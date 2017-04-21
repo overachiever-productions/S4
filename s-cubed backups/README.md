@@ -1,32 +1,50 @@
-﻿# [Branding Name] - dba_BackupDatabases
+﻿# S4 Backups
 While SQL Server's Native Backup capabilities provide a huge degree of flexibility and fine-tuning, the vast majority of SQL Server database backups only need a very streamlined and simplified subset of all of those options and capabilities. 
 
-As such, [Branding Name] backups address the following primary concerns:
+As such, S4 Backups address the following primary concerns:
 
 - **Simplicity.** Streamline the most commonly used features needed for backing up mission-critical databases into a set of simplified parameters that make automating backups of databases easy and efficient - while still vigorously ensuring disaster recovery best-practices.
 - **Resiliency** Wrap execution handling with low-level exception and error handling routines that prevent a failure in one operation (such as the failure to backup one database out of 10 specified) from 'cascading' into others and causing a 'chain' of operations from completing merely because an 'earlier' operation failed. 
 - **Transparency** Use the same low-level exception and error-handling routines designed to make backups more resilient to log problems in a centralized logging table (for trend-analysis and improved troubleshooting) and send email alerts with concise details about each failure or problem encountered during execution so that DBAs can quickly ascertain the impact and severity of any errors or problems incurred (without having to wade through messy 'debugging' and troubleshooting procedures just to figure out what happened).
 
 
-## Supported SQL Server Versions
-[Branding Name] Backups were designed to work with SQL Server 2008 and above. 
+## Table of Contents
+- [Benefits of S4 Backups](#benefits-of-s4-backups)
+- [Supported SQL Server Versions](#supported-sql-server-versions)
+- [Deployment](#deployment)
+- [Syntax](#syntax)
+- [Remarks](#remarks)
+- [Examples](#examples)
+- [Setting up Automated Jobs](#setting-up-automated-jobs)
 
-They were also designed to work with all Editions of SQL Server - though features which aren't supported on some Editions (like Backup Encryption on Web/Express Editions) obviously won't work. Likewise, SQL Express Editions can't send emails/alerts - so @OperatorName, @MailProfileName, and @EmailSubjectPrefix parameters are all ignored AND no alerts can/will be sent upon failures or errors from SQL Express Editions.
+## Benefits of S4 Backups
+Key Benefits Provided by S4 Backups:
 
-They have not (yet) been tested against case-sensitive SQL Servers.
-
-***NOTE:** As with any SQL Server deployment, these scripts are NOT suitable for use in backing up databases to NAS (Network Attached Storage) devices. SANs, Direct-Attached Disks, iSCSI (non-NAS), and other disk-configurations are viable, but the 'file-level' nature of NAS devices vs the block-level nature (of almost all other devices) required by SQL Server operations will cause non-stop problems and 'weird' device errors and failures when executing backups.*
-
-## Benefits of [Brand Name] Backups
-Key Benefits Provided by [Branding Name] Backups:
-
-- Simplicity, Resiliency, and Transparency - as described above. 
-- Simple deployment and Management. No dependencies on external DLLs, outside software, or additional components. Instead, [Branding Name] Backups are set of simple wrappers around native SQL Server Native Backup capabilities - designed to enable Simplicity, Resiliency, and Transparency when tackling backups.
+- Simplicity, Resiliency, and Transparency: commonly needed and used SQL Server functionality - in simple to use and manage scripts. 
+- Streamlined Deployment and Management. No dependencies on external DLLs, outside software, or additional components. Instead, S4 Backups are set of simple wrappers around native SQL Server Native Backup capabilities - designed to enable Simplicity, Resiliency, and Transparency when tackling backups.
 - Designed to facilitate copying backups to multiple locations (i.e., on-box backups + UNC backups (backups of backups) - or 2x UNC backup locations, etc.)
 - Enable at-rest-encryption by leveraging SQL Server 2014's (+) NATIVE backup encryption (only available on Standard and Enteprise Editions).
 - Leverages Backup Compression on all supported Versions and Editions of SQL Server (2008 R2+ Standard and Enterprise Editions) and transparently defaults to non-compressed backups for Express and Web Editions.
 - Supports logging of operational backup metrics (timees for backups, file copying, etc.) for trend analysis and review.
 - Supports Mirrored and 'Simple 2-Node' (Failover only) Availability Group databases.
+
+## Supported SQL Server Versions
+S4 Backups were designed to work with SQL Server 2008 and above. 
+
+S4 Backups were also designed to work with all Editions of SQL Server - though features which aren't supported on some Editions (like Backup Encryption on Web/Express Editions) obviously won't work. Likewise, SQL Express Editions can't send emails/alerts - so @OperatorName, @MailProfileName, and @EmailSubjectPrefix parameters are all ignored AND no alerts can/will be sent upon failures or errors from SQL Express Editions.
+
+S4 Backups have not (yet) been tested against case-sensitive SQL Servers.
+
+***NOTE:** As with any SQL Server deployment, S4 Backup scripts are NOT suitable for use in backing up databases to NAS (Network Attached Storage) devices. SANs, Direct-Attached Disks, iSCSI (non-NAS), and other disk-configurations are viable, but the 'file-level' nature of NAS devices vs the block-level nature (of almost all other devices) required by SQL Server operations will cause non-stop problems and 'weird' device errors and failures when executing backups.*
+
+## Deployment
+
+info on how to deploy... 
+- sp_cmdshell... 
+- common
+- table
+- sproc..
+- done... recommend review notes and examples... 
 
 ## Syntax 
 
@@ -144,7 +162,7 @@ Otherwise, some highly-simplified best-practices for automating SQL Server backu
 - Finally, [Branded Name] Backups are ONLY capable of creating and managing SQL Server Backups. And, while dba_BackupDatabases is designed and optimized for creating off-box backups, off-box backups (alone), aren't enough of a contingency plan for most companies - because while they will protect against situations where youl 100% lose your SQL Server (where the backups were made), they won't protect against the loss of your entire data-center or some types of key infrastructure (the SAN, etc.). Consequently, in addition to ensuring that you have off-box backups, you will want to make sure that you are regularly copying your backups off-site. (Products like [CloudBerry Server Backup](https://www.cloudberrylab.com/backup/windows-server.aspx) are cheap and make it very easy and affordable to copy backups off-site every 5 minutes or so with very little effort. Arguably, however, you'll typically WANT to run any third party (off site) backups OFF of your off-box location rather than on/from your SQL Server - to decrease disk, CPU, and network overhead. However, if you ONLY have a single SQL Server, go ahead and run backups (i.e., off-site backups) from your SQL Server (and get a more powerful server if needed) as it's better to have off-site backups.)
 
 
-### dba_BackupDatabases Specifics
+### S4 Backup Specifics
 dba_BackupDatabases was primarily designed to facilitate automated backups - i.e., regular backups executed on the server for disaster recovery purposes. It can, of course, be used to execute 'ad-hoc' backups if or when needed BUT does NOT (currently) allow COPY-ONLY backups (which isn't an issue unless your environment makes regular use of DIFFERENTIAL backups for speed or other recovery-purpose needs).
 
 The order of operations (within dba_BackupDatabases) is:
@@ -388,7 +406,7 @@ By default, dba_BackupDatabases will create and execute backup, file-copy, and f
 
 To see what dba_BackupDatabases would do (which is very useful in setting up backup jobs and/or when making (especially complicated) changes) rather than let it execute, simply set the @PrintOnly parameter to 1 (true) and execute - as in the example below (which is identical to Example C - except that commands will be 'spit out' instead of executed):
 
-```csharp
+```sql
 EXEC master.dbo.dba_BackupDatabases
     @BackupType = N'FULL', 
     @DatabasesToBackup = N'[USER]',
