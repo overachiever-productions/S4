@@ -9,15 +9,15 @@ As such, S4 Backups address the following primary concerns:
 
 
 ## Table of Contents
-- [Benefits of S4 Backups](#benefits-of-s4-backups)
-- [Supported SQL Server Versions](#supported-sql-server-versions)
+- [Benefits of S4 Backups](#benefits)
+- [Supported SQL Server Versions](#supported)
 - [Deployment](#deployment)
 - [Syntax](#syntax)
 - [Remarks](#remarks)
 - [Examples](#examples)
 - [Setting up Automated Jobs](#setting-up-automated-jobs)
 
-## Benefits of S4 Backups
+## <a name="benefits"></a>Benefits of S4 Backups
 Key Benefits Provided by S4 Backups:
 
 - Simplicity, Resiliency, and Transparency: commonly needed and used SQL Server functionality - in simple to use and manage scripts. 
@@ -28,7 +28,7 @@ Key Benefits Provided by S4 Backups:
 - Supports logging of operational backup metrics (timees for backups, file copying, etc.) for trend analysis and review.
 - Supports Mirrored and 'Simple 2-Node' (Failover only) Availability Group databases.
 
-## Supported SQL Server Versions
+## <a name="supported"></a>Supported SQL Server Versions
 S4 Backups were designed to work with SQL Server 2008 and above. 
 
 S4 Backups were also designed to work with all Editions of SQL Server - though features which aren't supported on some Editions (like Backup Encryption on Web/Express Editions) obviously won't work. Likewise, SQL Express Editions can't send emails/alerts - so @OperatorName, @MailProfileName, and @EmailSubjectPrefix parameters are all ignored AND no alerts can/will be sent upon failures or errors from SQL Express Editions.

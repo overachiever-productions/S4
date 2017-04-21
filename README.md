@@ -1,5 +1,5 @@
 ﻿# S4
-**S**imple **S**QL **S**erver **S**cripts -> **SSSS** -> S4
+**S**imple **S**QL **S**erver **S**cripts -> **SSSS** -> **S4**
 
 T-SQL scripts designed to simplify and optimize common SQL Server needs and operations. 
 
