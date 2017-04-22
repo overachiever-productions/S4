@@ -232,8 +232,8 @@ Defaults to 0 (false). When set to true, processing will complete as normal, HOW
 
 ## <a name="remarks"></a>Remarks
 
+### Automated Backups vs Ad-Hoc Backups
 S4 Backups were primarily designed to facilitate AUTOMATED backups - i.e., the regular backups executed on servers to provide disaster recovery options. S4 Backups (i.e., dba_BackupDatabases) can be used for 'ad-hoc' backups if necessary but dba_BackupDatabases does NOT allow for COPY_ONLY backups - which could cause significant problems or issues for databases using DIFF backups. Ideally, if you need an AD-HOC backup, use the SSMS GUI or 'whip one up' from script and, in either case, always specify the COPY_ONLY option - as a general best practice. If you are not very familiar with T-SQL Backup commands, you COULD use dba_BackupDatabases with the @PrintOnly = 1 switch set, then copy + paste + tweak the BACKUP command to provide a more meaningful backup name (i.e., dev_copy_for_xyz.BAK) AND interject the COPY_ONLY switch into the list of options specified after the WITH clause (i.e., WITH COMPRESSION, etc, COPY_ONLY, etc.).
-
 
 ### Order of Operations During Execution
 During execution, the high-level order of operations within dba_BackupDatabases is: 
@@ -256,11 +256,9 @@ When processing backups for cleanup (i.e., evaluating vs retention times), dba_B
 The secondary point / limitation is very important for purposes of addressing more 'complex' setups. Specifically, assume you have 4 (user) databases that you need to backup. Assume that 3 of them are of medium to 'meh' importance, but one is of SUCH critical importance you always want at least 3 days of FULL and T-LOG backups available for it - whereas, there isn't enough disk space to keep copies of the other 3 database for SUCH a long time (i.e., you can only 'manage' 2 days of backups for these databases). To this end, you would create DIFFERENT jobs for the 3x 'medium-important' jobs - with RetentionHours in/around the 48 hour mark - and distinct/different jobs (or at least steps or sets of commands) for your 'critical' database that would keep backups for 72 hours. As such, when @RetentionHours (or @CopyToRetentionHours) were being processed against your 3 'medium' importance databases, ONLY files in the folders for these 3x databases will be considered for currently specified retention (and the backups for your 4th/Critical database will NOT be touched during execution). 
 
 ### Backup Copies - Enterprise Edition vs Other Editions
-
 SQL Server Enterprise Edition Backups support a 'MIRROR TO' clause that allows backups to be mirrored (i.e., replicated) to multiple additional endpoints/destinations (folders) during execution. As such, if dba_BackupDatabases is deployed to an Enterprise Edition SQL Server, it will use native/built-in MIRROR TO functionality to create backup copies. Otherwise, on all other Editions, 'copy' operations are executed by first executing the backup against the path specified by @BackupDirectory (and the sub-folder within that directory for the database being processed), the backup is then verified, and then xp_cmdshell (i.e., a command prompt) is then used to 'manually' copy files to @CopyToBackupDirectory + sub-folder for each database being processed. 
 
 ## Backup Encryption
-
 S4 Backups 'wrap' native SQL Server Backup Encryption (i.e., there's nothing special about S4 Backups that could/would provide support for Backup Encryption OUTSIDE of what SQL Server already provides). As such, you will need SQL Server 2014 Standard or Enterprise Editions (encrytion is not supported on Web or Express Editions) or higher for Encryption Support. 
 
 WARNING: If you configure your system for Encrypted Backups, make SURE to backup your Encryption Certificates - otherwise your backups WILL be useless should you lose your primary server in a disaster - and there is NO way to recover from this (not even a support call to Microsoft could help you in this case).
@@ -517,27 +515,115 @@ Otherwise, some highly-simplified best-practices for automating SQL Server backu
 [Return to Table of Contents](#toc)
 
 ## <a name="jobs"></a>Setting Up Scheduled Backups using S4 Backups
+As S4 Backups were designed for automation (i.e., regularly scheduled backups), the following section provides some high-level guidance and 'comprehensive' examples on how to schedule jobs for all different types of databases. 
 
-outline:
-- process... i.e., how to do it (high level)
-- exceptions or advanced configs (disk constraints (space) / multiple backup locations, DIFFs for speed, different retention times for some dbs than others, and diff retention times on-box vs off-box (recap)
-- OPTIONS for 'customizations' - different jobs | diff job-steps | or diff commands within a single job-step. either is fine.
-- samples/examples... 
+### Creating Jobs
+For all Editions of SQL Server, the process for defining and creating jobs uses the same workflow. However, SQL Server Express Editions do NOT have a SQL Server Agent and cannot, therefore, use SQL Server Agent Jobs (i.e., schedule tasks with built-in capabilities for alerting/etc) for execution and will need to use the Windows Task Scheduler (or a 3rd party scheduler) to kick of .bat or .ps1 commands instead. 
 
-[high-level overview of the process of a) figuring out what you want/need in terms of COVERAGE (i.e., frequency + retention) then... creating individual jobs for system FULL, then user FULLs + DIFFs + TLOGs. 
+Otherwise, the basic order of operations (or workflow) for creating scheduled backups is as follows:
+- Read through the guidelines below BEFORE actually creating and implementing any actual job steps.
+- Start with any SLAs (RPOs or RTOs) you may have governing how much data-loss and down-time for key/critical databases can be tolerated. 
+- Evaluate all other non-critical databases for backup needs and put any non-important databases into SIMPLE recovery mode and/or remove from your production servers as much as possible. 
+- Review backup retention requirements for all databases. (Typically, the best option is to try and keep all types of dbs (important/critical and then non-import/dev/testing) for roughly the same duration. However, if you are constrained for disk space, you may have to pick 'favorite' or more important databases which will have LONGER backup retention times AT THE EXPENSE of shorter retention times for LESS important databases.
+- Create different logical 'groupings' of your databases as needed. Idealy you want as FEW groupings or types of databases as possible (i.e., System and User databases is a common convention). However, if some of your databases are drastically more important/critical than others, you might want to break up user databases into two groups: "Critical" and "Normal", and drop databases into these groups as needed. 
+- Start by setting up a job to execute FULL backups of your System databases. Typically, retention times of 2 - 3 days for system databases are more than fine. 
+- Then set up a job for FULL backups of any 'super' critical  - with corresponding retention rates defined as needed. Make sure you're copying these backups off-box (either via the @CopyToBackupDirectory or by a regularly-running 3rd party solution/etc.)
+- If one of your 'super' critcal databases is under very heavy load during periods of the day and you have TESTED and found out that you cannot restore from a FULL + all T-LOGs (since FULL) and recover within RTOs, then you'll need to create DIFF backups for this 'group' of databases at key intervals (i.e., every 4 hours from 10AM until 6PM - or whatever makes sense).
+- Once you've addressed FULL + DIFF backups for any critical or super important databases, you can then address FULL backups for any less important (i.e., medium importance) and lower-importance databases as needed. 
+- After you've figured out what your needs for 'critical', normal, and low-importance databases are (in terms of FULL and/or DIFF backups), try to CONSOLIDATE needs as much as you can. For example, if you have 5 databases, 2 of which are dev/test databases that aren't that important, 2 of which are production databases, and one of which is a mission-critical (used like crazy) database of utmost importance, you can (in most cases) consolidate the FULL + DIFF backups for ALL 5 of these databases into just two jobs: a job that tackles FULL backups of ALL user databases at, say, 4AM every mornining (which will execute full backups of your 2 dev/testing databases and of your 3x production databases), and then a second job (with a name like "<BigDbName>.DIFF Backups" - or "HighVolume.DIFF Backups" if you've got 2 or more high-volume DBs that require DIFF backups) that executes DIFF backups every 3 hours starting at 10AM and running until 5PM - or whatever makes sense. 
+- Once you have FULL + DIFF backups tackled, you should typically ONLY EVER need to create a SINGLE job to tackle Transaction Log backups - across all (non-SIMPLE Recovery Mode) databases. So, in the example above, if you've got 5x databases (2 that are dev/test, 2 that are important, and 1 that is critical), after you had created 2 jobs (one for FULL, one for DIFFs), you'd then create a single job for T-Log backups (i.e., "User Databases.LOG Backups") that was set to run every 3 - 10 minutes (depending up on RPOs) which would be configured to execute LOG backups - meaning that when executed, this job would 'skip past' your 2x dev/testing databases (because they're in SIMPLE recovery mode), then backup the T-Logs for your 3x production databases.
 
-Recommendations for DISTINCT jobs per each backup/type. Don't use house-boats or 'dual load' things. Create a single job per each type of thing... i.e., assuming such and such scneario would create 3x jobs... 1 for system/FULL, 1 for FULL user... 1 for t-log of all dbs - every 5 or 10 minutes. Later... if found that need job for larger DB to do a DIFF at, say, 2PM and 4PM to keep up with heavy tx volume, create a new/distinct job for it to do DIFF backups of the one db... 
+In short, make sure to plan things out a bit before you start creating jobs or executing backups. A little planning and preparation will to a long way - and, don't expect to get things perfect on your first try; you may need to monitor things for a few days (see how much disk you end up using for backups/etc.) and then 'course correct' or even potentially 'blow everything away and start over'. Or, in other words, S4 backups weren't designed to make backups a 'brain-dead' operation that wouldn't require any planning or monitoring on your part - but they WERE created to make it very easy for you to make changes or 'tear-down and recreate' backup routines and schedules without much effort involved in the actual CODING and configuration neeeded to get things 'just right'.
 
-SHOW examples of the job-step for all of the above... 
+### Addressing Customized Backup Requirements
+On very simple systems you can quite literally create two jobs and be done:
+- One that executes a FULL backup of all databases nightly. 
+- One that executes LOG backups of all (non-SIMPLE recovery) databases every x minutes. 
 
-Recommendations about JOB NAMES ... 
+However, even to do something like thise, you would run into the problem that while dba_BackupDatabases will let you specify [USER] as a way to backup all user databases and [SYSTEM] to backup all system databases, there is NOT an [ALL] token that targets all databases (this is by design). As such, for your first 'job' listed above, you'd have 3x actual options for how you wanted to tackle the need for processing FULL backups of all databases. 
 
-other recommendations/etc. 
+1. You could actually create 2x jobs instead of just a single Job - e.g., "System Databases.FULL Backups" and "User Databases.FULL Backups". For jobs processing System Backups, this is actually the best/recommended practice (it makes it very clear in looking at the Jobs listed in your SQL Server Agent that you're executing FULL backups of System databases (and user DBs as well). (For situations where you need to execute different options for user databases - one of the other two options below typically makes more sense).
+2. You 'stick' with using a single SQL Server Agent Job, but spin up 2x different Job Steps within the Job - i.e., a Job_Step called "System Databases" and an additional Job-Step called "User Databases". The BENEFIT of this approach is that you end up with just a single job (less 'clutter') and your backups will not only execute under the same schedule - but they'll run serially (i.e., system backups will take as long as needed, and - without skipping a beat - user database backups will then kick off) - which is great if you've have smaller maintenance windows. NEGATIVES of this approach are that you MUST take care to make sure that if the first Job-Step fails, the job itself does NOT quit (reporting failure), but goes to the next Job-Step (so that a 'simple' failure to backup, say, the model database (for some odd reason), doesn't prevent you from at least TRYING to backup one of your critical or even important databases.
+3. You could 'stick' with both a single job AND a single-job step - by simply 'dropping' 2x (or more) calls to dba_BackupDatabases within the same job step. While this works, it comes with 2 negatives: a) while dba_BackupDatabases is designed to run without throwing exceptions when an error occurs during backups, IF a major problem happens in your first execution, the second call to dba_BackupDatabases may not fire and b) it's easy for things to get a bit cluttered and 'confusing' fast. As such, option 2 (different Job Steps within the same job) is usually the best option for addressing 'customizations' or special needs within backups for user databases. 
 
-[if you've got multiple databases (i.e., say 20) and you're executing t-log backups every 5 minutes (for example) that's 288 * 20 = or 5760 rows/day added to the dba_backups_log tble if @LogSuccessfulOutcomes is set to 0. That's actually NOT much in terms of data (about xyz data/day)... but this can add up quickly... ]
 
-It is HIGHLY recommended that before scheduling any jobs using dba_BackupDatabases, that you FIRST specify the parameters for dba_BackupDatabases as you think you would like them, and then flip @PrintOnly to 1, and run a 'debug output' pass of the sproc - to verify that you're processing all of the databases you would expect to be processing, and that all paths and other configured steps are defined exactly as desired. Then, once you've got things working as expected, **MAKE SURE TO SET @PrintOnly = 0** (or simply remove it entirely), and then copy/paste your configured parameters into a SQL Server Agent Job Step for automated execution
+Otherwise, key reasons why you might want to address customized backup requirements would include things like: 
+- Situations where you might have different backup locations on the same server (i.e., smaller volumes/disks/folders that can't handle ALL of your backups to the same, single, location). In situations like this, you're better of creating a single job for all of your FULL backups for user databases (e.g., "User Databases.FULL Backups") and then doing the same for LOG backups (e.g., "User Databases.LOG Backups") and then for each job, creating 2 or more job steps - to handle backups for databases being written to the N drive (for example), and then a follow-up Job Step for databases backed up to the S drive, and so on. 
+- Situations where you have different retention times for different databases - either for DR purposes or because of disk space constraints. 
 
-]
+But, in each case where you must 'customize' or specialize specific settings or details, you typically want to try and 'consolidate' as many separate yet RELATED operations into as few jobs as possible - as doing so makes it much easier to find a job when problems happen (i.e., if you have 6x different "FULL backup" jobs for 6 or more databases, it'll take you a bit longer to find and troubleshoot WHICH one of those jobs had a problem if a problem happens AND you'll have WAY more schedules to juggle). Likewise, you typically want as FEW schedules to manage as possible - both because it makes it easier to troubleshoot problems AND because then you're not playing 'swiss cheese meets complex maintenance requirements' and trying to 'plug' various tasks into a large number of time-slots and the likes - and then constantly having to adjust and 'shuffle' schedules around when dbs start getting larger and backups take increasingly more and more time (causing 'collisions' with other jobs). 
 
-[Return to Table of Contents](#toc)
+### Testing Execution Details 
+Once you've figured out what you want to set up in terms of jobs/schedules and the likes, you should TEST the specific configuraitons you're looking at pulling off - to make sure everything will work as expected. 
+
+As a best practice, start with creating a call to dba_BackupDatabases that will tackle backups of your System databases. Specifically, copy + paste the code from Example A into SSMS, point the @BackupDirectory at a viable path on your server, and then append @PrintOnly = 1 to the end of the list of parameters and execute. Then review the commands generated and you can even copy/paste one of the BACKUP commands if you'd like and try to execute it (it'll likely fail on a server where dba_BackupDatabases hasn't run before - because it'll be trying to write to a subfolder that hasn't been created yet). Then, once you've reviewed the commands being generated, remove the @PrintOnly = 1 parameter (remove it instead of setting it 0), and execute. 
+
+At this point, if you haven't configured something correctly - or are missing dependencies, dba_BackupDatabases will throw an ERROR and will not continue operations. 
+
+Otherwise, if everything looks like it has been configured correctly, execution will complete and if there are errors, you'll see that an email message has been queued - and you can query master.dbo.dba_BackupDatabases_Log for information (check the ErrorDetails column - or just wait for an email).
+
+If backup execution completed as follows, then make sure to specify an @CopyToBackupDirectory and a corresponding value for @CopyToRetentionHours - and any other parameters as you'll need for your production backups, and then create a new SQL Server Agent Job to execute the commands as you have configured them. 
+
+Then repeat the process for all of the other backup operations that you'll need - where (for each job or set of differences you define) you can always 'test' or visualize outcomes by setting @PrintOnly = 1, and then REMOVING this statement before copy/pasting details into a SQL Server Agent Job. 
+
+### Creating And Configuring SQL Server Agent Jobs, Job-Steps, Schedules, and Notifications
+[cover how to do it all - with pictures.]
+cover
+- naming
+- ownership by sa (link to why)
+- job step
+- run in master db. 
+- multiple job steps
+- configuring advanced jbo-step options
+- schedules (one-off and repeated)
+- notifications. 
+
+### Extended Example
+Mia has the following databases and environment: 
+- 2x testing databases: test1 and test2. 
+- 1x 300GB critical database: ProdA. 
+- 2x 10 - 20GB important databases: db1 and db2
+- Enough disk space for all of her data and log files. 
+- 500GB of backup space on N:\ in N:\SQLBackups
+- 100GB of backup space on S:\ in S:\Scratch\Backups
+- 800GB of backup space on \\\\Backup-Server\ProdSQL\
+
+Assume that FULL backups of test1, test2, db1, and db2 consume 60GB of space daily (i.e., 60GB for all 4x databases). 
+
+Likewise, assume that FULL backups of ProdA consume 140GB each. 
+
+And that T-Log backups for db1 and db2 consume around 5GB of space each day, whereas T-Logs for ProdA consume around 20GB of space per day. 
+
+Mia is still working with management to come up with RPOs and RTOs that everyone can agree upon, but until she hears otherwise, she's going to execute T-LOG backups every 5 minutes, doesn't need DIFF backups of ProdA, and will execute FULL backups of all databases daily. 
+
+To do facilitate this, she does the following. 
+
+First, she defines the following call to dba_BackupDatabases - for her System Databases:
+
+
+She then creates a new Job, "System Databases.FULL Backups", sets it to be owned by 'sa', copies/pastes the code above into a single job step ("FULL Backup of System Databases"), sets it to execute every night at 7PM (which captures most changes made by admins during a 'work day') and where the few SECONDS it'll take to execute System backups won't even be noticed. She also sets the Notification tab to Notify "Alerts" if the job fails (in case there's a bug in dba_BackupDatabases rather than a problem that might encountered while executing backups that would be 'trapped'). 
+
+Second, she opts to set up a single Job for FULL user database backups - but she's going to need 2x Job Steps to account for the fact that she'll have to push ProdA to the N:\ drive and keep all other DBs on the S:\ drive - to avoid problems with space. 
+
+So, she creates a new Job, "User Databases.FULL Backups", sets the owner to SA, configures it to Notify Alerts on failure, and schedules the job to run at 2AM every day. 
+
+Then, she configures a call to dba_BackupDatabases for JUST ProdA - as follows: 
+
+
+And then she drops that into the first/initial Job Step for her job - with a name of "Full backups of ProdA - to N:\", and then copies/pastes in the code from above. 
+
+Then, she configures a new/different call to dba_BackupDatabases for all other user databases - which she does by specifying [USER] for @DatabasesToBackup and 'ProdA' for @DatabasesToExclude. She also sets different (lesser) retention times - both for local AND off-box backups to conserve space and to FAVOR backups of ProdA over the other 'less important' databases:
+
+
+Next, she adds a new (second) Job Step to "User Databases.FULL Backups" called "Full Backups of all other dbs to S:\" and copies/pastes the code from above. 
+
+[She then makes sure to modify the 'advanced' properties...  so that... if step 1 fails, step 2 will go first. but, notice that she also configured the highest priority db to be backed up first - regardless - so that it gets the most time to execute and so on.]
+
+
+
+[Return to Table of Contents]
+
+## Troubleshooting Common Backup Problems
+-- TODO
+[Permissions]
+[Common error conditions/etc.]
