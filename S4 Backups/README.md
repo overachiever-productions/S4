@@ -8,14 +8,15 @@ As such, S4 Backups address the following primary concerns:
 - **Transparency** Use the same low-level exception and error-handling routines designed to make backups more resilient to log problems in a centralized logging table (for trend-analysis and improved troubleshooting) and send email alerts with concise details about each failure or problem encountered during execution so that DBAs can quickly ascertain the impact and severity of any errors or problems incurred (without having to wade through messy 'debugging' and troubleshooting procedures just to figure out what happened).
 
 
-## Table of Contents
+## <a name="toc"></a>Table of Contents
 - [Benefits of S4 Backups](#benefits)
 - [Supported SQL Server Versions](#supported)
 - [Deployment](#deployment)
 - [Syntax](#syntax)
 - [Remarks](#remarks)
 - [Examples](#examples)
-- [Setting up Automated Jobs](#setting-up-automated-jobs)
+- [Best-Practices for SQL Server Backups](#best)
+- [Setting up Automated Jobs](#jobs)
 
 ## <a name="benefits"></a>Benefits of S4 Backups
 Key Benefits Provided by S4 Backups:
@@ -28,6 +29,8 @@ Key Benefits Provided by S4 Backups:
 - Supports logging of operational backup metrics (timees for backups, file copying, etc.) for trend analysis and review.
 - Supports Mirrored and 'Simple 2-Node' (Failover only) Availability Group databases.
 
+[Return to Table of Contents](#toc)
+
 ## <a name="supported"></a>Supported SQL Server Versions
 S4 Backups were designed to work with SQL Server 2008 and above. 
 
@@ -37,16 +40,102 @@ S4 Backups have not (yet) been tested against case-sensitive SQL Servers.
 
 ***NOTE:** As with any SQL Server deployment, S4 Backup scripts are NOT suitable for use in backing up databases to NAS (Network Attached Storage) devices. SANs, Direct-Attached Disks, iSCSI (non-NAS), and other disk-configurations are viable, but the 'file-level' nature of NAS devices vs the block-level nature (of almost all other devices) required by SQL Server operations will cause non-stop problems and 'weird' device errors and failures when executing backups.*
 
-## Deployment
+[Return to Table of Contents](#toc)
 
-info on how to deploy... 
-- sp_cmdshell... 
-- common
-- table
-- sproc..
-- done... recommend review notes and examples... 
+## <a name="deployment"></a>Deployment
 
-## Syntax 
+To Deploy S4 Backups into your environment:
+- You will need to enable xp_cmdshell if it isn't already enabled. See below for more information.
+- You will also need to have configured Database Mail, enabled the SQL Server Agent to use Database Mail for notifications, and have created a SQL Server Agent Operator. For more information, see the notes below. 
+- From the S4 'common' folder, locate and then open + execute dba_ExecuteAndFilterNonCatchableCommand.sql against your server.
+- From the S4 Backup folder, locate, and then open + execute the 0. dba_DatabaseBackups_Log.sql script against your server.
+- From the S4 Backup folder, locate, and then open + exeucte the 1. dba_BackupDatabases.sql script against your server.
+
+Once you've completed the steps listed above, everything you need will be deployed and ready for execution. (Note that if you're in a Mirrored Environment or if your servers are hosting Availability Groups, you'll want to make sure to complete the steps listed above on both/all servers where your databases will be hosted.)
+
+
+
+### Notes on xp_cmdshell
+
+It's not uncommon for some people to assume that enabling xp_cmdshell is a "gigantic security problem" - because enabling it for anyone OUTSIDE of the SysAdmin fixed server-role WOULD be a bad idea (fortunately, though, granting non-SysAdmins the ability to use this extended procedure takes a lot of effort). Otherwise, by enabling this feature (which is disabled by default) for SysAdmins, all that xp_cmdshell does is give SysAdmins the ability to, effectively, open up a command-shell on the host SQL Server and execute commands against that shell WITH the permissions granted to your SQL Server Engine/Service. Or, in other words, xp_cmdshell allows SysAdmins to run arbitrary Windows commands (in effect giving them a 'dos prompt') with whatever permissions are afforded to the SQL Server Service itself. When configured securely and correctly, the number of permissions available to a SQL Server Service are VERY limited by default - and are typically restricted to folders explicitly defined during setup or initial configuration (i.e., SQL Server will obviously need permissions to access the Program Files\SQL Server\ directory, the folders for data and log files, and any folders you've defined for SQL Server to use as backups; further, if you're pushing backups off-box (which you should be doing), you'll need to be using a least-privelege Domain Account - which will need to be granted read/write permissions against your targetted network shares for SQL Server backups). 
+
+In short, the worst that a SysAdmin can do with xp_cmdshell enabled is... the same they could do without it enabled (i.e., they could drop/destroy all of your databases and backups (if they are so inclined to do or if they're careless and their access to the server is somehow compromised) - but there is NO elevation of privilege that comes from having xp_cmdshell enabled - period. 
+
+To check to see if xp_cmdshell is enabled, run the following against your server: 
+
+```sql
+-- 1 = enabled, 0 = not-enabled:
+SELECT name, value_in_use FROM sys.configurations WHERE name = 'xp_cmdshell';
+```
+
+If it's not enabled, you'll then need to see if advanced configuration options are enabled or not (as 'flipping' xp_cmdshell on/off is an advanced configuration option). To do this, run the following against your server: 
+
+```sql
+-- 1 = enabled, 0 = not-enabled:
+SELECT name, value_in_use FROM sys.configurations WHERE name = 'show advanced options';
+```
+
+If you need to enable advanced configuration options, run the following:
+
+```sql
+USE master;
+GO
+
+EXEC sp_configure 'show advanced options', 1;
+GO
+```
+
+Once you execute the command above, SQL Server will notify you that the command succeeded, but that you need to run a RECONFIGURE command before the change will be applied. To force SQL Server to re-read configuration information, run the following command: 
+
+```sql
+RECONFIGURE;
+```
+
+**WARNING:** While the configuration options specified in these setup docs will NOT cause a dump of your plan cache, OTHER configuration changes can/will force a dump of your plan cache (which can cause MAJOR performance issues and problems on heavily used servers). As such:
+- Be carefule with the use of RECONFIGURE (i.e., don't ever treat it lightly). 
+- If you're 100% confident that no OTHER changes to the server's configuration are PENDING a RECONFIGURE command, go ahead and run reconfigure as needed to complete setup. 
+- If there's any doubt and you're on a busy system, wait until non-peak hours before running a RECONFIGURE command.
+
+To check if there are any changes pending on your server, you can run the following (and if the only configuration setting listed is for xp_cmdshell, then you can run RECONFIGURE without any worries):
+
+```sql
+-- note that 'min server memory(MB)' will frequently show up in here
+--		if so, you can ignore it... 
+SELECT name, value, value_in_use 
+FROM sys.configurations
+WHERE value != value_in_use;
+```
+
+Otherwise, once advanced configuration options are enabled, if you need to enable xp_cmdshell, run the following against your server:
+
+```sql
+USE master;
+GO
+
+EXEC sp_configure 'xp_cmdshell', 1;
+GO
+```
+
+Once you've run that, you will need to run a RECONFIGURE statement (as outlined above) BEFORE the change will 'take'. (See instructions above AND warnings - then execute when/as possible.)
+
+### Notes on Setting up Database Mail
+
+For more information on setting up and configuring Database Mail, see the following post: [Configuring and Troubleshooting Database Mail](http://sqlmag.com/blog/configuring-and-troubleshooting-database-mail-sql-server). 
+
+Then, once you've enabled Database Mail (and ensured that your SQL Server Agent - which isn't supported on Express Editions), you'll also need to create a new Operator. To create a new Operator:
+- In SSMS, connect to your server. 
+- Expand the SQL Server Agent > Operators node. 
+- Right click on the Operators node and select the "New Operator..." menu option. 
+- Provide a name for the operator (i.e., "Alerts"), then specify an email address (or, ideally, an ALIAS when sending to one or more people) in the "E-mail name" filed, then click OK. (All of the scheduling and time stuff is effectively for Pagers (remember those) - and can be completely ingored). 
+- Go back into your SQL Server Agent properties (as per the article linked above), and specify that the Operator you just created will be the Fail Safe Operator - on the "Alerts System" page/tab. 
+- 
+For more information and best practices on setting up Operator (email addresses), see the following: [Database Mail Tip: Notifying Operators vs Sending Emails](http://sqlmag.com/blog/sql-server-database-mail-notifying-operators-vs-sending-emails).
+
+**NOTE:** *By convention S4 Backups are written to use a Mail Profile name of "General" and an Operator Name of "Alerts" - but you can easily configure backups to use any profile name and/or operator name.*
+
+[Return to Table of Contents](#toc)
+
+## <a name="syntax"></a>Syntax 
 
 ```sql
 EXEC dbo.dba_BackupDatabases
@@ -139,59 +228,46 @@ Defaults to '[Database Backups ] ', but can be modified as desired. Otherwise, w
 
 Defaults to 0 (false). When set to true, processing will complete as normal, HOWEVER, no backup operations or other commands will actually be EXECUTED; instead, all commands will be output to the query window (and SOME validation operations will be skipped). No logging to dba_BackupDatabases_Log will occur when @PrintOnly = 1. Use of this parameter (i.e., set to true) is primarily intended for debugging operations AND to 'test' or 'see' what dba_BackupDatabases would do when handed a set of inputs/parameters.
 
+[Return to Table of Contents](#toc)
 
-## Remarks
+## <a name="remarks"></a>Remarks
 
-### General Best-Practices for SQL Server Backups
-
-For background and insights into how SQL Server Backups work, the following, free, videos can be very helpful in bringing you up to speed: 
-
-- [SQL Server Backups Demystified.](http://www.sqlservervideos.com/video/backups-demystified/) 
-- [SQL Server Logging Essentials.](http://www.sqlservervideos.com/video/logging-essentials/)
-- [Understanding Backup Options.](http://www.sqlservervideos.com/video/backup-options/)
-- [SQL Server Backup Best Practices.](http://www.sqlservervideos.com/video/sqlbackup-best-practices/)
-
-Otherwise, some highly-simplified best-practices for automating SQL Server backups are as follows:
-- Generally speaking, backups do NOT consume as many resources as most people initially fear - so they shouldn't be 'feared' or 'used sparingly'. (Granted, FULL backups against larger databases CAN put some stress/strain on the IO subsystem - so they should be taken off-hours or 'at night' as much as possible. Likewise, DIFF backups (which can be taken 'during the day' and at periods of high-load (to decrease how much time is required to restore databases in a disater) CAN consume some resources during the day when taken, but this needs typically slight negative needs to be contrasted with the positive/win of being able to restore databases more quickly in the case of certain types of disaster. Otherwise, when executed regularly (i.e., every 5 to 10 minutes), Transaction Log backups typically don't consume more resources than some 'moderate queries' that could be running on your systems and NEED to be executed regularly to ensure you have options and capabilities to recover from disasters. In short, humans are wired for scarcity; forget that and be 'eager' with your backups, then watch for any perf issues and address/react accordingly (instead of fearing that backups might cause problems - as it is guaranteed that a LACK of proper/timely backups will cause WAY more problems when an emergency occurs.)
-- All databases, including dev/testing/stating databases, should typically see a FULL backup every day. The exception of exclusion would be VERY LARGE databases (i.e., databases > 1TB start being consired LARGE (not necessarily VERY LARGE) database and start to fall outside the scope of [Branded Name] Backups), OR dev/test databases in SIMPLE recovery mode that don't see much activity and could 'lose a week' (or multiple days/whatever) of backups without causing ANY problems. As such, you should typically create a nightly job that executes FULL backups of all [SYSTEM] databases (see Example B - below) and another, distinct, job that executes FULL backups of [USER] databases (see Example C below). Then, if you've got some (user) databases you're SURE you don't care about AND that you can recreate if needed, then you can exclude these using @DatabasesToExclude.
-- Once FULL backups of all (key/important and even important-ish) databases have been addressed (i.e., you've created jobs for them), you may want to consider setting up DIFF backups DURING THE DAY to address 'vectored' backups of larger and VERY HEAVILY used databases - as a means of decreasing recovery times in a disaster. For example, if you've got a 300GB database that sees a few thousand transactions per minute (or more), and generates MBs or 10s of MBs of (compressed) T-LOG backups every 5 or 10 minutes when T-Log backups are run, then if you run into a disaster at, say, 3PM, you're going to have to restore a FULL Backup for this database plus a LOT of transactional activity - which CAN take a large amount of time. Therefore, if you've got specific RTOs in place, one means of 'boosting' recovery times is to 'interject' DIFF backups at key periods of the day. So, for example, if you took a FULL backup at 2AM, and DIFF backups at 8AM, Noon, and 4PM, then ran into a disaster at 3PM, you'd restore the 2AM FULL + the Noon DIFF (which would let you buypass 10 hours of T-Log backups) to help speed up execution. As such, if something like this makes sense in your environment, make sure to review the examples (below), and then pay special attention to Example E - which showcases how to specify that specific databases should be targeted for DIFF backups. 
-- Otherwise, in terms of Transaction Log backups, these SHOULD be executed every 10 minutes at least - and as frequently as every 3 minutes (on very heavily used systems).On some systems, you may want or need T-Log backups running 24 hours/day (i.e., transactional coverage all the time). On other (less busy systems), you might want to only run Transaction Log backups between, say, 4AM (when early users start using the system) until around 10PM when you're confident the last person in the office will always, 100%, be gone. Again, though, T-Log backups don't consume many resources - so, when in doubt: just run T-Log backups (they don't hurt anything). **Likewise, do NOT worry about T-Log backups 'overlapping' or colliding with your FULL / DIFF backups; if they're set to run at the same time, SQL Server is smart and won't allow anything to break (or throw errors) NOR will it allow for any data loss or problems.** Otherwise, as defined elsewhere, when a @BackupType of 'LOG' is specified, dba_BackupDatabases will backup the transaction logs of ALL (user) databases not set to SIMPLE recovery mode. As such, if you are CONFIDENT that you do NOT want transaction log backups of specific databases (dev, test, or 'read-only' databases that never change OR where you 100% do NOT care about the loss of transactional data), then you should 'flip' those databases to SIMPLE recovery so that they're not having their T-Logs backed up.
-- In terms of storage or WHERE you put your backups, there are a couple of rules of thumb. **First, it is NEVER good enough to keep your ONLY backups on the same server (i.e., disks) as your data. Doing so means that a crash or failure of your disks or system will take down your data and your backups.** As such, you should ALWAYS make sure to have off-box copies or backups of your databases (which is why the @CopyToBackupDirectory and @CopyToRetentionHours parameters exist). Arguably, you can and even SHOULD (in many - but not all) then ALSO have copies of your backups on-box (i.e., in addition to off-box copies). And the reason for this is that off-box backups are for hardware disasters - situations where a server catches fire or something horrible happens to your IO subsystem - whereas on-box backups are very HELPFUL (but not 100% required) for data-corruption issues (i.e., problems where you run into phsyical corruption or logical corruption) where your hardware is FINE - because on-box backups mean that you can start up restore operations immediately and from local disk (which is usually - but not always) faster than disk stored 'off box' and somewhere on the network. Again, though, the LOGICAL priority is to keep off-box backups first (usually with a longer retention rate as off-box backup locations typically tend to have greater storage capacity) and then to keep on-box 'copy' backups locally as a 'plus' or 'bonus' whenever possible OR whenever required by SLAs (i.e., RTOs). Note, however, that while this is the LOGICAL desired outcome, it's typically a better practice (for speed and resiliency purposes) to write/create backups locally (on-box) and then copy them off-box (i.e., to a network location) after they've been created locally. As such, many of the examples in this documentation point or allude to having backups on-box first (the @BackupDirectory) and the 'copy' location second (i.e., @CopyToBackupDirectory). 
-- Another best practice with backups, is how to organize or store them. Arguably, you could simply create a single folder and drop all backups (of all types and for all databases) into this folder as a 'pig pile' - and SQL Server would have no issues with being able to restore backups of your databases (if you were to use the GUI). However, humans would likely have a bit of a hard time 'sorting' through all of these backups as things would be a mess. An optimal approach is to, instead, create a sub-folder for each database, where you will then store all FULL, DIFF, and T-LOG backups for each database so that all backups for a given database are in a single folder. With this approach, it's very easy to quickly 'sort' backups by time-stamp to get a quick view of what backups are available and roughly how long they're being retained. This is a VERY critical benefit in situations where you can't or do NOT want to use the SSMS GUI to restore backups - or in situations where you're restoring backups after a TRUE disaster (where the backup histories kept in the msdb are lost - or where you're on brand new hardware). Furthermore, the logic in [Branded Name] Restore-Tests is designed to be 'pointed' at a folder or path (for a given database name) and will then 'traverse' all files in the folder to restore the most recent FULL backup, then restore the most recent DIFF backup (since the FULL) if one exists, and conclude by restoring all T-LOG backups since the last FULL or DIFF (i.e., following the backup chain) to complete restore a database up until the point of the last T-LOG backup (or to generate a list of commands that would be used - via the @PrintOnly = 1 option - so that you can use this set of scripts to easily create a point-in-time recovery script). Accordingly, dba_BackupDatabases takes the approach of assuming that the paths specified by @BackupDirectory and/or @CopyToBackupDirectory are 'root' locations and will **ALWAYS** create child directories (if not present) for each database being backed up. (NOTE that if you're in the situation where you don't have enough disk space for ALL of your backups to exist on the same disk or network share, you can create 2 or more backup disks/locations (e.g., you could have D:\SQLBackups and N:\SQLBackups (or 2x UNC locations, etc.)) and then assign each database to a specific disk/location as needed - to 'spread' your backups out over different locations. If you do this, you MIGHT want to create 2x different jobs per each backup type (i.e., 2x jobs for FULL backups and 2x jobs for T-Log Backups) - each with its own corresponding job name (e.g. "Primary Databases.FULL Backups" and "Secondary Databases.FULL Backups"); or you might simply have a SINGLE job per backup type (UserDatabases.FULL Backups and UserDatabases.LOG Backups) and for each job either have 2x job-steps (one per each path/location) or have a single job step that first backups up a list of databases to the D:\ drive, and then a separate/distinct execution of dba_BackupDatabases below the first execution (i.e., 2x calls to dba_BackupDatabases in the same job step) that then backs up a differen set of databases to the N:\ drive. 
-- In terms of retention times, there are two key considerations. First: backups are not the same thing as archives; archives are for legal/forensic and other purposes - whereas backups are for disaster recovery. Technically, you can create 'archives' via SQL Server backups without any issues (and dba_BackupDatabases is perfectly suited to this use) - but if you're going to use dba_BackupDatabase for 'archive' backups, make sure to create a new / distinct job with an explicit name (e.g., "Monthly Archive Backups"), give it a dedicated schedule - instead of trying to get your existing, nightly (for example) job that tackles FULL backups of your user databases to somehow do 'dual duty'. However, be aware that dba_BackupDatabases does NOT create (or allow for) COPY_ONLY backups - so IF YOU ARE USING DIFF backups against the databases being archived, you will want to make sure that IF you are creating archive backups, that you create those well before normal NIGHTLY backups so that when your normal, nightly, backups execute you're not breaking your backup chain. Otherwise, another option for archival backups is simply to have an automated process simply 'zip out' to your backup locations at a regularly scheduled point and 'grab' and COPY an existing FULL backup to a safe location. Otherwise, the second consideration in terms of retention is that, generally, the more backups you can keep the better (to a point - i.e., usually anything after 2 - 4 days isn't ever going to be used - because if you're doing things correctly (i.e., regular DBCC/Consistency checks and routinely (daily) verifying your backups by RESTORING them, you should never need much more that 1 - 2 days' worth of backups to recover from any disaster). Or, in other words, any time you can keep roughly 1-2 days of backups 'on-box', that is typically great/ideal as it will let you recovery from corruption problems should the occur - in the fastest way possible; likewise, if you can keep 2-3 days of backups off-box, that'll protect against hardware and other major system-related disasters. If you're NOT able to keep at least 2 days of backups somewhere, it's time to talk to management and get more space.
-- Finally, [Branded Name] Backups are ONLY capable of creating and managing SQL Server Backups. And, while dba_BackupDatabases is designed and optimized for creating off-box backups, off-box backups (alone), aren't enough of a contingency plan for most companies - because while they will protect against situations where youl 100% lose your SQL Server (where the backups were made), they won't protect against the loss of your entire data-center or some types of key infrastructure (the SAN, etc.). Consequently, in addition to ensuring that you have off-box backups, you will want to make sure that you are regularly copying your backups off-site. (Products like [CloudBerry Server Backup](https://www.cloudberrylab.com/backup/windows-server.aspx) are cheap and make it very easy and affordable to copy backups off-site every 5 minutes or so with very little effort. Arguably, however, you'll typically WANT to run any third party (off site) backups OFF of your off-box location rather than on/from your SQL Server - to decrease disk, CPU, and network overhead. However, if you ONLY have a single SQL Server, go ahead and run backups (i.e., off-site backups) from your SQL Server (and get a more powerful server if needed) as it's better to have off-site backups.)
+S4 Backups were primarily designed to facilitate AUTOMATED backups - i.e., the regular backups executed on servers to provide disaster recovery options. S4 Backups (i.e., dba_BackupDatabases) can be used for 'ad-hoc' backups if necessary but dba_BackupDatabases does NOT allow for COPY_ONLY backups - which could cause significant problems or issues for databases using DIFF backups. Ideally, if you need an AD-HOC backup, use the SSMS GUI or 'whip one up' from script and, in either case, always specify the COPY_ONLY option - as a general best practice. If you are not very familiar with T-SQL Backup commands, you COULD use dba_BackupDatabases with the @PrintOnly = 1 switch set, then copy + paste + tweak the BACKUP command to provide a more meaningful backup name (i.e., dev_copy_for_xyz.BAK) AND interject the COPY_ONLY switch into the list of options specified after the WITH clause (i.e., WITH COMPRESSION, etc, COPY_ONLY, etc.).
 
 
-### S4 Backup Specifics
-dba_BackupDatabases was primarily designed to facilitate automated backups - i.e., regular backups executed on the server for disaster recovery purposes. It can, of course, be used to execute 'ad-hoc' backups if or when needed BUT does NOT (currently) allow COPY-ONLY backups (which isn't an issue unless your environment makes regular use of DIFFERENTIAL backups for speed or other recovery-purpose needs).
-
-The order of operations (within dba_BackupDatabases) is:
-
+### Order of Operations During Execution
+During execution, the high-level order of operations within dba_BackupDatabases is: 
 - Validate Inputs
-- Construct a List of Databases to Backup (based on @DatabasesToBackup and @DatabasesToExclude parameters)
-- Then, for each database to be backed up, the following operations are executed (in the following order):
-- Construct and the execute a backup. 
-- Copy backup to copy path (if/as specified).
-- Remove expired backups from local AND from copy (explicit checks in both locations).
-- send email alert on any errors or problems (code is designed to (ideally) not crash or stop execution upon error, but to keep going and report all errors at end of execution - that way if one db backup fails or a copy operation fails, or there's an issue with removing an older file, all other operations will/should (ideally) complete as expected).
+- Construct a list of databases to backup (based on @DatabasesToBackup and @DatabasesToExclude parameters)
+- For each database to be backed up, the following operations are executed (in the following order):
+- Construct and then EXECUTE a backup statement/command.
+- Verify the backup (this is always done and can't be disabled within dba_BackupDatabases).
+- Copy the verified backup to the @CopyTo location (unless the backup was executed on a SQL Server Enterprise Edition server - in which case the MIRROR TO clause will have been used for 'copy' purposes).
+- Remove expired backups from the @BackupsDirectory and @CopyToBackupsDirectory for the CURRENT database being processed.
+- Copy the  backup to copy path (if/as specified).
+- Remove expired backups from local AND from copy (explicit checks in both locations - see "Managing Different Retention Requirements for Different Databases" below for more info).
+- Log any problems or issues and fire off email alerts if/when there are any problems with any aspect of execution defined above (other than validating inputs).
 
-Need to make all of this stuff be as succinct as possible: (i.e., the stuff on folder expectations/conventions - and... that it's still possible to put 'reallyBigDB' on the N drive or whatever... if needed - but that all backups of a single db should/typically... go to the same folder - other-wise @Retention params simply can't work)
-[dba_BackupDatabases assumes that all SQL Server backups will (typically) be stored in a shared folder - i.e., something like D:\SQLBackups\ - meaning that dba_BackupDatabases will, by design, create a sub-folder for each database being backed up... 
-All @BackupType backups for any given/specified database SHOULD be stored in the same folder (though nothing within this solution - or SQL Server in general - will enforce this recommendation). ]
+### Managing Different Retention Requirements for Different Databases
+When processing backups for cleanup (i.e., evaluating vs retention times), dba_BackupDatabases will ONLY execute:
+- after completing a backup (if the backup fails, file-cleanup will NOT be processed - so that you don't have a set of backups fail over a long weekend and watch all of your existing (good) backups slowly get 'eaten' while no one was watching their inbox, etc.). 
+- against the sub-folder for the database currently being processed. 
 
-[stuff about backups - i.e., on-box vs off-box and the need for both or, at least: the need for off-box. So, if NOT using on-box AND off-box, path for @BackupDirectory should be a UNC share - to ensure that backups are stored off-box and NOT on the same machine/VM as the database files themselves.]
+The secondary point / limitation is very important for purposes of addressing more 'complex' setups. Specifically, assume you have 4 (user) databases that you need to backup. Assume that 3 of them are of medium to 'meh' importance, but one is of SUCH critical importance you always want at least 3 days of FULL and T-LOG backups available for it - whereas, there isn't enough disk space to keep copies of the other 3 database for SUCH a long time (i.e., you can only 'manage' 2 days of backups for these databases). To this end, you would create DIFFERENT jobs for the 3x 'medium-important' jobs - with RetentionHours in/around the 48 hour mark - and distinct/different jobs (or at least steps or sets of commands) for your 'critical' database that would keep backups for 72 hours. As such, when @RetentionHours (or @CopyToRetentionHours) were being processed against your 3 'medium' importance databases, ONLY files in the folders for these 3x databases will be considered for currently specified retention (and the backups for your 4th/Critical database will NOT be touched during execution). 
 
-[info on how @CopyToBackupDirectory will use Enterprise Edition stuff when ... it's enterprise edtiion -otherwise, the process is: backup, verify, then use xp_cmdshell to execute a copy operation... ]
+### Backup Copies - Enterprise Edition vs Other Editions
 
-Native SQL Server Encryption requires SQL Server 2014 and above. See the following link for more details: 
+SQL Server Enterprise Edition Backups support a 'MIRROR TO' clause that allows backups to be mirrored (i.e., replicated) to multiple additional endpoints/destinations (folders) during execution. As such, if dba_BackupDatabases is deployed to an Enterprise Edition SQL Server, it will use native/built-in MIRROR TO functionality to create backup copies. Otherwise, on all other Editions, 'copy' operations are executed by first executing the backup against the path specified by @BackupDirectory (and the sub-folder within that directory for the database being processed), the backup is then verified, and then xp_cmdshell (i.e., a command prompt) is then used to 'manually' copy files to @CopyToBackupDirectory + sub-folder for each database being processed. 
 
-[WARNING:] If using native encryption, backup cert needs to be backed up and details securely stored in a safe place. 
+## Backup Encryption
 
-[if you've got multiple databases (i.e., say 20) and you're executing t-log backups every 5 minutes (for example) that's 288 * 20 = or 5760 rows/day added to the dba_backups_log tble if @LogSuccessfulOutcomes is set to 0. That's actually NOT much in terms of data (about xyz data/day)... but this can add up quickly... ]
+S4 Backups 'wrap' native SQL Server Backup Encryption (i.e., there's nothing special about S4 Backups that could/would provide support for Backup Encryption OUTSIDE of what SQL Server already provides). As such, you will need SQL Server 2014 Standard or Enterprise Editions (encrytion is not supported on Web or Express Editions) or higher for Encryption Support. 
 
-It is HIGHLY recommended that before scheduling any jobs using dba_BackupDatabases, that you FIRST specify the parameters for dba_BackupDatabases as you think you would like them, and then flip @PrintOnly to 1, and run a 'debug output' pass of the sproc - to verify that you're processing all of the databases you would expect to be processing, and that all paths and other configured steps are defined exactly as desired. Then, once you've got things working as expected, **MAKE SURE TO SET @PrintOnly = 0** (or simply remove it entirely), and then copy/paste your configured parameters into a SQL Server Agent Job Step for automated execution
+WARNING: If you configure your system for Encrypted Backups, make SURE to backup your Encryption Certificates - otherwise your backups WILL be useless should you lose your primary server in a disaster - and there is NO way to recover from this (not even a support call to Microsoft could help you in this case).
 
-## Examples 
+[Return to Table of Contents](#toc)
+
+## <a name="examples"></a>Examples 
 
 ### A. FULL Backup of System Databases to an On-Box Location (Only)
 
@@ -417,8 +493,36 @@ EXEC master.dbo.dba_BackupDatabases
     @PrintOnly = 1; -- don't execute. print commands instead...
 ```
 
+[Return to Table of Contents](#toc)
 
-## Setting Up Scheduled Backups using dba_BackupDatabases
+## <a name="best"></a>Best-Practices for SQL Server Backups
+
+For background and insights into how SQL Server Backups work, the following, free, videos can be very helpful in bringing you up to speed: 
+
+- [SQL Server Backups Demystified.](http://www.sqlservervideos.com/video/backups-demystified/) 
+- [SQL Server Logging Essentials.](http://www.sqlservervideos.com/video/logging-essentials/)
+- [Understanding Backup Options.](http://www.sqlservervideos.com/video/backup-options/)
+- [SQL Server Backup Best Practices.](http://www.sqlservervideos.com/video/sqlbackup-best-practices/)
+
+Otherwise, some highly-simplified best-practices for automating SQL Server backups are as follows:
+- Generally speaking, backups do NOT consume as many resources as most people initially fear - so they shouldn't be 'feared' or 'used sparingly'. (Granted, FULL backups against larger databases CAN put some stress/strain on the IO subsystem - so they should be taken off-hours or 'at night' as much as possible. Likewise, DIFF backups (which can be taken 'during the day' and at periods of high-load (to decrease how much time is required to restore databases in a disater) CAN consume some resources during the day when taken, but this needs typically slight negative needs to be contrasted with the positive/win of being able to restore databases more quickly in the case of certain types of disaster. Otherwise, when executed regularly (i.e., every 5 to 10 minutes), Transaction Log backups typically don't consume more resources than some 'moderate queries' that could be running on your systems and NEED to be executed regularly to ensure you have options and capabilities to recover from disasters. In short, humans are wired for scarcity; forget that and be 'eager' with your backups, then watch for any perf issues and address/react accordingly (instead of fearing that backups might cause problems - as it is guaranteed that a LACK of proper/timely backups will cause WAY more problems when an emergency occurs.)
+- All databases, including dev/testing/stating databases, should typically see a FULL backup every day. The exception of exclusion would be VERY LARGE databases (i.e., databases > 1TB start being consired LARGE (not necessarily VERY LARGE) database and start to fall outside the scope of [Branded Name] Backups), OR dev/test databases in SIMPLE recovery mode that don't see much activity and could 'lose a week' (or multiple days/whatever) of backups without causing ANY problems. As such, you should typically create a nightly job that executes FULL backups of all [SYSTEM] databases (see Example B - below) and another, distinct, job that executes FULL backups of [USER] databases (see Example C below). Then, if you've got some (user) databases you're SURE you don't care about AND that you can recreate if needed, then you can exclude these using @DatabasesToExclude.
+- Once FULL backups of all (key/important and even important-ish) databases have been addressed (i.e., you've created jobs for them), you may want to consider setting up DIFF backups DURING THE DAY to address 'vectored' backups of larger and VERY HEAVILY used databases - as a means of decreasing recovery times in a disaster. For example, if you've got a 300GB database that sees a few thousand transactions per minute (or more), and generates MBs or 10s of MBs of (compressed) T-LOG backups every 5 or 10 minutes when T-Log backups are run, then if you run into a disaster at, say, 3PM, you're going to have to restore a FULL Backup for this database plus a LOT of transactional activity - which CAN take a large amount of time. Therefore, if you've got specific RTOs in place, one means of 'boosting' recovery times is to 'interject' DIFF backups at key periods of the day. So, for example, if you took a FULL backup at 2AM, and DIFF backups at 8AM, Noon, and 4PM, then ran into a disaster at 3PM, you'd restore the 2AM FULL + the Noon DIFF (which would let you buypass 10 hours of T-Log backups) to help speed up execution. As such, if something like this makes sense in your environment, make sure to review the examples (below), and then pay special attention to Example E - which showcases how to specify that specific databases should be targeted for DIFF backups. 
+- Otherwise, in terms of Transaction Log backups, these SHOULD be executed every 10 minutes at least - and as frequently as every 3 minutes (on very heavily used systems).On some systems, you may want or need T-Log backups running 24 hours/day (i.e., transactional coverage all the time). On other (less busy systems), you might want to only run Transaction Log backups between, say, 4AM (when early users start using the system) until around 10PM when you're confident the last person in the office will always, 100%, be gone. Again, though, T-Log backups don't consume many resources - so, when in doubt: just run T-Log backups (they don't hurt anything). **Likewise, do NOT worry about T-Log backups 'overlapping' or colliding with your FULL / DIFF backups; if they're set to run at the same time, SQL Server is smart and won't allow anything to break (or throw errors) NOR will it allow for any data loss or problems.** Otherwise, as defined elsewhere, when a @BackupType of 'LOG' is specified, dba_BackupDatabases will backup the transaction logs of ALL (user) databases not set to SIMPLE recovery mode. As such, if you are CONFIDENT that you do NOT want transaction log backups of specific databases (dev, test, or 'read-only' databases that never change OR where you 100% do NOT care about the loss of transactional data), then you should 'flip' those databases to SIMPLE recovery so that they're not having their T-Logs backed up.
+- In terms of storage or WHERE you put your backups, there are a couple of rules of thumb. **First, it is NEVER good enough to keep your ONLY backups on the same server (i.e., disks) as your data. Doing so means that a crash or failure of your disks or system will take down your data and your backups.** As such, you should ALWAYS make sure to have off-box copies or backups of your databases (which is why the @CopyToBackupDirectory and @CopyToRetentionHours parameters exist). Arguably, you can and even SHOULD (in many - but not all) then ALSO have copies of your backups on-box (i.e., in addition to off-box copies). And the reason for this is that off-box backups are for hardware disasters - situations where a server catches fire or something horrible happens to your IO subsystem - whereas on-box backups are very HELPFUL (but not 100% required) for data-corruption issues (i.e., problems where you run into phsyical corruption or logical corruption) where your hardware is FINE - because on-box backups mean that you can start up restore operations immediately and from local disk (which is usually - but not always) faster than disk stored 'off box' and somewhere on the network. Again, though, the LOGICAL priority is to keep off-box backups first (usually with a longer retention rate as off-box backup locations typically tend to have greater storage capacity) and then to keep on-box 'copy' backups locally as a 'plus' or 'bonus' whenever possible OR whenever required by SLAs (i.e., RTOs). Note, however, that while this is the LOGICAL desired outcome, it's typically a better practice (for speed and resiliency purposes) to write/create backups locally (on-box) and then copy them off-box (i.e., to a network location) after they've been created locally. As such, many of the examples in this documentation point or allude to having backups on-box first (the @BackupDirectory) and the 'copy' location second (i.e., @CopyToBackupDirectory). 
+- Another best practice with backups, is how to organize or store them. Arguably, you could simply create a single folder and drop all backups (of all types and for all databases) into this folder as a 'pig pile' - and SQL Server would have no issues with being able to restore backups of your databases (if you were to use the GUI). However, humans would likely have a bit of a hard time 'sorting' through all of these backups as things would be a mess. An optimal approach is to, instead, create a sub-folder for each database, where you will then store all FULL, DIFF, and T-LOG backups for each database so that all backups for a given database are in a single folder. With this approach, it's very easy to quickly 'sort' backups by time-stamp to get a quick view of what backups are available and roughly how long they're being retained. This is a VERY critical benefit in situations where you can't or do NOT want to use the SSMS GUI to restore backups - or in situations where you're restoring backups after a TRUE disaster (where the backup histories kept in the msdb are lost - or where you're on brand new hardware). Furthermore, the logic in [Branded Name] Restore-Tests is designed to be 'pointed' at a folder or path (for a given database name) and will then 'traverse' all files in the folder to restore the most recent FULL backup, then restore the most recent DIFF backup (since the FULL) if one exists, and conclude by restoring all T-LOG backups since the last FULL or DIFF (i.e., following the backup chain) to complete restore a database up until the point of the last T-LOG backup (or to generate a list of commands that would be used - via the @PrintOnly = 1 option - so that you can use this set of scripts to easily create a point-in-time recovery script). Accordingly, dba_BackupDatabases takes the approach of assuming that the paths specified by @BackupDirectory and/or @CopyToBackupDirectory are 'root' locations and will **ALWAYS** create child directories (if not present) for each database being backed up. (NOTE that if you're in the situation where you don't have enough disk space for ALL of your backups to exist on the same disk or network share, you can create 2 or more backup disks/locations (e.g., you could have D:\SQLBackups and N:\SQLBackups (or 2x UNC locations, etc.)) and then assign each database to a specific disk/location as needed - to 'spread' your backups out over different locations. If you do this, you MIGHT want to create 2x different jobs per each backup type (i.e., 2x jobs for FULL backups and 2x jobs for T-Log Backups) - each with its own corresponding job name (e.g. "Primary Databases.FULL Backups" and "Secondary Databases.FULL Backups"); or you might simply have a SINGLE job per backup type (UserDatabases.FULL Backups and UserDatabases.LOG Backups) and for each job either have 2x job-steps (one per each path/location) or have a single job step that first backups up a list of databases to the D:\ drive, and then a separate/distinct execution of dba_BackupDatabases below the first execution (i.e., 2x calls to dba_BackupDatabases in the same job step) that then backs up a differen set of databases to the N:\ drive. 
+- In terms of retention times, there are two key considerations. First: backups are not the same thing as archives; archives are for legal/forensic and other purposes - whereas backups are for disaster recovery. Technically, you can create 'archives' via SQL Server backups without any issues (and dba_BackupDatabases is perfectly suited to this use) - but if you're going to use dba_BackupDatabase for 'archive' backups, make sure to create a new / distinct job with an explicit name (e.g., "Monthly Archive Backups"), give it a dedicated schedule - instead of trying to get your existing, nightly (for example) job that tackles FULL backups of your user databases to somehow do 'dual duty'. However, be aware that dba_BackupDatabases does NOT create (or allow for) COPY_ONLY backups - so IF YOU ARE USING DIFF backups against the databases being archived, you will want to make sure that IF you are creating archive backups, that you create those well before normal NIGHTLY backups so that when your normal, nightly, backups execute you're not breaking your backup chain. Otherwise, another option for archival backups is simply to have an automated process simply 'zip out' to your backup locations at a regularly scheduled point and 'grab' and COPY an existing FULL backup to a safe location. Otherwise, the second consideration in terms of retention is that, generally, the more backups you can keep the better (to a point - i.e., usually anything after 2 - 4 days isn't ever going to be used - because if you're doing things correctly (i.e., regular DBCC/Consistency checks and routinely (daily) verifying your backups by RESTORING them, you should never need much more that 1 - 2 days' worth of backups to recover from any disaster). Or, in other words, any time you can keep roughly 1-2 days of backups 'on-box', that is typically great/ideal as it will let you recovery from corruption problems should the occur - in the fastest way possible; likewise, if you can keep 2-3 days of backups off-box, that'll protect against hardware and other major system-related disasters. If you're NOT able to keep at least 2 days of backups somewhere, it's time to talk to management and get more space.
+- Finally, [Branded Name] Backups are ONLY capable of creating and managing SQL Server Backups. And, while dba_BackupDatabases is designed and optimized for creating off-box backups, off-box backups (alone), aren't enough of a contingency plan for most companies - because while they will protect against situations where youl 100% lose your SQL Server (where the backups were made), they won't protect against the loss of your entire data-center or some types of key infrastructure (the SAN, etc.). Consequently, in addition to ensuring that you have off-box backups, you will want to make sure that you are regularly copying your backups off-site. (Products like [CloudBerry Server Backup](https://www.cloudberrylab.com/backup/windows-server.aspx) are cheap and make it very easy and affordable to copy backups off-site every 5 minutes or so with very little effort. Arguably, however, you'll typically WANT to run any third party (off site) backups OFF of your off-box location rather than on/from your SQL Server - to decrease disk, CPU, and network overhead. However, if you ONLY have a single SQL Server, go ahead and run backups (i.e., off-site backups) from your SQL Server (and get a more powerful server if needed) as it's better to have off-site backups.)
+
+[Return to Table of Contents](#toc)
+
+## <a name="jobs"></a>Setting Up Scheduled Backups using S4 Backups
+
+outline:
+- process... i.e., how to do it (high level)
+- exceptions or advanced configs (disk constraints (space) / multiple backup locations, DIFFs for speed, different retention times for some dbs than others, and diff retention times on-box vs off-box (recap)
+- OPTIONS for 'customizations' - different jobs | diff job-steps | or diff commands within a single job-step. either is fine.
+- samples/examples... 
 
 [high-level overview of the process of a) figuring out what you want/need in terms of COVERAGE (i.e., frequency + retention) then... creating individual jobs for system FULL, then user FULLs + DIFFs + TLOGs. 
 
@@ -430,4 +534,10 @@ Recommendations about JOB NAMES ...
 
 other recommendations/etc. 
 
+[if you've got multiple databases (i.e., say 20) and you're executing t-log backups every 5 minutes (for example) that's 288 * 20 = or 5760 rows/day added to the dba_backups_log tble if @LogSuccessfulOutcomes is set to 0. That's actually NOT much in terms of data (about xyz data/day)... but this can add up quickly... ]
+
+It is HIGHLY recommended that before scheduling any jobs using dba_BackupDatabases, that you FIRST specify the parameters for dba_BackupDatabases as you think you would like them, and then flip @PrintOnly to 1, and run a 'debug output' pass of the sproc - to verify that you're processing all of the databases you would expect to be processing, and that all paths and other configured steps are defined exactly as desired. Then, once you've got things working as expected, **MAKE SURE TO SET @PrintOnly = 0** (or simply remove it entirely), and then copy/paste your configured parameters into a SQL Server Agent Job Step for automated execution
+
 ]
+
+[Return to Table of Contents](#toc)
