@@ -1,20 +1,14 @@
 ﻿# S4
-**S**imple **S**QL **S**erver **S**cripts -> **SSSS** -> **S4**
+**S**imple **S**QL **S**erver **S**cripts - **S4**
 
-T-SQL scripts designed to simplify and optimize common SQL Server needs and operations. 
+T-SQL scripts to simplify and optimize common SQL Server needs and operations. 
 
 ## Overview
-
-Currently, there are specific solutions or resources covering the following:
+The following solutions are currently available:
 - S4 Backups 
-- S4 Restore.
-- S4 Monitoring.
+- S4 Restore
 
-[Specifics for each project or solution are found in the sub-folders corresponding to each soluton/project name.]
+Specific documentation is found in the README.md in each of the sub-folders indicated above.
 
-
-
-## Deployment
-[something about... common scripts... and then... how to deploy each script type?]
-
-[or? should deployment details be found in each folder/project?]
+## LICENSE
+MIT License. Specifics found in LICENSE file at root of repository.

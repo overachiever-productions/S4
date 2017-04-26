@@ -16,6 +16,11 @@
 		- As currently defined, this script will DROP dbo.dba_DatabaseBackups_Log IF it already exists. 
 
 
+	CODE, LICENSE, DOCS:
+		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+		username: s4
+		password: simple
+
 */
 
 
@@ -29,6 +34,7 @@ IF OBJECT_ID('dbo.dba_DatabaseBackups_Log','U') IS NOT NULL
 GO
 
 -- Version 3.0.0.16527
+-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 CREATE TABLE dbo.dba_DatabaseBackups_Log  (
 	BackupId int IDENTITY(1,1) NOT NULL,

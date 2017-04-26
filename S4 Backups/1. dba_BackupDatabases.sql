@@ -21,6 +21,11 @@
 
 		- This sproc explicitly uses RAISERROR instead of THROW for 'backwards compat' down to SQL Server 2008. 
 
+	CODE, LICENSE, DOCS:
+		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+		username: s4
+		password: simple
+
 	TODO:
 		- test/validate (and clean-up) on case-sensitive server (as much as those suck).
 		- Review and potentially integrate any details defined here: 
@@ -43,9 +48,8 @@
 			Note that this would also require changes to dbo.dba_RestoreDatabases (i.e., to allow multiple files per 'logical' file) and
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
 
-
-
-	Scalable: 8+
+	Scalable:
+		22+
 */
 
 
@@ -78,6 +82,7 @@ AS
 	SET NOCOUNT ON;
 
 	-- Version 3.0.0.16527	
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

@@ -1,29 +1,15 @@
 
 /*
+
 	NOTE:
-		this exists to get around this vile bug:
+		This stored procedure exists as a work-around for the following bug within SQL Server:
 			https://connect.microsoft.com/SQLServer/feedback/details/746979/try-catch-construct-catches-last-error-only
 
 
-	TODO:  (translate the following into a NOTE)... 
-		I was hoping that the approach outlined in Ola Hallengren's "CommandExecute" sproc (for IX maint and backups) would provide an optional way around the NEED for this sproc... 
-		but... it appears it doesn't. 
-
-
-		For example... this doesn't work. @Error is 3013 (terminating abnormally)... so... debugging in SQL Server is just shite. 
-
-			DECLARE @Error int;
-			--DECLARE @command nvarchar(MAX) = N'ALTER INDEX [PK_tblCS_Activity] ON [mlp].[dbo].[tblCS_Activity] REORGANIZE WITH (LOB_COMPACTION = ON)';
-			DECLARE @command nvarchar(MAX) = N'BACKUP DATABASE Billing_Meddling TO DISK = ''X:\SQLBackups\oink.BAK''';
-
-			EXEC (@command);
-
-			SELECT @Error = @@ERROR;
-			SELECT @Error;
-
-
-
-
+	CODE, LICENSE, DOCS:
+		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+		username: s4
+		password: simple
 
 */
 
@@ -42,6 +28,7 @@ AS
 	SET NOCOUNT ON;
 
 	-- Version 3.0.0.16527
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	IF @filterType NOT IN ('BACKUP','RESTORE','CREATEDIR','ALTER','DELETEFILE') BEGIN;
 		RAISERROR('Configuration Problem: Non-Supported @filterType value specified.', 16, 1);
