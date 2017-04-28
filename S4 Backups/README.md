@@ -257,7 +257,7 @@ The secondary point / limitation is very important for purposes of addressing mo
 ### Backup Copies - Enterprise Edition vs Other Editions
 SQL Server Enterprise Edition Backups support a 'MIRROR TO' clause that allows backups to be mirrored (i.e., replicated) to multiple additional endpoints/destinations (folders) during execution. As such, if dba_BackupDatabases is deployed to an Enterprise Edition SQL Server, it will use native/built-in MIRROR TO functionality to create backup copies. Otherwise, on all other Editions, 'copy' operations are executed by first executing the backup against the path specified by @BackupDirectory (and the sub-folder within that directory for the database being processed), the backup is then verified, and then xp_cmdshell (i.e., a command prompt) is then used to 'manually' copy files to @CopyToBackupDirectory + sub-folder for each database being processed. 
 
-## Backup Encryption
+### Backup Encryption
 S4 Backups 'wrap' native SQL Server Backup Encryption (i.e., there's nothing special about S4 Backups that could/would provide support for Backup Encryption OUTSIDE of what SQL Server already provides). As such, you will need SQL Server 2014 Standard or Enterprise Editions (encrytion is not supported on Web or Express Editions) or higher for Encryption Support. 
 
 WARNING: If you configure your system for Encrypted Backups, make SURE to backup your Encryption Certificates - otherwise your backups WILL be useless should you lose your primary server in a disaster - and there is NO way to recover from this (not even a support call to Microsoft could help you in this case).
