@@ -32,7 +32,7 @@ CREATE PROC dbo.dba_DatabaseRestore_CheckPaths
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.0.0.16536	
+	-- Version 3.0.2.16541	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	SET @Exists = 0;

@@ -70,7 +70,7 @@ CREATE PROC dbo.dba_RestoreDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.0.0.16536	
+	-- Version 3.0.2.16541	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -388,7 +388,8 @@ AS
 		-- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
 		IF @AllowReplace = N'REPLACE' BEGIN;
 			
-			IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName) BEGIN;
+			-- only attempt to set to single-user mode if ONLINE (i.e., if somehow stuck in restoring... don't bother, just replace):
+			IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN;
 
 				BEGIN TRY 
 					SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
