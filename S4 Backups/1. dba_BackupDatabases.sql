@@ -81,7 +81,7 @@ CREATE PROC dbo.dba_BackupDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.0.0.16527	
+	-- Version 3.0.1.16561	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -114,7 +114,6 @@ AS
 		RETURN -2;
 	END;
 
-	-- If we're trying to copy backups, then throw an error if xp_cmdshell isn't enabled - because we NEED it to be able to capture detailed errors for actual BACKUP commands. 
 	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN;
 		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
 		RETURN -3;
@@ -196,6 +195,7 @@ AS
 	FROM sys.columns;
 
 	DECLARE @targetDatabases TABLE ( 
+		[entry_id] int IDENTITY(1,1) NOT NULL, 
 		[database_name] sysname NOT NULL
 	); 
 
@@ -230,7 +230,8 @@ AS
 		SELECT SUBSTRING(@SerializedDbs, N + 1, CHARINDEX(',', @SerializedDbs, N + 1) - N - 1)
 		FROM #Tally
 		WHERE N < LEN(@SerializedDbs) 
-			AND SUBSTRING(@SerializedDbs, N, 1) = ',';
+			AND SUBSTRING(@SerializedDbs, N, 1) = ','
+		ORDER BY #Tally.N;
 
 		IF @BackupType = 'LOG' BEGIN
 			DELETE FROM @targetDatabases 
@@ -328,7 +329,7 @@ AS
 	FROM 
 		@targetDatabases
 	ORDER BY 
-		[database_name];
+		[entry_id];
 
 	OPEN backups;
 
@@ -336,6 +337,19 @@ AS
 	WHILE @@FETCH_STATUS = 0 BEGIN;
 		
 		SET @errorMessage = NULL;
+
+		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
+		IF @currentDatabase IN (SELECT [name] FROM 
+				(
+					SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE'  
+					UNION
+					SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY'
+				) x
+		) BEGIN; 
+
+			PRINT 'Skipping database: ' + @currentDatabase + ' because it is no longer available, online, or accessible.';
+			GOTO NextDatabase;  -- just 'continue' - i.e., short-circuit processing of this 'loop'... 
+		END 
 
 		-- specify and verify path info:
 		IF @executingSystemDbBackups = 1 AND @AddServerNameToSystemBackupPath = 1
