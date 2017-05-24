@@ -31,6 +31,9 @@
 		- Review and potentially integrate any details defined here: 
 			http://vickyharp.com/2013/12/killing-sessions-with-external-wait-types/
 
+		-- Better Error Handling. 
+			Right now... many of the operations that UPDATE a row in ... dba_BackupDatabases_Log... are NOT doing ErrorMessage = ErrorMessage + @ErrorMessage - meaning code is overwriting previous details... 
+
 		- Add in simplified 'retry' logic for both backups and copy-to operations (i.e., something along the lines of adding a column to the 'list' of 
 			dbs being backed up and if there's a failure... just add a counter/increment-counter for number of failures into @targetDatabases along
 			with some meta-data about what the failure was (i.e., if we can't copy a file, don't re-backup the entire db) and then drop this into the 
@@ -69,6 +72,7 @@ CREATE PROC dbo.dba_BackupDatabases
 	@CopyToBackupDirectory				nvarchar(2000) = NULL,		-- { NULL | path_for_backup_copies } 
 	@BackupRetentionHours				int,						-- Anything > this many hours will be DELETED. 
 	@CopyToRetentionHours				int = NULL,					-- As above, but allows for diff retention settings to be configured for copied/secondary backups.
+	@RemoveFilesBeforeBackup			bit = 0,					-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
 	@EncryptionCertName					sysname = NULL,				-- Ignored if not specified. 
 	@EncryptionAlgorithm				sysname = NULL,				-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
 	@AddServerNameToSystemBackupPath	bit	= 0,					-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
@@ -81,7 +85,7 @@ CREATE PROC dbo.dba_BackupDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.0.1.16561	
+	-- Version 3.1.2.16561	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -90,6 +94,11 @@ AS
 		RAISERROR('Table dbo.dba_DatabaseBackups_Log not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
+
+	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN;
+		THROW 510000, N'Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 1;
+		RETURN -1;
+	END
 
 	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand', 'P') IS NULL BEGIN;
 		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
@@ -158,17 +167,17 @@ AS
 	END;
 
 	-- translate the hours settings:
-	DECLARE @RetentionCutoffTime datetime = DATEADD(HOUR, 0 - @BackupRetentionHours, GETDATE());
-	DECLARE @CopyToRetentionTime datetime = DATEADD(HOUR, 0 - @CopyToRetentionHours, GETDATE());
+	DECLARE @fileRetentionMinutes int = @BackupRetentionHours * 60;
+	DECLARE @copyToFileRetentionMinutes int = @CopyToRetentionHours * 60;
 
-	IF @RetentionCutoffTime >= GETDATE() BEGIN; 
-		 RAISERROR('Invalid @RetentionCutoffTime - greater than or equal to NOW.', 16, 1);
+	IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN; 
+		 RAISERROR('Invalid @BackupRetentionHours - greater than or equal to NOW.', 16, 1);
 		 RETURN -10;
 	END;
 
 	IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN;
-		IF @CopyToRetentionTime >= GETDATE() BEGIN;
-			RAISERROR('Invalid @CopyToRetentionTime - greater than or equal to NOW.', 16, 1);
+		IF (DATEADD(MINUTE, 0 - @copyToFileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN;
+			RAISERROR('Invalid @CopyToBackupRetentionHours - greater than or equal to NOW.', 16, 1);
 			RETURN -11;
 		END;
 	END;
@@ -337,16 +346,13 @@ AS
 	WHILE @@FETCH_STATUS = 0 BEGIN;
 		
 		SET @errorMessage = NULL;
+		SET @outcome = NULL;
 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
 		IF @currentDatabase IN (SELECT [name] FROM 
-				(
-					SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE'  
-					UNION
-					SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY'
-				) x
+				(SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE' 
+				 UNION SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY') x
 		) BEGIN; 
-
 			PRINT 'Skipping database: ' + @currentDatabase + ' because it is no longer available, online, or accessible.';
 			GOTO NextDatabase;  -- just 'continue' - i.e., short-circuit processing of this 'loop'... 
 		END 
@@ -368,6 +374,12 @@ AS
 			SELECT @currentOperationID = SCOPE_IDENTITY();
 		END;
 
+		IF @RemoveFilesBeforeBackup = 1 BEGIN;
+			GOTO RemoveOlderFiles;  -- zip down into the logic for removing files, then... once that's done... we'll get sent back up here (to DoneRemovingFilesBeforeBackup) to execute the backup... 
+
+DoneRemovingFilesBeforeBackup:
+		END
+
 		SET @command = 'EXECUTE master.dbo.xp_create_subdir N''' + @backupPath + ''';';
 
 		IF @PrintOnly = 1
@@ -377,11 +389,12 @@ AS
 				SET @outcome = NULL;
 				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
 
-				SET @errorMessage = @outcome;
+				IF @outcome IS NOT NULL
+					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
 
 			END TRY
 			BEGIN CATCH 
-				SET @errorMessage = N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 			END CATCH;
 		END;
 
@@ -398,10 +411,12 @@ AS
 				BEGIN TRY 
 					SET @outcome = NULL;
 					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
-					SET @errorMessage = @outcome;
+					
+					IF @outcome IS NOT NULL
+						SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
 				END TRY
 				BEGIN CATCH
-					SET @errorMessage = N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+					SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 				END CATCH;
 			END;
 
@@ -465,10 +480,11 @@ AS
 				SET @outcome = NULL;
 				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'BACKUP', @result = @outcome OUTPUT;
 
-				SET @errorMessage = @outcome;
+				IF @outcome IS NOT NULL
+					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
 			END TRY
 			BEGIN CATCH
-				SET @errorMessage = N'Unexpected Exception executing backup with the following command: [' + @command + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected Exception executing backup with the following command: [' + @command + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 			END CATCH;
 		END;
 
@@ -489,7 +505,7 @@ AS
 		-- Kick off the verification:
 		SET @command = N'RESTORE VERIFYONLY FROM DISK = N''' + @backupPath + N'\' + @backupName + N''' WITH NOUNLOAD, NOREWIND;';
 
-		IF @PrintOnly= 1 
+		IF @PrintOnly = 1 
 			PRINT @command;
 		ELSE BEGIN;
 			BEGIN TRY
@@ -505,7 +521,7 @@ AS
 				END;
 			END TRY
 			BEGIN CATCH
-				SET @errorMessage = N'Unexpected exception during backup verification for backup of database: ' + @currentDatabase + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception during backup verification for backup of database: ' + @currentDatabase + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 
 					UPDATE dbo.dba_DatabaseBackups_Log
 					SET 
@@ -548,7 +564,7 @@ AS
 						EXEC sys.sp_executesql @command;
 
 						IF NOT EXISTS(SELECT NULL FROM @copyOutput WHERE [output] LIKE '%1 file(s) copied%') BEGIN; -- there was an error, and we didn't copy the file.
-							SET @errorMessage = (SELECT TOP 1 [output] FROM @copyOutput WHERE [output] IS NOT NULL AND [output] NOT LIKE '%0 file(s) copied%');
+							SET @errorMessage = ISNULL(@errorMessage, '') + (SELECT TOP 1 [output] FROM @copyOutput WHERE [output] IS NOT NULL AND [output] NOT LIKE '%0 file(s) copied%') + N' ';
 						END;
 
 						IF @LogSuccessfulOutcomes = 1 BEGIN 
@@ -560,13 +576,13 @@ AS
 						END;
 					END TRY
 					BEGIN CATCH
-						SET @errorMessage = N'Unexpected error copying backup to [' + @copyToBackupPath + @serverName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+						SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error copying backup to [' + @copyToBackupPath + @serverName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 					END CATCH;
 
 					IF @errorMessage IS NOT NULL BEGIN;
 						UPDATE dbo.dba_DatabaseBackups_Log
 						SET 
-							CopyDetails = N'Started at {' + CONVERT(nvarchar(20), @copyStart, 120) + N'}, completed at {' + CONVERT(nvarchar(20), GETDATE(), 120) + '}. Outcome: FAILURE. Details: ' + @errorMessage
+							CopyDetails = N'Started at {' + CONVERT(nvarchar(20), @copyStart, 120) + N'}, completed at {' + CONVERT(nvarchar(20), GETDATE(), 120) + '}. Outcome: FAILURE. Details: ' + @errorMessage + N' '
 						WHERE 
 							BackupId = @currentOperationID;
 
@@ -578,195 +594,77 @@ AS
 
 		-----------------------------------------------------------------------------
 		-- Remove backups:
-		-- Need to remove Backups > @RetentionCutoffTime. Only: a) this has to be done per db (each db can/will have diff retention times) and b) need to differentiate between DIFF and FULL (since they share the same .bak extension but we likely want to retain them for different times). 
-		IF @BackupType = N'LOG' BEGIN 
-
-			SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @backupPath + ''', N''' + REPLACE(@extension, '.','') + ''', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 1;';
-		
-			IF @PrintOnly = 1 
-				PRINT @command;	
-			ELSE BEGIN;
-				BEGIN TRY
-					--EXEC sys.sp_executesql @command;
-					SET @outcome = NULL;
-					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
-
-					SET @errorMessage = @outcome + '. Command: [' + ISNULL(@command, '#EMPTY#') + N'].';
-				END TRY 
-				BEGIN CATCH
-					SET @errorMessage = N'Unexpected error deleting older LOG backups from [' + @backupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-				END CATCH;
-			END;
-
-			IF @errorMessage IS NOT NULL
-				GOTO NextDatabase;
-
-			-- Remove backups from 'copy' directory if in use:
-			IF ISNULL(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
-				SET @command = N'EXECUTE master.dbo.xp_delete_file 0, N''' + @copyToBackupPath + ''', N''' + REPLACE(@extension, '.','') + ''', N''' + REPLACE(CONVERT(nvarchar(20), @CopyToRetentionTime, 120), ' ', 'T') + ''', 1;';
-
-				IF @PrintOnly = 1 
-					PRINT @command;
-				ELSE BEGIN;
-					BEGIN TRY
-						--EXEC sys.sp_executesql @command;
-						SET @outcome = NULL;
-
-						DECLARE @result varchar(4000);
-						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
-						
-						SET @errorMessage = @outcome + '. Command: [' + ISNULL(@command, '#EMPTY#') + N'].';
-					END TRY
-					BEGIN CATCH 
-						SET @errorMessage = N'Unexpected error deleting MIRRORED older LOG backups from [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-						
-					END CATCH;
-				END;
-
-				IF @errorMessage IS NOT NULL
-					GOTO NextDatabase;
-			END;
-		  END;
-		ELSE BEGIN;   -- FULL/DIFF processing:
-
-			-- Get a list of matching DIFF/FULL backups - and process one by one (i.e., so that if we're retaining FULLs for 2 weeks and DIFFs for 2 days, we don't run a DIFF backup and delete all .BAKs > 2 days old).
-			DECLARE @files table (
-				id int IDENTITY(1,1),
-				subdirectory nvarchar(512), 
-				depth int, 
-				isfile bit
-			);
-			DELETE FROM @files;
+		-- Branch into this logic either by means of a GOTO (called from above) or by means of evaluating @RemoveFilesBeforeBackup.... 
+		IF @RemoveFilesBeforeBackup = 0 BEGIN;
 			
-			DECLARE @file nvarchar(512);
-
-			SET @command = N'EXEC master.sys.xp_dirtree ''' + @backupPath + ''', 0, 1;';
-
-			IF @PrintOnly = 1 
-				PRINT '-- ' + @command;
-
-			INSERT INTO @files (subdirectory, depth, isfile)
-			EXEC sys.sp_executesql @command;
-
-			DELETE FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE (CASE WHEN @BackupType = 'FULL' THEN 'FULL%' ELSE 'DIFF%' END);
-
+RemoveOlderFiles:
 			BEGIN TRY
-				DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-				SELECT subdirectory FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
 
-				OPEN nuker;
-				FETCH NEXT FROM nuker INTO @file;
-
-				WHILE @@FETCH_STATUS = 0 BEGIN;
+				IF @PrintOnly = 1 BEGIN;
+					PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @RetentionMinutes = ' + CAST(@copyToFileRetentionMinutes AS varchar(30)) + ', @PrintOnly = 1;';
 					
-					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @backupPath + N'\' + @file + ''', N''' + REPLACE(@extension, '.','') + ''', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 0;';
+					EXEC dbo.dba_RemoveBackupFiles
+						@BackupType= @BackupType,
+						@DatabasesToProcess = @currentDatabase,
+						@TargetDirectory = @BackupDirectory,
+						@RetentionMinutes = @fileRetentionMinutes, 
+						@PrintOnly = 1;
+				  END;
+				ELSE BEGIN;
+					SET @outcome = 'OUTPUT';
+					DECLARE @Output nvarchar(MAX);
+					EXEC dbo.dba_RemoveBackupFiles
+						@BackupType= @BackupType,
+						@DatabasesToProcess = @currentDatabase,
+						@TargetDirectory = @BackupDirectory,
+						@RetentionMinutes = @fileRetentionMinutes, 
+						@Output = @outcome OUTPUT;
 
-					IF @PrintOnly = 1 
-						PRINT @command;
-					ELSE BEGIN; 
-						--EXEC sys.sp_executesql @command; 
-						SET @outcome = NULL;
+					IF @outcome IS NOT NULL 
+						SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + ' ';
 
-						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
-						SET @errorMessage = @outcome + '. Command: [' + ISNULL(@command, '#EMPTY#') + N'].';
-					END;
+				END
 
-					IF @errorMessage IS NOT NULL
-						GOTO NextDatabase;
-
-					FETCH NEXT FROM nuker INTO @file;
-				END;
-
-				CLOSE nuker;
-				DEALLOCATE nuker;
-
-			END TRY
-			BEGIN CATCH
-
-				SET @errorMessage = N'Error deleting DIFF/FULL Backup with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-				UPDATE dbo.dba_DatabaseBackups_Log
-				SET 
-					ErrorDetails = @errorMessage
-				WHERE
-					BackupId = @currentOperationID;
-
-				IF (SELECT CURSOR_STATUS('local','nuker')) > -1 BEGIN;
-					CLOSE nuker;
-					DEALLOCATE nuker;
-				END;
-
-				GOTO NextDatabase;
-			END CATCH;
-
-			-- If we're copying backups, get a list of potential files to delete and process as well. 
-			-- NOTE: Can't just try and delete same files from 'main' out on 'copy' location - because there might not be the exact same files in both locations.
-			IF ISNULL(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
-
-				DELETE FROM @files;
+				IF ISNULL(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
-				SET @command = N'EXEC master.sys.xp_dirtree ''' + @copyToBackupPath + ''', 0, 1;';
-				IF @PrintOnly = 1 
-					PRINT '-- ' + @command;
+					IF @PrintOnly = 1 BEGIN;
+						PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @RetentionMinutes = ' + CAST(@copyToFileRetentionMinutes AS varchar(30)) + ', @PrintOnly = 1;';
+						
+						EXEC dbo.dba_RemoveBackupFiles
+							@BackupType= @BackupType,
+							@DatabasesToProcess = @currentDatabase,
+							@TargetDirectory = @CopyToBackupDirectory,
+							@RetentionMinutes = @copyToFileRetentionMinutes,
+							@PrintOnly = 1;
 
-				INSERT INTO @files (subdirectory, depth, isfile)
-				EXEC sys.sp_executesql @command;
-
-				DELETE FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE (CASE WHEN @BackupType = 'FULL' THEN 'FULL%' ELSE 'DIFF%' END);
-
-				BEGIN TRY
-					DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-					SELECT subdirectory FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
-
-					OPEN nuker;
-					FETCH NEXT FROM nuker INTO @file;
-
-					WHILE @@FETCH_STATUS = 0 BEGIN;
+					  END;
+					ELSE BEGIN;
+						SET @outcome = 'OUTPUT';
 					
-						SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @copyToBackupPath + N'\' + @file + ''', N''' + REPLACE(@extension, '.','') + ''', N''' + REPLACE(CONVERT(nvarchar(20), @CopyToRetentionTime, 120), ' ', 'T') + ''', 0;';
+						EXEC dbo.dba_RemoveBackupFiles
+							@BackupType= @BackupType,
+							@DatabasesToProcess = @currentDatabase,
+							@TargetDirectory = @CopyToBackupDirectory,
+							@RetentionMinutes = @copyToFileRetentionMinutes,
+							@Output = @outcome OUTPUT;					
+					
+						IF @outcome IS NOT NULL
+							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
+					END
+				END
+			END TRY 
+			BEGIN CATCH 
+				SET @errorMessage = ISNULL(@errorMessage, '') + 'Unexpected Error removing backups. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+			END CATCH
 
-						IF @PrintOnly = 1 
-							PRINT @command;
-						ELSE BEGIN; 
-							--EXEC sys.sp_executesql @command; 
-							SET @outcome = NULL;
+			IF @RemoveFilesBeforeBackup = 1 BEGIN;
+				IF @errorMessage IS NULL -- there weren't any problems/issues - so keep processing.
+					GOTO DoneRemovingFilesBeforeBackup;
 
-							EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
-							SET @errorMessage = @outcome + '. Command: [' + ISNULL(@command, '#EMPTY#') + N'].';
-						END;
-
-						IF @errorMessage IS NOT NULL
-							GOTO NextDatabase;
-
-						FETCH NEXT FROM nuker INTO @file;
-					END;
-
-					CLOSE nuker;
-					DEALLOCATE nuker;
-
-				END TRY
-				BEGIN CATCH
-
-					SET @errorMessage = N'Error deleting DIFF/FULL Backup from CopyTo Directory with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-					UPDATE dbo.dba_DatabaseBackups_Log
-					SET 
-						ErrorDetails = @errorMessage
-					WHERE
-						BackupId = @currentOperationID;
-
-					IF (SELECT CURSOR_STATUS('local','nuker')) > -1 BEGIN;
-						CLOSE nuker;
-						DEALLOCATE nuker;
-					END;
-
-					GOTO NextDatabase;
-			END CATCH;
-			END;
-
-		END;
+				-- otherwise, the remove operations failed, they were set to run FIRST, which means we now might not have enough disk - so we need to 'fail' this operation and move on to the next db... 
+				GOTO NextDatabase;
+			END
+		END
 
 NextDatabase:
 		IF (SELECT CURSOR_STATUS('local','nuker')) > -1 BEGIN;
@@ -774,7 +672,7 @@ NextDatabase:
 			DEALLOCATE nuker;
 		END;
 
-		IF @errorMessage IS NOT NULL BEGIN;
+		IF NULLIF(@errorMessage,'') IS NOT NULL BEGIN;
 			IF @PrintOnly = 1 
 				PRINT @errorMessage;
 			ELSE BEGIN;
@@ -792,7 +690,8 @@ NextDatabase:
 			END;
 		END; 
 
-		PRINT '';
+		PRINT '
+';
 
 		FETCH NEXT FROM backups INTO @currentDatabase;
 	END;
@@ -803,8 +702,6 @@ NextDatabase:
 	----------------------------------------------------------------------------------------------------------------------------------------------------------
 	-----------------------------------------------------------------------------
 	-- Cleanup:
-
-FINALIZE:
 
 	-- close/deallocate any cursors left open:
 	IF (SELECT CURSOR_STATUS('local','backups')) > -1 BEGIN;

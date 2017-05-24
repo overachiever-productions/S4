@@ -14,7 +14,7 @@
 
 	DEPENDENCIES:
 		- Requires dbo.dba_DatabaseRestore_Log - to log information about restore operations AND failures. 
-		- Requires dbo.dba_DatabaseRestore_CheckPaths - to facilitate validation of specified AND created database backup file paths. 
+		- Requires dbo.dba_CheckPaths - to facilitate validation of specified AND created database backup file paths. 
 		- Requires dbo.dba_ExecuteAndFilterNonCatchableCommand - to address problems with TRY/CATCH error handling within SQL Server. 
 		- Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
 		- Requires a configured Database Mail Profile + SQL Server Agent Operator. 
@@ -41,6 +41,21 @@
 		- POSSIBLY look at an option where @DatabasesToRestore can be set to [QUERY_FILE_SYSTEM] and... we then do a query against @BackupsRootPath for 
 			all FOLDER names (not file names) and then execute restore operations against any (non-system-named) folders to get a list of DBs to restore. 
 			that ... wouldn't suck at all.
+
+		- Possible issue where TIMING isn't the right way to determine which LOG backups to use. i.e., suppose we start a FULL _OR_ DIFF backup at 6PM - and it takes 20 minutes to exeucte. 
+			then... suppose we're doing T-LOG backups every 5 minutes - i.e., 5 after the hour. 
+				I'm _PRETTY_ sure that we'd want the 6:25 backup as our next T-LOG backup... 
+					BUT there are two other possibilities:
+						the 6:20 log backup MIGHT have just barely 'beat' the full/diff backup
+						MAYBE we want the 6:05 backup (pretty sure we don't). 
+				IF this ends up being a case of needing the 6:05 or the 6:20 log backup
+					the only thing I can think to do would be:
+						try to 
+							a) do a RESTORE FILELIST ONLY from the last full/diff we're applying
+							b) grab SOME timestamp out of that (or... sadly, an LSN)
+							c) figure out some way to use that timestamp/LSN agains the LIST of files we've already pulled back from the OS/file-system
+								i.e., right now I delete * < Max(LastFullBackup)... then do the same with Logs vs LAST(FULL|DIFF)... 
+										so I might need to HOLD off on deleting log files until i get the LSN or some time-stamp... then read from the t-logs themselves and try that... (sigh).
 
 */
 
@@ -70,7 +85,7 @@ CREATE PROC dbo.dba_RestoreDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.0.2.16541	
+	-- Version 3.1.2.16561	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -80,13 +95,13 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dba_DatabaseRestore_CheckPaths', 'P') IS NULL BEGIN;
-		THROW 510000, N'Sproc dbo.dba_DatabaseRestore_CheckPaths not defined - unable to continue.', 1;
+	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN;
+		THROW 510000, N'Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 1;
 		RETURN -1;
 	END
 
 	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand','P') IS NULL BEGIN;
-		THROW 510000, N'Sproc dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 1;
+		THROW 510000, N'Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 1;
 		RETURN -1;
 	END
 
@@ -142,20 +157,20 @@ AS
 	DECLARE @failedDrops int = 0;
 
 	-- Verify Paths: 
-	EXEC dbo.dba_DatabaseRestore_CheckPaths @BackupsRootPath, @isValid OUTPUT;
-	IF @IsValid = 0 BEGIN;
+	EXEC dbo.dba_CheckPaths @BackupsRootPath, @isValid OUTPUT;
+	IF @isValid = 0 BEGIN;
 		SET @earlyTermination = N'@BackupsRootPath (' + @BackupsRootPath + N') is invalid - restore operations terminated prematurely.';
 		GOTO FINALIZE;
 	END
 	
-	EXEC dbo.dba_DatabaseRestore_CheckPaths @RestoredRootDataPath, @isValid OUTPUT;
-	IF @IsValid = 0 BEGIN;
+	EXEC dbo.dba_CheckPaths @RestoredRootDataPath, @isValid OUTPUT;
+	IF @isValid = 0 BEGIN;
 		SET @earlyTermination = N'@RestoredRootDataPath (' + @RestoredRootDataPath + N') is invalid - restore operations terminated prematurely.';
 		GOTO FINALIZE;
 	END
 
-	EXEC dbo.dba_DatabaseRestore_CheckPaths @RestoredRootLogPath, @isValid OUTPUT;
-	IF @IsValid = 0 BEGIN;
+	EXEC dbo.dba_CheckPaths @RestoredRootLogPath, @isValid OUTPUT;
+	IF @isValid = 0 BEGIN;
 		SET @earlyTermination = N'@RestoredRootLogPath (' + @RestoredRootLogPath + N') is invalid - restore operations terminated prematurely.';
 		GOTO FINALIZE;
 	END

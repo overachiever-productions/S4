@@ -49,10 +49,10 @@ Currently, S4 Backups is only supported on SQL Server Versions and Editions (san
 To deploy S4 Restore into your environment:
 - You will need to enable xp_cmdshell if it isn't already enabled. (See below for more information.)
 - You will aso need to have configured Database Mail, enabled the SQL Server Agent to use Database Mail for notifications, and have created a SQL Server Agent Operator. (See below for more information.)
-- From the S4 'common' folder, locate and then open + execute dba_ExecuteAnFilterNonCatchableCommand.sql against your target server. 
+- From the S4 'common' folder, locate and then open + execute dba_ExecuteAnFilterNonCatchableCommand.sql against your target server.
+- From the S4 'common' folder, locate and then open + execute the 1. dba_CheckPaths.sql script against your target server.  
 - From the S4 Restore folder, locate and then open + execute the 0. dba_DatabaseRestore_Log.sql script against your target server. 
-- From the S4 Restore folder, locate and then open + execute the 1. dba_DatabaseRestore_CheckPaths.sql script against your target server. 
-- From the S4 Restore folder, locate and then open + execute the 2. dba_RestoreDatabases.sql script against your target server. 
+- From the S4 Restore folder, locate and then open + execute the 1. dba_RestoreDatabases.sql script against your target server. 
 
 Once you're completed the steps above, everything you need will be deployed and ready for use.
 

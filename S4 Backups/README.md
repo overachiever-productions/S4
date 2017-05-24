@@ -46,6 +46,7 @@ To Deploy S4 Backups into your environment:
 - You will need to enable xp_cmdshell if it isn't already enabled. (See below for more information.)
 - You will also need to have configured Database Mail, enabled the SQL Server Agent to use Database Mail for notifications, and have created a SQL Server Agent Operator. For more information, see the notes below. 
 - From the S4 'Common' folder, locate and then open + execute dba_ExecuteAndFilterNonCatchableCommand.sql against your target server.
+- From the S4 'Common' folder, locate and then open + execute dba_CheckPaths.sql against your target server.
 - From the S4 Backup folder, locate, and then open + execute the 0. dba_DatabaseBackups_Log.sql script against your target server.
 - From the S4 Backup folder, locate, and then open + exeucte the 1. dba_BackupDatabases.sql script against your target server.
 
@@ -145,6 +146,7 @@ EXEC dbo.dba_BackupDatabases
     [@CopyToBackupDirectory = N'',]
     @BackupRetentionHours = int-retention-hours, 
     [@CopyToRetentionHours = int-retention-hours,]
+    [@RemoveFilesBeforeBackup] = { 0 | 1 }, 
     [@EncryptionCertName = 'ServerCertName',] 
     [@EncryptionAlgorithm = '{ AES 256 | TRIPLE_DES_3KEY }',] 
     [@AddServerNameToSystemBackupPath = { 0 | 1 },] 
@@ -174,7 +176,7 @@ Optional. Designed to work with [USER] (or [SYSTEM]) tokens (but also works with
 
 Required. Specifies the path to the root folder where all backups defined by @DatabasesToBackup will be written. Must be a valid Windows Path - and can be either a local path or UNC path. 
 
-**[@CopyToBackupDirectory]** = 'path-to-folder-for-COPIES-of-backups']
+**[@CopyToBackupDirectory** = 'path-to-folder-for-COPIES-of-backups']
 
 Optional - but highly recommended. When specified, backups (written to @BackupDirectory) will be copied to @CopyToBackupDirectory as part of the backup process. Must be a valid Windows path and, by design (though not enforced), should be an 'off-box' location for proper protection purposes. 
 
@@ -184,30 +186,32 @@ Required. Must be greater than 0. Specifies the amount of time, in hours, that b
 
 **NOTE:** *Retention details are only applied against the @BackupType being currently executed. For example,  T-Log backups with an @BackupRetentionHours of 24 hours will NOT remove FULL or DIFF backups for the same database (even in the same folder) - and only if/when the name of the database is matched AND only when the same @BackupDirectory for the previous backups is specified as the backups being currently executed. Or, in other words, dba_BackupDatabases does NOT 'remember' where your previous backups were stored and go out and delete any previous backups older than @BackupRetentionHours. Instead, after each database is backed up, dba_BackupDatabases will check the 'current' folder for any backups of @BackupType that are older than @BackupRetentionHours and ONLY remove those files if/when the file-backup-names match those of the database being backed up, when the files are in the same folder, and if the backups themselves are older than @BackupRetentionHours.*
 
-**[@CopyToRetentionHours] = integer-hours-to-retain-COPIES-of-backups]
+**[@CopyToRetentionHours** = integer-hours-to-retain-COPIES-of-backups]
 
 This parameter is required if @CopyToBackupDirectory is specified. Otherwise, it works almost exactly like @BackupRetentionHours (in terms of how files are evaluated and/or removed) BUT provides a separate set of retention details for your backup copies. Or, in other words, you could specify a @BackupRetentionHours of 24 for your FULL backups of on-box backups (i.e., @BackupDirectory backups), and a value of 48 (or whatever else) for your @CopyToRetentionHours - meaning that 'local' backups of the type specified would be kept for 24 hours, while remote (off-box) backups were kept for 48 hours. 
 
+**[@RemoveFilesBeforeBackup** = { 0 | 1 } ]
+Optional. Default = 0 (false). When set to true (1), will attempt to delete any backups (and backup copies) matching @BackupRetentionHours (and @CopyToBackupRetentionHours) BEFORE executing the BACKUP + VERIFY commands. If there is a FAILURE during the process of removing older backups, the corresponding backup will be SKIPPED (as the expectation is that this parameter is set to 1 when available space may be at a premium and the database(s) being backed-up might be large enough to cause issues with disk-space otherwise).
 
-**[@EncryptionCertName]** = 'NameOfCertToUseForEncryption'
+**[@EncryptionCertName** = 'NameOfCertToUseForEncryption' ]
 
 Optional. If specified, backup operation will attempt to use native SQL Server backup by attempting to encrypt the backup using the @EncryptionCertName (and @EncryptionAlgorithm) specified. If the specified Certificate Name is not found (or if the version of SQL Server is earlier than SQL Server 2014 or a non-supported edition (Express or Web) is specified), the backup operation will fail. 
 
-**[@EncryptionAlgorith]** = '{ AES_256 | TRIPLE_DES_3KEY }'
+**[@EncryptionAlgorith** = '{ AES_256 | TRIPLE_DES_3KEY }' ]
 
 This parameter is required IF @EncryptionName is specified (otherwise it must be left blank or NULL). Recommended values are either AES_256 or TRIPLE_DES_3KEY. Supported values are any values supported by your version of SQL Server. (See the [Backup](https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql) statement for more information.)
 
-**[@AddServerNameToSystemBackupPath]** = { 0 | 1 }
+**[@AddServerNameToSystemBackupPath** = { 0 | 1 } ]
 
 Optional. Default = 0 (false). For servers that are part of an AlwaysOn Availabilty Group or participating in a Mirroring topology, each server involved will have its own [SYSTEM] databases. When they're backed up to a centralized location (typically via the @CopyToBackupPath), there needs to be a way to differentiate backups from, say, the master database on SERVER1 from master databases backups from SERVER2. By flipping @AddServerNameToSystemBackupPath = 1, the full path for [SYSTEM] database backups will be: Path + db_name + server_name e.g., \\backup-server\sql-backups\master\SERVER1\ - thus ensuring that system-level database backups from SERVER1 do NOT overwrite system-level database backups created/written by SERVER2 and vice-versa. 
 
-**[@AllowNonAccessibleSecondaries]** = { 0 | 1 } 
+**[@AllowNonAccessibleSecondaries** = { 0 | 1 } ]
 
 Optional. Default = 0 (false). By default, once the databases in @DatabasesToBackup has been converted into a list of databases, this 'list' will be compared against all databases on the server that are in a STATE where they can be backed-up (databases participating in Mirroring, for example, might be in a RECOVERING state) and IF the 'list' of databases to backup then is found to contain NO databases, dba_BackupDatabases will throw an error because it was instructed to backup databases but FOUND no databases to backup. However, IF @AllowNonAccessibleSecondaries is set to 1, then IF @DatabasesToBackup = 'db1,db2' and DB1 and DB2 are both, somehow, not in an online/backup-able state, dba_BackupDatabases will find that NO databases should be backed up after initial processing, will 'see' that @AllowNonAccessibleSecondaries is set to 1 and rather than throwing an error, will terminate gracefully. 
 
 **NOTE:** *@AllowNonAccessibleSecondaries should ONLY be set to true (1) when Mirroring or Availability Groups are in use and after carefully considering what could/would happen IF execution of backups did NOT 'fire' because the databases specified by @DatabasesToBackup were all found to be in a state where they could NOT be backed up.*
 
-**[@LogSuccessfulOutcomes]** = { 0 | 1 }
+**[@LogSuccessfulOutcomes** = { 0 | 1 } ]
 
 Optional. Default = 0 (false). By default, dba_BackupDatabases will NOT log successful outcomes to the  dba_DatabaseBackups_log table (though any time there is an error or problem, details will be logged regardless of this setting). However, if @LogSuccessfulOutcomes is set to true, then succesful outcomes (i.e., those with no errors or problems) will also be logged into the dba_DatabaseBackups_Log table (which can be helpful for gathering metrics and extended details about backup operations if needed). 
 
@@ -215,15 +219,15 @@ Optional. Default = 0 (false). By default, dba_BackupDatabases will NOT log succ
 
 Defaults to 'Alerts'. If 'Alerts' is not a valid Operator name specified/configured on the server, dba_BackupDatabases will throw an error BEFORE attempting to backup databases. Otherwise, once this parameter is set to a valid Operator name, then if/when there are any problems during execution, this is the Operator that dba_BackupDatabases will send an email alert to - with an overview of problem details. 
 
-**[@MailProfileName]** = 'name-of-mail-profile-to-use-for-alert-sending']
+**[@MailProfileName** = 'name-of-mail-profile-to-use-for-alert-sending' ]
 
 Deafults to 'General'. If this is not a valid SQL Server Database Mail Profile, dba_DatabaseBackups will throw an error BEFORE attempting backups. Otherwise, this is the profile used to send alerts if/when there are problems or errors encountered during backups. 
 
-**[@EmailSubjectPrefix** = 'Email-Subject-Prefix-You-Would-Like-For-Backup-Alert-Messages']
+**[@EmailSubjectPrefix** = 'Email-Subject-Prefix-You-Would-Like-For-Backup-Alert-Messages' ]
 
 Defaults to '[Database Backups ] ', but can be modified as desired. Otherwise, whenever an error or problem occurs during execution an email will be sent with a Subject that starts with whatever is specified (i.e., if you switch this to '--DB2 BACKUPS PROBLEM!!-- ', you'll get an email with a subject similar to '--DB2 BACKUPS PROBLEM!!-- Failed To complete' - making it easier to set up any rules or specialized alerts you may wish for backup-specific alerts sent by your SQL Server.
 
-**[@PrintOnly** = { 0 | 1 }]
+**[@PrintOnly** = { 0 | 1 } ]
 
 Defaults to 0 (false). When set to true, processing will complete as normal, HOWEVER, no backup operations or other commands will actually be EXECUTED; instead, all commands will be output to the query window (and SOME validation operations will be skipped). No logging to dba_BackupDatabases_Log will occur when @PrintOnly = 1. Use of this parameter (i.e., set to true) is primarily intended for debugging operations AND to 'test' or 'see' what dba_BackupDatabases would do when handed a set of inputs/parameters.
 
