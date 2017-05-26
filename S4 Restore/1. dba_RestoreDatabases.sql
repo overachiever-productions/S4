@@ -301,7 +301,7 @@ AS
 
 		-- Verify Path to Source db's backups:
 		SET @sourcePath = @BackupsRootPath + N'\' + @databaseToRestore;
-		EXEC dbo.dba_DatabaseRestore_CheckPaths @sourcePath, @isValid OUTPUT;
+		EXEC dbo.dba_CheckPaths @sourcePath, @isValid OUTPUT;
 		IF @isValid = 0 BEGIN 
 			SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
 			GOTO NextDatabase;
