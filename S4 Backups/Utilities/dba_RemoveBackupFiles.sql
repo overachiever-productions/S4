@@ -1,14 +1,13 @@
 
--- TODO: figure out a way to TEST this...
---		best option would be to deploy into  ... prod against a set of copied backups... 
-
 
 
 /*
 	DEPENDENCIES:
-		- dba_ExecuteAndFilterNonCatchableCommand
-		- dba_CheckPaths
-		- xp_cmdshell must be enabled.
+		- Requires dba_ExecuteAndFilterNonCatchableCommand - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
+		- Requires dba_CheckPaths - sproc to verify that paths are valid. 
+		- Requires dba_LoadDatabaseNames - sproc that centralizes handling of which dbs/folders to process.
+		- Requires dba_SplitString - udf to parse the above.
+		- Requires that xp_cmdshell must be enabled.
 
 	NOTES:
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
@@ -33,12 +32,10 @@
 
 
 		- Not yet documented. 
-		- Behaves, essentially, like dba_BackupDatabases - only it doesn't do backups... it just removes files from ONE root directory for 1st level of child directories NOT excluded. 
-		- Main Differences:
-			- [READ_FROM_FILESYSTEM] vs [USER] or [SYSTEM] - and... does what it says... converts folders into names of 'dbs' to process. 
-			- @RetentionMINUTES - not Hours. 
-			- @TargetDirectory instead of @BackupDirectory - IF you need to cleanup files in 2x directories (local + off-box), run 2x - once against one path and then again against diff path (with diff @RetentionMinutes if/as needed). 
-			- @SendNotifications - won't send notifications unless set to 1. 
+			-	Behaves, essentially, like dba_BackupDatabases - only it doesn't do backups... it just removes files from ONE root directory for 1st level of child directories NOT excluded. 
+			- Main Differences:
+				- @RetentionMINUTES - not Hours. 
+				- @SendNotifications - won't send notifications unless set to 1. 
 
 	FODDER:
 		xp_dirtree:
@@ -96,13 +93,23 @@ CREATE PROC [dbo].[dba_RemoveBackupFiles]
 AS
 	SET NOCOUNT ON; 
 
-	-- Version 3.1.2.16561	
+	-- Version 3.3.0.16577	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand', 'P') IS NULL BEGIN;
 		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
+	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN;
+		RAISERROR('Table-Valued Function dbo.dba_SplitString not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
+	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN;
+		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -195,57 +202,22 @@ AS
 
 	SET @Output = NULL;
 
-	-- Determine which folders to process:
-	SELECT TOP 400 IDENTITY(int, 1, 1) as N 
-	INTO #Tally
-	FROM sys.columns;
+	DECLARE @serialized nvarchar(MAX);
+	EXEC dbo.dba_LoadDatabaseNames
+	    @Input = @DatabasesToProcess,
+	    @Exclusions = @DatabasesToExclude,
+	    @Mode = N'REMOVE',
+	    @BackupType = @BackupType, 
+		@TargetDirectory = @TargetDirectory,
+		@Output = @serialized OUTPUT;
 
-	DECLARE @targetDirectories TABLE ( 
-		[entry_id] int IDENTITY(1,1) NOT NULL,
-		[directory_name] sysname NOT NULL
-	); 
+	DECLARE @targetDirectories table (
+        [entry_id] int IDENTITY(1,1) NOT NULL, 
+        [directory_name] sysname NOT NULL
+    ); 
 
-	IF UPPER(@DatabasesToProcess) = '[READ_FROM_FILESYSTEM]' BEGIN;
-
-		DECLARE @directories table (
-			row_id int IDENTITY(1,1) NOT NULL, 
-			subdirectory sysname NOT NULL, 
-			depth int NOT NULL
-		);
-
-		INSERT INTO @directories (subdirectory, depth)
-		EXEC master.sys.xp_dirtree @TargetDirectory, 1, 0;
-
-		INSERT INTO @targetDirectories (directory_name)
-		SELECT subdirectory FROM @directories ORDER BY row_id;
-
-	  END; 
-	ELSE BEGIN;
-
-		DECLARE @SerializedDbs nvarchar(1200);
-		SET @SerializedDbs = ',' + REPLACE(@DatabasesToProcess, ' ', '') + ',';
-
-		INSERT INTO @targetDirectories ([directory_name])
-		SELECT SUBSTRING(@SerializedDbs, N + 1, CHARINDEX(',', @SerializedDbs, N + 1) - N - 1)
-		FROM #Tally
-		WHERE N < LEN(@SerializedDbs) 
-			AND SUBSTRING(@SerializedDbs, N, 1) = ','
-		ORDER BY #Tally.N;
-	END;
-
-	-- Exclude any databases specified for exclusion:
-	IF ISNULL(@DatabasesToExclude, '') != '' BEGIN;
-		DECLARE @removedDbs nvarchar(1200);
-		SET @removedDbs = ',' + REPLACE(@DatabasesToExclude, ' ', '') + ',';
-
-		DELETE FROM @targetDirectories
-		WHERE [directory_name] IN (
-			SELECT SUBSTRING(@removedDbs, N + 1, CHARINDEX(',', @removedDbs, N + 1) - N - 1)
-			FROM #Tally
-			WHERE N < LEN(@removedDbs)
-				AND SUBSTRING(@removedDbs, N, 1) = ','
-		);
-	END;
+	INSERT INTO @targetDirectories ([directory_name])
+	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:

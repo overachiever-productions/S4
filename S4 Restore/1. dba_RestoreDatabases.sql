@@ -14,6 +14,7 @@
 
 	DEPENDENCIES:
 		- Requires dbo.dba_DatabaseRestore_Log - to log information about restore operations AND failures. 
+		- Requires dba_LoadDatabaseNames - sproc used to 'parse' or determine which dbs to target based upon inputs.
 		- Requires dbo.dba_CheckPaths - to facilitate validation of specified AND created database backup file paths. 
 		- Requires dbo.dba_ExecuteAndFilterNonCatchableCommand - to address problems with TRY/CATCH error handling within SQL Server. 
 		- Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
@@ -57,6 +58,9 @@
 								i.e., right now I delete * < Max(LastFullBackup)... then do the same with Logs vs LAST(FULL|DIFF)... 
 										so I might need to HOLD off on deleting log files until i get the LSN or some time-stamp... then read from the t-logs themselves and try that... (sigh).
 
+			FODDER: 
+				https://www.sqlskills.com/blogs/paul/sqlskills-sql101-why-is-restore-slower-than-backup/
+
 */
 
 USE master;
@@ -69,6 +73,7 @@ GO
 
 CREATE PROC dbo.dba_RestoreDatabases 
 	@DatabasesToRestore				nvarchar(MAX),
+	@DatabasesToExclude				nvarchar(MAX) = NULL,
 	@BackupsRootPath				nvarchar(MAX),
 	@RestoredRootDataPath			nvarchar(MAX),
 	@RestoredRootLogPath			nvarchar(MAX),
@@ -85,7 +90,7 @@ CREATE PROC dbo.dba_RestoreDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.1.2.16561	
+	-- Version 3.3.0.16577	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -94,6 +99,11 @@ AS
 		THROW 510000, N'Table dbo.dba_DatabaseRestore_Log not defined - unable to continue.', 1;
 		RETURN -1;
 	END
+	
+	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN;
+		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
 
 	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN;
 		THROW 510000, N'Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 1;
@@ -110,6 +120,7 @@ AS
 		RETURN -1;
 	END
 
+	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	IF @PrintOnly = 0 BEGIN; -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 		
@@ -135,6 +146,11 @@ AS
 		END 
 	END
 
+	IF @MaxNumberOfFailedDrops <= 0 BEGIN;
+		RAISERROR('@MaxNumberOfFailedDrops must be set to a value of 1 or higher.', 16, 1);
+		RETURN -6;
+	END
+
 	IF NULLIF(@AllowReplace, '') IS NOT NULL AND UPPER(@AllowReplace) != N'REPLACE' BEGIN;
 		THROW 510000, N'The @AllowReplace switch must be set to NULL or the exact term N''REPLACE''.', 1;
 		RETURN -4;
@@ -143,6 +159,19 @@ AS
 	IF @AllowReplace IS NOT NULL AND @DropDatabasesAfterRestore = 1 BEGIN;
 		THROW 510000, N'Databases cannot be explicitly REPLACED and DROPPED after being replaced. If you wish DBs to be restored (on a different server for testing) with SAME names as PROD, simply leave suffix empty (but not NULL) and leave @AllowReplace NULL.', 1;
 		RETURN -6;
+	END
+
+	IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN;
+		RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dba_RestoreDatabases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
+		RETURN -10;
+	END
+
+	IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
+		SET @DatabasesToExclude = NULL;
+
+	IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) != N'[READ_FROM_FILESYSTEM]') BEGIN;
+		RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the [READ_FROM_FILESYSTEM] token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
+		RETURN -20;
 	END
 
 	-- 'Global' Variables:
@@ -177,33 +206,40 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Construct list of databases to restore:
-	IF OBJECT_ID('tempdb..#DatabasesToRestore') IS NOT NULL 
-		DROP TABLE #DatabasesToRestore;
+	DECLARE @serialized nvarchar(MAX);
+	EXEC dbo.dba_LoadDatabaseNames
+	    @Input = @DatabasesToRestore,         
+	    @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
+	    @Mode = N'RESTORE',
+	    @TargetDirectory = @BackupsRootPath, 
+		@Output = @serialized OUTPUT;
 
-	CREATE TABLE #DatabasesToRestore (
-		id int IDENTITY(1,1) NOT NULL, 
-		database_name sysname NOT NULL
-	);
+	DECLARE @dbsToRestore table (
+        [entry_id] int IDENTITY(1,1) NOT NULL, 
+        [database_name] sysname NOT NULL
+    ); 
 
-	-- Create a tally table for string-split operations and 'split' strings into #DatabasesToRestore:
-	IF OBJECT_ID('tempdb..#Tally') IS NOT NULL 
-		DROP TABLE #Tally; 
+	INSERT INTO @dbsToRestore ([database_name])
+	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
 
-	SET @DatabasesToRestore = ',' + @DatabasesToRestore + ',';
-	SELECT TOP 400 IDENTITY(int, 1, 1) as N INTO #Tally FROM sys.columns;
+	IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN;
+		RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
+		RETURN -20;
+	END
 
-	INSERT INTO #DatabasesToRestore (database_name)
-	SELECT RTRIM(LTRIM(SUBSTRING(@DatabasesToRestore, N+1, CHARINDEX(',', @DatabasesToRestore, N+1)-N-1))) FROM #Tally WHERE N < LEN(@DatabasesToRestore) AND SUBSTRING(@DatabasesToRestore, N, 1) = ',';
+	IF @PrintOnly = 1 BEGIN;
+		PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
+	END
 
 	DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
 		[database_name]
 	FROM 
-		#DatabasesToRestore
+		@dbsToRestore
 	WHERE
 		LEN([database_name]) > 0
 	ORDER BY 
-		id;
+		entry_id;
 
 	DECLARE @databaseToRestore sysname;
 	DECLARE @restoredName sysname;

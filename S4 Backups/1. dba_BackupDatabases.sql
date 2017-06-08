@@ -3,8 +3,10 @@
 /*
 
 	DEPENDENCIES:
-		- dbo.dba_DatabaseBackups_Log (logging table to keep details about errors (and successful executions if @LogSuccessfulOutcomes = 1). 
-		- dbo.dba_ExecuteAndFilterNonCatchableCommand - sproc used to execute backup and other compands in order to be able to CAPTURE exception
+		- Requires dba_DatabaseBackups_Log (logging table to keep details about errors (and successful executions if @LogSuccessfulOutcomes = 1). 
+		- Requires dba_SplitString - to parse results from dba_LoadDatabases.
+		- Requires dba_LoadDatabaseNames - sproc used to 'parse' or determine which dbs to target based upon inputs.
+		- Requires dba_ExecuteAndFilterNonCatchableCommand - sproc used to execute backup and other compands in order to be able to CAPTURE exception
 			details and error details (due to bug/problem with TRY/CATCH in T-SQL). 
 		- Requires that xp_cmdshell is ENABLED before execution can/will complete (but the sproc CAN be created without xp_cmdshell enabled).
 		- Requires a configured Database Mail Profile + SQL Server Agent Operator. 
@@ -85,7 +87,7 @@ CREATE PROC dbo.dba_BackupDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.1.2.16561	
+	-- Version 3.3.0.16577	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -95,8 +97,18 @@ AS
 		RETURN -1;
 	END;
 
+	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN;
+		RAISERROR('Table-Valued Function dbo.dba_SplitString not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
+	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN;
+		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
 	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN;
-		THROW 510000, N'Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 1;
+		RAISERROR('Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
@@ -166,6 +178,11 @@ AS
 		RETURN -7;
 	END;
 
+	IF UPPER(@DatabasesToBackup) = N'[READ_FROM_FILESYSTEM]' BEGIN;
+		RAISERROR('@DatabasesToBackup may NOT be set to the token [READ_FROM_FILESYSTEM] when processing backups.', 16, 1);
+		RETURN -9;
+	END
+
 	-- translate the hours settings:
 	DECLARE @fileRetentionMinutes int = @BackupRetentionHours * 60;
 	DECLARE @copyToFileRetentionMinutes int = @CopyToRetentionHours * 60;
@@ -199,83 +216,25 @@ AS
 	-- Determine which databases to backup:
 	DECLARE @executingSystemDbBackups bit = 0;
 
-	SELECT TOP 400 IDENTITY(int, 1, 1) as N 
-	INTO #Tally
-	FROM sys.columns;
-
-	DECLARE @targetDatabases TABLE ( 
-		[entry_id] int IDENTITY(1,1) NOT NULL, 
-		[database_name] sysname NOT NULL
-	); 
-
 	IF UPPER(@DatabasesToBackup) = '[SYSTEM]' BEGIN;
 		SET @executingSystemDbBackups = 1;
-
-		INSERT INTO @targetDatabases ([database_name])
-		SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
 	END; 
 
-	IF UPPER(@DatabasesToBackup) = '[USER]' BEGIN; 
+	DECLARE @serialized nvarchar(MAX);
+	EXEC dbo.dba_LoadDatabaseNames
+	    @Input = @DatabasesToBackup,
+	    @Exclusions = @DatabasesToExclude,
+	    @Mode = N'BACKUP',
+	    @BackupType = @BackupType, 
+		@Output = @serialized OUTPUT;
 
-		IF @BackupType = 'LOG'
-			INSERT INTO @targetDatabases ([database_name])
-			SELECT name FROM sys.databases 
-			WHERE recovery_model_desc = 'FULL' 
-				AND name NOT IN ('master', 'model', 'msdb', 'tempdb') 
-			ORDER BY name;
-		ELSE 
-			INSERT INTO @targetDatabases ([database_name])
-			SELECT name FROM sys.databases 
-			WHERE name NOT IN ('master', 'model', 'msdb','tempdb') 
-			ORDER BY name;
-	END; 
+	DECLARE @targetDatabases table (
+        [entry_id] int IDENTITY(1,1) NOT NULL, 
+        [database_name] sysname NOT NULL
+    ); 
 
-	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN;
-
-		DECLARE @SerializedDbs nvarchar(1200);
-		SET @SerializedDbs = ',' + REPLACE(@DatabasesToBackup, ' ', '') + ',';
-
-		INSERT INTO @targetDatabases ([database_name])
-		SELECT SUBSTRING(@SerializedDbs, N + 1, CHARINDEX(',', @SerializedDbs, N + 1) - N - 1)
-		FROM #Tally
-		WHERE N < LEN(@SerializedDbs) 
-			AND SUBSTRING(@SerializedDbs, N, 1) = ','
-		ORDER BY #Tally.N;
-
-		IF @BackupType = 'LOG' BEGIN
-			DELETE FROM @targetDatabases 
-			WHERE [database_name] NOT IN (
-				SELECT name FROM sys.databases WHERE recovery_model_desc = 'FULL'
-			);
-		  END;
-		ELSE 
-			DELETE FROM @targetDatabases
-			WHERE [database_name] NOT IN (SELECT name FROM sys.databases);
-	END;
-
-	-- Exclude any databases that aren't operational:
-	DELETE FROM @targetDatabases 
-	WHERE [database_name] IN (SELECT name FROM sys.databases WHERE state_desc != 'ONLINE')  -- this gets any dbs that are NOT online - INCLUDING those that are listed as 'RESTORING' because of mirroring. 
-		OR [database_name] IN (
-			SELECT d.name 
-			FROM sys.databases d 
-			INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id
-			WHERE hars.role_desc != 'PRIMARY'
-		); -- grab any dbs that are in an AG where the current role != PRIMARY. 
-
-	-- Exclude any databases specified for exclusion:
-	IF ISNULL(@DatabasesToExclude, '') != '' BEGIN;
-		DECLARE @removedDbs nvarchar(1200);
-		SET @removedDbs = ',' + REPLACE(@DatabasesToExclude, ' ', '') + ',';
-
-		DELETE FROM @targetDatabases
-		WHERE [database_name] IN (
-			SELECT SUBSTRING(@removedDbs, N + 1, CHARINDEX(',', @removedDbs, N + 1) - N - 1)
-			FROM #Tally
-			WHERE N < LEN(@removedDbs)
-				AND SUBSTRING(@removedDbs, N, 1) = ','
-		);
-	END;
+	INSERT INTO @targetDatabases ([database_name])
+	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN;

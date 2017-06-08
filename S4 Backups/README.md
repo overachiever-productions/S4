@@ -45,11 +45,13 @@ S4 Backups have not (yet) been tested against case-sensitive SQL Servers.
 To Deploy S4 Backups into your environment:
 - You will need to enable xp_cmdshell if it isn't already enabled. (See below for more information.)
 - You will also need to have configured Database Mail, enabled the SQL Server Agent to use Database Mail for notifications, and have created a SQL Server Agent Operator. For more information, see the notes below. 
-- From the S4 'Common' folder, locate and then open + execute dba_ExecuteAndFilterNonCatchableCommand.sql against your target server.
-- From the S4 'Common' folder, locate and then open + execute dba_CheckPaths.sql against your target server.
-- From the S4 Backup folder, open the Utilities folder, find and then open + execute dba_RemoveBackupFiles.sql against your target server.
-- From the S4 Backup folder, locate, and then open + execute the 0. dba_DatabaseBackups_Log.sql script against your target server.
-- From the S4 Backup folder, locate, and then open + exeucte the 1. dba_BackupDatabases.sql script against your target server.
+- From the **S4 'Common'** folder, locate and then open + execute dba_ExecuteAndFilterNonCatchableCommand.sql against your target server.
+- From the **S4 'Common'** folder, locate and then open + execute dba_CheckPaths.sql against your target server.
+- From the **S4 'Common'** folder, locate and then open + execute dba_SplitString.sql against your target server.
+- From the **S4 'Common'** folder, locate and then open + execute dba_LoadDatabaseNames against your target server.
+- From the **S4 Backup folder**, open the Utilities folder, find and then open + execute dba_RemoveBackupFiles.sql against your target server.
+- From the **S4 Backup folder**, locate, and then open + execute the 0. dba_DatabaseBackups_Log.sql script against your target server.
+- From the **S4 Backup folder**, locate, and then open + execute the 1. dba_BackupDatabases.sql script against your target server.
 
 Once you've completed the steps listed above, everything you need will be deployed and ready for execution. 
 

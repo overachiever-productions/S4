@@ -33,7 +33,7 @@ IF OBJECT_ID('dbo.dba_DatabaseBackups_Log','U') IS NOT NULL
 	DROP TABLE dbo.dba_DatabaseBackups_Log;
 GO
 
--- Version 3.1.2.16561
+-- Version 3.3.0.16577
 -- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 CREATE TABLE dbo.dba_DatabaseBackups_Log  (

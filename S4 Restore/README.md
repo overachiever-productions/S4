@@ -49,10 +49,12 @@ Currently, S4 Backups is only supported on SQL Server Versions and Editions (san
 To deploy S4 Restore into your environment:
 - You will need to enable xp_cmdshell if it isn't already enabled. (See below for more information.)
 - You will aso need to have configured Database Mail, enabled the SQL Server Agent to use Database Mail for notifications, and have created a SQL Server Agent Operator. (See below for more information.)
-- From the S4 'common' folder, locate and then open + execute dba_ExecuteAnFilterNonCatchableCommand.sql against your target server.
-- From the S4 'common' folder, locate and then open + execute the 1. dba_CheckPaths.sql script against your target server.  
-- From the S4 Restore folder, locate and then open + execute the 0. dba_DatabaseRestore_Log.sql script against your target server. 
-- From the S4 Restore folder, locate and then open + execute the 1. dba_RestoreDatabases.sql script against your target server. 
+- From the **S4 'common'** folder, locate and then open + execute dba_ExecuteAnFilterNonCatchableCommand.sql against your target server.
+- From the **S4 'common'** folder, locate and then open + execute dba_CheckPaths.sql against your target server. 
+- From the **S4 'Common'** folder, locate and then open + execute dba_SplitString.sql against your target server.
+- From the **S4 'Common'** folder, locate and then open + execute dba_LoadDatabaseNames against your target server.
+- From the **S4 Restore** folder, locate and then open + execute the 0. dba_DatabaseRestore_Log.sql script against your target server. 
+- From the **S4 Restore** folder, locate and then open + execute the 1. dba_RestoreDatabases.sql script against your target server. 
 
 Once you're completed the steps above, everything you need will be deployed and ready for use.
 
@@ -140,7 +142,8 @@ For more information and best practices on setting up Operator (email addresses)
 
 ```sql
 EXEC master.dbo.dba_RestoreDatabases 
-    @DatabasesToRestore = N'list,of,db-names,to,restore', 
+    @DatabasesToRestore = {N'[READ_FROM_FILESYSTEM]' | N'list,of,db-names,to,restore' },
+    @DatabasesToExclude = N'list,of,dbs,to,not,restore',
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 
     @RestoredRootLogPath = N'L:\SQLLogs', 
@@ -159,9 +162,14 @@ EXEC master.dbo.dba_RestoreDatabases
 
 ### Arguments
 
-**@DatabasesToRestore** = 'comma,delimited, list-of-db-names, to restore'
+**@DatabasesToRestore** = { [READ_FROM_FILESYSTEM] | 'comma,delimited, list-of-db-names, to restore' }
 
-Required. Spaces between database-names can be present or not. Otherwise, for every database listed, dba_RestoreBackups will look for a sub-folder with a matching name in @BackupsRootPath and attempt to restore any backups (with a matching-name) present. 
+Required. You can either pass in the specialized 'token': [READ_FROM_FILESYSTEM] - which indicates that dba_RestoreDatabases will treat the names of (first-level) sub-FOLDERS within @BackupsRootPath as a list of databases to attempt to restore (i.e., if you have 3 folders, one called X, one called Y, and another called widgets, setting @BackupsRootPath to [READ_FROM_FILESYSTEM] would cause it to try and restore the databases: X, Y, and widgets). When using this token, you will typically want to explicitly exclude a number of databases using the @DatabasesToExclude parameter. Otherwise, if you don't want to 'read' in a list of databases to restore, you can simply specify a comma-delimited list of database names (e.g., 'X, Y,widgets') - where spaces between database-names can be present or not. 
+
+Otherwise, for every database listed, dba_RestoreBackups will look for a sub-folder with a matching name in @BackupsRootPath and attempt to restore any backups (with a matching-name) present. 
+
+**[@DatabasesToExclude** = 'list,of,dbs,to,not,attempt,restore,against']
+Optional. ONLY allowed to be populated when @DatabasesToRestore is set to '[READ_FROM_FILESYSTEM]' (as a means of explicitly ignoring or 'skipping' certain folders and/or databases). Otherwise, if you don't want a specific database restored, then don't list it in @DatabasesToRestore.
 
 **@BackupsRootPath** = 'path-to-location-of-folder-containing-sub-folders-with-backups-of-each-db'
 
