@@ -87,7 +87,7 @@ CREATE PROC dbo.dba_BackupDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.3.0.16577	
+	-- Version 3.3.0.16581	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -568,6 +568,7 @@ RemoveOlderFiles:
 						@TargetDirectory = @BackupDirectory,
 						@RetentionMinutes = @fileRetentionMinutes, 
 						@PrintOnly = 1;
+
 				  END;
 				ELSE BEGIN;
 					SET @outcome = 'OUTPUT';
@@ -584,7 +585,7 @@ RemoveOlderFiles:
 
 				END
 
-				IF ISNULL(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
+				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
 					IF @PrintOnly = 1 BEGIN;
 						PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @RetentionMinutes = ' + CAST(@copyToFileRetentionMinutes AS varchar(30)) + ', @PrintOnly = 1;';
