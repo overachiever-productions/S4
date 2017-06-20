@@ -23,7 +23,7 @@
 
 
 	SCALABLE:
-		2.5+
+		3+
 
 
 
@@ -38,7 +38,7 @@ GO
 
 CREATE PROC dbo.dba_LoadDatabaseNames 
 	@Input				nvarchar(MAX),				-- [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
-	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names
+	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL, 
@@ -46,7 +46,7 @@ CREATE PROC dbo.dba_LoadDatabaseNames
 AS
 	SET NOCOUNT ON; 
 
-	-- Version 3.3.0.16581	
+	-- Version 3.3.0.16589	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -170,16 +170,19 @@ AS
 
 	-- Exclude any databases specified for exclusion:
 	IF ISNULL(@Exclusions, '') != '' BEGIN;
+	
 		DECLARE @removedDbs nvarchar(1200);
 		SET @removedDbs = N',' + @Exclusions + N',';
 
-		DELETE FROM @targets
-		WHERE [database_name] IN (
-			SELECT RTRIM(LTRIM(SUBSTRING(@removedDbs, N + 1, CHARINDEX(',', @removedDbs, N + 1) - N - 1)))
+		DELETE t 
+		FROM @targets t 
+		INNER JOIN (
+			SELECT RTRIM(LTRIM(SUBSTRING(@removedDbs, N + 1, CHARINDEX(',', @removedDbs, N + 1) - N - 1))) [db_name]
 			FROM #Tally
 			WHERE N < LEN(@removedDbs)
-				AND SUBSTRING(@removedDbs, N, 1) = ','
-		);
+				AND SUBSTRING(@removedDbs, N, 1) = ','		
+		) exclusions ON t.[database_name] LIKE exclusions.[db_name];
+
 	END;
 
 	-- Output (used to get around nasty 'insert exec can't be nested' error when reading from file-system.

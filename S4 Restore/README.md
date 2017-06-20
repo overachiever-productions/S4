@@ -143,7 +143,7 @@ For more information and best practices on setting up Operator (email addresses)
 ```sql
 EXEC master.dbo.dba_RestoreDatabases 
     @DatabasesToRestore = {N'[READ_FROM_FILESYSTEM]' | N'list,of,db-names,to,restore' },
-    @DatabasesToExclude = N'list,of,dbs,to,not,restore',
+    [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',]
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 
     @RestoredRootLogPath = N'L:\SQLLogs', 
@@ -168,8 +168,10 @@ Required. You can either pass in the specialized 'token': [READ_FROM_FILESYSTEM]
 
 Otherwise, for every database listed, dba_RestoreBackups will look for a sub-folder with a matching name in @BackupsRootPath and attempt to restore any backups (with a matching-name) present. 
 
-**[@DatabasesToExclude** = 'list,of,dbs,to,not,attempt,restore,against']
+**[@DatabasesToExclude** = 'list,of,dbs,to,not,attempt,restore,against, %wildcards_allowed%']
 Optional. ONLY allowed to be populated when @DatabasesToRestore is set to '[READ_FROM_FILESYSTEM]' (as a means of explicitly ignoring or 'skipping' certain folders and/or databases). Otherwise, if you don't want a specific database restored, then don't list it in @DatabasesToRestore.
+
+Note that you can also specify wildcards, or 'patterns' for database names that you wish to skip or avoid - i.e., if you don't want to attempt to restore multiple databases defined as <db_name>_stage, then you can specify '%_stage%' as an option for exclusion - and any databases matching this pattern (via a LIKE evaluation) will be excluded.
 
 **@BackupsRootPath** = 'path-to-location-of-folder-containing-sub-folders-with-backups-of-each-db'
 

@@ -144,7 +144,7 @@ For more information and best practices on setting up Operator (email addresses)
 EXEC dbo.dba_BackupDatabases
     @BackupType = '{ FULL|DIFF|LOG }', 
     @DatabasesToBackup = N'{ widgets,hr,sales,etc | [SYSTEM] | [USER] }', 
-    [@DatabasesToExclude = N'',] 
+    [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',] 
     @BackupDirectory = N'D:\sqlbackups', 
     [@CopyToBackupDirectory = N'',]
     @BackupRetentionHours = int-retention-hours, 
@@ -171,9 +171,11 @@ Required. The type of backup to perform (FULL backup, Differential backup, or Tr
 
 Required. Either a comma-delimited list of databases to backup by name (e.g., 'db1, dbXyz', 'Widgets') or a specialized token (enclosed in square-brackets) to specify that either [SYSTEM] databases should be backed up, or [USER] databases should be backed up. 
 
-**[@DatabasesToExclude** = 'list, of, database, names, to exclude' ]
+**[@DatabasesToExclude** = 'list, of, database, names, to exclude, %wildcards_allowed%' ]
 
-Optional. Designed to work with [USER] (or [SYSTEM]) tokens (but also works with a specified list of databases). Removes any databases (found on server), from the list of DBs to backup. 
+Optional. Designed to work with [USER] (or [SYSTEM]) tokens (but also works with a specified list of databases). Removes any databases (found on server), from the list of DBs to backup.
+
+Note that you can specify wild-cards for 'pattern matching' as a means of excluding entire groups of similarly named databases. For example, if you have a number of <dbname>_staging databases that you don't want to bother backing up, you can specify '%_staging' as an exclusion pattern (which will be processed via a LIKE expression) to avoid executing backups against all _staging databases.
 
 **@BackupDirectory** = 'path-to-root-folder-for-backups'
 
