@@ -39,6 +39,7 @@ GO
 CREATE PROC dbo.dba_LoadDatabaseNames 
 	@Input				nvarchar(MAX),				-- [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
+	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL, 
@@ -46,7 +47,7 @@ CREATE PROC dbo.dba_LoadDatabaseNames
 AS
 	SET NOCOUNT ON; 
 
-	-- Version 3.3.0.16589	
+	-- Version 3.4.0.16590	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -184,6 +185,61 @@ AS
 		) exclusions ON t.[database_name] LIKE exclusions.[db_name];
 
 	END;
+
+	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
+		DECLARE @SerializedPriorities nvarchar(MAX);
+		SET @SerializedPriorities = N',' + @Priorities + N',';
+
+		DECLARE @prioritized table (
+			priority_id int IDENTITY(1,1) NOT NULL, 
+			[database_name] sysname NOT NULL
+		);
+
+		INSERT INTO @prioritized ([database_name])
+		SELECT  RTRIM(LTRIM((SUBSTRING(@SerializedPriorities, N + 1, CHARINDEX(',', @SerializedPriorities, N + 1) - N - 1))))
+        FROM #Tally
+        WHERE N < LEN(@SerializedPriorities) 
+            AND SUBSTRING(@SerializedPriorities, N, 1) = ','
+        ORDER BY #Tally.N;
+
+		DECLARE @alphabetized int;
+		SELECT @alphabetized = priority_id FROM @prioritized WHERE [database_name] = '*';
+
+		IF @alphabetized IS NULL
+			SET @alphabetized = (SELECT MAX(entry_id) + 1 FROM @targets);
+
+		DECLARE @prioritized_targets TABLE ( 
+			[entry_id] int IDENTITY(1,1) NOT NULL, 
+			[database_name] sysname NOT NULL
+		); 
+
+		WITH core AS ( 
+			SELECT 
+				t.[database_name], 
+				CASE 
+					WHEN p.[database_name] IS NULL THEN 0 + t.entry_id
+					WHEN p.[database_name] IS NOT NULL AND p.priority_id <= @alphabetized THEN -32767 + p.priority_id
+					WHEN p.[database_name] IS NOT NULL AND p.priority_id > @alphabetized THEN 32767 + p.priority_id
+				END [prioritized_priority]
+			FROM 
+				@targets t 
+				LEFT OUTER JOIN @prioritized p ON p.[database_name] = t.[database_name]
+		) 
+
+		INSERT INTO @prioritized_targets ([database_name])
+		SELECT 
+			[database_name]
+		FROM core 
+		ORDER BY 
+			core.prioritized_priority;
+
+		DELETE FROM @targets;
+		INSERT INTO @targets ([database_name])
+		SELECT [database_name] 
+		FROM @prioritized_targets
+		ORDER BY entry_id;
+
+	END 
 
 	-- Output (used to get around nasty 'insert exec can't be nested' error when reading from file-system.
 	SET @Output = N'';

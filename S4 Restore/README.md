@@ -144,6 +144,7 @@ For more information and best practices on setting up Operator (email addresses)
 EXEC master.dbo.dba_RestoreDatabases 
     @DatabasesToRestore = {N'[READ_FROM_FILESYSTEM]' | N'list,of,db-names,to,restore' },
     [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',]
+    [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 
     @RestoredRootLogPath = N'L:\SQLLogs', 
@@ -172,6 +173,14 @@ Otherwise, for every database listed, dba_RestoreBackups will look for a sub-fol
 Optional. ONLY allowed to be populated when @DatabasesToRestore is set to '[READ_FROM_FILESYSTEM]' (as a means of explicitly ignoring or 'skipping' certain folders and/or databases). Otherwise, if you don't want a specific database restored, then don't list it in @DatabasesToRestore.
 
 Note that you can also specify wildcards, or 'patterns' for database names that you wish to skip or avoid - i.e., if you don't want to attempt to restore multiple databases defined as <db_name>_stage, then you can specify '%_stage%' as an option for exclusion - and any databases matching this pattern (via a LIKE evaluation) will be excluded.
+
+**[@Priorities** = { 'higher, priority, dbs, *, lower, priority, dbs' } ]
+
+Optional. Allows specification of priorities for restore/test operations (i.e., specification for order of operations). When NOT specified, dbs loaded (and then remaining after @DatabasesToExclude are processed) will be ranked/sorted alphabetically - which would be the SAME result as if @Priorities were set to the value of '*'. Which means that * is a token that specifies that any database not SPECIFICALLY specified via @Priorities (by name) will be sorted alphabetically. Otherwise, any db-names listed (and matched) BEFORE the * will be ordered (in the order listed) BEFORE any dbs processed alphabetically, and any dbs listed AFTER the * will be ordered (negatively - in the order specified) AFTER any dbs not matched. 
+
+As an example, assume you have 7 databases, ProdA, Minor1, Minor1, Minor1, Minor1, and Junk, Junk2. Alphabetically, Junk, Junk2, and all 'minor' dbs would be processed before ProdA, but if you specified 'ProdA, *, Junk2, Junk', you'd see the databases processed/restored in the following order: ProdA, Minor1, Minor2, Minor3, Minor4, Junk2, Junk - because ProdA is specified before any dbs not explicitly mentioned/specified (i.e., those matching the token *), all of the 'Minor' databases are next - and are sorted/ranked alphabetically, and then Junk is specified BEFORE Junk - but after the * token - meaning that Junk is the last db listed and is therefore ranked LOWER than Junk2 (i.e., anything following * is sorted/ranked as defined and FOLLOWING the databases represented by *).
+
+When @Priorities is defined as something like 'only, db,names', it will be treated as if you had specified the following: 'only,db,names,*' - meaning that the dbs you specified for @Priorities will be restored/tested in the order specified BEFORE all other (non-named) dbs. Otherwise, if you wish to 'de-prioritize' any dbs, you must specify * and then the names of any dbs that should be processed 'after' or 'later'.
 
 **@BackupsRootPath** = 'path-to-location-of-folder-containing-sub-folders-with-backups-of-each-db'
 

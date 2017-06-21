@@ -74,6 +74,7 @@ GO
 CREATE PROC dbo.dba_RestoreDatabases 
 	@DatabasesToRestore				nvarchar(MAX),
 	@DatabasesToExclude				nvarchar(MAX) = NULL,
+	@Priorities						nvarchar(MAX) = NULL,
 	@BackupsRootPath				nvarchar(MAX),
 	@RestoredRootDataPath			nvarchar(MAX),
 	@RestoredRootLogPath			nvarchar(MAX),
@@ -90,7 +91,7 @@ CREATE PROC dbo.dba_RestoreDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.3.0.16581	
+	-- Version 3.4.0.16590		
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -210,6 +211,7 @@ AS
 	EXEC dbo.dba_LoadDatabaseNames
 	    @Input = @DatabasesToRestore,         
 	    @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
+		@Priorities = @Priorities,
 	    @Mode = N'RESTORE',
 	    @TargetDirectory = @BackupsRootPath, 
 		@Output = @serialized OUTPUT;

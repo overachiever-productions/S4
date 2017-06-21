@@ -145,6 +145,7 @@ EXEC dbo.dba_BackupDatabases
     @BackupType = '{ FULL|DIFF|LOG }', 
     @DatabasesToBackup = N'{ widgets,hr,sales,etc | [SYSTEM] | [USER] }', 
     [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',] 
+    [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
     @BackupDirectory = N'D:\sqlbackups', 
     [@CopyToBackupDirectory = N'',]
     @BackupRetentionHours = int-retention-hours, 
@@ -171,11 +172,20 @@ Required. The type of backup to perform (FULL backup, Differential backup, or Tr
 
 Required. Either a comma-delimited list of databases to backup by name (e.g., 'db1, dbXyz', 'Widgets') or a specialized token (enclosed in square-brackets) to specify that either [SYSTEM] databases should be backed up, or [USER] databases should be backed up. 
 
-**[@DatabasesToExclude** = 'list, of, database, names, to exclude, %wildcards_allowed%' ]
+**[@DatabasesToExclude** = { 'list, of, database, names, to exclude, %wildcards_allowed%' } ]
 
 Optional. Designed to work with [USER] (or [SYSTEM]) tokens (but also works with a specified list of databases). Removes any databases (found on server), from the list of DBs to backup.
 
 Note that you can specify wild-cards for 'pattern matching' as a means of excluding entire groups of similarly named databases. For example, if you have a number of <dbname>_staging databases that you don't want to bother backing up, you can specify '%_staging' as an exclusion pattern (which will be processed via a LIKE expression) to avoid executing backups against all _staging databases.
+
+**[@Priorities** = { 'higher, priority, dbs, *, lower, priority, dbs' } ]
+
+Optional. Allows specification of priorities for backup operations (i.e., specification for order of operations). When NOT specified, dbs loaded (and then remaining after @DatabasesToExclude are processed) will be ranked/sorted alphabetically - which would be the SAME result as if @Priorities were set to the value of '*'. Which means that * is a token that specifies that any database not SPECIFICALLY specified via @Priorities (by name) will be sorted alphabetically. Otherwise, any db-names listed (and matched) BEFORE the * will be ordered (in the order listed) BEFORE any dbs processed alphabetically, and any dbs listed AFTER the * will be ordered (negatively - in the order specified) AFTER any dbs not matched. 
+
+As an example, assume you have 7 databases, ProdA, Minor1, Minor1, Minor1, Minor1, and Junk, Junk2. Alphabetically, Junk, Junk2, and all 'minor' dbs would be processed before ProdA, but if you specified 'ProdA, *, Junk2, Junk', you'd see the databases processed/restored in the following order: ProdA, Minor1, Minor2, Minor3, Minor4, Junk2, Junk - because ProdA is specified before any dbs not explicitly mentioned/specified (i.e., those matching the token *), all of the 'Minor' databases are next - and are sorted/ranked alphabetically, and then Junk is specified BEFORE Junk - but after the * token - meaning that Junk is the last db listed and is therefore ranked LOWER than Junk2 (i.e., anything following * is sorted/ranked as defined and FOLLOWING the databases represented by *).
+
+When @Priorities is defined as something like 'only, db,names', it will be treated as if you had specified the following: 'only,db,names,*' - meaning that the dbs you specified for @Priorities will be restored/tested in the order specified BEFORE all other (non-named) dbs. Otherwise, if you wish to 'de-prioritize' any dbs, you must specify * and then the names of any dbs that should be processed 'after' or 'later'.
+  
 
 **@BackupDirectory** = 'path-to-root-folder-for-backups'
 

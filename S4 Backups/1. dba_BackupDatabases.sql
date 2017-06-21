@@ -68,8 +68,9 @@ GO
 
 CREATE PROC dbo.dba_BackupDatabases 
 	@BackupType							sysname,					-- { FULL|DIFF|LOG }
-	@DatabasesToBackup					nvarchar(1000),				-- { [SYSTEM]|[USER]|name1,name2,etc }
-	@DatabasesToExclude					nvarchar(600) = NULL,		-- { NULL | name1,name2 }  
+	@DatabasesToBackup					nvarchar(MAX),				-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToExclude					nvarchar(MAX) = NULL,		-- { NULL | name1,name2 }  
+	@Priorities							nvarchar(MAX) = NULL,		-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
 	@BackupDirectory					nvarchar(2000),				-- { path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000) = NULL,		-- { NULL | path_for_backup_copies } 
 	@BackupRetentionHours				int,						-- Anything > this many hours will be DELETED. 
@@ -87,7 +88,7 @@ CREATE PROC dbo.dba_BackupDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.3.0.16581	
+	-- Version Version 3.4.0.16590
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -224,6 +225,7 @@ AS
 	EXEC dbo.dba_LoadDatabaseNames
 	    @Input = @DatabasesToBackup,
 	    @Exclusions = @DatabasesToExclude,
+		@Priorities = @Priorities,
 	    @Mode = N'BACKUP',
 	    @BackupType = @BackupType, 
 		@Output = @serialized OUTPUT;
