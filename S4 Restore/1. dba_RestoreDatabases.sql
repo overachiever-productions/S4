@@ -91,7 +91,7 @@ CREATE PROC dbo.dba_RestoreDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.5.0.16602		
+	-- Version 3.5.0.16602	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
