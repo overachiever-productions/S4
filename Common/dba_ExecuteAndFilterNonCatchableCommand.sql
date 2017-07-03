@@ -27,10 +27,10 @@ CREATE PROC dbo.dba_ExecuteAndFilterNonCatchableCommand
 AS
 	SET NOCOUNT ON;
 
-	-- Version 3.4.0.16590	
+	-- Version 3.5.0.16602	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
-	IF @filterType NOT IN ('BACKUP','RESTORE','CREATEDIR','ALTER','DELETEFILE') BEGIN;
+	IF @filterType NOT IN ('BACKUP','RESTORE','CREATEDIR','ALTER','DROP','DELETEFILE') BEGIN;
 		RAISERROR('Configuration Problem: Non-Supported @filterType value specified.', 16, 1);
 		SET @result = 'Configuration Problem with dba_ExecuteAndFilterNonCatchableCommand.';
 		RETURN -1;
@@ -64,6 +64,9 @@ AS
 	-- ALTER:
 	('Command(s) completed successfully.', 'ALTER'),
 	('Nonqualified transactions are being rolled back. Estimated rollback completion%', 'ALTER'), 
+
+	-- DROP:
+	('Command(s) completed successfully.', 'DROP'),
 
 	-- DELETEFILE:
 	('Command(s) completed successfully.','DELETEFILE')
