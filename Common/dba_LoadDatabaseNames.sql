@@ -47,7 +47,7 @@ CREATE PROC dbo.dba_LoadDatabaseNames
 AS
 	SET NOCOUNT ON; 
 
-	-- Version 3.5.0.16602	
+	-- Version 3.5.0.16604	
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-----------------------------------------------------------------------------
@@ -146,15 +146,17 @@ AS
             AND SUBSTRING(@SerializedDbs, N, 1) = ','
         ORDER BY #Tally.N;
 
-        IF @BackupType = 'LOG' BEGIN
-            DELETE FROM @targets 
-            WHERE [database_name] NOT IN (
-                SELECT name FROM sys.databases WHERE recovery_model_desc = 'FULL'
-            );
-          END;
-        ELSE 
-            DELETE FROM @targets
-            WHERE [database_name] NOT IN (SELECT name FROM sys.databases);
+		IF @Mode = N'BACKUP' BEGIN;
+			IF @BackupType = 'LOG' BEGIN
+				DELETE FROM @targets 
+				WHERE [database_name] NOT IN (
+					SELECT name FROM sys.databases WHERE recovery_model_desc = 'FULL'
+				);
+			  END;
+			ELSE 
+				DELETE FROM @targets
+				WHERE [database_name] NOT IN (SELECT name FROM sys.databases);
+		END
     END;
 
 	IF UPPER(@mode) = N'BACKUP' BEGIN;
@@ -245,7 +247,8 @@ AS
 	SET @Output = N'';
 	SELECT @Output = @Output + [database_name] + ',' FROM @targets ORDER BY entry_id;
 
-	SET @Output = LEFT(@Output, LEN(@Output) - 1);
+	IF ISNULL(@Output,'') != ''
+		SET @Output = LEFT(@Output, LEN(@Output) - 1);
 
 	RETURN 0;
 GO
