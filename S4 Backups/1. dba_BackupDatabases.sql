@@ -88,8 +88,8 @@ CREATE PROC dbo.dba_BackupDatabases
 AS
 	SET NOCOUNT ON;
 
-	-- Version Version 3.5.0.16602
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
