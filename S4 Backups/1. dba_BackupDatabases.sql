@@ -1,5 +1,23 @@
 
 
+-- NEXT STEPS (with version 3.8.2.16655 modifications):
+--		a) create-directory checks need to include the PATH as part of the error. 
+--				in other words, I specified: X:\Pigs\ as the path to push @CopyTo backups to... and got this message: 
+--					HResult 0x5620, Level 16, State 1 -> xp_create_subdir() returned error 3, 'The system cannot find the path specified.'
+--			I want that to say: "Error when creating/validating path X:\Pigs\ACESvc. Error [ HResult 0x5620, Level 16, State 1 -> xp_create_subdir() returned error 3, 'The system cannot find the path specified.' ]
+--		b) likewise, when I specified X:\Pigs as the path... file removal... (attempting to remove OLDER files from X:\pigs) threw errors - as in, ERRORS, or EXCEPTIONS (not warnings about file copy operations)
+--			in the form of: 
+--				Unexpected Error removing backups. Error: 50000 - Invalid @TargetDirectory specified - either the path does not exist, or SQL Server's Service Account does not have permissions to access the specified directory. 
+--			I'd like that to:
+--				1) specify @TargetDirectory VALUE - because a variable there doesn't help at ALL with debugging. 
+--				2) somehow log this as a COPY detail - (which shouldn't be too hard) ... given that this is related to the COPY TO operation. 
+--					or, in other words, failure to remove older backups from @BackupPath = Exception/Error. But failure to remove OLDER copies from the COPY TO Location is ... a network hiccup/warning instead. 
+--							(and, after x attempts at trying to copy files - which will also mean cleanup attempts), we'll STOP working on these and... be done. 
+
+--		c) start implementing and testing the retry logic (now that everything else is working as expected). 
+--		d) test the hell out of this. 
+
+
 /*
 
 	DEPENDENCIES:
@@ -93,27 +111,27 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dba_DatabaseBackups_Log', 'U') IS NULL BEGIN;
+	IF OBJECT_ID('dba_DatabaseBackups_Log', 'U') IS NULL BEGIN
 		RAISERROR('Table dbo.dba_DatabaseBackups_Log not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN;
+	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN
 		RAISERROR('Table-Valued Function dbo.dba_SplitString not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN;
+	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN
 		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN;
+	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN
 		RAISERROR('Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand', 'P') IS NULL BEGIN;
+	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand', 'P') IS NULL BEGIN
 		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
@@ -126,32 +144,32 @@ AS
 		ELSE NULL
 	END;
 
-	IF @Edition = N'STANDARD' OR @Edition IS NULL BEGIN;
+	IF @Edition = N'STANDARD' OR @Edition IS NULL BEGIN
 		-- check for Web:
 		IF @@VERSION LIKE '%web%' SET @Edition = 'WEB';
 	END;
 	
-	IF @Edition IS NULL BEGIN;
+	IF @Edition IS NULL BEGIN
 		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
 		RETURN -2;
 	END;
 
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN;
+	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
 		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
 		RETURN -3;
 	END;
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
-	IF (@PrintOnly = 0) AND (@Edition != 'EXPRESS') BEGIN; -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
+	IF (@PrintOnly = 0) AND (@Edition != 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 
 		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN;
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
 			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
 			RETURN -4;
 		 END;
-		ELSE BEGIN; 
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
 				RAISERROR('Invalild Operator Name Specified.', 16, 1);
 				RETURN -4;
 			END;
@@ -161,25 +179,25 @@ AS
 		DECLARE @DatabaseMailProfile nvarchar(255);
 		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
  
-		IF @DatabaseMailProfile != @MailProfileName BEGIN;
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
 			RETURN -5;
 		END; 
 	END;
 
-	IF NULLIF(@BackupDirectory, N'') IS NULL BEGIN;
+	IF NULLIF(@BackupDirectory, N'') IS NULL BEGIN
 		RAISERROR('@BackupsDirectory cannot be NULL and must be a valid path.', 16, 1);
 		RETURN -6;
 	END;
 
-	IF UPPER(@BackupType) NOT IN ('FULL', 'DIFF', 'LOG') BEGIN;
+	IF UPPER(@BackupType) NOT IN ('FULL', 'DIFF', 'LOG') BEGIN
 		PRINT 'Usage: @BackupType = FULL|DIFF|LOG';
 		RAISERROR('Invalid @BackupType Specified.', 16, 1);
 
 		RETURN -7;
 	END;
 
-	IF UPPER(@DatabasesToBackup) = N'[READ_FROM_FILESYSTEM]' BEGIN;
+	IF UPPER(@DatabasesToBackup) = N'[READ_FROM_FILESYSTEM]' BEGIN
 		RAISERROR('@DatabasesToBackup may NOT be set to the token [READ_FROM_FILESYSTEM] when processing backups.', 16, 1);
 		RETURN -9;
 	END
@@ -188,26 +206,26 @@ AS
 	DECLARE @fileRetentionMinutes int = @BackupRetentionHours * 60;
 	DECLARE @copyToFileRetentionMinutes int = @CopyToRetentionHours * 60;
 
-	IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN; 
+	IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN 
 		 RAISERROR('Invalid @BackupRetentionHours - greater than or equal to NOW.', 16, 1);
 		 RETURN -10;
 	END;
 
-	IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN;
-		IF (DATEADD(MINUTE, 0 - @copyToFileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN;
+	IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
+		IF (DATEADD(MINUTE, 0 - @copyToFileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN
 			RAISERROR('Invalid @CopyToBackupRetentionHours - greater than or equal to NOW.', 16, 1);
 			RETURN -11;
 		END;
 	END;
 
-	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN;
+	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
 		-- make sure the cert name is legit and that an encryption algorithm was specified:
-		IF NOT EXISTS (SELECT NULL FROM master.sys.certificates WHERE name = @EncryptionCertName) BEGIN;
+		IF NOT EXISTS (SELECT NULL FROM master.sys.certificates WHERE name = @EncryptionCertName) BEGIN
 			RAISERROR('Certificate name specified by @EncryptionCertName is not a valid certificate (not found in sys.certificates).', 16, 1);
 			RETURN -15;
-		END
+		END;
 
-		IF NULLIF(@EncryptionAlgorithm, '') IS NULL BEGIN;
+		IF NULLIF(@EncryptionAlgorithm, '') IS NULL BEGIN
 			RAISERROR('@EncryptionAlgorithm must be specified when @EncryptionCertName is specified.', 16, 1);
 			RETURN -15;
 		END;
@@ -217,7 +235,7 @@ AS
 	-- Determine which databases to backup:
 	DECLARE @executingSystemDbBackups bit = 0;
 
-	IF UPPER(@DatabasesToBackup) = '[SYSTEM]' BEGIN;
+	IF UPPER(@DatabasesToBackup) = '[SYSTEM]' BEGIN
 		SET @executingSystemDbBackups = 1;
 	END; 
 
@@ -239,21 +257,21 @@ AS
 	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
 
 	-- verify that we've got something: 
-	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN;
-		IF @AllowNonAccessibleSecondaries = 1 BEGIN;
+	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
+		IF @AllowNonAccessibleSecondaries = 1 BEGIN
 			-- Because we're dealing with Mirrored DBs, we won't fail or throw an error here. Instead, we'll just report success (with no DBs to backup).
 			PRINT 'No ONLINE databases available for backup. BACKUP terminating with success.';
 			RETURN 0;
 
 		   END; 
-		ELSE BEGIN;
+		ELSE BEGIN
 			PRINT 'Usage: @DatabasesToBackup = [SYSTEM]|[USER]|dbname1,dbname2,dbname3,etc';
 			RAISERROR('No databases specified for backup.', 16, 1);
 			RETURN -20;
 		END;
 	END;
 
-	IF @BackupDirectory = @CopyToBackupDirectory BEGIN;
+	IF @BackupDirectory = @CopyToBackupDirectory BEGIN
 		RAISERROR('@BackupDirectory and @CopyToBackupDirectory can NOT be the same directory.', 16, 1);
 		RETURN - 50;
 	END;
@@ -271,6 +289,7 @@ AS
 	DECLARE @executionID uniqueidentifier = NEWID();
 	DECLARE @operationStart datetime;
 	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @copyMessage nvarchar(MAX);
 	DECLARE @currentOperationID int;
 
 	DECLARE @currentDatabase sysname;
@@ -304,19 +323,21 @@ AS
 	OPEN backups;
 
 	FETCH NEXT FROM backups INTO @currentDatabase;
-	WHILE @@FETCH_STATUS = 0 BEGIN;
+	WHILE @@FETCH_STATUS = 0 BEGIN
 		
 		SET @errorMessage = NULL;
+		SET @copyMessage = NULL;
 		SET @outcome = NULL;
+		SET @currentOperationID = NULL;
 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
 		IF @currentDatabase IN (SELECT [name] FROM 
 				(SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE' 
 				 UNION SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY') x
-		) BEGIN; 
+		) BEGIN 
 			PRINT 'Skipping database: ' + @currentDatabase + ' because it is no longer available, online, or accessible.';
 			GOTO NextDatabase;  -- just 'continue' - i.e., short-circuit processing of this 'loop'... 
-		END 
+		END; 
 
 		-- specify and verify path info:
 		IF @executingSystemDbBackups = 1 AND @AddServerNameToSystemBackupPath = 1
@@ -328,14 +349,14 @@ AS
 		SET @copyToBackupPath = REPLACE(@backupPath, @BackupDirectory, @CopyToBackupDirectory); 
 
 		SET @operationStart = GETDATE();
-		IF (@LogSuccessfulOutcomes = 1) AND (@PrintOnly = 0)  BEGIN;
+		IF (@LogSuccessfulOutcomes = 1) AND (@PrintOnly = 0)  BEGIN
 			INSERT INTO dbo.dba_DatabaseBackups_Log (ExecutionId,BackupDate,[Database],BackupType,BackupPath,CopyToPath,BackupStart)
 			VALUES(@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart);
 			
 			SELECT @currentOperationID = SCOPE_IDENTITY();
 		END;
 
-		IF @RemoveFilesBeforeBackup = 1 BEGIN;
+		IF @RemoveFilesBeforeBackup = 1 BEGIN
 			GOTO RemoveOlderFiles;  -- zip down into the logic for removing files, then... once that's done... we'll get sent back up here (to DoneRemovingFilesBeforeBackup) to execute the backup... 
 
 DoneRemovingFilesBeforeBackup:
@@ -345,7 +366,7 @@ DoneRemovingFilesBeforeBackup:
 
 		IF @PrintOnly = 1
 			PRINT @command;
-		ELSE BEGIN;
+		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
 				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
@@ -355,35 +376,13 @@ DoneRemovingFilesBeforeBackup:
 
 			END TRY
 			BEGIN CATCH 
-				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: [' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N']. Backup Filepath non-valid. Cannot continue with backup.';
 			END CATCH;
 		END;
 
+		-- Normally, it wouldn't make sense to 'bail' on backups simply because we couldn't remove an older file. But, when the directive is to RemoveFilesBEFORE backups, we have to 'bail' to avoid running out of disk space when we can't delete files BEFORE backups. 
 		IF @errorMessage IS NOT NULL
 			GOTO NextDatabase;
-
-		IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN;
-			
-			SET @command = 'EXECUTE master.dbo.xp_create_subdir N''' + @copyToBackupPath + ''';';
-
-			IF @PrintOnly = 1 
-				PRINT @command;
-			ELSE BEGIN;
-				BEGIN TRY 
-					SET @outcome = NULL;
-					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
-					
-					IF @outcome IS NOT NULL
-						SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-				END TRY
-				BEGIN CATCH
-					SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-				END CATCH;
-			END;
-
-			IF @errorMessage IS NOT NULL
-				GOTO NextDatabase;
-		END;
 
 		-- Create a Backup Name: 
 		SET @extension = N'.bak';
@@ -396,9 +395,9 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @backupName = @BackupType + N'_' + @currentDatabase + '_backup_' + @timestamp + '_' + @offset + @extension;
 
-		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase, N'[]') + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' {MIRROR_TO}
+		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase, N'[]') + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
-		{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION}{FORMAT}, NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
+		{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION} NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
 	
 	';
 
@@ -417,26 +416,16 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{DIFFERENTIAL}', N'');
 
-		IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN;
+		IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
 			SET @encryptionClause = ' ENCRYPTION (ALGORITHM = ' + ISNULL(@EncryptionAlgorithm, N'AES_256') + N', SERVER CERTIFICATE = ' + ISNULL(@EncryptionCertName, '') + N'), ';
 			SET @command = REPLACE(@command, N'{ENCRYPTION}', @encryptionClause);
 		  END;
 		ELSE 
 			SET @command = REPLACE(@command, N'{ENCRYPTION}','');
 
-		-- NOTE: we only need to use FORMAT, INIT if a) we're on enteprise ed, and b) we're doing a MIRROR TO backup - otherwise, it's NOT needed. 
-		IF @Edition = N'ENTERPRISE' AND NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN;
-			SET @command = REPLACE(@command, N'{MIRROR_TO}', N'MIRROR TO DISK = N''' + @copyToBackupPath + N'\' + @backupName + N'''' + @crlf + @tab);
-			SET @command = REPLACE(@command, N'{FORMAT}', N'FORMAT, INIT');
-		  END;
-		ELSE BEGIN;
-			SET @command = REPLACE(@command, N'{MIRROR_TO}', N'');
-			SET @command = REPLACE(@command, N'{FORMAT}', N'NOFORMAT, NOINIT');
-		END;
-
 		IF @PrintOnly = 1
 			PRINT @command;
-		ELSE BEGIN;
+		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
 				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'BACKUP', @result = @outcome OUTPUT;
@@ -452,7 +441,7 @@ DoneRemovingFilesBeforeBackup:
 		IF @errorMessage IS NOT NULL
 			GOTO NextDatabase;
 
-		IF @LogSuccessfulOutcomes = 1 BEGIN;
+		IF @LogSuccessfulOutcomes = 1 BEGIN
 			UPDATE dbo.dba_DatabaseBackups_Log 
 			SET 
 				BackupEnd = GETDATE(),
@@ -468,11 +457,11 @@ DoneRemovingFilesBeforeBackup:
 
 		IF @PrintOnly = 1 
 			PRINT @command;
-		ELSE BEGIN;
+		ELSE BEGIN
 			BEGIN TRY
 				EXEC sys.sp_executesql @command;
 
-				IF @LogSuccessfulOutcomes = 1 BEGIN;
+				IF @LogSuccessfulOutcomes = 1 BEGIN
 					UPDATE dbo.dba_DatabaseBackups_Log
 					SET 
 						VerificationCheckEnd = GETDATE(),
@@ -497,59 +486,82 @@ DoneRemovingFilesBeforeBackup:
 		END;
 
 		-----------------------------------------------------------------------------
-		-- Execute Copy if a copy was specified and we're NOT on Enterprise Edition:
-		IF @CopyToBackupDirectory IS NOT NULL BEGIN;
+		-- Now that the backup (and, optionally/ideally) verification are done, copy the file to a secondary location if specified:
+		IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
+			
+			SET @copyStart = GETDATE();
+			SET @command = 'EXECUTE master.dbo.xp_create_subdir N''' + @copyToBackupPath + ''';';
 
-			IF @Edition = 'ENTERPRISE' BEGIN;
-				IF @LogSuccessfulOutcomes = 1 BEGIN;
-					UPDATE dbo.dba_DatabaseBackups_Log
-					SET 
-						CopyDetails = N'COPIED TO DESTINATION via Enterprise Edition''s MIRROR TO clause.'
-					WHERE 
-						BackupId = @currentOperationID;
-				END;
-			  END;
-			ELSE BEGIN 
+			IF @PrintOnly = 1 
+				PRINT @command;
+			ELSE BEGIN
+				BEGIN TRY 
+					SET @outcome = NULL;
+					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
+					
+					IF @outcome IS NOT NULL
+						SET @copyMessage = @outcome;
+				END TRY
+				BEGIN CATCH
+					SET @copyMessage = N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N'. Detail: [' + ISNULL(@copyMessage, '') + N']';
+				END CATCH;
+			END;
+
+			-- if we didn't run into validation errors, we can go ahead and try the copyTo process: 
+			IF @copyMessage IS NULL BEGIN
+
 				DECLARE @copyOutput TABLE ([output] nvarchar(2000));
 				DELETE FROM @copyOutput;
 
 				SET @command = 'EXEC xp_cmdshell ''COPY "' + @backupPath + N'\' + @backupName + '" "' + @copyToBackupPath + '\"''';
-				SET @copyStart = GETDATE();
 
 				IF @PrintOnly = 1
 					PRINT @command;
-				ELSE BEGIN;
+				ELSE BEGIN
 					BEGIN TRY
 
 						INSERT INTO @copyOutput ([output])
 						EXEC sys.sp_executesql @command;
 
 						IF NOT EXISTS(SELECT NULL FROM @copyOutput WHERE [output] LIKE '%1 file(s) copied%') BEGIN; -- there was an error, and we didn't copy the file.
-							SET @errorMessage = ISNULL(@errorMessage, '') + (SELECT TOP 1 [output] FROM @copyOutput WHERE [output] IS NOT NULL AND [output] NOT LIKE '%0 file(s) copied%') + N' ';
+							SET @copyMessage = ISNULL(@copyMessage, '') + (SELECT TOP 1 [output] FROM @copyOutput WHERE [output] IS NOT NULL AND [output] NOT LIKE '%0 file(s) copied%') + N' ';
 						END;
 
 						IF @LogSuccessfulOutcomes = 1 BEGIN 
 							UPDATE dbo.dba_DatabaseBackups_Log
 							SET 
-								CopyDetails = N'Started at {' + CONVERT(nvarchar(20), @copyStart, 120) + N'}, completed at {' + CONVERT(nvarchar(20), GETDATE(), 120) + '}. Outcome: SUCCESS.'
+								CopySucceeded = 1,
+								CopySeconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
+								FailedCopyAttempts = 0
 							WHERE
 								BackupId = @currentOperationID;
 						END;
 					END TRY
 					BEGIN CATCH
-						SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error copying backup to [' + @copyToBackupPath + @serverName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+
+						SET @copyMessage = ISNULL(@copyMessage, '') + N'Unexpected error copying backup to [' + @copyToBackupPath + @serverName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 					END CATCH;
+				END;
+		    END;
 
-					IF @errorMessage IS NOT NULL BEGIN;
-						UPDATE dbo.dba_DatabaseBackups_Log
-						SET 
-							CopyDetails = N'Started at {' + CONVERT(nvarchar(20), @copyStart, 120) + N'}, completed at {' + CONVERT(nvarchar(20), GETDATE(), 120) + '}. Outcome: FAILURE. Details: ' + @errorMessage + N' '
-						WHERE 
-							BackupId = @currentOperationID;
+			IF @copyMessage IS NOT NULL BEGIN
 
-						GOTO NextDatabase;
-					END;
-				END;				
+				IF @currentOperationId IS NULL BEGIN
+					-- if we weren't logging successful operations, this operation isn't now a 100% failure, but there are problems, so we need to create a row for reporting/tracking purposes:
+					INSERT INTO dbo.dba_DatabaseBackups_Log (ExecutionId, BackupDate, [Database], BackupType, BackupPath, CopyToPath, BackupStart, BackupEnd, BackupSucceeded)
+					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(),0);
+
+					SELECT @currentOperationID = SCOPE_IDENTITY();
+				END
+
+				UPDATE dbo.dba_DatabaseBackups_Log
+				SET 
+					CopySucceeded = 0, 
+					CopySeconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
+					FailedCopyAttempts = 1, 
+					CopyDetails = @copyMessage
+				WHERE 
+					BackupId = @currentOperationID;
 			END;
 		END;
 
@@ -670,6 +682,25 @@ NextDatabase:
 		CLOSE backups;
 		DEALLOCATE backups;
 	END;
+
+
+	-- MKC:
+--			need to add some additional logic/processing here. 
+--			a) look for failed copy operations up to X hours ago? 
+--		    b) try to re-run them - via dba_sync... or ... via 'raw' roboopy? hmmm. 
+--			c) mark any that succeed as done... success. 
+--			d) up-tick any that still failed. 
+--			e) for any that exceed @maxCopyToRetries - create an error and log it against all previous rows/databases that have failed? hmmm. Yeah... if we've been failing for, say, 45 minutes and sending 'warnings'... then we want to 
+--				'call it' for all of the ones that have failed up to this point... and flag them as 'errored out' (might require a new column in the table). OR... maybe it works by me putting something like the following into error details
+--				(for ALL rows that have failed up to this point - i.e., previous attempts + the current attempt/iteration):
+--				"Attempts to copy backups from @sourcePath to @copyToPath consistently failed from @backupEndTime to @now (duration?) over @MaxSomethingAttempts. No longer attempting to synchronize files - meaning that backups are in jeopardy. Please
+--					fix @CopyToPath and, when complete, run dba_syncDbs with such and such arguments? to ensure dbs copied on to secondary...."
+--			   because, if that happens... then... the 'history' for backups will show errors (whereas they didn't show/report errors previously - so that covers 'history' - with a summary of when we 'called it'... 
+--				and, this covers... the current rows as well. i.e., they'll have errors... which will then get picked up by the logic below. 
+--			f) for any true 'errors', those get picked up below. 
+--			g) for any non-errors - but failures to copy, there needs to be a 'warning' email sent - with a summary (list) of each db that hasn't copied - current number of attempts, how long it's been, etc. 
+
+
 
 	DECLARE @emailErrorMessage nvarchar(MAX);
 

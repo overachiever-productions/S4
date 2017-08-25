@@ -50,7 +50,10 @@ CREATE TABLE dbo.dba_DatabaseBackups_Log  (
 	VerificationCheckStart datetime NULL, 
 	VerificationCheckEnd datetime NULL, 
 	VerificationCheckSucceeded bit NULL, 
-	CopyDetails nvarchar(300) NULL, 
+	CopySucceeded bit NULL, 
+	CopySeconds int NULL, 
+	FailedCopyAttempts int NULL, 
+	CopyDetails nvarchar(MAX) NULL,
 	ErrorDetails nvarchar(MAX) NULL, 
 	CONSTRAINT PK_dba_DatabaseBackups_Log PRIMARY KEY CLUSTERED (BackupId)
 );
