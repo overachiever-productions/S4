@@ -41,10 +41,10 @@ AS
 		[output] varchar(500)
 	);
 
-	DECLARE @commdand nvarchar(2000) = N'IF EXIST "' + @Path + N'" ECHO EXISTS';
+	DECLARE @command nvarchar(2000) = N'IF EXIST "' + @Path + N'" ECHO EXISTS';
 
 	INSERT INTO @results ([output])  
-	EXEC sys.xp_cmdshell @commdand;
+	EXEC sys.xp_cmdshell @command;
 
 	IF EXISTS (SELECT NULL FROM @results WHERE [output] = 'EXISTS')
 		SET @Exists = 1;
