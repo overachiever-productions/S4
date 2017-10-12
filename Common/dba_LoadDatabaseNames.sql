@@ -40,7 +40,7 @@ CREATE PROC dbo.dba_LoadDatabaseNames
 	@Input				nvarchar(MAX),				-- [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | CHECKUP
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL, 
 	@Output				nvarchar(MAX)	OUTPUT
@@ -58,9 +58,16 @@ AS
 	END
 
 	IF ISNULL(@Mode, N'') = N'' BEGIN;
-		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE', 16, 1);
+		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | CHECKUP', 16, 1);
 		RETURN -2;
 	END
+
+
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'CHECKUP') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | CHECKUP', 16, 1);
+		RETURN -2;
+	END
+
 
 	IF UPPER(@Mode) = N'BACKUP' BEGIN;
 		IF @BackupType IS NULL BEGIN;
@@ -146,7 +153,7 @@ AS
             AND SUBSTRING(@SerializedDbs, N, 1) = ','
         ORDER BY #Tally.N;
 
-		IF @Mode = N'BACKUP' BEGIN;
+		IF UPPER(@Mode) = N'BACKUP' BEGIN;
 			IF @BackupType = 'LOG' BEGIN
 				DELETE FROM @targets 
 				WHERE [database_name] NOT IN (
@@ -159,7 +166,7 @@ AS
 		END
     END;
 
-	IF UPPER(@mode) = N'BACKUP' BEGIN;
+	IF UPPER(@Mode) = N'BACKUP' BEGIN;
 		-- Exclude any databases that aren't operational:
 		DELETE FROM @targets 
 		WHERE [database_name] IN (SELECT name FROM sys.databases WHERE state_desc != 'ONLINE')  -- this gets any dbs that are NOT online - INCLUDING those that are listed as 'RESTORING' because of mirroring. 

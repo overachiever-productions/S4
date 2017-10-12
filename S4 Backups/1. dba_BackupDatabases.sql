@@ -16,6 +16,12 @@
 
 --		c) start implementing and testing the retry logic (now that everything else is working as expected). 
 --		d) test the hell out of this. 
+--			AND, under these concerns, I have to ensure that WHEN I do a better job of makign each 'step' in the backup process (check paths, generate backup code, run backup code, verify backup, copy to secondary, delete backups, etc.)
+--				that I DON'T create a nightmare scenario where (either locally or on the secondary) that I'm _DELETING_ files when the backup didn't WORK or get copied/etc. 
+--					i.e., it's always better to 'run out of disk' (and get the alerts before hand) than to let 'cleanup code' somehow remove ALL backups in some 'nightmare' scenario where
+--					backups aren't happening, but 'cleanup' does happen - over the period of hours/days... 
+--						PRETTY sure I've got code that accounts for this scenario - just want to make sure I don't 'overwrite' that code/logic in making this routine more robust.
+
 
 
 /*
