@@ -176,7 +176,7 @@ AS
 		 END;
 		ELSE BEGIN
 			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-				RAISERROR('Invalild Operator Name Specified.', 16, 1);
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
 				RETURN -4;
 			END;
 		END;
@@ -582,12 +582,16 @@ RemoveOlderFiles:
 				IF @PrintOnly = 1 BEGIN;
 					PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @RetentionMinutes = ' + CAST(@copyToFileRetentionMinutes AS varchar(30)) + ', @PrintOnly = 1;';
 					
-					EXEC dbo.dba_RemoveBackupFiles
-						@BackupType= @BackupType,
-						@DatabasesToProcess = @currentDatabase,
-						@TargetDirectory = @BackupDirectory,
-						@RetentionMinutes = @fileRetentionMinutes, 
-						@PrintOnly = 1;
+                    EXEC dbo.dba_RemoveBackupFiles
+                        @BackupType= @BackupType,
+                        @DatabasesToProcess = @currentDatabase,
+                        @TargetDirectory = @BackupDirectory,
+                        @RetentionMinutes = @fileRetentionMinutes, 
+						@OperatorName = @OperatorName,
+						@MailProfileName  = @DatabaseMailProfile,
+
+						-- note:
+                        @PrintOnly = 1;
 
 				  END;
 				ELSE BEGIN;
@@ -598,6 +602,8 @@ RemoveOlderFiles:
 						@DatabasesToProcess = @currentDatabase,
 						@TargetDirectory = @BackupDirectory,
 						@RetentionMinutes = @fileRetentionMinutes, 
+						@OperatorName = @OperatorName,
+						@MailProfileName  = @DatabaseMailProfile, 
 						@Output = @outcome OUTPUT;
 
 					IF @outcome IS NOT NULL 
@@ -614,7 +620,11 @@ RemoveOlderFiles:
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
-							@RetentionMinutes = @copyToFileRetentionMinutes,
+							@RetentionMinutes = @copyToFileRetentionMinutes, 
+							@OperatorName = @OperatorName,
+							@MailProfileName  = @DatabaseMailProfile,
+
+							--note:
 							@PrintOnly = 1;
 
 					  END;
@@ -625,7 +635,9 @@ RemoveOlderFiles:
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
-							@RetentionMinutes = @copyToFileRetentionMinutes,
+							@RetentionMinutes = @copyToFileRetentionMinutes, 
+							@OperatorName = @OperatorName,
+							@MailProfileName  = @DatabaseMailProfile,
 							@Output = @outcome OUTPUT;					
 					
 						IF @outcome IS NOT NULL

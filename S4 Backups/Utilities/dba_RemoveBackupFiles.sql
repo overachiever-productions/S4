@@ -147,7 +147,7 @@ AS
 		 END;
 		ELSE BEGIN; 
 			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN;
-				RAISERROR('Invalild Operator Name Specified.', 16, 1);
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
 				RETURN -4;
 			END;
 		END;
