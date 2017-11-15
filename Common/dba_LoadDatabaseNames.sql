@@ -166,8 +166,8 @@ AS
 		END
     END;
 
-	IF UPPER(@Mode) = N'BACKUP' BEGIN;
-		-- Exclude any databases that aren't operational:
+	IF UPPER(@Mode) IN (N'BACKUP') BEGIN;
+		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
 		DELETE FROM @targets 
 		WHERE [database_name] IN (SELECT name FROM sys.databases WHERE state_desc != 'ONLINE')  -- this gets any dbs that are NOT online - INCLUDING those that are listed as 'RESTORING' because of mirroring. 
 			OR [database_name] IN (
