@@ -59,14 +59,10 @@
 
 EXEC dbo.dba_RemoveBackupFiles 
 	@BackupType = 'FULL', -- sysname
-    @DatabasesToBackup = N'[READ_FROM_FILESYSTEM]', -- nvarchar(1000)
+    @DatabasesToProcess = N'[READ_FROM_FILESYSTEM]', -- nvarchar(1000)
     @DatabasesToExclude = N'', -- nvarchar(600)
     @TargetDirectory = N'D:\SQLBackups', -- nvarchar(2000)
-    @RetentionMinutes = 12, -- int
-    @SendNotifications = NULL, -- bit
-    @OperatorName = NULL, -- sysname
-    @MailProfileName = NULL, -- sysname
-    @EmailSubjectPrefix = N'', -- nvarchar(50)
+    @Retention = '12m', -- int
     @PrintOnly = 1 -- bit
 
 */
@@ -83,7 +79,7 @@ CREATE PROC [dbo].[dba_RemoveBackupFiles]
 	@DatabasesToProcess					nvarchar(1000),					-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,			-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000),					-- { path_to_backups }
-	@RetentionMinutes					int,							-- Anything > this many minutes old (for @BackupType specified) will be removed.
+	@Retention							nvarchar(10),					-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
 	@Output								nvarchar(MAX) = NULL OUTPUT,	-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@SendNotifications					bit	= 0,						-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
@@ -174,13 +170,50 @@ AS
 		RETURN -7;
 	END;
 
-	-- translate the retention settings:
-	DECLARE @RetentionCutoffTime datetime = DATEADD(MINUTE, 0 - @RetentionMinutes, GETDATE());
+	SET @Retention = LTRIM(RTRIM(@Retention));
+	DECLARE @retentionType char(1);
+	DECLARE @retentionValue int;
 
-	IF @RetentionCutoffTime >= GETDATE() BEGIN; 
-		 RAISERROR('Invalid @RetentionCutoffTime - greater than or equal to NOW.', 16, 1);
-		 RETURN -10;
-	END;
+	SET @retentionType = LOWER(RIGHT(@Retention,1));
+
+	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
+	IF @retentionType NOT IN ('m','h','d','w','b') BEGIN 
+		RAISERROR('Invalid @Retention value specified. @Retention must take the format of #L - where # is a positive integer, and L is a SINGLE letter [m | h | d | w | b] for minutes, hours, days, weeks, or backups (i.e., a specific number of most recent backups to retain).', 16, 1);
+		RETURN -10000;	
+	END 
+
+	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
+	IF NOT EXISTS (SELECT 1 WHERE LEFT(@Retention, LEN(@Retention) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
+		RAISERROR('Invalid @Retention specified defined (more than one non-integer value found in @Retention value). Please specify an integer and then either [ m | h | d | w | b ] for minutes, hours, days, weeks, or backups (specific number of most recent backups) to retain.', 16, 1);
+		RETURN -10001;
+	END
+	
+	SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+
+	IF @retentionType = 'b'
+		PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+	ELSE 
+		PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+
+	DECLARE @retentionCutoffTime datetime = NULL; 
+	IF @retentionType != 'b' BEGIN
+		IF @retentionType = 'm'
+			SET @retentionCutoffTime = DATEADD(MINUTE, 0 - @retentionValue, GETDATE());
+
+		IF @retentionType = 'h'
+			SET @retentionCutoffTime = DATEADD(HOUR, 0 - @retentionValue, GETDATE());
+
+		IF @retentionType = 'd'
+			SET @retentionCutoffTime = DATEADD(DAY, 0 - @retentionValue, GETDATE());
+
+		IF @retentionType = 'w'
+			SET @retentionCutoffTime = DATEADD(WEEK, 0 - @retentionValue, GETDATE());
+		
+		IF @RetentionCutoffTime >= GETDATE() BEGIN; 
+			 RAISERROR('Invalid @Retention specification. Specified value is in the future.', 16, 1);
+			 RETURN -10;
+		END;		
+	END
 
 	-- normalize paths: 
 	IF(RIGHT(@TargetDirectory, 1) = '\')
@@ -236,6 +269,13 @@ AS
 		isfile bit
 	);
 
+	DECLARE @lastN table ( 
+		id int IDENTITY(1,1) NOT NULL, 
+		original_id int NOT NULL, 
+		backup_name nvarchar(512), 
+		backup_type sysname
+	);
+
 	DECLARE @errors table (
 		error_id int IDENTITY(1,1) NOT NULL, 
 		[error_message] nvarchar(MAX) NOT NULL
@@ -260,39 +300,12 @@ AS
 		SET @errorMessage = NULL;
 		SET @outcome = NULL;
 
-		IF @BackupType IN ('LOG', 'ALL') BEGIN;
-			-- Process any/all log files en-masse:
+		IF @retentionType = 'b' BEGIN -- Remove all backups of target type except the most recent N (where N is @retentionValue).
 			
-			SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 1;';
-
-			IF @PrintOnly = 1 
-				PRINT @command;
-			ELSE BEGIN 
-				BEGIN TRY
-					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
-
-					IF @outcome IS NOT NULL 
-						SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-
-				END TRY 
-				BEGIN CATCH
-					SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error deleting older LOG backups from [' + @targetPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-				END CATCH;				
-			END
-
-			IF @errorMessage IS NOT NULL BEGIN;
-				SET @errorMessage = ISNULL(@errorMessage, '') + N' [Command: ' + @command + N']';
-
-				INSERT INTO @errors ([error_message])
-				VALUES (@errorMessage);
-			END
-		END
-
-		IF @BackupType IN ('FULL', 'DIFF', 'ALL') BEGIN;
-
-			-- start by clearing any previous values:
+			-- clear out any state from previous iterations.
 			DELETE FROM @files;
+			DELETE FROM @lastN;
+
 			SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
 
 			IF @PrintOnly = 1
@@ -301,21 +314,72 @@ AS
 			INSERT INTO @files (subdirectory, depth, isfile)
 			EXEC sys.sp_executesql @command;
 
+			-- Remove non-matching files/entries:
 			DELETE FROM @files WHERE isfile = 0; -- remove directories.
-			DELETE FROM @files WHERE subdirectory NOT LIKE '%.bak'; -- remove (from processing) any files that don't use the .bak extension. 
 
-			-- If a specific backup type is specified ONLY target that backup type:
-			IF @BackupType != N'ALL' BEGIN;
-				
-				IF @BackupType = N'FULL'
-					DELETE FROM @files WHERE subdirectory NOT LIKE N'FULL%';
+			IF @BackupType IN ('LOG', 'ALL') BEGIN
+				INSERT INTO @lastN (original_id, backup_name, backup_type)
+				SELECT TOP (@retentionValue)
+					id, 
+					subdirectory, 
+					'LOG'
+				FROM 
+					@files
+				WHERE 
+					subdirectory LIKE 'LOG%.trn'
+				ORDER BY 
+					id DESC;
 
-				IF @BackupType = N'DIFF'
-					DELETE FROM @files WHERE subdirectory NOT LIKE N'DIFF%';
-			END
+				IF @BackupType != 'ALL' BEGIN
+					DELETE FROM @files WHERE subdirectory NOT LIKE '%.trn';  -- if we're NOT doing all, then remove DIFF and FULL backups... 
+				END;
+			END;
 
+			IF @BackupType IN ('FULL', 'ALL') BEGIN
+				INSERT INTO @lastN (original_id, backup_name, backup_type)
+				SELECT TOP (@retentionValue)
+					id, 
+					subdirectory, 
+					'FULL'
+				FROM 
+					@files
+				WHERE 
+					subdirectory LIKE 'FULL%.bak'
+				ORDER BY 
+					id DESC;
+
+				IF @BackupType != 'ALL' BEGIN 
+					DELETE FROM @files WHERE subdirectory NOT LIKE 'FULL%.bak'; -- if we're NOT doing all, then remove all non-FULL backups...  
+				END
+			END;
+
+			IF @BackupType IN ('DIFF', 'ALL') BEGIN
+				INSERT INTO @lastN (original_id, backup_name, backup_type)
+				SELECT TOP (@retentionValue)
+					id, 
+					subdirectory, 
+					'DIFF'
+				FROM 
+					@files
+				WHERE 
+					subdirectory LIKE 'DIFF%.bak'
+				ORDER BY 
+					id DESC;
+
+					IF @BackupType != 'ALL' BEGIN 
+						DELETE FROM @files WHERE subdirectory NOT LIKE 'DIFF%.bak'; -- if we're NOT doing all, the remove non-DIFFs so they won't be nuked.
+					END
+			END;
+			
+			-- prune any/all files we're supposed to keep: 
+			DELETE x 
+			FROM 
+				@files x 
+				INNER JOIN @lastN l ON x.id = l.original_id AND x.subdirectory = l.backup_name;
+
+			-- and delete all, enumerated, files that are left:
 			DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT subdirectory FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
+			SELECT subdirectory FROM @files ORDER BY id;
 
 			OPEN nuker;
 			FETCH NEXT FROM nuker INTO @file;
@@ -326,7 +390,7 @@ AS
 				SET @errorMessage = NULL;
 				SET @outcome = NULL
 
-				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 0;';
+				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), GETDATE(), 120), ' ', 'T') + ''', 0;';
 
 				IF @PrintOnly = 1 
 					PRINT @command;
@@ -340,7 +404,7 @@ AS
 
 					END TRY 
 					BEGIN CATCH
-						SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting DIFF/FULL Backup with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+						SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error deleting backup [' + @file + N'] from [' + @targetPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 					END CATCH
 
 				END;
@@ -353,12 +417,113 @@ AS
 				END
 
 				FETCH NEXT FROM nuker INTO @file;
+
 			END;
 
 			CLOSE nuker;
 			DEALLOCATE nuker;
+		  END;
+		ELSE BEGIN -- Any backups older than @RetentionCutoffTime are removed. 
 
-		END
+			IF @BackupType IN ('LOG', 'ALL') BEGIN;
+			
+				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 1;';
+
+				IF @PrintOnly = 1 
+					PRINT @command;
+				ELSE BEGIN 
+					BEGIN TRY
+						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
+
+						IF @outcome IS NOT NULL 
+							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
+
+					END TRY 
+					BEGIN CATCH
+						SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error deleting older LOG backups from [' + @targetPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+
+					END CATCH;				
+				END
+
+				IF @errorMessage IS NOT NULL BEGIN;
+					SET @errorMessage = ISNULL(@errorMessage, '') + N' [Command: ' + @command + N']';
+
+					INSERT INTO @errors ([error_message])
+					VALUES (@errorMessage);
+				END
+			END
+
+			IF @BackupType IN ('FULL', 'DIFF', 'ALL') BEGIN;
+
+				-- start by clearing any previous values:
+				DELETE FROM @files;
+				SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
+
+				IF @PrintOnly = 1
+					PRINT N'--' + @command;
+
+				INSERT INTO @files (subdirectory, depth, isfile)
+				EXEC sys.sp_executesql @command;
+
+				DELETE FROM @files WHERE isfile = 0; -- remove directories.
+				DELETE FROM @files WHERE subdirectory NOT LIKE '%.bak'; -- remove (from processing) any files that don't use the .bak extension. 
+
+				-- If a specific backup type is specified ONLY target that backup type:
+				IF @BackupType != N'ALL' BEGIN;
+				
+					IF @BackupType = N'FULL'
+						DELETE FROM @files WHERE subdirectory NOT LIKE N'FULL%';
+
+					IF @BackupType = N'DIFF'
+						DELETE FROM @files WHERE subdirectory NOT LIKE N'DIFF%';
+				END
+
+				DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
+				SELECT subdirectory FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
+
+				OPEN nuker;
+				FETCH NEXT FROM nuker INTO @file;
+
+				WHILE @@FETCH_STATUS = 0 BEGIN;
+
+					-- reset per each 'grab':
+					SET @errorMessage = NULL;
+					SET @outcome = NULL
+
+					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 0;';
+
+					IF @PrintOnly = 1 
+						PRINT @command;
+					ELSE BEGIN; 
+
+						BEGIN TRY
+							EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
+						
+							IF @outcome IS NOT NULL 
+								SET @errorMessage = ISNULL(@errorMessage, '')  + @outcome + N' ';
+
+						END TRY 
+						BEGIN CATCH
+							SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting DIFF/FULL Backup with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+						END CATCH
+
+					END;
+
+					IF @errorMessage IS NOT NULL BEGIN;
+						SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';
+
+						INSERT INTO @errors ([error_message])
+						VALUES (@errorMessage);
+					END
+
+					FETCH NEXT FROM nuker INTO @file;
+				END;
+
+				CLOSE nuker;
+				DEALLOCATE nuker;
+
+		    END
+		END;
 
 		FETCH NEXT FROM processor INTO @currentDirectory;
 	END
