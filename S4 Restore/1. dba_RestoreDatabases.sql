@@ -78,12 +78,12 @@ CREATE PROC dbo.dba_RestoreDatabases
 	@BackupsRootPath				nvarchar(MAX),
 	@RestoredRootDataPath			nvarchar(MAX),
 	@RestoredRootLogPath			nvarchar(MAX),
-	@RestoredDbNameSuffix			nvarchar(20),
+	@RestoredDbNamePattern			nvarchar(40) = N'{0}_test',
 	@AllowReplace					nchar(7) = NULL,		-- NULL or the exact term: N'REPLACE'...
 	@SkipLogBackups					bit = 0,
 	@CheckConsistency				bit = 1,
-	@DropDatabasesAfterRestore		bit = 0,		-- Only works if set to 1, and if we've RESTORED the db in question. 
-	@MaxNumberOfFailedDrops			int = 1,		-- number of failed DROP operations we'll tolerate before early termination.
+	@DropDatabasesAfterRestore		bit = 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
+	@MaxNumberOfFailedDrops			int = 1,				-- number of failed DROP operations we'll tolerate before early termination.
 	@OperatorName					sysname = N'Alerts',
 	@MailProfileName				sysname = N'General',
 	@EmailSubjectPrefix				nvarchar(50) = N'[RESTORE TEST] ',
@@ -96,84 +96,89 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dba_DatabaseRestore_Log', 'U') IS NULL BEGIN;
-		THROW 510000, N'Table dbo.dba_DatabaseRestore_Log not defined - unable to continue.', 1;
+	IF OBJECT_ID('dba_DatabaseRestore_Log', 'U') IS NULL BEGIN
+		RAISERROR('Table dbo.dba_DatabaseRestore_Log not defined - unable to continue.', 16, 1);
 		RETURN -1;
-	END
+	END;
 	
-	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN;
+	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN
 		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN;
-		THROW 510000, N'Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 1;
+	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN
+		RAISERROR('Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 16, 1);
 		RETURN -1;
-	END
+	END;
 
-	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand','P') IS NULL BEGIN;
-		THROW 510000, N'Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 1;
+	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand','P') IS NULL BEGIN
+		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
 		RETURN -1;
-	END
+	END;
 
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN;
-		THROW 510000, N'xp_cmdshell is not currently enabled.', 1;
+	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
+		RAISERROR('xp_cmdshell is not currently enabled.', 16, 1);
 		RETURN -1;
-	END
+	END;
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
-	IF @PrintOnly = 0 BEGIN; -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
+	IF @PrintOnly = 0 BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 		
 		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN;
-			THROW 510000, N'An Operator is not specified - error details can''t be sent if/when encountered.', 1;
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
 			RETURN -2;
-		 END
+		 END;
 		ELSE BEGIN 
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN;
-				THROW 510000, N'Invalild Operator Name Specified.', 1;
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalild Operator Name Specified.', 16, 1);
 				RETURN -2;
-			END
-		END
+			END;
+		END;
 
 		-- Profile Checks:
 		DECLARE @DatabaseMailProfile nvarchar(255)
 		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
  
-		IF @DatabaseMailProfile != @MailProfileName BEGIN;
-			THROW 510000, N'Specified Mail Profile is invalid or Database Mail is not enabled.', 1;
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
 			RETURN -2;
-		END 
-	END
+		END; 
+	END;
 
-	IF @MaxNumberOfFailedDrops <= 0 BEGIN;
+	IF @MaxNumberOfFailedDrops <= 0 BEGIN
 		RAISERROR('@MaxNumberOfFailedDrops must be set to a value of 1 or higher.', 16, 1);
 		RETURN -6;
-	END
+	END;
 
-	IF NULLIF(@AllowReplace, '') IS NOT NULL AND UPPER(@AllowReplace) != N'REPLACE' BEGIN;
-		THROW 510000, N'The @AllowReplace switch must be set to NULL or the exact term N''REPLACE''.', 1;
+	IF NULLIF(@AllowReplace, '') IS NOT NULL AND UPPER(@AllowReplace) != N'REPLACE' BEGIN
+		RAISERROR('The @AllowReplace switch must be set to NULL or the exact term N''REPLACE''.', 16, 1);
 		RETURN -4;
-	END
+	END;
 
-	IF @AllowReplace IS NOT NULL AND @DropDatabasesAfterRestore = 1 BEGIN;
-		THROW 510000, N'Databases cannot be explicitly REPLACED and DROPPED after being replaced. If you wish DBs to be restored (on a different server for testing) with SAME names as PROD, simply leave suffix empty (but not NULL) and leave @AllowReplace NULL.', 1;
+	IF @AllowReplace IS NOT NULL AND @DropDatabasesAfterRestore = 1 BEGIN
+		RAISERROR('Databases cannot be explicitly REPLACED and DROPPED after being replaced. If you wish DBs to be restored (on a different server for testing) with SAME names as PROD, simply leave suffix empty (but not NULL) and leave @AllowReplace NULL.', 16, 1);
 		RETURN -6;
-	END
+	END;
 
-	IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN;
+	IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN
 		RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dba_RestoreDatabases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
 		RETURN -10;
-	END
+	END;
 
 	IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
 		SET @DatabasesToExclude = NULL;
 
-	IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) != N'[READ_FROM_FILESYSTEM]') BEGIN;
+	IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) != N'[READ_FROM_FILESYSTEM]') BEGIN
 		RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the [READ_FROM_FILESYSTEM] token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
 		RETURN -20;
-	END
+	END;
+
+	IF (NULLIF(@RestoredDbNamePattern,'')) IS NULL BEGIN
+		RAISERROR('@RestoredDbNamePattern can NOT be NULL or empty. It MAY also contain the place-holder token ''{0}'' to represent the name of the original database (e.g., ''{0}_test'' would become ''dbname_test'' when restoring a database named ''dbname'').', 16, 1);
+		RETURN -22;
+	END;
 
 	-- 'Global' Variables:
 	DECLARE @isValid bit;
@@ -344,7 +349,9 @@ AS
 	WHILE @@FETCH_STATUS = 0 BEGIN;
 		
 		SET @statusDetail = NULL; -- reset every 'loop' through... 
-		SET @restoredName = @databaseToRestore + ISNULL(@RestoredDbNameSuffix, '');
+		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
+		IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern != '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
+			SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
 		IF @PrintOnly = 0 BEGIN;
 			INSERT INTO dbo.dba_DatabaseRestore_Log (ExecutionId, [Database], RestoredAs, [RestoreStart], ErrorDetails)
