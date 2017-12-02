@@ -23,6 +23,10 @@
 --						PRETTY sure I've got code that accounts for this scenario - just want to make sure I don't 'overwrite' that code/logic in making this routine more robust.
 
 
+-- ALSO see the vNEXT notes down blow... in terms of 'retry' logic and DECOUPLING copy operations from backup operations. that stuff all needs to be tackle at the same time. 
+
+
+
 
 /*
 
@@ -57,8 +61,24 @@
 		- Review and potentially integrate any details defined here: 
 			http://vickyharp.com/2013/12/killing-sessions-with-external-wait-types/
 
-		-- Better Error Handling. 
+		- Better Error Handling. 
 			Right now... many of the operations that UPDATE a row in ... dba_BackupDatabases_Log... are NOT doing ErrorMessage = ErrorMessage + @ErrorMessage - meaning code is overwriting previous details... 
+
+		- vNEXT: 
+			In addition to the 'retry' logic stuff below... need to 'decouple' secondary/copy-to backups from this sproc. 
+				specifically, implementation logic shouldn't be handled here... it should be handled in the \utilities\dba_SynchronizeBackups sproc... 
+				AND this sproc will just attempt to CALL that... and handle errors/issues when that won't work... i..e, that'd be a situation where a) we retry, b) we warn that off-box backups/copies weren't able to run as expected... 
+
+				then... in the core of dba_SynchronizeBackups the following would be done: 
+					a) copy files from primary to secondary that aren't already there... 
+					b) remove any files > @CopyToRetention... 
+					
+					I BELIEVE the logic there should be fairly tricksy/hard... 
+					 vs what i'm doing now - which is 'hard coupled' logic (local backup and then COPY - or the operation FAILS).... 
+					
+					BUT, i think i could probably do something where... i added a new column to dba_BackupLogs... that would keep tabs of any files that hadn't been copied over? or maybe a whole new table? 
+						so that once 'connectivity' is back up... we just copy any files that need to be copied... and something lilke that... right? 
+						 
 
 		- Add in simplified 'retry' logic for both backups and copy-to operations (i.e., something along the lines of adding a column to the 'list' of 
 			dbs being backed up and if there's a failure... just add a counter/increment-counter for number of failures into @targetDatabases along
@@ -78,7 +98,7 @@
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
 
 	Scalable:
-		22+
+		24+
 */
 
 
@@ -97,8 +117,8 @@ CREATE PROC dbo.dba_BackupDatabases
 	@Priorities							nvarchar(MAX) = NULL,		-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
 	@BackupDirectory					nvarchar(2000),				-- { path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000) = NULL,		-- { NULL | path_for_backup_copies } 
-	@BackupRetentionHours				int,						-- Anything > this many hours will be DELETED. 
-	@CopyToRetentionHours				int = NULL,					-- As above, but allows for diff retention settings to be configured for copied/secondary backups.
+	@BackupRetention					nvarchar(10),				-- [DOCUMENT HERE]
+	@CopyToRetention					nvarchar(10) = NULL,		-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
 	@RemoveFilesBeforeBackup			bit = 0,					-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
 	@EncryptionCertName					sysname = NULL,				-- Ignored if not specified. 
 	@EncryptionAlgorithm				sysname = NULL,				-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
@@ -208,21 +228,21 @@ AS
 		RETURN -9;
 	END
 
-	-- translate the hours settings:
-	DECLARE @fileRetentionMinutes int = @BackupRetentionHours * 60;
-	DECLARE @copyToFileRetentionMinutes int = @CopyToRetentionHours * 60;
 
-	IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN 
-		 RAISERROR('Invalid @BackupRetentionHours - greater than or equal to NOW.', 16, 1);
-		 RETURN -10;
-	END;
+-- TODO: I really need to validate retention details HERE... i.e., BEFORE we start running backups. 
+--		not sure of the best way to do that - i.e., short of copy/paste of the logic (here and there).
 
-	IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
-		IF (DATEADD(MINUTE, 0 - @copyToFileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN
-			RAISERROR('Invalid @CopyToBackupRetentionHours - greater than or equal to NOW.', 16, 1);
-			RETURN -11;
-		END;
-	END;
+	--IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN 
+	--	 RAISERROR('Invalid @BackupRetentionHours - greater than or equal to NOW.', 16, 1);
+	--	 RETURN -10;
+	--END;
+
+	--IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
+	--	IF (DATEADD(MINUTE, 0 - @copyToFileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN
+	--		RAISERROR('Invalid @CopyToBackupRetentionHours - greater than or equal to NOW.', 16, 1);
+	--		RETURN -11;
+	--	END;
+	--END;
 
 	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
 		-- make sure the cert name is legit and that an encryption algorithm was specified:
@@ -580,13 +600,13 @@ RemoveOlderFiles:
 			BEGIN TRY
 
 				IF @PrintOnly = 1 BEGIN;
-					PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @RetentionMinutes = ' + CAST(@copyToFileRetentionMinutes AS varchar(30)) + ', @PrintOnly = 1;';
+					PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @PrintOnly = 1;';
 					
                     EXEC dbo.dba_RemoveBackupFiles
                         @BackupType= @BackupType,
                         @DatabasesToProcess = @currentDatabase,
                         @TargetDirectory = @BackupDirectory,
-                        @RetentionMinutes = @fileRetentionMinutes, 
+                        @Retention = @BackupRetention, 
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile,
 
@@ -601,7 +621,7 @@ RemoveOlderFiles:
 						@BackupType= @BackupType,
 						@DatabasesToProcess = @currentDatabase,
 						@TargetDirectory = @BackupDirectory,
-						@RetentionMinutes = @fileRetentionMinutes, 
+						@Retention = @BackupRetention,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile, 
 						@Output = @outcome OUTPUT;
@@ -614,13 +634,13 @@ RemoveOlderFiles:
 				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
 					IF @PrintOnly = 1 BEGIN;
-						PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @RetentionMinutes = ' + CAST(@copyToFileRetentionMinutes AS varchar(30)) + ', @PrintOnly = 1;';
+						PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @PrintOnly = 1;';
 						
 						EXEC dbo.dba_RemoveBackupFiles
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
-							@RetentionMinutes = @copyToFileRetentionMinutes, 
+							@Retention = @CopyToRetention, 
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 
@@ -635,7 +655,7 @@ RemoveOlderFiles:
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
-							@RetentionMinutes = @copyToFileRetentionMinutes, 
+							@Retention = @CopyToRetention, 
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 							@Output = @outcome OUTPUT;					

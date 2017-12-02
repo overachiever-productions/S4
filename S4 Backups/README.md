@@ -148,8 +148,8 @@ EXEC dbo.dba_BackupDatabases
     [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
     @BackupDirectory = N'D:\sqlbackups', 
     [@CopyToBackupDirectory = N'',]
-    @BackupRetentionHours = int-retention-hours, 
-    [@CopyToRetentionHours = int-retention-hours,]
+    @BackupRetention = { integer_value + m | h | d | w | b specifier }, 
+    [@CopyToRetention = { integer_value + m | h | d | w | b specifier },]
     [@RemoveFilesBeforeBackup] = { 0 | 1 }, 
     [@EncryptionCertName = 'ServerCertName',] 
     [@EncryptionAlgorithm = '{ AES 256 | TRIPLE_DES_3KEY }',] 
@@ -195,18 +195,21 @@ Required. Specifies the path to the root folder where all backups defined by @Da
 
 Optional - but highly recommended. When specified, backups (written to @BackupDirectory) will be copied to @CopyToBackupDirectory as part of the backup process. Must be a valid Windows path and, by design (though not enforced), should be an 'off-box' location for proper protection purposes. 
 
-**@BackupRetenionHours** = integer-hours-to-retain-backups
+**@BackupRetenion* = { integer_value + m | h | d | w | b specifier }
 
-Required. Must be greater than 0. Specifies the amount of time, in hours, that backups of the current type (i.e., @BackupType) should be retained or kept. For example, if an @BackupType of 'LOG' is specified and an @BackupDirectory of 'D:\Backups' is specified along with a @BackupRetentionHours value of 24 (hours), then if database 'Widgets' is being backed up, dba_BackupDatabases will then remove any .trn (transaction log backups) > 24 hours old while keeping any (transaction-log) backups < 24 hours old. 
+Required. Specifies the amount of time (in m(inutes), h(ours), d(ays), or w(eeks)) that backups of the current type (i.e., @BackupType) should be retained or kept. May also be used to specify the specific number of b(ackups) to be retained instead of specifying a 'time threshold'. For example, if an @BackupType of 'LOG' is specified, and @BackupDirectory is set to 'D:\SQLBackups' is specified with a @BackupRetention of '24h' (i.e., 24h(ours)), then if database 'Widgets' is being backed up, dba_BackupDatabases will then remove any .trn (transaction log backups) > 24 hours hold while keeping any transaction-log backups < 24 hours old. Similarly, if @BackupType were specified as 'FULL' and @BackupRetention were set to '2d' (2 days or the equivalent of 48h), then FULL backups of any database being processed > 48 hours (2 days) old would be removed, while any FULL backups newer than the specified threshold would be kept. 
 
-**NOTE:** *Retention details are only applied against the @BackupType being currently executed. For example,  T-Log backups with an @BackupRetentionHours of 24 hours will NOT remove FULL or DIFF backups for the same database (even in the same folder) - and only if/when the name of the database is matched AND only when the same @BackupDirectory for the previous backups is specified as the backups being currently executed. Or, in other words, dba_BackupDatabases does NOT 'remember' where your previous backups were stored and go out and delete any previous backups older than @BackupRetentionHours. Instead, after each database is backed up, dba_BackupDatabases will check the 'current' folder for any backups of @BackupType that are older than @BackupRetentionHours and ONLY remove those files if/when the file-backup-names match those of the database being backed up, when the files are in the same folder, and if the backups themselves are older than @BackupRetentionHours.*
+Likewise, if you simply wish to keep a SPECIFIED number of backups - instead of relying upon dates, you can specify #b - where # is the number of backups you'd like to keep (of the current @BackupType being processed). So, for example, if you specified @BackupType = 'DIFF' and @BackupRetention = '1b' - you'd only be keeping the LATEST backup (assuming you remove backups AFTER creating them - because you'd first execute a DIFF backup, then remove all but the last #b(ackups) - or all but the last backup (which you had just taken). 
 
-**[@CopyToRetentionHours** = integer-hours-to-retain-COPIES-of-backups]
 
-This parameter is required if @CopyToBackupDirectory is specified. Otherwise, it works almost exactly like @BackupRetentionHours (in terms of how files are evaluated and/or removed) BUT provides a separate set of retention details for your backup copies. Or, in other words, you could specify a @BackupRetentionHours of 24 for your FULL backups of on-box backups (i.e., @BackupDirectory backups), and a value of 48 (or whatever else) for your @CopyToRetentionHours - meaning that 'local' backups of the type specified would be kept for 24 hours, while remote (off-box) backups were kept for 48 hours. 
+**NOTE:** *Retention details are only applied against the @BackupType being currently executed. For example,  T-Log backups with an @BackupRetention of '24h' will NOT remove FULL or DIFF backups for the same database (even in the same folder). (Retention ONLY works if when the database name AND backup type is an exact match.) Or, in other words, dba_BackupDatabases does NOT 'remember' where your previous backups were stored and go out and delete any previous backups older than @BackupRetention. Instead, during retention processing, dba_BackupDatabases will check the 'current' folder for any backups of @BackupType that are older than @BackupRetention and ONLY remove those files if/when the file-backup-names match those of the database being backed up, when the files are in the same folder, and if the backups themselves match the qualifiers stated in @BackupRetention.*
+
+**[@CopyToRetention** = { integer_value + m | h | d | w | b specifier }]
+
+This parameter is required if @CopyToBackupDirectory is specified. Otherwise, it works almost exactly like @BackupRetention (in terms of how files are evaluated and/or removed) EXCEPT that it provides a separate set of retention details for your backup copies. Or, in other words, you could specify a @BackupRetention of '24h' for your FULL backups of on-box backups (i.e., @BackupDirectory backups), and a value of '48h' (or whatever else) for your @CopyToRetention - meaning that 'local' backups of the type specified would be kept for 24 hours, while remote (off-box) backups were kept for 48 hours. 
 
 **[@RemoveFilesBeforeBackup** = { 0 | 1 } ]
-Optional. Default = 0 (false). When set to true (1), will attempt to delete any backups (and backup copies) matching @BackupRetentionHours (and @CopyToBackupRetentionHours) BEFORE executing the BACKUP + VERIFY commands. If there is a FAILURE during the process of removing older backups, the corresponding backup will be SKIPPED (as the expectation is that this parameter is set to 1 when available space may be at a premium and the database(s) being backed-up might be large enough to cause issues with disk-space otherwise).
+Optional. Default = 0 (false). When set to true (1), will attempt to delete any backups (and backup copies) matching @BackupRetention (and @CopyToBackupRetention) BEFORE executing the BACKUP + VERIFY commands. If there is a FAILURE during the process of removing older backups, the corresponding backup will be SKIPPED (as the expectation is that this parameter is set to 1 when available space may be at a premium and the database(s) being backed-up might be large enough to cause issues with disk-space otherwise).
 
 **[@EncryptionCertName** = 'NameOfCertToUseForEncryption' ]
 
@@ -271,7 +274,7 @@ When processing backups for cleanup (i.e., evaluating vs retention times), dba_B
 - after completing a backup (if the backup fails, file-cleanup will NOT be processed - so that you don't have a set of backups fail over a long weekend and watch all of your existing (good) backups slowly get 'eaten' while no one was watching their inbox, etc.). 
 - against the sub-folder for the database currently being processed. 
 
-The secondary point / limitation is very important for purposes of addressing more 'complex' setups. Specifically, assume you have 4 (user) databases that you need to backup. Assume that 3 of them are of medium to 'meh' importance, but one is of SUCH critical importance you always want at least 3 days of FULL and T-LOG backups available for it - whereas, there isn't enough disk space to keep copies of the other 3 database for SUCH a long time (i.e., you can only 'manage' 2 days of backups for these databases). To this end, you would create DIFFERENT jobs for the 3x 'medium-important' jobs - with RetentionHours in/around the 48 hour mark - and distinct/different jobs (or at least steps or sets of commands) for your 'critical' database that would keep backups for 72 hours. As such, when @RetentionHours (or @CopyToRetentionHours) were being processed against your 3 'medium' importance databases, ONLY files in the folders for these 3x databases will be considered for currently specified retention (and the backups for your 4th/Critical database will NOT be touched during execution). 
+The secondary point / limitation is very important for purposes of addressing more 'complex' setups. Specifically, assume you have 4 (user) databases that you need to backup. Assume that 3 of them are of medium to 'meh' importance, but one is of SUCH critical importance you always want at least 3 days of FULL and T-LOG backups available for it - whereas, there isn't enough disk space to keep copies of the other 3 database for SUCH a long time (i.e., you can only 'manage' 2 days of backups for these databases). To this end, you would create DIFFERENT jobs for the 3x 'medium-important' jobs - with RetentionHours in/around the 48 hour mark - and distinct/different jobs (or at least steps or sets of commands) for your 'critical' database that would keep backups for 72 hours. As such, when @RetentionHours (or @CopyToRetention) were being processed against your 3 'medium' importance databases, ONLY files in the folders for these 3x databases will be considered for currently specified retention (and the backups for your 4th/Critical database will NOT be touched during execution). 
 
 ### Backup Copies - Enterprise Edition vs Other Editions
 SQL Server Enterprise Edition Backups support a 'MIRROR TO' clause that allows backups to be mirrored (i.e., replicated) to multiple additional endpoints/destinations (folders) during execution. As such, if dba_BackupDatabases is deployed to an Enterprise Edition SQL Server, it will use native/built-in MIRROR TO functionality to create backup copies. Otherwise, on all other Editions, 'copy' operations are executed by first executing the backup against the path specified by @BackupDirectory (and the sub-folder within that directory for the database being processed), the backup is then verified, and then xp_cmdshell (i.e., a command prompt) is then used to 'manually' copy files to @CopyToBackupDirectory + sub-folder for each database being processed. 
@@ -289,14 +292,14 @@ WARNING: If you configure your system for Encrypted Backups, make SURE to backup
 
 The following example will backup all system databases (master, model, and msdb (there's no need to backup tempdb - nor can it be backed up)) to D:\SQLBackups. Once completed, there will be a new subfolder for each database backed up (i.e., D:\SQLBackups\master and D:\SQLBackups\model, etc.) IF there weren't folders already created with these names, and a new, FULL, backup of each database will be dropped into each respective folder. 
 
-Further, any FULL backups of these databases that might have already been in this folder will be evaluated to review how old they are, and any that are > 48 hours old will be deleted - as per the @BackupRetentionHours specification. 
+Further, any FULL backups of these databases that might have already been in this folder will be evaluated to review how old they are, and any that are > 48 hours old will be deleted - as per the @BackupRetention specification. 
 
 ```sql
 EXEC master.dbo.dba_BackupDatabases
     @BackupType = 'FULL', 
     @DatabasesToBackup = N'[SYSTEM]', 
     @BackupDirectory = N'D:\SQLBackups', 
-    @BackupRetentionHours = 48;
+    @BackupRetention = '48h';
 ```
 
 Note too that the example above contains, effectively, the minimum number of specified parameters required for execution (i.e., which DBs to backup, what TYPE of backup, a path, and a retention time). 
@@ -318,8 +321,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[SYSTEM]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72; -- longer retention than 'on-box' backups
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h'; -- longer retention than 'on-box' backups
 ```
 
 ### C. Full Backup of All User Databases - Locally and to a Network Share
@@ -339,8 +342,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
 ```
 
 ### D. Full Backup of User Databases - Excluding explicitly specified databases
@@ -354,8 +357,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToExclude = N'Widgets, Billing,Monitoring', 
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
 ```
 ### E. Explicitly Specifying Database Names for Backup Selection
 
@@ -372,8 +375,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToExclude = N'Widgets, Billing,Monitoring', 
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
 ```
 
 ### F. Setting up Transaction-Log Backups
@@ -382,7 +385,7 @@ In the following example, Transaction-log backups are targeted (i.e., @BackType 
 
 Notes:
 - If all of your databases (i.e., on a given server) are in SIMPLE recovery mode, attempting to execute with an @BackupType of 'LOG' will throw an error - because it won't find ANY transaction logs to backup. 
-- In the example below, @BackupRetentionHours has been set to 49 (hours). Previous examples have used 'clean multiples' of 24 hour periods (i.e., days) - but there's no 'rule' about how many hours can be specified - other than that this value cannot be 0 or NULL. (And, by setting the value to 'somewhat arbitrary' values like 25 hours instead of 24 hours, you're ensuring that if a set of backups 'go long' in terms of execution time, you'll always have a full 24 hours + a 1 hour backup worth of backups and such.)
+- In the example below, @BackupRetention has been set to 49 (hours). Previous examples have used 'clean multiples' of 24 hour periods (i.e., days) - but there's no 'rule' about how many hours can be specified - other than that this value cannot be 0 or NULL. (And, by setting the value to 'somewhat arbitrary' values like 25 hours instead of 24 hours, you're ensuring that if a set of backups 'go long' in terms of execution time, you'll always have a full 24 hours + a 1 hour backup worth of backups and such.)
 
 
 ```sql
@@ -391,8 +394,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 49, 
-    @CopyToRetentionHours = 72;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
 ```
 
 
@@ -410,8 +413,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 49, 
-    @CopyToRetentionHours = 72, 
+    @BackupRetention = '49h', 
+    @CopyToRetention = '72h';
     @EncryptionCertName = N'BackupsEncryptionCert', 
     @EncryptionAlgorithm = N'AES_256';
 ```
@@ -434,7 +437,7 @@ EXEC master.dbo.dba_BackupDatabases
     @BackupType = 'FULL', 
     @DatabasesToBackup = N'[SYSTEM]', 
     @BackupDirectory = N'\\SharedBackups\SQLServer\', 
-    @BackupRetentionHours = 48,
+    @BackupRetention = '48h',
     @AddServerNameToSystemBackupPath = 1;
 ```
 
@@ -450,8 +453,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'\\SharedBackups\SQLServer\', 
     @CopyToBackupDirectory = N'\\BackupServer\CYABackups\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72,
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
     @AllowNonAccessibleSecondaries = 1;
 ```
 
@@ -467,8 +470,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72, 
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h'; 
     @LogSuccessfulOutcomes = 1;
 ```
 
@@ -483,8 +486,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72, 
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h'; 
     @OperatorName = N'DBA',
     @MailProfileName = N'DbMail',
     @EmailSubjectPrefix = N'!! BACKUPS !! - ';
@@ -504,8 +507,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[USER]',
     @BackupDirectory = N'D:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\SQLBackups\ServerName\', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72,
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
     @PrintOnly = 1; -- don't execute. print commands instead...
 ```
 
@@ -525,7 +528,7 @@ Otherwise, some highly-simplified best-practices for automating SQL Server backu
 - **FULL Backups - Recommendations and Frequency of Backups.** All databases, including dev/testing/stating databases, should typically see a FULL backup every day. The exception would be LARGE databases (i.e., databases typically above/beyond 1TB in size - where it might make more sense to execute FULL backups on weekends, and execute DIFF backups nightly), or dev/test databases in SIMPLE recovery mode that don't see much activity and could 'lose a week' (or multiple days/whatever) of backups without causing ANY problems. As such, you should typically create a nightly job that executes FULL backups of all [SYSTEM] databases (see Example B) and another, distinct, job that executes FULL backups of [USER] databases (see Example C below). Then, if you've got some (user) databases you're SURE you don't care about AND that you can recreate if needed, then you can exclude these using @DatabasesToExclude.
 - **A Primary Role for DIFF Backups.** Once FULL backups of all (key/important and even important-ish) databases have been addressed (i.e., you've created jobs for them), you may want to consider setting up DIFF backups DURING THE DAY to address 'vectored' backups of larger and VERY HEAVILY used databases - as a means of decreasing recovery times in a disaster. For example, if you've got a 300GB database that sees a few thousand transactions per minute (or more), and generates MBs or 10s of MBs of (compressed) T-LOG backups every 5 or 10 minutes when T-Log backups are run, then if you run into a disaster at, say, 3PM, you're going to have to restore a FULL Backup for this database plus a LOT of transactional activity - which CAN take a large amount of time. Therefore, if you've got specific RTOs in place, one means of 'boosting' recovery times is to 'interject' DIFF backups at key periods of the day. So, for example, if you took a FULL backup at 2AM, and DIFF backups at 8AM, Noon, and 4PM, then ran into a disaster at 3PM, you'd restore the 2AM FULL + the Noon DIFF (which would let you buypass 10 hours of T-Log backups) to help speed up execution. As such, if something like this makes sense in your environment, make sure to review the examples (below), and then pay special attention to Example E - which showcases how to specify that specific databases should be targeted for DIFF backups. 
 - **Recommendations for Transaction Log Backups.** Otherwise, in terms of Transaction Log backups, these SHOULD be executed every 10 minutes at least - and as frequently as every 3 minutes (on very heavily used systems).On some systems, you may want or need T-Log backups running 24 hours/day (i.e., transactional coverage all the time). On other (less busy systems), you might want to only run Transaction Log backups between, say, 4AM (when early users start using the system) until around 10PM when you're confident the last person in the office will always, 100%, be gone. Again, though, T-Log backups don't consume many resources - so, when in doubt: just run T-Log backups (they don't hurt anything). **Likewise, do NOT worry about T-Log backups 'overlapping' or colliding with your FULL / DIFF backups; if they're set to run at the same time, SQL Server is smart and won't allow anything to break (or throw errors) NOR will it allow for any data loss or problems.** Otherwise, as defined elsewhere, when a @BackupType of 'LOG' is specified, dba_BackupDatabases will backup the transaction logs of ALL (user) databases not set to SIMPLE recovery mode. As such, if you are CONFIDENT that you do NOT want transaction log backups of specific databases (dev, test, or 'read-only' databases that never change OR where you 100% do NOT care about the loss of transactional data), then you should 'flip' those databases to SIMPLE recovery so that they're not having their T-Logs backed up.
-- **Recommendations for Backup Storage Locations.** In terms of storage or WHERE you put your backups, there are a couple of rules of thumb. **First, it is NEVER good enough to keep your ONLY backups on the same server (i.e., disks) as your data. Doing so means that a crash or failure of your disks or system will take down your data and your backups.** As such, you should ALWAYS make sure to have off-box copies or backups of your databases (which is why the @CopyToBackupDirectory and @CopyToRetentionHours parameters exist). Arguably, you can and even SHOULD (in many - but not all) then ALSO have copies of your backups on-box (i.e., in addition to off-box copies). And the reason for this is that off-box backups are for hardware disasters - situations where a server catches fire or something horrible happens to your IO subsystem - whereas on-box backups are very HELPFUL (but not 100% required) for data-corruption issues (i.e., problems where you run into phsyical corruption or logical corruption) where your hardware is FINE - because on-box backups mean that you can start up restore operations immediately and from local disk (which is usually - but not always) faster than disk stored 'off box' and somewhere on the network. Again, though, the LOGICAL priority is to keep off-box backups first (usually with a longer retention rate as off-box backup locations typically tend to have greater storage capacity) and then to keep on-box 'copy' backups locally as a 'plus' or 'bonus' whenever possible OR whenever required by SLAs (i.e., RTOs). Note, however, that while this is the LOGICAL desired outcome, it's typically a better practice (for speed and resiliency purposes) to write/create backups locally (on-box) and then copy them off-box (i.e., to a network location) after they've been created locally. As such, many of the examples in this documentation point or allude to having backups on-box first (the @BackupDirectory) and the 'copy' location second (i.e., @CopyToBackupDirectory). 
+- **Recommendations for Backup Storage Locations.** In terms of storage or WHERE you put your backups, there are a couple of rules of thumb. **First, it is NEVER good enough to keep your ONLY backups on the same server (i.e., disks) as your data. Doing so means that a crash or failure of your disks or system will take down your data and your backups.** As such, you should ALWAYS make sure to have off-box copies or backups of your databases (which is why the @CopyToBackupDirectory and @CopyToRetention parameters exist). Arguably, you can and even SHOULD (in many - but not all) then ALSO have copies of your backups on-box (i.e., in addition to off-box copies). And the reason for this is that off-box backups are for hardware disasters - situations where a server catches fire or something horrible happens to your IO subsystem - whereas on-box backups are very HELPFUL (but not 100% required) for data-corruption issues (i.e., problems where you run into phsyical corruption or logical corruption) where your hardware is FINE - because on-box backups mean that you can start up restore operations immediately and from local disk (which is usually - but not always) faster than disk stored 'off box' and somewhere on the network. Again, though, the LOGICAL priority is to keep off-box backups first (usually with a longer retention rate as off-box backup locations typically tend to have greater storage capacity) and then to keep on-box 'copy' backups locally as a 'plus' or 'bonus' whenever possible OR whenever required by SLAs (i.e., RTOs). Note, however, that while this is the LOGICAL desired outcome, it's typically a better practice (for speed and resiliency purposes) to write/create backups locally (on-box) and then copy them off-box (i.e., to a network location) after they've been created locally. As such, many of the examples in this documentation point or allude to having backups on-box first (the @BackupDirectory) and the 'copy' location second (i.e., @CopyToBackupDirectory). 
 - **Organizing Backups.** Another best practice with backups, is how to organize or store them. Arguably, you could simply create a single folder and drop all backups (of all types and for all databases) into this folder as a 'pig pile' - and SQL Server would have no issues with being able to restore backups of your databases (if you were to use the GUI). However, humans would likely have a bit of a hard time 'sorting' through all of these backups as things would be a mess. An optimal approach is to, instead, create a sub-folder for each database, where you will then store all FULL, DIFF, and T-LOG backups for each database so that all backups for a given database are in a single folder. With this approach, it's very easy to quickly 'sort' backups by time-stamp to get a quick view of what backups are available and roughly how long they're being retained. This is a VERY critical benefit in situations where you can't or do NOT want to use the SSMS GUI to restore backups - or in situations where you're restoring backups after a TRUE disaster (where the backup histories kept in the msdb are lost - or where you're on brand new hardware). Furthermore, the logic in S4 Restore scripts is designed to be 'pointed' at a folder or path (for a given database name) and will then 'traverse' all files in the folder to restore the most recent FULL backup, then restore the most recent DIFF backup (since the FULL) if one exists, and conclude by restoring all T-LOG backups since the last FULL or DIFF (i.e., following the backup chain) to complete restore a database up until the point of the last T-LOG backup (or to generate a list of commands that would be used - via the @PrintOnly = 1 option - so that you can use this set of scripts to easily create a point-in-time recovery script). Accordingly, dba_BackupDatabases takes the approach of assuming that the paths specified by @BackupDirectory and/or @CopyToBackupDirectory are 'root' locations and will **ALWAYS** create child directories (if not present) for each database being backed up. (NOTE that if you're in the situation where you don't have enough disk space for ALL of your backups to exist on the same disk or network share, you can create 2 or more backup disks/locations (e.g., you could have D:\SQLBackups and N:\SQLBackups (or 2x UNC locations, etc.)) and then assign each database to a specific disk/location as needed - to 'spread' your backups out over different locations. If you do this, you MIGHT want to create 2x different jobs per each backup type (i.e., 2x jobs for FULL backups and 2x jobs for T-Log Backups) - each with its own corresponding job name (e.g. "Primary Databases.FULL Backups" and "Secondary Databases.FULL Backups"); or you might simply have a SINGLE job per backup type (UserDatabases.FULL Backups and UserDatabases.LOG Backups) and for each job either have 2x job-steps (one per each path/location) or have a single job step that first backups up a list of databases to the D:\ drive, and then a separate/distinct execution of dba_BackupDatabases below the first execution (i.e., 2x calls to dba_BackupDatabases in the same job step) that then backs up a differen set of databases to the N:\ drive. 
 - **Backup Retention Times.* In terms of retention times, there are two key considerations. First: backups are not the same thing as archives; archives are for legal/forensic and other purposes - whereas backups are for disaster recovery. Technically, you can create 'archives' via SQL Server backups without any issues (and dba_BackupDatabases is perfectly suited to this use) - but if you're going to use dba_BackupDatabase for 'archive' backups, make sure to create a new / distinct job with an explicit name (e.g., "Monthly Archive Backups"), give it a dedicated schedule - instead of trying to get your existing, nightly (for example) job that tackles FULL backups of your user databases to somehow do 'dual duty'. However, be aware that dba_BackupDatabases does NOT create (or allow for) COPY_ONLY backups - so IF YOU ARE USING DIFF backups against the databases being archived, you will want to make sure that IF you are creating archive backups, that you create those well before normal NIGHTLY backups so that when your normal, nightly, backups execute you're not breaking your backup chain. Otherwise, another option for archival backups is simply to have an automated process simply 'zip out' to your backup locations at a regularly scheduled point and 'grab' and COPY an existing FULL backup to a safe location. Otherwise, the second consideration in terms of retention is that, generally, the more backups you can keep the better (to a point - i.e., usually anything after 2 - 4 days isn't ever going to be used - because if you're doing things correctly (i.e., regular DBCC/Consistency checks and routinely (daily) verifying your backups by RESTORING them, you should never need much more that 1 - 2 days' worth of backups to recover from any disaster). Or, in other words, any time you can keep roughly 1-2 days of backups 'on-box', that is typically great/ideal as it will let you recovery from corruption problems should the occur - in the fastest way possible; likewise, if you can keep 2-3 days of backups off-box, that'll protect against hardware and other major system-related disasters. If you're NOT able to keep at least 2 days of backups somewhere, it's time to talk to management and get more space.
 - **The Need for OFF-SITE Backups.**Finally, S4 Backups are ONLY capable of creating and managing SQL Server Backups. And, while dba_BackupDatabases is designed and optimized for creating off-box backups, off-box backups (alone), aren't enough of a contingency plan for most companies - because while they will protect against situations where youl 100% lose your SQL Server (where the backups were made), they won't protect against the loss of your entire data-center or some types of key infrastructure (the SAN, etc.). Consequently, in addition to ensuring that you have off-box backups, you will want to make sure that you are regularly copying your backups off-site. (Products like [CloudBerry Server Backup](https://www.cloudberrylab.com/backup/windows-server.aspx) are cheap and make it very easy and affordable to copy backups off-site every 5 minutes or so with very little effort. Arguably, however, you'll typically WANT to run any third party (off site) backups OFF of your off-box location rather than on/from your SQL Server - to decrease disk, CPU, and network overhead. However, if you ONLY have a single SQL Server, go ahead and run backups (i.e., off-site backups) from your SQL Server (and get a more powerful server if needed) as it's better to have off-site backups.)
@@ -580,7 +583,7 @@ At this point, if you haven't configured something correctly - or are missing de
 
 Otherwise, if everything looks like it has been configured correctly, execution will complete and if there are errors, you'll see that an email message has been queued - and you can query master.dbo.dba_BackupDatabases_Log for information (check the ErrorDetails column - or just wait for an email).
 
-If backup execution completed as follows, then make sure to specify an @CopyToBackupDirectory and a corresponding value for @CopyToRetentionHours - and any other parameters as you'll need for your production backups, and then create a new SQL Server Agent Job to execute the commands as you have configured them. 
+If backup execution completed as follows, then make sure to specify an @CopyToBackupDirectory and a corresponding value for @CopyToRetention - and any other parameters as you'll need for your production backups, and then create a new SQL Server Agent Job to execute the commands as you have configured them. 
 
 Then repeat the process for all of the other backup operations that you'll need - where (for each job or set of differences you define) you can always 'test' or visualize outcomes by setting @PrintOnly = 1, and then REMOVING this statement before copy/pasting details into a SQL Server Agent Job. 
 
@@ -666,8 +669,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'[SYSTEM]',
     @BackupDirectory = N'S:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\ProdSQL', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
 ```
 
 She then creates a new Job, "System Databases.FULL Backups", sets it to be owned by 'sa', copies/pastes the code above into a single job step ("FULL Backup of System Databases"), sets it to execute every night at 7PM (which captures most changes made by admins during a 'work day') and where the few SECONDS it'll take to execute System backups won't even be noticed. She also sets the Notification tab to Notify "Alerts" if the job fails (in case there's a bug in dba_BackupDatabases rather than a problem that might encountered while executing backups that would be 'trapped'). 
@@ -684,13 +687,13 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'ProdA',
     @BackupDirectory = N'N:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\ProdSQL', 
-    @BackupRetentionHours = 72, 
-    @CopyToRetentionHours = 96;
+    @BackupRetention = '72h', 
+    @CopyToRetention = '96h';
 ```
 
 And then she drops that into the first/initial Job Step for her job - with a name of "Full backups of ProdA - to N:\", and then copies/pastes in the code from above. 
 
-Then, she configures a separte call to dba_BackupDatabases for all other user databases - which she does by specifying [USER] for @DatabasesToBackup and 'ProdA' for @DatabasesToExclude. She also sets different (lesser) retention times - both for local AND off-box backups to conserve space and to FAVOR backups of ProdA over the other 'less important' databases:
+Then, she configures a separate call to dba_BackupDatabases for all other user databases - which she does by specifying [USER] for @DatabasesToBackup and 'ProdA' for @DatabasesToExclude. She also sets different (lesser) retention times - both for local AND off-box backups to conserve space and to FAVOR backups of ProdA over the other 'less important' databases:
 
 ```sql
 EXEC master.dbo.dba_BackupDatabases
@@ -699,8 +702,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToExclude = N'ProdA',
     @BackupDirectory = N'S:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\ProdSQL', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 48;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '48h';
 ```
 
 With the call to dba_BackupDatabases configured, she adds a new (second) Job Step to "User Databases.FULL Backups" called "Full Backups of all other dbs to S:\" and copies/pastes the code from above. Then, since she has 2 distinct Job-steps configured, she then switches to the Advanced Properties for her first job step (Full Backups of ProdA - to N:\), and ensures that the "On success action" as well as the "On failure actions" are BOTH set to the "Go to the next step" option - so that errors occur during execution of backups for ProdA, backups for all other (user) databases will attempt to execute.
@@ -713,8 +716,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToBackup = N'ProdA',
     @BackupDirectory = N'N:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\ProdSQL', 
-    @BackupRetentionHours = 48, 
-    @CopyToRetentionHours = 72;
+    @BackupRetention = '48h', 
+    @CopyToRetention = '72h';
 ```
 
 Then, she does the 'inverse' for her other databases - by specifying [USER] for @DatabasesToBackup and 'ProdA' for @DatabasesToExclude - and then changing paths and retention times as needed:
@@ -726,8 +729,8 @@ EXEC master.dbo.dba_BackupDatabases
     @DatabasesToExclude = N'ProdA',
     @BackupDirectory = N'S:\SQLBackups\', 
     @CopyToBackupDirectory = N'\\BackupServer\ProdSQL', 
-    @BackupRetentionHours = 24, 
-    @CopyToRetentionHours = 48;
+    @BackupRetention = '24h', 
+    @CopyToRetention = '48h';
 ```
 
 With these tasks complete, she then creates a new job ("User Databases.LOG Backups"), sets the owner to 'sa', schedules the job to run every 5 minutes - starting a 4:00 AM and running the rest of the day (i.e., until midnight), specifies that the job should notify her upon failure, pastes in the commands above into 2 distinct Job Steps (one for ProdA, the other for the other databases), and then makes sure that Job Step 1 will always "Go to the next step" after successful or failed executions. 

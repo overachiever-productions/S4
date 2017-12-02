@@ -148,7 +148,7 @@ EXEC master.dbo.dba_RestoreDatabases
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 
     @RestoredRootLogPath = N'L:\SQLLogs', 
-    [@RestoredDbNameSuffix = N'',] 
+    [@RestoredDbNamePattern = N'{0}_test',] 
     [@AllowReplace = N'',] 
     [@SkipLogBackups = NULL,] 
     [@CheckConsistency = { 0 | 1 },] 
@@ -194,7 +194,9 @@ Required. S4 Restore will push (or relocate) .mdf and .ndf file into the path sp
 
 Required. Can be the exact same value as @RestoredRootDataPath (i.e., data and log files can be restored to the same folder if/as needed) - but is provided as a seperate configurable option to allow restore of logs and data files to different drives/paths when needed as well. (Neither approach is necessarily better - and an 'optimal' configuration/setup will depend upon disk capacities and performance-levels.)
 
-**[@RestoredDbNameSuffix]** = 'name-of-suffix-you-wish-to-append-to-restored-db-name']
+**[@RestoredDbNamePattern]** = 'naming-pattern-with-{0}-as-current-db-name-placeholder']
+
+Optional. Defaults to '{0}_test'. As any database to be restored is processed, the pattern (or name) specified by this argument will be used for the RESTORED databasename - and if the {0} token is present, then {0} will be replaced with the ORIGINAL name of the database being restored. For example, assume you are restoring a SINGLE database named 'production'. If you specify nothing for this parameter, the restored database will default to 'production_test', whereas if you were to set @RestoredDbNamePattern to 'Fred', the database would be restored as 'Fred'. (Obviously, if you're restoring MULTIPLE databases and specify 'Fred' you'll run into problems IF you've allowed previous 'Fred' instances to exist and/or haven't specified that @AllowReplace should replace each 'Fred' as processed.) Otherwise, if you set @RestoredDbNamePattern to something like 'MayRestoreTestOf_{0}' and process multiple databases - such as Production, Stage, and Testing, you would end up with 3x databases restored as 'MayRestoreTestOf_production', 'MayRestoreTestOf_stage', 'MayRestoreTestOf_testing' - and so on.
 
 Optional. When specified, the value of @RestoredDbNameSuffix will be appended to the end of the name of the database being restored. For example, if you have specified that you want to restore the Billing, Widgets, and Tracking databases (via @DatabasesToRestore) and have specified a @RestoredDbNameSuffix of '_test', these databases would be restored as Billing_Test, Widgets_Test, and Tracking_Test. This option is primarily provided for scenarios where you will be doing 'on-box' restore testing (i.e., running nightly jobs ON your production server and restoring copies of your production databases to make sure the backups are good) - so that you don't have to worry about naming collisions or other issues while running restore tests.
 
