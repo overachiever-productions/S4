@@ -3,13 +3,7 @@
 
 	NOTES:
 		- This script ASSUMES that previous instances of S4 were deployed to the server in question. 
-		- If this is a NEW server, run the [xxxx] script.
-
-
-
-	FODDER:
-		- There's some wicked-good insight in this thread:
-			https://dba.stackexchange.com/questions/122890/user-defined-function-udf-in-master-database
+		- If this is a NEW server, run the \Install\4.0.sql script.
 
 
 
@@ -53,7 +47,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.0.0.16754';
+DECLARE @CurrentVersion varchar(20) = N'4.0.1.16756';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -111,8 +105,8 @@ IF @objectId IS NOT NULL BEGIN
 	PRINT 'Importing Previous Data.... ';
 	SET IDENTITY_INSERT dbo.backup_log ON;
 
-	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path,  backup_start, backup_end, backup_succeeded, verification_start,  verification_end, verification_succeeded, 
-		copy_succeeded, copy_seconds, failed_copy_attempts, copy_details, error_details)
+	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
+		verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
 	SELECT 
 		BackupId,
         ExecutionId,
@@ -127,10 +121,8 @@ IF @objectId IS NOT NULL BEGIN
         VerificationCheckStart,
         VerificationCheckEnd,
         VerificationCheckSucceeded,
-        CopySucceeded,
-        CopySeconds,
-        FailedCopyAttempts,
         CopyDetails,
+		0,     --FailedCopyAttempts,
         ErrorDetails
 	FROM 
 		master.dbo.dba_DatabaseBackups_Log
