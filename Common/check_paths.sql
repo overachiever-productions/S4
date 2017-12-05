@@ -19,21 +19,20 @@
 
 */
 
-USE master;
+USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.dba_CheckPaths','P') IS NOT NULL
-	DROP PROC dbo.dba_CheckPaths;
+IF OBJECT_ID('dbo.check_paths','P') IS NOT NULL
+	DROP PROC dbo.check_paths;
 GO
 
-CREATE PROC dbo.dba_CheckPaths 
+CREATE PROC dbo.check_paths 
 	@Path				nvarchar(MAX),
 	@Exists				bit					OUTPUT
 AS
 	SET NOCOUNT ON;
 
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	SET @Exists = 0;
 

@@ -13,10 +13,10 @@
 
 
 	DEPENDENCIES:
-		- Requires dbo.dba_DatabaseRestore_Log - to log information about restore operations AND failures. 
-		- Requires dba_LoadDatabaseNames - sproc used to 'parse' or determine which dbs to target based upon inputs.
-		- Requires dbo.dba_CheckPaths - to facilitate validation of specified AND created database backup file paths. 
-		- Requires dbo.dba_ExecuteAndFilterNonCatchableCommand - to address problems with TRY/CATCH error handling within SQL Server. 
+		- Requires dbo.restore_log - to log information about restore operations AND failures. 
+		- Requires dbo.load_database_names - sproc used to 'parse' or determine which dbs to target based upon inputs.
+		- Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
+		- Requires dbo.execute_uncatchable_command - to address problems with TRY/CATCH error handling within SQL Server. 
 		- Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
 		- Requires a configured Database Mail Profile + SQL Server Agent Operator. 
 
@@ -63,15 +63,15 @@
 
 */
 
-USE master;
+USE [admindb];
 GO
 
 
-IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
-	DROP PROC dba_RestoreDatabases;
+IF OBJECT_ID('dbo.restore_databases','P') IS NOT NULL
+	DROP PROC dbo.restore_databases;
 GO
 
-CREATE PROC dbo.dba_RestoreDatabases 
+CREATE PROC dbo.restore_databases 
 	@DatabasesToRestore				nvarchar(MAX),
 	@DatabasesToExclude				nvarchar(MAX) = NULL,
 	@Priorities						nvarchar(MAX) = NULL,
@@ -92,27 +92,26 @@ AS
 	SET NOCOUNT ON;
 
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dba_DatabaseRestore_Log', 'U') IS NULL BEGIN
-		RAISERROR('Table dbo.dba_DatabaseRestore_Log not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
+		RAISERROR('S4 Table dbo.restore_log not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 	
-	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand','P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.execute_uncatchable_command','P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -192,19 +191,19 @@ AS
 	DECLARE @failedDrops int = 0;
 
 	-- Verify Paths: 
-	EXEC dbo.dba_CheckPaths @BackupsRootPath, @isValid OUTPUT;
+	EXEC dbo.check_paths @BackupsRootPath, @isValid OUTPUT;
 	IF @isValid = 0 BEGIN;
 		SET @earlyTermination = N'@BackupsRootPath (' + @BackupsRootPath + N') is invalid - restore operations terminated prematurely.';
 		GOTO FINALIZE;
 	END
 	
-	EXEC dbo.dba_CheckPaths @RestoredRootDataPath, @isValid OUTPUT;
+	EXEC dbo.check_paths @RestoredRootDataPath, @isValid OUTPUT;
 	IF @isValid = 0 BEGIN;
 		SET @earlyTermination = N'@RestoredRootDataPath (' + @RestoredRootDataPath + N') is invalid - restore operations terminated prematurely.';
 		GOTO FINALIZE;
 	END
 
-	EXEC dbo.dba_CheckPaths @RestoredRootLogPath, @isValid OUTPUT;
+	EXEC dbo.check_paths @RestoredRootLogPath, @isValid OUTPUT;
 	IF @isValid = 0 BEGIN;
 		SET @earlyTermination = N'@RestoredRootLogPath (' + @RestoredRootLogPath + N') is invalid - restore operations terminated prematurely.';
 		GOTO FINALIZE;
@@ -213,7 +212,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Construct list of databases to restore:
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.dba_LoadDatabaseNames
+	EXEC dbo.load_database_names
 	    @Input = @DatabasesToRestore,         
 	    @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
 		@Priorities = @Priorities,
@@ -227,7 +226,7 @@ AS
     ); 
 
 	INSERT INTO @dbsToRestore ([database_name])
-	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
 
 	IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN;
 		RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
@@ -271,14 +270,14 @@ AS
 	);
 
 	DECLARE @LatestBatch uniqueidentifier;
-	SELECT @LatestBatch = (SELECT TOP 1 ExecutionId FROM dbo.dba_DatabaseRestore_Log ORDER BY RestorationTestId DESC);
+	SELECT @LatestBatch = (SELECT TOP 1 execution_id FROM dbo.restore_log ORDER BY restore_test_id DESC);
 
 	INSERT INTO @NonDroppedFromPreviousExecution ([Database], RestoredAs)
-	SELECT [Database], RestoredAs 
-	FROM dbo.dba_DatabaseRestore_Log 
-	WHERE ExecutionId = @LatestBatch
-		AND Dropped = 'NOT-DROPPED'
-		AND RestoredAs IN (SELECT name FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
+	SELECT [database], [restored_as]
+	FROM dbo.restore_log 
+	WHERE execution_id = @LatestBatch
+		AND [dropped] = 'NOT-DROPPED'
+		AND [restored_as] IN (SELECT name FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
 
 	IF @CheckConsistency = 1 BEGIN
 		IF OBJECT_ID('tempdb..##DBCC_OUTPUT') IS NOT NULL 
@@ -354,7 +353,7 @@ AS
 			SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
 		IF @PrintOnly = 0 BEGIN;
-			INSERT INTO dbo.dba_DatabaseRestore_Log (ExecutionId, [Database], RestoredAs, [RestoreStart], ErrorDetails)
+			INSERT INTO dbo.restore_log (execution_id, [database], restored_as, restore_start, error_details)
 			VALUES (@executionID, @databaseToRestore, @restoredName, GETUTCDATE(), '#UNKNOWN ERROR#');
 
 			SELECT @restoreLogId = SCOPE_IDENTITY();
@@ -362,7 +361,7 @@ AS
 
 		-- Verify Path to Source db's backups:
 		SET @sourcePath = @BackupsRootPath + N'\' + @databaseToRestore;
-		EXEC dbo.dba_CheckPaths @sourcePath, @isValid OUTPUT;
+		EXEC dbo.check_paths @sourcePath, @isValid OUTPUT;
 		IF @isValid = 0 BEGIN 
 			SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
 			GOTO NextDatabase;
@@ -375,7 +374,7 @@ AS
 			IF EXISTS (SELECT NULL FROM @NonDroppedFromPreviousExecution WHERE [Database] = @databaseToRestore AND RestoredAs = @restoredName) BEGIN;
 				SET @command = N'DROP DATABASE [' + @restoredName + N'];';
 				
-				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DROP', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
 				SET @statusDetail = @outcome;
 
 				IF @statusDetail IS NOT NULL BEGIN;
@@ -491,7 +490,7 @@ AS
 					  END
 					ELSE BEGIN
 						SET @outcome = NULL;
-						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'ALTER', @result = @outcome OUTPUT;
+						EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
 						SET @statusDetail = @outcome;
 					END
 
@@ -525,7 +524,7 @@ AS
 			  END
 			ELSE BEGIN;
 				SET @outcome = NULL;
-				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'RESTORE', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
 				SET @statusDetail = @outcome;
 			END
@@ -552,7 +551,7 @@ AS
 				  END
 				ELSE BEGIN;
 					SET @outcome = NULL;
-					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'RESTORE', @result = @outcome OUTPUT;
+					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
 					SET @statusDetail = @outcome;
 				END
@@ -583,7 +582,7 @@ AS
 					  END
 					ELSE BEGIN;
 						SET @outcome = NULL;
-						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'RESTORE', @result = @outcome OUTPUT;
+						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
 						SET @statusDetail = @outcome;
 					END
@@ -619,7 +618,7 @@ AS
 			  END
 			ELSE BEGIN
 				SET @outcome = NULL;
-				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'RESTORE', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
 				SET @statusDetail = @outcome;
 			END;
@@ -634,13 +633,13 @@ AS
 
 		-- If we've made it here, then we need to update logging/meta-data:
 		IF @PrintOnly = 0 BEGIN;
-			UPDATE dbo.dba_DatabaseRestore_Log 
+			UPDATE dbo.restore_log 
 			SET 
-				RestoreSucceeded = 1, 
-				RestoreEnd = GETUTCDATE(), 
-				ErrorDetails = NULL
+				restore_succeeded = 1, 
+				restore_end = GETUTCDATE(), 
+				error_details = NULL
 			WHERE 
-				RestorationTestId = @restoreLogId;
+				restore_test_id = @restoreLogId;
 		END
 
 		-- Run consistency checks if specified:
@@ -649,13 +648,13 @@ AS
 			SET @command = N'DBCC CHECKDB([' + @restoredName + N']) WITH NO_INFOMSGS, ALL_ERRORMSGS, TABLERESULTS;'; -- outputting data for review/analysis. 
 
 			IF @PrintOnly = 0 BEGIN 
-				UPDATE dbo.dba_DatabaseRestore_Log
+				UPDATE dbo.restore_log
 				SET 
-					ConsistencyCheckStart = GETUTCDATE(),
-					ConsistencyCheckSucceeded = 0, 
-					ErrorDetails = '#UNKNOWN ERROR CHECKING CONSISTENCY#'
+					consistency_start = GETUTCDATE(),
+					consistency_succeeded = 0, 
+					error_details = '#UNKNOWN ERROR CHECKING CONSISTENCY#'
 				WHERE
-					RestorationTestId = @restoreLogId;
+					restore_test_id = @restoreLogId;
 			END
 
 			BEGIN TRY 
@@ -670,23 +669,23 @@ AS
 						SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName, N'[]') + N'. Details: ' + @crlf;
 						SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM ##DBCC_OUTPUT ORDER BY RowID;
 
-						UPDATE dbo.dba_DatabaseRestore_Log
+						UPDATE dbo.restore_log
 						SET 
-							ConsistencyCheckEnd = GETUTCDATE(),
-							ConsistencyCheckSucceeded = 0,
-							ErrorDetails = @statusDetail
+							consistency_end = GETUTCDATE(),
+							consistency_succeeded = 0,
+							error_details = @statusDetail
 						WHERE 
-							RestorationTestId = @restoreLogId;
+							restore_test_id = @restoreLogId;
 
 					  END
 					ELSE BEGIN; -- there were NO errors:
-						UPDATE dbo.dba_DatabaseRestore_Log
+						UPDATE dbo.restore_log
 						SET
-							ConsistencyCheckEnd = GETUTCDATE(),
-							ConsistencyCheckSucceeded = 1, 
-							ErrorDetails = NULL
+							consistency_end = GETUTCDATE(),
+							consistency_succeeded = 1, 
+							error_details = NULL
 						WHERE 
-							RestorationTestId = @restoreLogId;
+							restore_test_id = @restoreLogId;
 
 					END
 				END
@@ -703,7 +702,7 @@ AS
 		IF @DropDatabasesAfterRestore = 1 BEGIN;
 			
 			-- Make sure we can/will ONLY restore databases that we've restored in this session. 
-			SELECT @restoreSucceeded = RestoreSucceeded FROM dbo.dba_DatabaseRestore_Log WHERE RestoredAs = @restoredName AND ExecutionId = @executionID;
+			SELECT @restoreSucceeded = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
 
 			IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
 				SET @restoreSucceeded = 1; 
@@ -712,12 +711,12 @@ AS
 				-- We can't drop this database.
 				SET @failedDrops = @failedDrops + 1;
 
-				UPDATE dbo.dba_DatabaseRestore_Log
+				UPDATE dbo.restore_log
 				SET 
-					Dropped = 'ERROR', 
-					ErrorDetails = ErrorDetails + @crlf + '(NOTE: DROP was configured but SKIPPED due to ERROR state.)'
+					[dropped] = 'ERROR', 
+					error_details = error_details + @crlf + '(NOTE: DROP was configured but SKIPPED due to ERROR state.)'
 				WHERE 
-					RestorationTestId = @restoreLogId;
+					restore_test_id = @restoreLogId;
 
 				GOTO NextDatabase;
 			END
@@ -729,11 +728,11 @@ AS
 					IF @PrintOnly = 1 
 						PRINT @command;
 					ELSE BEGIN;
-						UPDATE dbo.dba_DatabaseRestore_Log 
+						UPDATE dbo.restore_log 
 						SET 
-							Dropped = N'ATTEMPTED'
+							[dropped] = N'ATTEMPTED'
 						WHERE 
-							RestorationTestId = @restoreLogId;
+							restore_test_id = @restoreLogId;
 
 						EXEC sys.sp_executesql @command;
 
@@ -744,11 +743,11 @@ AS
 							GOTO NextDatabase;
 						  END
 						ELSE 
-							UPDATE dbo.dba_DatabaseRestore_Log
+							UPDATE dbo.restore_log
 							SET 
-								Dropped = 'DROPPED'
+								dropped = 'DROPPED'
 							WHERE 
-								RestorationTestId = @restoreLogId;
+								restore_test_id = @restoreLogId;
 					END
 
 				END TRY 
@@ -756,11 +755,11 @@ AS
 					SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 					SET @failedDrops = @failedDrops + 1;
 
-					UPDATE dbo.dba_DatabaseRestore_Log
+					UPDATE dbo.restore_log
 					SET 
-						Dropped = 'ERROR'
+						dropped = 'ERROR'
 					WHERE 
-						RestorationTestId = @restoredName;
+						restore_test_id = @restoredName;
 
 					GOTO NextDatabase;
 				END CATCH
@@ -768,11 +767,11 @@ AS
 
 		  END
 		ELSE BEGIN;
-			UPDATE dbo.dba_DatabaseRestore_Log 
+			UPDATE dbo.restore_log 
 			SET 
-				Dropped = 'NOT-DROPPED'
+				dropped = 'NOT-DROPPED'
 			WHERE
-				RestorationTestId = @restoreLogId;
+				restore_test_id = @restoreLogId;
 		END
 
 		PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
@@ -789,12 +788,12 @@ NextDatabase:
 				PRINT N'ERROR: ' + @statusDetail;
 			  END
 			ELSE BEGIN;
-				UPDATE dbo.dba_DatabaseRestore_Log
+				UPDATE dbo.restore_log
 				SET 
-					[RestoreEnd] = GETUTCDATE(),
-					ErrorDetails = @statusDetail
+					restore_end = GETUTCDATE(),
+					error_details = @statusDetail
 				WHERE 
-					RestorationTestId = @restoreLogId;
+					restore_test_id = @restoreLogId;
 			END
 
 			PRINT N'-- Operations for database [' + @restoredName + N'] failed.' + @crlf + @crlf;
@@ -830,18 +829,18 @@ FINALIZE:
 	END
 
 	-- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
-	IF (NULLIF(@earlyTermination,'') IS NOT NULL) OR (EXISTS (SELECT NULL FROM dbo.dba_DatabaseRestore_Log WHERE ExecutionId = @executionID AND ErrorDetails IS NOT NULL)) BEGIN;
+	IF (NULLIF(@earlyTermination,'') IS NOT NULL) OR (EXISTS (SELECT NULL FROM dbo.restore_log WHERE execution_id = @executionID AND error_details IS NOT NULL)) BEGIN;
 
 		SET @emailErrorMessage = N'The following Errors were encountered: ' + @crlf;
 
-		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Source Database: [' + [Database] + N']. Attempted to Restore As: [' + RestoredAs + N']. Error: ' + ErrorDetails + @crlf + @crlf
+		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Source Database: [' + [database] + N']. Attempted to Restore As: [' + restored_as + N']. Error: ' + error_details + @crlf + @crlf
 		FROM 
-			dbo.dba_DatabaseRestore_Log
+			dbo.restore_log
 		WHERE 
-			ExecutionId = @executionID
-			AND ErrorDetails IS NOT NULL
+			execution_id = @executionID
+			AND error_details IS NOT NULL
 		ORDER BY 
-			RestorationTestId;
+			restore_test_id;
 
 		-- notify too that we stopped execution due to early termination:
 		IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN;

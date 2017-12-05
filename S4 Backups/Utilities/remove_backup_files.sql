@@ -3,10 +3,10 @@
 
 /*
 	DEPENDENCIES:
-		- Requires dba_ExecuteAndFilterNonCatchableCommand - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
-		- Requires dba_CheckPaths - sproc to verify that paths are valid. 
-		- Requires dba_LoadDatabaseNames - sproc that centralizes handling of which dbs/folders to process.
-		- Requires dba_SplitString - udf to parse the above.
+		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
+		- Requires dbo.check_paths - sproc to verify that paths are valid. 
+		- Requires dbo.load_database_names - sproc that centralizes handling of which dbs/folders to process.
+		- Requires dbo.split_string - udf to parse the above.
 		- Requires that xp_cmdshell must be enabled.
 
 	NOTES:
@@ -57,7 +57,7 @@
 /*
 
 
-EXEC dbo.dba_RemoveBackupFiles 
+EXEC dbo.remove_backup_files 
 	@BackupType = 'FULL', -- sysname
     @DatabasesToProcess = N'[READ_FROM_FILESYSTEM]', -- nvarchar(1000)
     @DatabasesToExclude = N'', -- nvarchar(600)
@@ -67,14 +67,14 @@ EXEC dbo.dba_RemoveBackupFiles
 
 */
 
-USE [master];
+USE [admindb];
 GO
 
-IF OBJECT_ID('[dbo].[dba_RemoveBackupFiles]','P') IS NOT NULL
-	DROP PROC [dbo].[dba_RemoveBackupFiles];
+IF OBJECT_ID('[dbo].[remove_backup_files]','P') IS NOT NULL
+	DROP PROC [dbo].[remove_backup_files];
 GO
 
-CREATE PROC [dbo].[dba_RemoveBackupFiles] 
+CREATE PROC [dbo].[remove_backup_files] 
 	@BackupType							sysname,						-- { ALL | FULL|DIFF|LOG }
 	@DatabasesToProcess					nvarchar(1000),					-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,			-- { NULL | name1,name2 }  
@@ -90,22 +90,21 @@ AS
 	SET NOCOUNT ON; 
 
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand', 'P') IS NULL BEGIN;
-		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN;
-		RAISERROR('Table-Valued Function dbo.dba_SplitString not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN;
+		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN;
-		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -221,10 +220,9 @@ AS
 
 	-- verify that path exists:
 	DECLARE @isValid bit;
-	EXEC dbo.dba_CheckPaths @TargetDirectory, @isValid OUTPUT;
+	EXEC dbo.check_paths @TargetDirectory, @isValid OUTPUT;
 	IF @isValid = 0 BEGIN;
 		RAISERROR('Invalid @TargetDirectory specified - either the path does not exist, or SQL Server''s Service Account does not have permissions to access the specified directory.', 16, 1);
-
 		RETURN -10;
 	END
 
@@ -236,7 +234,7 @@ AS
 	SET @Output = NULL;
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.dba_LoadDatabaseNames
+	EXEC dbo.load_database_names
 	    @Input = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
 	    @Mode = N'REMOVE',
@@ -250,7 +248,7 @@ AS
     ); 
 
 	INSERT INTO @targetDirectories ([directory_name])
-	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:
@@ -397,7 +395,7 @@ AS
 				ELSE BEGIN; 
 
 					BEGIN TRY
-						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
+						EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
 						
 						IF @outcome IS NOT NULL 
 							SET @errorMessage = ISNULL(@errorMessage, '')  + @outcome + N' ';
@@ -433,7 +431,7 @@ AS
 					PRINT @command;
 				ELSE BEGIN 
 					BEGIN TRY
-						EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
+						EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
 
 						IF @outcome IS NOT NULL 
 							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -497,7 +495,7 @@ AS
 					ELSE BEGIN; 
 
 						BEGIN TRY
-							EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'DELETEFILE', @result = @outcome OUTPUT;
+							EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
 						
 							IF @outcome IS NOT NULL 
 								SET @errorMessage = ISNULL(@errorMessage, '')  + @outcome + N' ';

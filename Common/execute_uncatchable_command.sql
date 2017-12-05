@@ -1,5 +1,7 @@
 
 /*
+	DEPENDENCIES:
+		- Requires that xp_cmdshell be enabled.
 
 	NOTE:
 		This stored procedure exists as a work-around for the following bug within SQL Server:
@@ -13,14 +15,14 @@
 
 */
 
-USE master;
+USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.dba_ExecuteAndFilterNonCatchableCommand','P') IS NOT NULL
-	DROP PROC dbo.dba_ExecuteAndFilterNonCatchableCommand;
+IF OBJECT_ID('dbo.execute_uncatchable_command','P') IS NOT NULL
+	DROP PROC dbo.execute_uncatchable_command;
 GO
 
-CREATE PROC dbo.dba_ExecuteAndFilterNonCatchableCommand
+CREATE PROC dbo.execute_uncatchable_command
 	@statement				varchar(4000), 
 	@filterType				varchar(20), 
 	@result					varchar(4000)			OUTPUT	
@@ -28,7 +30,6 @@ AS
 	SET NOCOUNT ON;
 
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	IF @filterType NOT IN ('BACKUP','RESTORE','CREATEDIR','ALTER','DROP','DELETEFILE') BEGIN;
 		RAISERROR('Configuration Problem: Non-Supported @filterType value specified.', 16, 1);
@@ -113,17 +114,17 @@ GO
 
 
 --DECLARE @result varchar(2000);
---EXEC dba_ExecuteAndFilterNonCatchableCommand 'BACKUP DATABASE Testing2 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
+--EXEC execute_uncatchable_command 'BACKUP DATABASE Testing2 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
 --SELECT @result;
 --GO
 
 --DECLARE @result varchar(2000);
---EXEC dba_ExecuteAndFilterNonCatchableCommand 'BACKUP DATABASE Testing77 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
+--EXEC execute_uncatchable_command 'BACKUP DATABASE Testing77 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
 --SELECT @result;
 --GO
 
 --DECLARE @result varchar(2000);
---EXEC dba_ExecuteAndFilterNonCatchableCommand 'EXECUTE master.dbo.xp_create_subdir N''D:\SQLBackups\Testing1'';', 'CREATEDIR', @result = @result OUTPUT;
+--EXEC execute_uncatchable_command 'EXECUTE master.dbo.xp_create_subdir N''D:\SQLBackups\Testing1'';', 'CREATEDIR', @result = @result OUTPUT;
 --SELECT @result;
 --GO
 

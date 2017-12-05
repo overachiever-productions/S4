@@ -31,10 +31,10 @@
 /*
 
 	DEPENDENCIES:
-		- Requires dba_DatabaseBackups_Log (logging table to keep details about errors (and successful executions if @LogSuccessfulOutcomes = 1). 
-		- Requires dba_SplitString - to parse results from dba_LoadDatabases.
-		- Requires dba_LoadDatabaseNames - sproc used to 'parse' or determine which dbs to target based upon inputs.
-		- Requires dba_ExecuteAndFilterNonCatchableCommand - sproc used to execute backup and other compands in order to be able to CAPTURE exception
+		- Requires dbo.backup_log (logging table to keep details about errors (and successful executions if @LogSuccessfulOutcomes = 1). 
+		- Requires dbo.split_string - to parse results from dba_LoadDatabases.
+		- Requires dbo.load_database_names - sproc used to 'parse' or determine which dbs to target based upon inputs.
+		- Requires dbo.execute_uncatchable_command - sproc used to execute backup and other compands in order to be able to CAPTURE exception
 			details and error details (due to bug/problem with TRY/CATCH in T-SQL). 
 		- Requires that xp_cmdshell is ENABLED before execution can/will complete (but the sproc CAN be created without xp_cmdshell enabled).
 		- Requires a configured Database Mail Profile + SQL Server Agent Operator. 
@@ -87,7 +87,7 @@
 				that'll make things a wee bit more resilient (and, arguably... should throw in a WAITFOR DELAY once we start 'reprocessing') without
 				hitting a point where a failed backup and/or copy operation could, say, retry 10x times with 30 seconds lag between each try because... 
 					ALLOWING that much 'retry' typically means there's a huge problem and... we're hurting ourselves rather than failing and reporting 
-					the error. I could/should also keep tabs on the AMOUNT of time spent ... and log it into a 'notes' column in .. dbo_DatabaseBackups_Log.
+					the error. I could/should also keep tabs on the AMOUNT of time spent ... and log it into a 'notes' column in .. dbo.backup_log.
 
 		- vNEXT: Additional integration with AGs (simple 2-node AGs first via preferred replica UDF), then on to multi-node configurations. 
 			And, in the process, figure out how to address DIFFs as... they're not supported on secondaries: 
@@ -98,19 +98,19 @@
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
 
 	Scalable:
-		24+
+		26+
 */
 
 
 
-USE master;
+USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.dba_BackupDatabases','P') IS NOT NULL
-	DROP PROC dbo.dba_BackupDatabases;
+IF OBJECT_ID('dbo.backup_databases','P') IS NOT NULL
+	DROP PROC dbo.backup_databases;
 GO
 
-CREATE PROC dbo.dba_BackupDatabases 
+CREATE PROC dbo.backup_databases 
 	@BackupType							sysname,					-- { FULL|DIFF|LOG }
 	@DatabasesToBackup					nvarchar(MAX),				-- { [SYSTEM]|[USER]|name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX) = NULL,		-- { NULL | name1,name2 }  
@@ -133,32 +133,31 @@ AS
 	SET NOCOUNT ON;
 
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dba_DatabaseBackups_Log', 'U') IS NULL BEGIN
-		RAISERROR('Table dbo.dba_DatabaseBackups_Log not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
+		RAISERROR('S4 Table dbo.backup_log not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.dba_SplitString not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
+		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_CheckPaths', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_CheckPaths not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dba_ExecuteAndFilterNonCatchableCommand', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_ExecuteAndFilterNonCatchableCommand not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -232,6 +231,8 @@ AS
 -- TODO: I really need to validate retention details HERE... i.e., BEFORE we start running backups. 
 --		not sure of the best way to do that - i.e., short of copy/paste of the logic (here and there).
 
+-- honestly, probably makes the most sense to push validation into a scalar UDF. the UDF returns a string/error or NULL (if there's nothing wrong). That way, both sprocs can use the validation details easily. 
+
 	--IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN 
 	--	 RAISERROR('Invalid @BackupRetentionHours - greater than or equal to NOW.', 16, 1);
 	--	 RETURN -10;
@@ -266,7 +267,7 @@ AS
 	END; 
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.dba_LoadDatabaseNames
+	EXEC dbo.load_database_names
 	    @Input = @DatabasesToBackup,
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
@@ -280,7 +281,7 @@ AS
     ); 
 
 	INSERT INTO @targetDatabases ([database_name])
-	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
@@ -376,7 +377,7 @@ AS
 
 		SET @operationStart = GETDATE();
 		IF (@LogSuccessfulOutcomes = 1) AND (@PrintOnly = 0)  BEGIN
-			INSERT INTO dbo.dba_DatabaseBackups_Log (ExecutionId,BackupDate,[Database],BackupType,BackupPath,CopyToPath,BackupStart)
+			INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start)
 			VALUES(@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart);
 			
 			SELECT @currentOperationID = SCOPE_IDENTITY();
@@ -395,7 +396,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
-				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @result = @outcome OUTPUT;
 
 				IF @outcome IS NOT NULL
 					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -454,7 +455,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
-				EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'BACKUP', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'BACKUP', @result = @outcome OUTPUT;
 
 				IF @outcome IS NOT NULL
 					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -468,13 +469,13 @@ DoneRemovingFilesBeforeBackup:
 			GOTO NextDatabase;
 
 		IF @LogSuccessfulOutcomes = 1 BEGIN
-			UPDATE dbo.dba_DatabaseBackups_Log 
+			UPDATE dbo.backup_log 
 			SET 
-				BackupEnd = GETDATE(),
-				BackupSucceeded = 1, 
-				VerificationCheckStart = GETDATE()
+				backup_end = GETDATE(),
+				backup_succeeded = 1, 
+				verification_start = GETDATE()
 			WHERE 
-				BackupId = @currentOperationID;
+				backup_id = @currentOperationID;
 		END;
 
 		-----------------------------------------------------------------------------
@@ -488,24 +489,24 @@ DoneRemovingFilesBeforeBackup:
 				EXEC sys.sp_executesql @command;
 
 				IF @LogSuccessfulOutcomes = 1 BEGIN
-					UPDATE dbo.dba_DatabaseBackups_Log
+					UPDATE dbo.backup_log
 					SET 
-						VerificationCheckEnd = GETDATE(),
-						VerificationCheckSucceeded = 1
+						verification_end = GETDATE(),
+						verification_succeeded = 1
 					WHERE
-						BackupId = @currentOperationID;
+						backup_id = @currentOperationID;
 				END;
 			END TRY
 			BEGIN CATCH
 				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception during backup verification for backup of database: ' + @currentDatabase + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 
-					UPDATE dbo.dba_DatabaseBackups_Log
+					UPDATE dbo.backup_log
 					SET 
-						VerificationCheckEnd = GETDATE(),
-						VerificationCheckSucceeded = 0,
-						ErrorDetails = @errorMessage
+						verification_end = GETDATE(),
+						verification_succeeded = 0,
+						error_details = @errorMessage
 					WHERE
-						BackupId = @currentOperationID;
+						backup_id = @currentOperationID;
 
 				GOTO NextDatabase;
 			END CATCH;
@@ -523,7 +524,7 @@ DoneRemovingFilesBeforeBackup:
 			ELSE BEGIN
 				BEGIN TRY 
 					SET @outcome = NULL;
-					EXEC dbo.dba_ExecuteAndFilterNonCatchableCommand @command, 'CREATEDIR', @result = @outcome OUTPUT;
+					EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @result = @outcome OUTPUT;
 					
 					IF @outcome IS NOT NULL
 						SET @copyMessage = @outcome;
@@ -554,13 +555,13 @@ DoneRemovingFilesBeforeBackup:
 						END;
 
 						IF @LogSuccessfulOutcomes = 1 BEGIN 
-							UPDATE dbo.dba_DatabaseBackups_Log
+							UPDATE dbo.backup_log
 							SET 
-								CopySucceeded = 1,
-								CopySeconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
-								FailedCopyAttempts = 0
+								copy_succeeded = 1,
+								copy_seconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
+								failed_copy_attempts = 0
 							WHERE
-								BackupId = @currentOperationID;
+								backup_id = @currentOperationID;
 						END;
 					END TRY
 					BEGIN CATCH
@@ -574,20 +575,20 @@ DoneRemovingFilesBeforeBackup:
 
 				IF @currentOperationId IS NULL BEGIN
 					-- if we weren't logging successful operations, this operation isn't now a 100% failure, but there are problems, so we need to create a row for reporting/tracking purposes:
-					INSERT INTO dbo.dba_DatabaseBackups_Log (ExecutionId, BackupDate, [Database], BackupType, BackupPath, CopyToPath, BackupStart, BackupEnd, BackupSucceeded)
+					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded)
 					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(),0);
 
 					SELECT @currentOperationID = SCOPE_IDENTITY();
 				END
 
-				UPDATE dbo.dba_DatabaseBackups_Log
+				UPDATE dbo.backup_log
 				SET 
-					CopySucceeded = 0, 
-					CopySeconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
-					FailedCopyAttempts = 1, 
-					CopyDetails = @copyMessage
+					copy_succeeded = 0, 
+					copy_seconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
+					failed_copy_attempts = 1, 
+					copy_details = @copyMessage
 				WHERE 
-					BackupId = @currentOperationID;
+					backup_id = @currentOperationID;
 			END;
 		END;
 
@@ -600,9 +601,9 @@ RemoveOlderFiles:
 			BEGIN TRY
 
 				IF @PrintOnly = 1 BEGIN;
-					PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @PrintOnly = 1;';
+					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @PrintOnly = 1;';
 					
-                    EXEC dbo.dba_RemoveBackupFiles
+                    EXEC dbo.remove_backup_files
                         @BackupType= @BackupType,
                         @DatabasesToProcess = @currentDatabase,
                         @TargetDirectory = @BackupDirectory,
@@ -617,7 +618,7 @@ RemoveOlderFiles:
 				ELSE BEGIN;
 					SET @outcome = 'OUTPUT';
 					DECLARE @Output nvarchar(MAX);
-					EXEC dbo.dba_RemoveBackupFiles
+					EXEC dbo.remove_backup_files
 						@BackupType= @BackupType,
 						@DatabasesToProcess = @currentDatabase,
 						@TargetDirectory = @BackupDirectory,
@@ -634,9 +635,9 @@ RemoveOlderFiles:
 				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
 					IF @PrintOnly = 1 BEGIN;
-						PRINT '-- EXEC dbo.dba_RemoveBackupFiles @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @PrintOnly = 1;';
+						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @PrintOnly = 1;';
 						
-						EXEC dbo.dba_RemoveBackupFiles
+						EXEC dbo.remove_backup_files
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
@@ -651,7 +652,7 @@ RemoveOlderFiles:
 					ELSE BEGIN;
 						SET @outcome = 'OUTPUT';
 					
-						EXEC dbo.dba_RemoveBackupFiles
+						EXEC dbo.remove_backup_files
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
@@ -689,15 +690,15 @@ NextDatabase:
 				PRINT @errorMessage;
 			ELSE BEGIN;
 				IF @currentOperationId IS NULL BEGIN;
-					INSERT INTO dbo.dba_DatabaseBackups_Log (ExecutionId,BackupDate,[Database],BackupType,BackupPath,CopyToPath,BackupStart,BackupEnd,BackupSucceeded,ErrorDetails)
+					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, error_details)
 					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(), 0, @errorMessage);
 				  END;
 				ELSE BEGIN;
-					UPDATE dbo.dba_DatabaseBackups_Log
+					UPDATE dbo.backup_log
 					SET 
-						ErrorDetails = @errorMessage
+						error_details = @errorMessage
 					WHERE 
-						BackupId = @currentOperationID;
+						backup_id = @currentOperationID;
 				END;
 			END;
 		END; 
@@ -742,17 +743,17 @@ NextDatabase:
 
 	DECLARE @emailErrorMessage nvarchar(MAX);
 
-	IF EXISTS (SELECT NULL FROM dbo.dba_DatabaseBackups_Log WHERE ExecutionId = @executionID AND ErrorDetails IS NOT NULL) BEGIN;
+	IF EXISTS (SELECT NULL FROM dbo.backup_log WHERE execution_id = @executionID AND error_details IS NOT NULL) BEGIN;
 		SET @emailErrorMessage = N'The following errors were encountered: ' + @crlf;
 
-		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Target Database: [' + [Database] + N']. Error: ' + ErrorDetails + @crlf + @crlf
+		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Target Database: [' + [database] + N']. Error: ' + error_details + @crlf + @crlf
 		FROM 
-			dbo.dba_DatabaseBackups_Log
+			dbo.backup_log
 		WHERE 
-			ExecutionId = @executionID
-			AND ErrorDetails IS NOT NULL 
+			execution_id = @executionID
+			AND error_details IS NOT NULL 
 		ORDER BY 
-			BackupId;
+			backup_id;
 
 	END;
 
@@ -770,7 +771,7 @@ NextDatabase:
 		END;
 
 		-- make sure the sproc FAILS at this point (especially if this is a job). 
-		SET @errorMessage = N'One or more operations failed. Execute [ SELECT * FROM master.dbo.dba_DatabaseBackups_Log WHERE ExecutionID = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
+		SET @errorMessage = N'One or more operations failed. Execute [ SELECT * FROM [utility].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
 		RAISERROR(@errorMessage, 16, 1);
 		RETURN -100;
 	END;

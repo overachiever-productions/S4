@@ -12,7 +12,7 @@
 			run an INSERT..EXEC statement, we CAN'T spit the output of THIS sproc (dba_LoadDatabaseNames) out as a normal projection (which could then be 'consumed'
 			via an INSERT...EXEC within the consumer - because that runs afoul of the dreaded 'nested insert exec' limitation that is prevented by SQL Server. 
 			AS SUCH: this sproc spits out a list of dbs via the @Output parameter as a serialized LIST of database names - that then need to be 'split' apart via
-			dba_SplitStrings (or something else). That's a significant 'work-around' but the performance overhead is non-existent, meaning that the only overhead
+			split_string (or something else). That's a significant 'work-around' but the performance overhead is non-existent, meaning that the only overhead
 			is one of code maintenance and the JUSTIFICATION for such a manuever is that, once coded, this will be EASIER to maintain as 1x block of code than 3x
 			semi-similar blocks of code spread out among 3x different routines. 
 
@@ -29,14 +29,14 @@
 
 */
 
-USE [master];
+USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.dba_LoadDatabaseNames','P') IS NOT NULL
-	DROP PROC dbo.dba_LoadDatabaseNames;
+IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
+	DROP PROC dbo.load_database_names;
 GO
 
-CREATE PROC dbo.dba_LoadDatabaseNames 
+CREATE PROC dbo.load_database_names 
 	@Input				nvarchar(MAX),				-- [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
@@ -47,8 +47,9 @@ CREATE PROC dbo.dba_LoadDatabaseNames
 AS
 	SET NOCOUNT ON; 
 
+	DECLARE @includeAdminDBAsSystemDatabase bit = 1; -- by default, tread admindb as a system database (i.e., exclude it from [USER] and include it in [SYSTEM];
+
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -61,13 +62,11 @@ AS
 		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | CHECKUP', 16, 1);
 		RETURN -2;
 	END
-
-
+	
 	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'CHECKUP') BEGIN 
 		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | CHECKUP', 16, 1);
 		RETURN -2;
 	END
-
 
 	IF UPPER(@Mode) = N'BACKUP' BEGIN;
 		IF @BackupType IS NULL BEGIN;
@@ -108,10 +107,15 @@ AS
     IF UPPER(@Input) = '[SYSTEM]' BEGIN;
 	    INSERT INTO @targets ([database_name])
         SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
+
+		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') BEGIN
+			IF @includeAdminDBAsSystemDatabase = 1 
+				INSERT INTO @targets ([database_name])
+				VALUES ('admindb');
+		END
     END; 
 
     IF UPPER(@Input) = '[USER]' BEGIN; 
-
         IF @BackupType = 'LOG'
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
@@ -123,6 +127,9 @@ AS
             SELECT name FROM sys.databases 
             WHERE name NOT IN ('master', 'model', 'msdb','tempdb') 
             ORDER BY name;
+
+		IF @includeAdminDBAsSystemDatabase = 1 
+			DELETE FROM @targets WHERE [database_name] = 'admindb';
     END; 
 
     IF UPPER(@Input) = '[READ_FROM_FILESYSTEM]' BEGIN;
