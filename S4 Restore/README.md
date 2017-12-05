@@ -47,11 +47,11 @@ Currently, S4 Backups is only supported on SQL Server Versions and Editions (san
 
 ## <a name="deployment"></a>Deployment
 
-***NOTE:*** *S4 Scripts leverage OS-level functionality via xp_cmdshell - and deployment of S4 scripts in to your environment will enable xp_cmdshell (for SysAdmins only) if it is not previously enabled. There's sadly a LOT of FUD online about perceived perils of xp_cmdshell - which are addressed here: <a href="..\About\Notes\xp_cmdshell_notes.md"> xp_cmdshell_notes.md </a>.*
+***NOTE:*** *S4 Scripts leverage OS-level functionality via xp_cmdshell - and deployment of S4 scripts in to your environment will enable xp_cmdshell (for SysAdmins only) if it is not previously enabled. There's sadly a LOT of FUD online about perceived perils of xp_cmdshell - which are addressed here: <a href="/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=About%2FNotes%2Fxp_cmdshell_notes.md"> xp_cmdshell_notes.md </a>.*
 
-**To Deploy S4 Backups into new environment:**
+**To Deploy S4 Restore into new environment:**
 
-* You will need to configure SQL Server Database Mail, enable the SQL Server Agent to use Database Mail for Notifications, and create a SQL Server Agent Operator. For more information, see the following, detailed, instructions for Database Mail configuration details.
+* You will need to configure SQL Server Database Mail, enable the SQL Server Agent to use Database Mail for Notifications, and create a SQL Server Agent Operator. For more information, see the following, detailed, <a href="/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=About%2FNotes%2Fdatabase_mail.md">instructions for Database Mail configuration details</a>.
 * Visit the <a href="../Deployment/Install">S4\Deployment\Install\ </a>folder and deploy/execute the latest install script (e.g., 4.0 or 4.5, etc. - whatever is the highest version) available. This will enable xp_cmdshell (for SysAdmin role members only) if needed, create an admindb database, and deploy all necessary scripts, objects, and other resources needed for full S4 Restore functionality. 
 
 **To Upgrade (version 4.0+) S4 scripts in an existing environment to newer versions of S4 scripts:**
