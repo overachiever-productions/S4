@@ -1,9 +1,9 @@
 ﻿# S4 Backups
 S4 Backups were designed to provide:
 
-- **Simplicity.** Streamline the most commonly used features needed for backing up mission-critical databases into a set of simplified parameters that make automating backups of databases easy and efficient - while still vigorously ensuring disaster recovery best-practices.
-- **Resiliency** Wrap execution handling with low-level error handling to prevent a failure in one operation (such as the failure to backup one database out of 10 specified) from 'cascading' into others and causing a 'chain' of operations from completing merely because an 'earlier' operation failed. 
-- **Transparency** Use (low-level) error-handling to log problems in a centralized logging table (for trend-analysis and improved troubleshooting) and send email alerts with concise details about each failure or problem encountered during execution so that DBAs can quickly ascertain the impact and severity of any errors incurred during execution without having to wade through messy 'debugging' and troubleshooting procedures.
+- **Simplicity.** Streamlines the most commonly used features needed for backing up mission-critical databases into a set of simplified parameters that make automating backups of databases easy and efficient - while still vigorously ensuring disaster recovery best-practices.
+- **Resiliency** Wraps execution with low-level error handling to prevent a failure in one operation (such as the failure to backup one database out of 10 specified) from 'cascading' into others and causing a 'chain' of operations from completing merely because an 'earlier' operation failed. 
+- **Transparency** Usea (low-level) error-handling to log problems in a centralized logging table (for trend-analysis and improved troubleshooting) and send email alerts with concise details about each failure or problem encountered during execution so that DBAs can quickly ascertain the impact and severity of any errors incurred during execution without having to wade through messy 'debugging' and troubleshooting procedures.
 
 
 ## <a name="toc"></a>Table of Contents
@@ -19,7 +19,7 @@ S4 Backups were designed to provide:
 ## <a name="benefits"></a>Benefits of S4 Backups
 Key Benefits Provided by S4 Backups:
 
-- **Simplicity, Resiliency, and Transparency.** Commonly needed features and capabilities - streamlined into a set of simple to use and manage scripts. 
+- **Simplicity, Resiliency, and Transparency.** Commonly needed features and capabilities - streamlined into a set of simple to use scripts. 
 - **Streamlined Deployment and Management.** No dependencies on external DLLs, outside software, or additional components. Instead, S4 Backups are set of simple wrappers around native SQL Server Native Backup capabilities - designed to enable Simplicity, Resiliency, and Transparency when tackling backups.
 - **Redundancy.** Designed to facilitate copying backups to multiple locations (i.e., on-box backups + UNC backups (backups of backups) - or 2x UNC backup locations, etc.)
 - **Encryption.** Enable at-rest-encryption by leveraging SQL Server 2014's (+) NATIVE backup encryption (only available on Standard and Enteprise Editions).
@@ -32,7 +32,9 @@ Key Benefits Provided by S4 Backups:
 ## <a name="supported"></a>Supported SQL Server Versions
 **S4 Backups were designed to work with SQL Server 2008 and above.** 
 
-S4 Backups were also designed to work with all Editions of SQL Server - though features which aren't supported on some Editions (like Backup Encryption on Web/Express Editions) obviously won't work. Likewise, SQL Express Editions can't send emails/alerts - so @OperatorName, @MailProfileName, and @EmailSubjectPrefix parameters are all ignored AND no alerts can/will be sent upon failures or errors from SQL Express Editions.
+S4 Backups were designed to work with all STAND-ALONE Editions of SQL Server (i.e., S4 scripts are not designed to work with Amazon RDS, Azure DB, or other 'streamlined' versions of SQL Server) greater than SQL Server 2008. However, features which aren't supported on some Editions (like Backup Encryption on Web/Express Editions) obviously can't be supported via S4 scripts (meaning that backups on Web and Express Editions will NOT be compressed). Likewise, SQL Express Editions can't send emails/alerts - so @OperatorName, @MailProfileName, and @EmailSubjectPrefix parameters are all ignored AND no alerts can/will be sent upon failures or errors from SQL Express Editions.
+
+Because SQL Server 2017 Linux Editions do NOT support direct interaction (from within SQL Server via a 'command prompt') with the file-system), S4 Backup scripts are not currently supported on SQL Server 2017 for Linux (but are supported on Windows Installations).
 
 S4 Backups have not (yet) been tested against case-sensitive SQL Servers.
 
@@ -42,99 +44,18 @@ S4 Backups have not (yet) been tested against case-sensitive SQL Servers.
 
 ## <a name="deployment"></a>Deployment
 
-To Deploy S4 Backups into your environment:
-- You will need to enable xp_cmdshell if it isn't already enabled. (See below for more information.)
-- You will also need to have configured Database Mail, enabled the SQL Server Agent to use Database Mail for notifications, and have created a SQL Server Agent Operator. For more information, see the notes below. 
-- From the **S4 'Common'** folder, locate and then open + execute dba_ExecuteAndFilterNonCatchableCommand.sql against your target server.
-- From the **S4 'Common'** folder, locate and then open + execute dba_CheckPaths.sql against your target server.
-- From the **S4 'Common'** folder, locate and then open + execute dba_SplitString.sql against your target server.
-- From the **S4 'Common'** folder, locate and then open + execute dba_LoadDatabaseNames against your target server.
-- From the **S4 Backup folder**, open the Utilities folder, find and then open + execute dba_RemoveBackupFiles.sql against your target server.
-- From the **S4 Backup folder**, locate, and then open + execute the 0. dba_DatabaseBackups_Log.sql script against your target server.
-- From the **S4 Backup folder**, locate, and then open + execute the 1. dba_BackupDatabases.sql script against your target server.
+***NOTE:*** *S4 Scripts leverage OS-level functionality via xp_cmdshell - and deployment of S4 scripts in to your environment will enable xp_cmdshell (for SysAdmins only) if it is not previously enabled. There's sadly a LOT of FUD online about perceived perils of xp_cmdshell - which are addressed here: <a href="..\About\Notes\xp_cmdshell_notes.md"> xp_cmdshell_notes.md </a>.*
 
-Once you've completed the steps listed above, everything you need will be deployed and ready for execution. 
+**To Deploy S4 Backups into new environment:**
 
-***Note**: If you're in a Mirrored Environment or if your servers are hosting Availability Groups, you'll want to make sure to complete the steps listed above on both/all servers where your databases will be hosted.*
+* You will need to configure SQL Server Database Mail, enable the SQL Server Agent to use Database Mail for Notifications, and create a SQL Server Agent Operator. For more information, see the following, detailed, instructions for Database Mail configuration details.
+* Visit the <a href="../Deployment/Install">S4\Deployment\Install\ </a>folder and deploy/execute the latest install script (e.g., 4.0 or 4.5, etc. - whatever is the highest version) available. This will enable xp_cmdshell (for SysAdmin role members only) if needed, create an admindb database, and deploy all necessary scripts, objects, and other resources needed for full S4 Restore functionality. 
+
+**To Upgrade (version 4.0+) S4 scripts in an existing environment to newer versions of S4 scripts:**
+* Visit the <a href="../Deployment/Upgrade">S4\Deployment\Upgrade\ </a> folder and deploy/execute the latest 4.x to ***4.[LatestVersionAvailable]*** script against your server (e.g., if you're currently running version 4.0 and the Upgrade folder contains a 4.x to 4.6.sql upgrade script, execute this script against your environment(s) and it will push all 4.1, 4.2, 4.3, etc. upgrades - up to the latest version indicated (by the file name) so that you have all changes and improvements represented in your environment(s).
 
 
-### Notes on xp_cmdshell
-
-There's a lot of false information online about the use of xp_cmdshell. However, while enabling xp_cmdshell for anyone OUTSIDE of the SysAdmin fixed server-role WOULD be a bad idea, this both semi-difficult to do (i.e., it takes some explicit steps), and is NOT what is required for S4 backups to execute. Instead, S4 Backups simply need xp_cmdshell enabled for SysAdmins - which will give Admins (or SQL Server Agent jobs running with elevated permissions), the ability to, effectively, open up a command-shell on the host SQL Server and execute commands against that shell WITH the permissions granted to your SQL Server Engine/Service. Or, in other words, xp_cmdshell allows SysAdmins to run arbitrary Windows commands (in effect giving them a 'DOS prompt') with whatever permissions are afforded to the SQL Server Service itself. When configured securely and correctly, the number of permissions available to a SQL Server Service are VERY limited by default - and are typically restricted to folders explicitly defined during setup or initial configuration (i.e., SQL Server will obviously need permissions to access the Program Files\SQL Server\ directory, the folders for data and log files, and any folders you've defined for SQL Server to use as backups; further, if you're pushing backups off-box (which you should be doing), you'll need to be using a least-privilege Domain Account - which will need to be granted read/write permissions against your targeted network shares for SQL Server backups). 
-
-In short, the worst that a SysAdmin can do with xp_cmdshell enabled is... the same they could do without it enabled (i.e., they could drop/destroy all of your databases and backups (if they are so inclined to do or if they're careless and their access to the server is somehow compromised) - but there is NO elevation of privilege that comes from having xp_cmdshell enabled - period. 
-
-To check to see if xp_cmdshell is enabled, run the following against your server: 
-
-```sql
--- 1 = enabled, 0 = not-enabled:
-SELECT name, value_in_use FROM sys.configurations WHERE name = 'xp_cmdshell';
-```
-
-If it's not enabled, you'll then need to see if advanced configuration options are enabled or not (as 'flipping' xp_cmdshell on/off is an advanced configuration option). To do this, run the following against your server: 
-
-```sql
--- 1 = enabled, 0 = not-enabled:
-SELECT name, value_in_use FROM sys.configurations WHERE name = 'show advanced options';
-```
-
-If you need to enable advanced configuration options, run the following:
-
-```sql
-USE master;
-GO
-
-EXEC sp_configure 'show advanced options', 1;
-GO
-```
-
-Once you execute the command above, SQL Server will notify you that the command succeeded, but that you need to run a RECONFIGURE command before the change will be applied. To force SQL Server to re-read configuration information, run the following command: 
-
-```sql
-RECONFIGURE;
-```
-
-**WARNING:** While the configuration options specified in these setup docs will NOT cause a dump of your plan cache, OTHER configuration changes can/will force a dump of your plan cache (which can cause MAJOR performance issues and problems on heavily used servers). As such:
-- Be careful with the use of RECONFIGURE (i.e., don't ever treat it lightly). 
-- If you're 100% confident that no OTHER changes to the server's configuration are PENDING a RECONFIGURE command, go ahead and run reconfigure as needed to complete setup. 
-- If there's any doubt and you're on a busy system, wait until non-peak hours before running a RECONFIGURE command.
-
-To check if there are any changes pending on your server, you can run the following (and if the only configuration setting listed is for xp_cmdshell, then you can run RECONFIGURE without any worries):
-
-```sql
--- note that 'min server memory(MB)' will frequently show up in here
---		if so, you can ignore it... 
-SELECT name, value, value_in_use 
-FROM sys.configurations
-WHERE value != value_in_use;
-```
-
-Otherwise, once advanced configuration options are enabled, if you need to enable xp_cmdshell, run the following against your server:
-
-```sql
-USE master;
-GO
-
-EXEC sp_configure 'xp_cmdshell', 1;
-GO
-```
-
-Once you've run that, you will need to run a RECONFIGURE statement (as outlined above) BEFORE the change will 'take'. (See instructions above AND warnings - then execute when/as possible.)
-
-### Notes on Setting up Database Mail
-
-For more information on setting up and configuring Database Mail, see the following post: [Configuring and Troubleshooting Database Mail](http://sqlmag.com/blog/configuring-and-troubleshooting-database-mail-sql-server). 
-
-Then, once you've enabled Database Mail (and ensured that your SQL Server Agent - which isn't supported on Express Editions), you'll also need to create a new Operator. To create a new Operator:
-- In SSMS, connect to your server. 
-- Expand the SQL Server Agent > Operators node. 
-- Right click on the Operators node and select the "New Operator..." menu option. 
-- Provide a name for the operator (i.e., "Alerts"), then specify an email address (or, ideally, an ALIAS when sending to one or more people) in the "E-mail name" filed, then click OK. (All of the scheduling and time stuff is effectively for Pagers (remember those) - and can be completely ignored). 
-- Go back into your SQL Server Agent properties (as per the article linked above), and specify that the Operator you just created will be the Fail Safe Operator - on the "Alerts System" page/tab. 
-- 
-For more information and best practices on setting up Operator (email addresses), see the following: [Database Mail Tip: Notifying Operators vs Sending Emails](http://sqlmag.com/blog/sql-server-database-mail-notifying-operators-vs-sending-emails).
-
-**NOTE:** *By convention S4 Backups are written to use a Mail Profile name of "General" and an Operator Name of "Alerts" - but you can easily configure backups to use any profile name and/or operator name.*
+***Note**: If you're in a Mirrored Environment or if your servers are hosting Availability Groups, you'll want to make sure to complete the steps listed above on both/all servers where backups will be managed.*
 
 [Return to Table of Contents](#toc)
 
@@ -170,7 +91,10 @@ Required. The type of backup to perform (FULL backup, Differential backup, or Tr
 
 **@DatabasesToBackup** =  { list, of, databases, to, backup, by, name | [USER] | [SYSTEM] }
 
-Required. Either a comma-delimited list of databases to backup by name (e.g., 'db1, dbXyz', 'Widgets') or a specialized token (enclosed in square-brackets) to specify that either [SYSTEM] databases should be backed up, or [USER] databases should be backed up. 
+Required. Either a comma-delimited list of databases to backup by name (e.g., 'db1, dbXyz, Widgets') or a specialized token (enclosed in square-brackets) to specify that either [SYSTEM] databases should be backed up, or [USER] databases should be backed up. 
+
+
+***NOTE:*** By default, the admindb is treated by S4 scripts as a [SYSTEM] database (instead of a [USER] database). If you wish/need to modify this behavior, you'll need to modify the @includeAdminDBAsSystemDatabase switch/variable in dbo.load_database_names (i.e., set it to 0 and it'll then be treated as a [USER] database instead of a [SYSTEM] database).
 
 **[@DatabasesToExclude** = { 'list, of, database, names, to exclude, %wildcards_allowed%' } ]
 
