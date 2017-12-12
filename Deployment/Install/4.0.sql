@@ -1,14 +1,5 @@
 
-
--- note, warn that we're enabling xp_cmdshell... 
---		point to a link where we outline that it's NOT a problem. 
---			and... the link... needs to be the link that both backups and restore scripts point to... 
-
-
--- enable advanced options as necessary. (and save a 'bit value' to revert as needed)... 
--- then enable xp_cmdshell and output an ERROR... so'z people can see a 'warning' that xp_cmdshell was enabled. 
-
-
+-- TODO: add link to documentation on xp_cmdshell (if not already enabled).
 
 
 IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND value_in_use = 0) BEGIN;
@@ -78,7 +69,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.0.1.16756';
+DECLARE @CurrentVersion varchar(20) = N'4.1.0.16764';
 
 -- Add current version info:
 IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
@@ -552,8 +543,6 @@ END
 
 GO
 
-
-
 USE [admindb];
 GO
 
@@ -567,6 +556,7 @@ CREATE PROC [dbo].[remove_backup_files]
 	@DatabasesToExclude					nvarchar(600) = NULL,			-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000),					-- { path_to_backups }
 	@Retention							nvarchar(10),					-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
+	@ServerNameInSystemBackupPath		bit = 0,						-- for mirrored servers/etc.
 	@Output								nvarchar(MAX) = NULL OUTPUT,	-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@SendNotifications					bit	= 0,						-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
@@ -581,17 +571,17 @@ AS
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN;
-		RAISERROR('Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
+		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
 	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN;
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
+		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
 	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN;
-		RAISERROR('Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -676,10 +666,12 @@ AS
 	
 	SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
 
-	IF @retentionType = 'b'
-		PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
-	ELSE 
-		PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+	IF @PrintOnly = 1 BEGIN
+		IF @retentionType = 'b'
+			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+		ELSE 
+			PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+	END;
 
 	DECLARE @retentionCutoffTime datetime = NULL; 
 	IF @retentionType != 'b' BEGIN
@@ -736,6 +728,25 @@ AS
 
 	INSERT INTO @targetDirectories ([directory_name])
 	SELECT [result] FROM dbo.split_string(@serialized, N',');
+
+	-----------------------------------------------------------------------------
+	-- Account for backups of system databases with the server-name in the path:  
+	IF @ServerNameInSystemBackupPath = 1 BEGIN
+		
+		-- simply add additional/'duplicate-ish' directories to check for anything that's a system database:
+		DECLARE @serverName sysname = N'\' + REPLACE(@@SERVERNAME, N'\', N'_'); -- account for named instances. 
+
+
+		-- and, note that IF we hand off the name of an invalid directory (i.e., say admindb backups are NOT being treated as system - so that D:\SQLBackups\admindb\SERVERNAME\ was invalid, then xp_dirtree (which is what's used to query for files) will simply return 'empty' results and NOT throw errors.
+		INSERT INTO @targetDirectories (directory_name)
+		SELECT 
+			directory_name + @serverName 
+		FROM 
+			@targetDirectories
+		WHERE 
+			directory_name IN (N'master', N'msdb', N'model', N'admindb'); 
+
+	END;
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:
@@ -1069,7 +1080,6 @@ AS
 
 	RETURN 0;
 GO
-
 
 USE [admindb];
 GO
@@ -1569,13 +1579,14 @@ RemoveOlderFiles:
 			BEGIN TRY
 
 				IF @PrintOnly = 1 BEGIN;
-					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @PrintOnly = 1;';
+					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 					
                     EXEC dbo.remove_backup_files
                         @BackupType= @BackupType,
                         @DatabasesToProcess = @currentDatabase,
                         @TargetDirectory = @BackupDirectory,
                         @Retention = @BackupRetention, 
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile,
 
@@ -1591,6 +1602,7 @@ RemoveOlderFiles:
 						@DatabasesToProcess = @currentDatabase,
 						@TargetDirectory = @BackupDirectory,
 						@Retention = @BackupRetention,
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile, 
 						@Output = @outcome OUTPUT;
@@ -1603,13 +1615,14 @@ RemoveOlderFiles:
 				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
 					IF @PrintOnly = 1 BEGIN;
-						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @PrintOnly = 1;';
+						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 						
 						EXEC dbo.remove_backup_files
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
 							@Retention = @CopyToRetention, 
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 
@@ -1625,6 +1638,7 @@ RemoveOlderFiles:
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
 							@Retention = @CopyToRetention, 
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 							@Output = @outcome OUTPUT;					
