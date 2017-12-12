@@ -601,13 +601,14 @@ RemoveOlderFiles:
 			BEGIN TRY
 
 				IF @PrintOnly = 1 BEGIN;
-					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @PrintOnly = 1;';
+					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 					
                     EXEC dbo.remove_backup_files
                         @BackupType= @BackupType,
                         @DatabasesToProcess = @currentDatabase,
                         @TargetDirectory = @BackupDirectory,
                         @Retention = @BackupRetention, 
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile,
 
@@ -623,6 +624,7 @@ RemoveOlderFiles:
 						@DatabasesToProcess = @currentDatabase,
 						@TargetDirectory = @BackupDirectory,
 						@Retention = @BackupRetention,
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile, 
 						@Output = @outcome OUTPUT;
@@ -635,13 +637,14 @@ RemoveOlderFiles:
 				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
 					IF @PrintOnly = 1 BEGIN;
-						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @PrintOnly = 1;';
+						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 						
 						EXEC dbo.remove_backup_files
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
 							@Retention = @CopyToRetention, 
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 
@@ -657,6 +660,7 @@ RemoveOlderFiles:
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
 							@Retention = @CopyToRetention, 
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 							@Output = @outcome OUTPUT;					

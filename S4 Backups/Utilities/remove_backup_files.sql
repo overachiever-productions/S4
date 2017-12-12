@@ -12,29 +12,9 @@
 	NOTES:
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
 
-		- BUG? 
-			May be an issue where using xp_delete_file MIGHT be causing issues with directories. 
-			Specifically:
-				on Windows Server 2012R2 and 2016... if there's a folder ... and it has files... 
-				and we run xp_delete_file against said folder.... 
-				THEN get to a point where ALL files in that folder are gone/deleted (either xp_delete_file removes all folders OR we manually delete everything)
-					then there's an 'Access Denied' issue - where the folder can't be accessed or DELETED at ALL - until a reboot. 
-						And... once the reboot happens... the folders aren't there anymore. 
-
-						It's ALSO possible that xp_create_subdir is causing the problem... i.e., it MIGHT not be an issue with deleting files - it could be that file-creation had some weird issues... 
-							in which case... i'll need to use cd or something - along with ensuring that we get the right perms... 
-
-				IF i can confirm that this is being caused by xp_delete_file... 
-					I'm going to have to do something different - like:
-						a) RESTORE FILEHEADER ONLY.... 
-							get the time in question... 
-						b) DOS delete the thing... IF it should be deleted... 
-
-
 		- Not yet documented. 
 			-	Behaves, essentially, like dba_BackupDatabases - only it doesn't do backups... it just removes files from ONE root directory for 1st level of child directories NOT excluded. 
 			- Main Differences:
-				- @RetentionMINUTES - not Hours. 
 				- @SendNotifications - won't send notifications unless set to 1. 
 
 	FODDER:
@@ -80,6 +60,7 @@ CREATE PROC [dbo].[remove_backup_files]
 	@DatabasesToExclude					nvarchar(600) = NULL,			-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000),					-- { path_to_backups }
 	@Retention							nvarchar(10),					-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
+	@ServerNameInSystemBackupPath		bit = 0,						-- for mirrored servers/etc.
 	@Output								nvarchar(MAX) = NULL OUTPUT,	-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@SendNotifications					bit	= 0,						-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
@@ -189,10 +170,12 @@ AS
 	
 	SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
 
-	IF @retentionType = 'b'
-		PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
-	ELSE 
-		PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+	IF @PrintOnly = 1 BEGIN
+		IF @retentionType = 'b'
+			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+		ELSE 
+			PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+	END;
 
 	DECLARE @retentionCutoffTime datetime = NULL; 
 	IF @retentionType != 'b' BEGIN
@@ -249,6 +232,25 @@ AS
 
 	INSERT INTO @targetDirectories ([directory_name])
 	SELECT [result] FROM dbo.split_string(@serialized, N',');
+
+	-----------------------------------------------------------------------------
+	-- Account for backups of system databases with the server-name in the path:  
+	IF @ServerNameInSystemBackupPath = 1 BEGIN
+		
+		-- simply add additional/'duplicate-ish' directories to check for anything that's a system database:
+		DECLARE @serverName sysname = N'\' + REPLACE(@@SERVERNAME, N'\', N'_'); -- account for named instances. 
+
+
+		-- and, note that IF we hand off the name of an invalid directory (i.e., say admindb backups are NOT being treated as system - so that D:\SQLBackups\admindb\SERVERNAME\ was invalid, then xp_dirtree (which is what's used to query for files) will simply return 'empty' results and NOT throw errors.
+		INSERT INTO @targetDirectories (directory_name)
+		SELECT 
+			directory_name + @serverName 
+		FROM 
+			@targetDirectories
+		WHERE 
+			directory_name IN (N'master', N'msdb', N'model', N'admindb'); 
+
+	END;
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:
