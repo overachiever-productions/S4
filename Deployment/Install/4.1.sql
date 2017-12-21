@@ -1,6 +1,22 @@
 
--- TODO: add link to documentation on xp_cmdshell (if not already enabled).
 
+
+
+/*
+
+	NOTES:
+		- This script assumes that there MAY (or may NOT) be older S4 scripts on the server and, if found, will migrate data (backup and restore logs) and cleanup/remove older code from masterdb.  
+
+	TODO: 
+		- If xp_cmdshell ends up being enabled, drop a link to S4 documentation on what it is, why it's needed, and why it's not the security risk some folks on interwebs make it out to be. 
+
+
+*/
+
+
+
+USE [master];
+GO
 
 IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND value_in_use = 0) BEGIN;
 
@@ -31,6 +47,7 @@ IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND
 	END;
 END;
 GO
+
 
 
 USE [master];
@@ -69,7 +86,23 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.1.0.16764';
+
+DECLARE @CurrentVersion varchar(20) = N'4.1.1.16773';
+
+-- Add previous details if any are present: 
+DECLARE @version sysname; 
+DECLARE @objectId int;
+DECLARE @createDate datetime;
+SELECT @objectId = [object_id], @createDate = create_date FROM master.sys.objects WHERE [name] = N'dba_DatabaseBackups_Log';
+SELECT @version = CAST([value] AS sysname) FROM master.sys.extended_properties WHERE major_id = @objectId AND [name] = 'Version';
+
+IF NULLIF(@version,'') IS NOT NULL BEGIN
+	IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @version) BEGIN
+		INSERT INTO dbo.version_history (version_number, [description], deployed)
+		VALUES ( @version, N'Found during deployment of ' + @CurrentVersion + N'.', @createDate);
+	END
+END;
+
 
 -- Add current version info:
 IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
@@ -81,29 +114,64 @@ END;
 -- Setup and Copy info from backup and restore logs... 
 IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
 
-	CREATE TABLE dbo.backup_log  (
-		backup_id int IDENTITY(1,1) NOT NULL,
-		execution_id uniqueidentifier NOT NULL,
-		backup_date date NOT NULL CONSTRAINT DF_backup_log_log_date DEFAULT (GETDATE()),
-		[database] sysname NOT NULL, 
-		backup_type sysname NOT NULL,
-		backup_path nvarchar(1000) NOT NULL, 
-		copy_path nvarchar(1000) NULL, 
-		backup_start datetime NOT NULL, 
-		backup_end datetime NULL, 
-		backup_succeeded bit NOT NULL CONSTRAINT DF_backup_log_backup_succeeded DEFAULT (0), 
-		verification_start datetime NULL, 
-		verification_end datetime NULL, 
-		verification_succeeded bit NULL, 
-		copy_succeeded bit NULL, 
-		copy_seconds int NULL, 
-		failed_copy_attempts int NULL, 
-		copy_details nvarchar(MAX) NULL,
-		error_details nvarchar(MAX) NULL, 
-		CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
-	);	
+		CREATE TABLE dbo.backup_log  (
+			backup_id int IDENTITY(1,1) NOT NULL,
+			execution_id uniqueidentifier NOT NULL,
+			backup_date date NOT NULL CONSTRAINT DF_backup_log_log_date DEFAULT (GETDATE()),
+			[database] sysname NOT NULL, 
+			backup_type sysname NOT NULL,
+			backup_path nvarchar(1000) NOT NULL, 
+			copy_path nvarchar(1000) NULL, 
+			backup_start datetime NOT NULL, 
+			backup_end datetime NULL, 
+			backup_succeeded bit NOT NULL CONSTRAINT DF_backup_log_backup_succeeded DEFAULT (0), 
+			verification_start datetime NULL, 
+			verification_end datetime NULL, 
+			verification_succeeded bit NULL, 
+			copy_succeeded bit NULL, 
+			copy_seconds int NULL, 
+			failed_copy_attempts int NULL, 
+			copy_details nvarchar(MAX) NULL,
+			error_details nvarchar(MAX) NULL, 
+			CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
+		);	
 
 END;
+
+-- copy over data from previous deployments if present. 
+-- NOTE: done in a separate check to help keep things idempotent... i.e., if there's an error/failure AFTER creating the table... we wouldn't branch to this logic again IF it's part of the table creation.
+IF @objectId IS NOT NULL BEGIN 
+		
+	PRINT 'Importing Previous Data.... ';
+	SET IDENTITY_INSERT dbo.backup_log ON;
+
+	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
+		verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
+	SELECT 
+		BackupId,
+        ExecutionId,
+        BackupDate,
+        [Database],
+        BackupType,
+        BackupPath,
+        CopyToPath,
+        BackupStart,
+        BackupEnd,
+        BackupSucceeded,
+        VerificationCheckStart,
+        VerificationCheckEnd,
+        VerificationCheckSucceeded,
+        CopyDetails,
+		0,     --FailedCopyAttempts,
+        ErrorDetails
+	FROM 
+		master.dbo.dba_DatabaseBackups_Log
+	WHERE 
+		BackupID NOT IN (SELECT backup_id FROM dbo.backup_log);
+
+	SET IDENTITY_INSERT dbo.backup_log OFF;
+END
+
 
 IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 
@@ -126,6 +194,109 @@ IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 
 END;
 
+-- copy over data as needed:
+SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
+IF @objectId IS NOT NULL BEGIN;
+
+	PRINT 'Importing Previous Data.... ';
+	SET IDENTITY_INSERT dbo.restore_log ON;
+
+	INSERT INTO dbo.restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
+		consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+	SELECT 
+		RestorationTestId,
+        ExecutionId,
+        TestDate,
+        [Database],
+        RestoredAs,
+        RestoreStart,
+        RestoreEnd,
+        RestoreSucceeded,
+        ConsistencyCheckStart,
+        ConsistencyCheckEnd,
+        ConsistencyCheckSucceeded,
+        Dropped,
+        ErrorDetails
+	FROM 
+		master.dbo.dba_DatabaseRestore_Log
+	WHERE 
+		RestorationTestId NOT IN (SELECT restore_test_id FROM dbo.restore_log);
+
+	SET IDENTITY_INSERT dbo.restore_log OFF;
+
+END
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Cleanup and Remove any/all previous code from the master database:
+
+
+USE [master];
+GO
+
+-------------------------------------------------------------
+-- Tables:
+IF OBJECT_ID('dbo.dba_DatabaseBackups_Log','U') IS NOT NULL
+	DROP TABLE dbo.dba_DatabaseBackups_Log;
+GO
+
+IF OBJECT_ID('dbo.dba_DatabaseRestore_Log','U') IS NOT NULL
+	DROP TABLE dbo.dba_DatabaseRestore_Log;
+GO
+
+
+-- UDFs:
+IF OBJECT_ID('dbo.dba_SplitString','TF') IS NOT NULL
+	DROP FUNCTION dbo.dba_SplitString;
+GO
+
+-------------------------------------------------------------
+-- Sprocs:
+-- common:
+IF OBJECT_ID('dbo.dba_CheckPaths','P') IS NOT NULL
+	DROP PROC dbo.dba_CheckPaths;
+GO
+
+IF OBJECT_ID('dbo.dba_ExecuteAndFilterNonCatchableCommand','P') IS NOT NULL
+	DROP PROC dbo.dba_ExecuteAndFilterNonCatchableCommand;
+GO
+
+IF OBJECT_ID('dbo.dba_LoadDatabaseNames','P') IS NOT NULL
+	DROP PROC dbo.dba_LoadDatabaseNames;
+GO
+
+-- Backups:
+IF OBJECT_ID('[dbo].[dba_RemoveBackupFiles]','P') IS NOT NULL
+	DROP PROC [dbo].[dba_RemoveBackupFiles];
+GO
+
+IF OBJECT_ID('dbo.dba_BackupDatabases','P') IS NOT NULL
+	DROP PROC dbo.dba_BackupDatabases;
+GO
+
+IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
+	DROP PROC dba_RestoreDatabases;
+GO
+
+-------------------------------------------------------------
+-- Potential FORMER versions of basic code (pre 1.0).
+
+IF OBJECT_ID('dbo.dba_DatabaseBackups','P') IS NOT NULL
+	DROP PROC dbo.dba_DatabaseBackups;
+GO
+
+IF OBJECT_ID('dbo.dba_ExecuteNonCatchableCommand','P') IS NOT NULL
+	DROP PROC dbo.dba_ExecuteNonCatchableCommand;
+GO
+
+IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
+	DROP PROC dba_RestoreDatabases;
+GO
+
+
+IF OBJECT_ID('dbo.dba_DatabaseRestore_CheckPaths','P') IS NOT NULL
+	DROP PROC dbo.dba_DatabaseRestore_CheckPaths;
+GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Deploy new code:
@@ -274,7 +445,7 @@ CREATE PROC dbo.load_database_names
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | CHECKUP
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
-	@TargetDirectory	sysname			= NULL, 
+	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -406,15 +577,23 @@ AS
     END;
 
 	IF UPPER(@Mode) IN (N'BACKUP') BEGIN;
+
+		DECLARE @synchronized table ( 
+			[database_name] sysname NOT NULL
+		);
+
+		INSERT INTO @synchronized ([database_name])
+		SELECT [name] FROM	sys.databases WHERE state_desc != 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+
+		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @synchronized ([database_name])
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+		END
+
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
 		DELETE FROM @targets 
-		WHERE [database_name] IN (SELECT name FROM sys.databases WHERE state_desc != 'ONLINE')  -- this gets any dbs that are NOT online - INCLUDING those that are listed as 'RESTORING' because of mirroring. 
-			OR [database_name] IN (
-				SELECT d.name 
-				FROM sys.databases d 
-				INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id
-				WHERE hars.role_desc != 'PRIMARY'
-			); -- grab any dbs that are in an AG where the current role != PRIMARY. 
+		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
 
 	-- Exclude any databases specified for exclusion:
@@ -1335,11 +1514,19 @@ AS
 		SET @outcome = NULL;
 		SET @currentOperationID = NULL;
 
+-- TODO: this logic is duplicated in dbo.load_database_names. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
-		IF @currentDatabase IN (SELECT [name] FROM 
-				(SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE' 
-				 UNION SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY') x
-		) BEGIN 
+		DECLARE @synchronized table ([database_name] sysname NOT NULL);
+		INSERT INTO @synchronized ([database_name])
+		SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE';  -- mirrored dbs that have failed over and are now 'restoring'... 
+
+		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @synchronized ([database_name])
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+		END
+
+		IF @currentDatabase IN (SELECT [database_name] FROM @synchronized) BEGIN
 			PRINT 'Skipping database: ' + @currentDatabase + ' because it is no longer available, online, or accessible.';
 			GOTO NextDatabase;  -- just 'continue' - i.e., short-circuit processing of this 'loop'... 
 		END; 
@@ -1760,6 +1947,7 @@ NextDatabase:
 
 	RETURN 0;
 GO
+
 
 
 
