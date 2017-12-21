@@ -2,9 +2,7 @@
 /*
 
 	NOTES:
-		- This script ASSUMES that previous instances of S4 were deployed to the server in question. 
-		- If this is a NEW server, run the \Install\4.0.sql script.
-
+		- This script assumes that there MAY (or may NOT) be older S4 scripts on the server and, if found, will migrate data (backup and restore logs) and cleanup/remove older code from masterdb.  
 
 
 */
@@ -47,7 +45,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.0.1.16756';
+DECLARE @CurrentVersion varchar(20) = N'4.1.1.16773';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -295,7 +293,6 @@ AS
 GO
 
 
-
 USE [admindb];
 GO
 
@@ -406,7 +403,7 @@ CREATE PROC dbo.load_database_names
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | CHECKUP
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
-	@TargetDirectory	sysname			= NULL, 
+	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -538,15 +535,23 @@ AS
     END;
 
 	IF UPPER(@Mode) IN (N'BACKUP') BEGIN;
+
+		DECLARE @synchronized table ( 
+			[database_name] sysname NOT NULL
+		);
+
+		INSERT INTO @synchronized ([database_name])
+		SELECT [name] FROM	sys.databases WHERE state_desc != 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+
+		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @synchronized ([database_name])
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+		END
+
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
 		DELETE FROM @targets 
-		WHERE [database_name] IN (SELECT name FROM sys.databases WHERE state_desc != 'ONLINE')  -- this gets any dbs that are NOT online - INCLUDING those that are listed as 'RESTORING' because of mirroring. 
-			OR [database_name] IN (
-				SELECT d.name 
-				FROM sys.databases d 
-				INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id
-				WHERE hars.role_desc != 'PRIMARY'
-			); -- grab any dbs that are in an AG where the current role != PRIMARY. 
+		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
 
 	-- Exclude any databases specified for exclusion:
@@ -675,8 +680,6 @@ END
 
 GO
 
-
-
 USE [admindb];
 GO
 
@@ -690,6 +693,7 @@ CREATE PROC [dbo].[remove_backup_files]
 	@DatabasesToExclude					nvarchar(600) = NULL,			-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000),					-- { path_to_backups }
 	@Retention							nvarchar(10),					-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
+	@ServerNameInSystemBackupPath		bit = 0,						-- for mirrored servers/etc.
 	@Output								nvarchar(MAX) = NULL OUTPUT,	-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@SendNotifications					bit	= 0,						-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
@@ -704,17 +708,17 @@ AS
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN;
-		RAISERROR('Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
+		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
 	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN;
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
+		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
 	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN;
-		RAISERROR('Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -799,10 +803,12 @@ AS
 	
 	SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
 
-	IF @retentionType = 'b'
-		PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
-	ELSE 
-		PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+	IF @PrintOnly = 1 BEGIN
+		IF @retentionType = 'b'
+			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+		ELSE 
+			PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+	END;
 
 	DECLARE @retentionCutoffTime datetime = NULL; 
 	IF @retentionType != 'b' BEGIN
@@ -859,6 +865,25 @@ AS
 
 	INSERT INTO @targetDirectories ([directory_name])
 	SELECT [result] FROM dbo.split_string(@serialized, N',');
+
+	-----------------------------------------------------------------------------
+	-- Account for backups of system databases with the server-name in the path:  
+	IF @ServerNameInSystemBackupPath = 1 BEGIN
+		
+		-- simply add additional/'duplicate-ish' directories to check for anything that's a system database:
+		DECLARE @serverName sysname = N'\' + REPLACE(@@SERVERNAME, N'\', N'_'); -- account for named instances. 
+
+
+		-- and, note that IF we hand off the name of an invalid directory (i.e., say admindb backups are NOT being treated as system - so that D:\SQLBackups\admindb\SERVERNAME\ was invalid, then xp_dirtree (which is what's used to query for files) will simply return 'empty' results and NOT throw errors.
+		INSERT INTO @targetDirectories (directory_name)
+		SELECT 
+			directory_name + @serverName 
+		FROM 
+			@targetDirectories
+		WHERE 
+			directory_name IN (N'master', N'msdb', N'model', N'admindb'); 
+
+	END;
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:
@@ -1193,7 +1218,6 @@ AS
 	RETURN 0;
 GO
 
-
 USE [admindb];
 GO
 
@@ -1448,11 +1472,19 @@ AS
 		SET @outcome = NULL;
 		SET @currentOperationID = NULL;
 
+-- TODO: this logic is duplicated in dbo.load_database_names. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
-		IF @currentDatabase IN (SELECT [name] FROM 
-				(SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE' 
-				 UNION SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY') x
-		) BEGIN 
+		DECLARE @synchronized table ([database_name] sysname NOT NULL);
+		INSERT INTO @synchronized ([database_name])
+		SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE';  -- mirrored dbs that have failed over and are now 'restoring'... 
+
+		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @synchronized ([database_name])
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+		END
+
+		IF @currentDatabase IN (SELECT [database_name] FROM @synchronized) BEGIN
 			PRINT 'Skipping database: ' + @currentDatabase + ' because it is no longer available, online, or accessible.';
 			GOTO NextDatabase;  -- just 'continue' - i.e., short-circuit processing of this 'loop'... 
 		END; 
@@ -1692,13 +1724,14 @@ RemoveOlderFiles:
 			BEGIN TRY
 
 				IF @PrintOnly = 1 BEGIN;
-					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @PrintOnly = 1;';
+					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 					
                     EXEC dbo.remove_backup_files
                         @BackupType= @BackupType,
                         @DatabasesToProcess = @currentDatabase,
                         @TargetDirectory = @BackupDirectory,
                         @Retention = @BackupRetention, 
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile,
 
@@ -1714,6 +1747,7 @@ RemoveOlderFiles:
 						@DatabasesToProcess = @currentDatabase,
 						@TargetDirectory = @BackupDirectory,
 						@Retention = @BackupRetention,
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile, 
 						@Output = @outcome OUTPUT;
@@ -1726,13 +1760,14 @@ RemoveOlderFiles:
 				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
 					IF @PrintOnly = 1 BEGIN;
-						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @PrintOnly = 1;';
+						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 						
 						EXEC dbo.remove_backup_files
 							@BackupType= @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
 							@Retention = @CopyToRetention, 
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 
@@ -1748,6 +1783,7 @@ RemoveOlderFiles:
 							@DatabasesToProcess = @currentDatabase,
 							@TargetDirectory = @CopyToBackupDirectory,
 							@Retention = @CopyToRetention, 
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
 							@Output = @outcome OUTPUT;					
@@ -1869,6 +1905,7 @@ NextDatabase:
 
 	RETURN 0;
 GO
+
 
 
 
@@ -2675,20 +2712,4 @@ FINALIZE:
 	RETURN 0;
 GO
 
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Report on outcome AND jobs that SHOULD be updated... (and possibly spit out the code to paste into place?)
-
-
--- TODO: look at parsing apart the commands and SUGGESTING the replacements.... (don't modify code... but show what could/should be modified.)
-
-SELECT 
-	sj.name [job_name],
-	sjs.step_name
-FROM 
-	msdb.dbo.sysjobsteps sjs
-	INNER JOIN msdb.dbo.sysjobs sj ON sjs.job_id = sj.job_id
-WHERE 
-	command LIKE '%dba_BackupDatabases%' 
-	OR command LIKE '%dba_RestoreDatabases%';
-
+PRINT 'done';
