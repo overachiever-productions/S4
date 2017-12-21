@@ -357,11 +357,19 @@ AS
 		SET @outcome = NULL;
 		SET @currentOperationID = NULL;
 
+-- TODO: this logic is duplicated in dbo.load_database_names. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
-		IF @currentDatabase IN (SELECT [name] FROM 
-				(SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE' 
-				 UNION SELECT [name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE UPPER(hars.role_desc) != 'PRIMARY') x
-		) BEGIN 
+		DECLARE @synchronized table ([database_name] sysname NOT NULL);
+		INSERT INTO @synchronized ([database_name])
+		SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE';  -- mirrored dbs that have failed over and are now 'restoring'... 
+
+		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @synchronized ([database_name])
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+		END
+
+		IF @currentDatabase IN (SELECT [database_name] FROM @synchronized) BEGIN
 			PRINT 'Skipping database: ' + @currentDatabase + ' because it is no longer available, online, or accessible.';
 			GOTO NextDatabase;  -- just 'continue' - i.e., short-circuit processing of this 'loop'... 
 		END; 

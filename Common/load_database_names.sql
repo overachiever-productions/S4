@@ -42,7 +42,7 @@ CREATE PROC dbo.load_database_names
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | CHECKUP
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
-	@TargetDirectory	sysname			= NULL, 
+	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -174,15 +174,23 @@ AS
     END;
 
 	IF UPPER(@Mode) IN (N'BACKUP') BEGIN;
+
+		DECLARE @synchronized table ( 
+			[database_name] sysname NOT NULL
+		);
+
+		INSERT INTO @synchronized ([database_name])
+		SELECT [name] FROM	sys.databases WHERE state_desc != 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+
+		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @synchronized ([database_name])
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+		END
+
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
 		DELETE FROM @targets 
-		WHERE [database_name] IN (SELECT name FROM sys.databases WHERE state_desc != 'ONLINE')  -- this gets any dbs that are NOT online - INCLUDING those that are listed as 'RESTORING' because of mirroring. 
-			OR [database_name] IN (
-				SELECT d.name 
-				FROM sys.databases d 
-				INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id
-				WHERE hars.role_desc != 'PRIMARY'
-			); -- grab any dbs that are in an AG where the current role != PRIMARY. 
+		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
 
 	-- Exclude any databases specified for exclusion:
