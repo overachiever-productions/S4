@@ -7,7 +7,7 @@
 */
 
 
-EXEC dbo.backup_databases
+EXEC admindb.dbo.backup_databases
     @BackupType = NULL, 
     @DatabasesToBackup = N'', 
     @DatabasesToExclude = N'', 
@@ -29,7 +29,7 @@ EXEC dbo.backup_databases
 
 
 
-EXEC dbo.restore_databases
+EXEC admindb.dbo.restore_databases
     @DatabasesToRestore = N'', 
     @DatabasesToExclude = N'', 
     @Priorities = N'', 
