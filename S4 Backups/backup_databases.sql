@@ -783,7 +783,7 @@ NextDatabase:
 		END;
 
 		-- make sure the sproc FAILS at this point (especially if this is a job). 
-		SET @errorMessage = N'One or more operations failed. Execute [ SELECT * FROM [utility].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
+		SET @errorMessage = N'One or more operations failed. Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
 		RAISERROR(@errorMessage, 16, 1);
 		RETURN -100;
 	END;
