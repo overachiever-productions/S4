@@ -23,6 +23,13 @@ EXEC dbo.dba_VerifyBackupExecution
 		- Add functionality for @DiffBackupAlertThresholdMinutes ... to optionally specify DIFF backup frequencies. 
 				This isn't really needed for all dbs... and ... in some cases it'll mean setting up a job/execution that checks all DBs except 'bigdatabase' + another execution for 'big-database' that checks full/diff/t-log on different thresholds than 'other' databases.
 
+		- There's a common enough scenario where... say, a larger DB will get 'hammered' once or twice a week with a data-load or other type of LARGE (write-heavy) operation such that the t-log backup at that point will ROUTINELY
+			go 'long' compared to what execution has been over the last N executions. Which means this'll raise an alert about a long-running t-log backup that IS sort of a concern/issue - but it's NOT really that OUT of sorts. 
+				ideally... there'd be a way to account for that. Like, say, specifying a time-window when we could go 2x or even 6x on the duration... but, that's insanely hard to specify and 'parse' and the likes. 
+				Or, another option would be ... IF we find the t-log running long, see if it's long/out-of-sorts with the same execution 1 day ago, and/or 1 week ago, and, frankly, even 1 month ago. 
+						ASSUMING these are EASY queries to add into the mix... then this'd be the best option. 
+
+
 		- I'm 'throwing' master and msdb into the 'mix' of dbs to check - period. 
 				but... do i want to have those 'tied' to the same FULL backup thresholds? Seems like... NOT. 
 
@@ -38,12 +45,14 @@ EXEC dbo.dba_VerifyBackupExecution
 
 */
 
-
-IF OBJECT_ID('dbo.dba_VerifyBackupExecution','P') IS NOT NULL
-	DROP PROC dbo.dba_VerifyBackupExecution;
+USE [admindb];
 GO
 
-CREATE PROC dbo.dba_VerifyBackupExecution 
+IF OBJECT_ID('dbo.verify_backup_execution','P') IS NOT NULL
+	DROP PROC dbo.verify_backup_execution;
+GO
+
+CREATE PROC dbo.verify_backup_execution 
 	@DatabasesToCheck					nvarchar(MAX),
 	@DatabasesToExclude					nvarchar(MAX)		= NULL,
 	@FullBackupAlertThresholdHours		int, 
@@ -117,7 +126,7 @@ AS
 	);
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.dba_LoadDatabaseNames 
+	EXEC dbo.load_database_names 
 		@Input = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
 		@Priorities = NULL, 
@@ -126,14 +135,14 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForFullBackups 
-	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
 
 
 	-- TODO: If these are somehow in the @Exclusions list... then... don't add them. 
 	INSERT INTO @databaseToCheckForFullBackups ([name])
 	VALUES ('master'),('msdb');
 
-	EXEC dbo.dba_LoadDatabaseNames 
+	EXEC dbo.load_database_names 
 		@Input = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
 		@Priorities = NULL, 
@@ -142,7 +151,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.dba_SplitString(@serialized, N',');
+	SELECT [result] FROM dbo.split_string((@serialized, N',');
 
 
 	-- Verify that there are backups to check:
@@ -159,7 +168,7 @@ AS
 	);
 
 	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.dba_SplitString(@MonitoredJobs, N',');
+	SELECT [result] FROM dbo.split_string((@MonitoredJobs, N',');
 
 	INSERT INTO @jobsToCheck (jobname, jobid)
 	SELECT 
