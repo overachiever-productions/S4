@@ -87,7 +87,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.1.1.16773';
+DECLARE @CurrentVersion varchar(20) = N'4.2.0.16786';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -276,6 +276,10 @@ GO
 
 IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
 	DROP PROC dba_RestoreDatabases;
+GO
+
+IF OBJECT_ID('dba_VerifyBackupExecution', 'P') IS NOT NULL
+	DROP PROC dbo.dba_VerifyBackupExecution;
 GO
 
 -------------------------------------------------------------
