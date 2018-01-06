@@ -2870,7 +2870,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string((@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
 
 
 	-- Verify that there are backups to check:
@@ -2887,7 +2887,7 @@ AS
 	);
 
 	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.split_string((@MonitoredJobs, N',');
+	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',');
 
 	INSERT INTO @jobsToCheck (jobname, jobid)
 	SELECT 
