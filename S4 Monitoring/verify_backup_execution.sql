@@ -71,13 +71,13 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dba_SplitString', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.dba_SplitString not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
+		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dba_LoadDatabaseNames', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.dba_LoadDatabaseNames not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
+		RAISERROR('Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
