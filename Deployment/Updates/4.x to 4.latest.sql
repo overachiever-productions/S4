@@ -76,7 +76,7 @@ IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targe
 
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Deployed via Upgrade Script. Bug Fixes and Initial addition of monitoring scripts (backups and activity).', GETDATE());
+	VALUES (@targetVersion, 'Deployed via Upgrade Script. Bug Fixes and Initial addition of copy_database functionality.', GETDATE());
 
 END;
 
