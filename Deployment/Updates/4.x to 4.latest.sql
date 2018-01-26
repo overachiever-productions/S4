@@ -69,7 +69,7 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Version 4.2.0.16786 Rollup: 
-DECLARE @targetVersion varchar(20) = '4.2.2.16808';
+DECLARE @targetVersion varchar(20) = '4.2.2.16809';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT 'Deploying v4.2 Updates.... ';
@@ -1575,6 +1575,7 @@ GO
 
 
 
+
 USE admindb;
 GO
 
@@ -1586,11 +1587,11 @@ GO
 CREATE PROC dbo.copy_database 
 	@SourceDatabaseName			sysname, 
 	@TargetDatabaseName			sysname, 
-	@BackupsRootPath			sysname	= N'<BackupsRootPath, sysname, E:\SQLBackups>', 
-	@DataPath					sysname = N'<DataPath, sysname, D:\SQLData>', 
-	@LogPath					sysname = N'<LogPath, sysname, D:\SQLData>',
-	@OperatorName				sysname = N'<OperatorName, sysname, Alerts>',
-	@MailProfileName			sysname = N'<MailProfileName, sysname, General>'
+	@BackupsRootPath			sysname	= N'D:\SQLBackups', 
+	@DataPath					sysname = N'D:\SQLData', 
+	@LogPath					sysname = N'D:\SQLData',
+	@OperatorName				sysname = N'Alerts',
+	@MailProfileName			sysname = N'General'
 AS
 	SET NOCOUNT ON; 
 
@@ -1656,6 +1657,10 @@ AS
 		RETURN -10;
 	END;
 	
+	-- Make sure the DB owner is set correctly: 
+	DECLARE @sql nvarchar(MAX) = N'ALTER AUTHORIZATION ON DATABASE::[' + @TargetDatabaseName + N'] TO sa;';
+	EXEC sp_executesql @sql;
+
 	DECLARE @backedUp bit = 0;
 	IF @restored = 1 BEGIN
 		
@@ -1686,8 +1691,6 @@ AS
 
 	RETURN 0;
 GO
-
-
 
 USE admindb;
 GO
