@@ -6,9 +6,9 @@
 EXEC admindb.dbo.verify_backup_execution
     @DatabasesToCheck = N'billing,maskedDB3',             -- nvarchar(max)
     @DatabasesToExclude = N'maskedDB3',           -- nvarchar(max)
-    @FullBackupAlertThresholdHours = 2,  -- 2 hours - to throw warnings... 
-    @LogBackupAlertThresholdMinutes = 2, --  2 minutes - ditto... 
-    @MonitoredJobs = N'User Databases.TROG Backups, User Databases.Log Backups'
+    @FullBackupAlertThresholdHours = 24,  -- 2 hours - to throw warnings... 
+    @LogBackupAlertThresholdMinutes = 20, --  2 minutes - ditto... 
+    @MonitoredJobs = N'User Databases.Log Backups'
 
 */
 
@@ -145,7 +145,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string((@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
 
 
 	-- Verify that there are backups to check:
@@ -162,7 +162,7 @@ AS
 	);
 
 	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.split_string((@MonitoredJobs, N',');
+	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',');
 
 	INSERT INTO @jobsToCheck (jobname, jobid)
 	SELECT 
@@ -488,3 +488,4 @@ AS
 	END;
 
 	RETURN 0;
+GO
