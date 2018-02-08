@@ -3,7 +3,7 @@
 
 /*
 
-EXEC dbo.dba_VerifyBackupExecution
+EXEC admindb.dbo.verify_backup_execution
     @DatabasesToCheck = N'billing,maskedDB3',             -- nvarchar(max)
     @DatabasesToExclude = N'maskedDB3',           -- nvarchar(max)
     @FullBackupAlertThresholdHours = 2,  -- 2 hours - to throw warnings... 
@@ -13,21 +13,13 @@ EXEC dbo.dba_VerifyBackupExecution
 */
 
 
-
 /*
 
 	TODO:
 
-
 	vNEXT:
 		- Add functionality for @DiffBackupAlertThresholdMinutes ... to optionally specify DIFF backup frequencies. 
 				This isn't really needed for all dbs... and ... in some cases it'll mean setting up a job/execution that checks all DBs except 'bigdatabase' + another execution for 'big-database' that checks full/diff/t-log on different thresholds than 'other' databases.
-
-		- There's a common enough scenario where... say, a larger DB will get 'hammered' once or twice a week with a data-load or other type of LARGE (write-heavy) operation such that the t-log backup at that point will ROUTINELY
-			go 'long' compared to what execution has been over the last N executions. Which means this'll raise an alert about a long-running t-log backup that IS sort of a concern/issue - but it's NOT really that OUT of sorts. 
-				ideally... there'd be a way to account for that. Like, say, specifying a time-window when we could go 2x or even 6x on the duration... but, that's insanely hard to specify and 'parse' and the likes. 
-				Or, another option would be ... IF we find the t-log running long, see if it's long/out-of-sorts with the same execution 1 day ago, and/or 1 week ago, and, frankly, even 1 month ago. 
-						ASSUMING these are EASY queries to add into the mix... then this'd be the best option. 
 
 
 		- I'm 'throwing' master and msdb into the 'mix' of dbs to check - period. 
@@ -58,7 +50,9 @@ CREATE PROC dbo.verify_backup_execution
 	@FullBackupAlertThresholdHours		int, 
 	@LogBackupAlertThresholdMinutes		int,
 	@MonitoredJobs						nvarchar(MAX)		= NULL, 
-	@AllowNonAccessibleSecondaries		bit					= 0,	
+	@AllowNonAccessibleSecondaries		bit					= 0,
+	@MinimumElapsedSecondsToConsider	int					= 60,   -- if a specified backup job has been running < @MinimumElapsedSecondsToConsider, then there's NO reason to raise an alert. 
+	@MaximumElapsedSecondsToIgnore		int					= 300,			-- if a backup job IS running longer than normal, but is STILL under @MaximumElapsedSecondsToIgnore, then there's no reason to raise an alert. 
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
 	@EmailSubjectPrefix					nvarchar(50)		= N'[Database Backups - Failed Checkups] ', 
@@ -375,7 +369,9 @@ AS
 				WHERE 
 					job_id = @currentJobID;
 
-				IF @isExecuting = 1 BEGIN
+				-- 4.2.3.16822 Only check for 'long-running' jobs if a) duration is > @MinimumElapsedSecondsToConsider (i.e., don't alert for a job running 220% over normal IF 220% over normal is, say, 10 seconds TOTAL)
+				--		 _AND_ b) if @elapsed is >  @MaximumElapsedSecondsToIgnore - i.e., don't alert if 'total elapsed' time is, say, 3 minutes - who cares...  (in 15 minutes when we run again, IF this job is still running (and that's a problem), THEN we'll get an alert). 
+				IF (@isExecuting = 1) AND (@elapsed > @MinimumElapsedSecondsToConsider) AND (@elapsed > @MaximumElapsedSecondsToIgnore) BEGIN	
 
 					-- check on execution durations:
 					SELECT 
