@@ -191,18 +191,20 @@ AS
 	END;
 
 	-- send/display any problems:
-	IF @PrintOnly = 1 
-		PRINT @emailErrorMessage;
-	ELSE BEGIN 
-		SET @emailSubject = @EmailSubjectPrefix + N' - Configuration Problems Detected';
+	IF @emailErrorMessage IS NOT NULL BEGIN
+		IF @PrintOnly = 1 
+			PRINT @emailErrorMessage;
+		ELSE BEGIN 
+			SET @emailSubject = @EmailSubjectPrefix + N' - Configuration Problems Detected';
 
-		EXEC msdb..sp_notify_operator
-			@profile_name = @MailProfileName,
-			@name = @OperatorName,
-			@subject = @emailSubject, 
-			@body = @emailErrorMessage;
+			EXEC msdb..sp_notify_operator
+				@profile_name = @MailProfileName,
+				@name = @OperatorName,
+				@subject = @emailSubject, 
+				@body = @emailErrorMessage;
 
-	END
+		END
+	END;
 
 	RETURN 0;
 GO
