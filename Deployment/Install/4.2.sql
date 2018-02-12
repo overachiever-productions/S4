@@ -87,7 +87,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.2.3.16822';
+DECLARE @CurrentVersion varchar(20) = N'4.2.3.16826';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -3219,6 +3219,7 @@ AS
 GO
 
 
+
 USE admindb;
 GO
 
@@ -3230,11 +3231,12 @@ GO
 CREATE PROC dbo.copy_database 
 	@SourceDatabaseName			sysname, 
 	@TargetDatabaseName			sysname, 
-	@BackupsRootPath			sysname	= N'D:\SQLBackups', 
-	@DataPath					sysname = N'D:\SQLData', 
-	@LogPath					sysname = N'D:\SQLData',
-	@OperatorName				sysname = N'Alerts',
-	@MailProfileName			sysname = N'General'
+	@BackupsRootDirectory		nvarchar(2000)	= N'D:\SQLBackups', 
+	@CopyToBackupDirectory		nvarchar(2000)	= NULL,
+	@DataPath					sysname			= N'D:\SQLData', 
+	@LogPath					sysname			= N'D:\SQLData',
+	@OperatorName				sysname			= N'Alerts',
+	@MailProfileName			sysname			= N'General'
 AS
 	SET NOCOUNT ON; 
 
@@ -3256,6 +3258,11 @@ AS
 		RETURN -5;
 	END;
 
+	DECLARE @retention nvarchar(10) = N'110w'; -- if we're creating/copying a new db, there shouldn't be ANY backups. Just in case, give it a very wide berth... 
+	DECLARE @copyToRetention nvarchar(10) = NULL;
+	IF @CopyToBackupDirectory IS NOT NULL 
+		SET @copyToRetention = @retention;
+
 	PRINT N'Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
 	
 	DECLARE @restored bit = 0;
@@ -3264,7 +3271,7 @@ AS
 	BEGIN TRY 
 		EXEC admindb.dbo.restore_databases
 			@DatabasesToRestore = @SourceDatabaseName,
-			@BackupsRootPath = @BackupsRootPath,
+			@BackupsRootPath = @BackupsRootDirectory,
 			@RestoredRootDataPath = @DataPath,
 			@RestoredRootLogPath = @LogPath,
 			@RestoredDbNamePattern = @TargetDatabaseName,
@@ -3311,8 +3318,10 @@ AS
 			EXEC admindb.dbo.backup_databases
 				@BackupType = N'FULL',
 				@DatabasesToBackup = @TargetDatabaseName,
-				@BackupDirectory = @BackupsRootPath,
-				@BackupRetention = N'24h',
+				@BackupDirectory = @BackupsRootDirectory,
+				@BackupRetention = @retention,
+				@CopyToBackupDirectory = @CopyToBackupDirectory, 
+				@CopyToRetention = @copyToRetention,
 				@OperatorName = @OperatorName, 
 				@MailProfileName = @MailProfileName, 
 				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
