@@ -1,17 +1,9 @@
 
 /*
 
-
-	DEPLOYMENT:
-		- Make sure to modify Default Parameter Options (i.e., Backup path, data/log paths, and email/alert info). 
-			Because execution of this sproc should be as simple as: EXEC admindb.dbo.copy_database 'source', 'target';
-
-
 	NOTES:
 		- This is really just a 'wrapper' around dbo.restore_databases and dbo.backup_databases such that it allows quick/easy duplication of a single
 			database (to be used for production) such that a) it 'copies' the db from backups from an existing database and b) kicks off an immediate FULL backup upon db creation. 
-
-
 
 
 */
@@ -29,10 +21,10 @@ GO
 CREATE PROC dbo.copy_database 
 	@SourceDatabaseName			sysname, 
 	@TargetDatabaseName			sysname, 
-	@BackupsRootDirectory		nvarchar(2000)	= N'D:\SQLBackups', 
+	@BackupsRootDirectory		nvarchar(2000)	= N'[DEFAULT]', 
 	@CopyToBackupDirectory		nvarchar(2000)	= NULL,
-	@DataPath					sysname			= N'D:\SQLData', 
-	@LogPath					sysname			= N'D:\SQLData',
+	@DataPath					sysname			= N'[DEFAULT]', 
+	@LogPath					sysname			= N'[DEFAULT]',
 	@OperatorName				sysname			= N'Alerts',
 	@MailProfileName			sysname			= N'General'
 AS
@@ -54,6 +46,19 @@ AS
 	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName) BEGIN
 		RAISERROR('@TargetDatabaseName already exists as a database. Either pick another target database name - or drop existing target before retrying.', 16, 1);
 		RETURN -5;
+	END;
+
+	-- Allow for default paths:
+	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
+		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
+	END;
+
+	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
+		SELECT @DataPath = dbo.load_default_path('DATA');
+	END;
+
+	IF UPPER(@LogPath) = N'[DEFAULT]' BEGIN
+		SELECT @LogPath = dbo.load_default_path('LOG');
 	END;
 
 	DECLARE @retention nvarchar(10) = N'110w'; -- if we're creating/copying a new db, there shouldn't be ANY backups. Just in case, give it a very wide berth... 

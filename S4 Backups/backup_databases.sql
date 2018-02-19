@@ -98,7 +98,7 @@
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
 
 	Scalable:
-		26+
+		28+
 */
 
 
@@ -111,24 +111,24 @@ IF OBJECT_ID('dbo.backup_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.backup_databases 
-	@BackupType							sysname,					-- { FULL|DIFF|LOG }
-	@DatabasesToBackup					nvarchar(MAX),				-- { [SYSTEM]|[USER]|name1,name2,etc }
-	@DatabasesToExclude					nvarchar(MAX) = NULL,		-- { NULL | name1,name2 }  
-	@Priorities							nvarchar(MAX) = NULL,		-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
-	@BackupDirectory					nvarchar(2000),				-- { path_to_backups }
-	@CopyToBackupDirectory				nvarchar(2000) = NULL,		-- { NULL | path_for_backup_copies } 
-	@BackupRetention					nvarchar(10),				-- [DOCUMENT HERE]
-	@CopyToRetention					nvarchar(10) = NULL,		-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
-	@RemoveFilesBeforeBackup			bit = 0,					-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
-	@EncryptionCertName					sysname = NULL,				-- Ignored if not specified. 
-	@EncryptionAlgorithm				sysname = NULL,				-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
-	@AddServerNameToSystemBackupPath	bit	= 0,					-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
-	@AllowNonAccessibleSecondaries		bit = 0,					-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
-	@LogSuccessfulOutcomes				bit = 0,					-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
+	@BackupType							sysname,										-- { FULL|DIFF|LOG }
+	@DatabasesToBackup					nvarchar(MAX),									-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToExclude					nvarchar(MAX) = NULL,							-- { NULL | name1,name2 }  
+	@Priorities							nvarchar(MAX) = NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
+	@BackupDirectory					nvarchar(2000) = N'[DEFAULT]',					-- { [DEFAULT] | path_to_backups }
+	@CopyToBackupDirectory				nvarchar(2000) = NULL,							-- { NULL | path_for_backup_copies } 
+	@BackupRetention					nvarchar(10),									-- [DOCUMENT HERE]
+	@CopyToRetention					nvarchar(10) = NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
+	@RemoveFilesBeforeBackup			bit = 0,										-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
+	@EncryptionCertName					sysname = NULL,									-- Ignored if not specified. 
+	@EncryptionAlgorithm				sysname = NULL,									-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
+	@AddServerNameToSystemBackupPath	bit	= 0,										-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
+	@AllowNonAccessibleSecondaries		bit = 0,										-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
+	@LogSuccessfulOutcomes				bit = 0,										-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
 	@OperatorName						sysname = N'Alerts',
 	@MailProfileName					sysname = N'General',
 	@EmailSubjectPrefix					nvarchar(50) = N'[Database Backups ] ',
-	@PrintOnly							bit = 0						-- Instead of EXECUTING commands, they're printed to the console only. 	
+	@PrintOnly							bit = 0											-- Instead of EXECUTING commands, they're printed to the console only. 	
 AS
 	SET NOCOUNT ON;
 
@@ -208,6 +208,10 @@ AS
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
 			RETURN -5;
 		END; 
+	END;
+
+	IF UPPER(@BackupDirectory) = N'[DEFAULT]' BEGIN
+		SELECT @BackupDirectory = dbo.load_default_path('BACKUP');
 	END;
 
 	IF NULLIF(@BackupDirectory, N'') IS NULL BEGIN

@@ -12,6 +12,10 @@
 			only... that doesn't cover any of the path info we want/need. (which is lame.) 
 			So.... xp_instance_regread is the only real option.
 
+	Examples
+		SELECT dbo.load_default_path('BACKUP');
+		SELECT dbo.load_default_path('DATA');
+		SELECT dbo.load_default_path('LOG');
 
 */
 
@@ -33,6 +37,10 @@ BEGIN
 
 	IF UPPER(@PathType) = N'BACKUPS'
 		SET @PathType = N'BACKUP';
+
+	IF UPPER(@PathType) = N'LOGS'
+		SET @PathType = N'LOG';
+
 	DECLARE @valueName nvarchar(4000);
 
 	SET @valueName = CASE @PathType

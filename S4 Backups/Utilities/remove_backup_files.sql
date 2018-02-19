@@ -55,18 +55,18 @@ IF OBJECT_ID('[dbo].[remove_backup_files]','P') IS NOT NULL
 GO
 
 CREATE PROC [dbo].[remove_backup_files] 
-	@BackupType							sysname,						-- { ALL | FULL|DIFF|LOG }
-	@DatabasesToProcess					nvarchar(1000),					-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
-	@DatabasesToExclude					nvarchar(600) = NULL,			-- { NULL | name1,name2 }  
-	@TargetDirectory					nvarchar(2000),					-- { path_to_backups }
-	@Retention							nvarchar(10),					-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
-	@ServerNameInSystemBackupPath		bit = 0,						-- for mirrored servers/etc.
-	@Output								nvarchar(MAX) = NULL OUTPUT,	-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
-	@SendNotifications					bit	= 0,						-- { 0 | 1 } Email only sent if set to 1 (true).
+	@BackupType							sysname,									-- { ALL | FULL|DIFF|LOG }
+	@DatabasesToProcess					nvarchar(1000),								-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
+	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
+	@TargetDirectory					nvarchar(2000) = N'[DEFAULT]',				-- { path_to_backups }
+	@Retention							nvarchar(10),								-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
+	@ServerNameInSystemBackupPath		bit = 0,									-- for mirrored servers/etc.
+	@Output								nvarchar(MAX) = NULL OUTPUT,				-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
+	@SendNotifications					bit	= 0,									-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
 	@MailProfileName					sysname = N'General',
 	@EmailSubjectPrefix					nvarchar(50) = N'[Backups Cleanup ] ',
-	@PrintOnly							bit = 0 						-- { 0 | 1 }
+	@PrintOnly							bit = 0 									-- { 0 | 1 }
 AS
 	SET NOCOUNT ON; 
 
@@ -136,6 +136,10 @@ AS
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
 			RETURN -5;
 		END; 
+	END;
+
+	IF UPPER(@TargetDirectory) = N'[DEFAULT]' BEGIN
+		SELECT @TargetDirectory = dbo.load_default_path('BACKUP');
 	END;
 
 	IF NULLIF(@TargetDirectory, N'') IS NULL BEGIN;
