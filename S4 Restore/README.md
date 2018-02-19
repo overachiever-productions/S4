@@ -65,13 +65,13 @@ Currently, S4 Backups is only supported on SQL Server Versions and Editions (san
 ## <a name="syntax"></a>Syntax 
 
 ```sql
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = {N'[READ_FROM_FILESYSTEM]' | N'list,of,db-names,to,restore' },
     [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',]
     [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
-    @BackupsRootPath = N'\\server\path-to-backups', 
-    @RestoredRootDataPath = N'D:\SQLData', 
-    @RestoredRootLogPath = N'L:\SQLLogs', 
+    @BackupsRootPath = N'{ \\server\path-to-backups | [DEFAULT] }', 
+    @RestoredRootDataPath = N'{ D:\SQLData | [DEFAULT] }', 
+    @RestoredRootLogPath = N'{ L:\SQLLogs | [DEFAULT] }', 
     [@RestoredDbNamePattern = N'{0}_test',] 
     [@AllowReplace = N'',] 
     [@SkipLogBackups = NULL,] 
@@ -108,15 +108,29 @@ When @Priorities is defined as something like 'only, db,names', it will be treat
 
 **@BackupsRootPath** = 'path-to-location-of-folder-containing-sub-folders-with-backups-of-each-db'
 
-Required. S4 Restore uses the convention that all backups for a single, given, database should be in a seperate/dedicated folder. As such, you should backup all of your databases to D:\SQLBackups\ and each database's backups are then written into distinct sub-folders. (This is the same convention that S4 Backup uses.) 
+Required. 
+Default Value is N'[DEFAULT]'.
+S4 Restore uses the convention that all backups for a single, given, database should be in a seperate/dedicated folder. As such, you should backup all of your databases to D:\SQLBackups\ and each database's backups are then written into distinct sub-folders. (This is the same convention that S4 Backup uses.) 
 
-**@RestoredRootDataPath** = 'path-to-folder-where-you-want-data-files-restored'
+IF the [DEFAULT] token is used, restore_databases will request the default location for SQL Server Backups by querying the registry for the current SQL Server instance.
 
-Required. S4 Restore will push (or relocate) .mdf and .ndf file into the path specified by @RestoredRootDataPath when restoring databases (regardless of the original path for these files pre-backup). If you need to try and use different paths for different databases (i.e., you don't have enough space on a specific drive to restore a number of your key databases), you'll need to set up multiple calls/executions against dba_RestoreDatabases with a different set of @DatabasesToRestore specified - and with different @RestoredRootDataPath (and/or @RestoredRootLogPath) values specified between each different call or execution. 
+**@RestoredRootDataPath** = '{ path-to-folder-where-you-want-data-files-restored | [DEFAULT] }'
+
+Required. 
+Default Value is N'[DEFAULT]'.
+
+S4 Restore will push (or relocate) .mdf and .ndf file into the path specified by @RestoredRootDataPath when restoring databases (regardless of the original path for these files pre-backup). If you need to try and use different paths for different databases (i.e., you don't have enough space on a specific drive to restore a number of your key databases), you'll need to set up multiple calls/executions against dba_RestoreDatabases with a different set of @DatabasesToRestore specified - and with different @RestoredRootDataPath (and/or @RestoredRootLogPath) values specified between each different call or execution. 
+
+IF the [DEFAULT] token is used, restore_databases will request the default location for SQL Server Data Files by querying the registry for the current SQL Server instance.
 
 **@RestoredRootLogPath** = 'path-to-folder-where-you-want-log-files-restored'
 
-Required. Can be the exact same value as @RestoredRootDataPath (i.e., data and log files can be restored to the same folder if/as needed) - but is provided as a seperate configurable option to allow restore of logs and data files to different drives/paths when needed as well. (Neither approach is necessarily better - and an 'optimal' configuration/setup will depend upon disk capacities and performance-levels.)
+Required. 
+Default Value is N'[DEFAULT]'.
+
+Can be the exact same value as @RestoredRootDataPath (i.e., data and log files can be restored to the same folder if/as needed) - but is provided as a seperate configurable option to allow restore of logs and data files to different drives/paths when needed as well. (Neither approach is necessarily better - and an 'optimal' configuration/setup will depend upon disk capacities and performance-levels.)
+
+IF the [DEFAULT] token is used, restore_databases will request the default location for SQL Server Log Files by querying the registry for the current SQL Server instance.
 
 **[@RestoredDbNamePattern]** = 'naming-pattern-with-{0}-as-current-db-name-placeholder']
 
@@ -219,7 +233,7 @@ While it is a best-practice to provide developers with development, testing, and
 The following example showcases a simplified execution of S4 Restore:
 
 ```sql
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'Billing,Widgets', 
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 
@@ -241,7 +255,7 @@ Further, in the above example, if there aren't any backups for the Billing datab
 The following execution is, effectively, identical to Example A - except that the Billing_test and Widgets_test databases will be dropped AFTER being restored and AFTER checked for consistency (i.e., if backups are found for the Billing database, they'll be restored as the Billing_test database, the Billing_test database will be checked for consistency, and after that check is complete, dba_RestoreDatabases will DROP Billing_test, then start working on processing backups for the Widgets database, and so on).
 
 ```sql
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'Billing,Widgets', 
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 
@@ -258,7 +272,7 @@ Assume you've got a Hosted SQL Server with 4x production datababases: db1, db2, 
 In such a scenario, you'd spin up something similar to the following - and configure it to run (via a SQL Server Agent Job) at, say, 3AM every morning: 
 
 ```sql
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'PriorityA,db1,db2,db3', 
     @BackupsRootPath = N'D:\SQLBackups', 
     @RestoredRootDataPath = N'D:\SQLData', 
@@ -283,7 +297,7 @@ To address this scenario/need, you'd spin up 3x distinct calls to dba_RestoreDat
 
 ```sql
 -- Restore Operations for ClusterA:
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'Inventory,Catalog,Sales,Support', 
     @BackupsRootPath = N'\\\\backup-server\ClusterA\', 
     @RestoredRootDataPath = N'N:\Nearline-Restore\', 
@@ -294,7 +308,7 @@ EXEC master.dbo.dba_RestoreDatabases
 
 
 -- Restore Operations for ProdC:
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'AccountingTools,ERPNNS,db2,db3', 
     @BackupsRootPath = N'\\\\backup-server\ProdC\', 
     @RestoredRootDataPath = N'N:\Nearline-Restore\', 
@@ -305,7 +319,7 @@ EXEC master.dbo.dba_RestoreDatabases
 
 
 -- Restore Operations for PigPile:
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'demo,CRM_SSV,HRapp, EngineeringSamples', 
     @BackupsRootPath = N'\\\\backup-server\PigPile\', 
     @RestoredRootDataPath = N'N:\Nearline-Restore\', 
@@ -327,7 +341,7 @@ In this example, we'll assume that the Tribeca database is a key production data
 
 ```sql
 -- Restore Operations for ClusterA:
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'Tribeca', 
     @BackupsRootPath = N'\\\\backup-server\Prod\', 
     @RestoredRootDataPath = N'N:\DevSQLData\', 
@@ -356,7 +370,7 @@ While Fault Tolerance (i.e., Mirroring, Availability Groups, or a Failover Clust
 In the following example, we'll assume that a Startup company had a hosted SQL Server with 3x databases needed for their application - that they were executing regular backups (i.e., FULL backups nightly and T-Log backups of all 3 databases every 5 minutes) - and that these backups were being pushed up to 'the cloud' every 5 minutes (i.e., being copied off box). Then, for whatever reason, we'll assume that a major disaster occured - not only did their hosting company have a serious crash that resulted in the loss of the Virtual Server this company was using, but it's going to take 20+ hours for them to have something 'in place' for recovery. As such, this startup decides to provision a new server with a different hosting compay, copy/deploy their apps and such and then copy down the backups 'from the cloud' into a folder called D:\RestoredCloudBackups\SQL (where there will be a sub-folder for each of the 3x different production databases) and they're now ready to spin up restore operations of their databases - to bring them into production. To do this, they would run something similar to the following: 
 
 ```sql
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'Customers,Products,Sales', 
     @BackupsRootPath = N'D:\RestoredCloudBackups\SQL', 
     @RestoredRootDataPath = N'D:\SQLData\', 
@@ -374,7 +388,7 @@ Finally, since this is a disaster scenario, we're also assuming that this startu
 If you'd like to see what S4 Restore will do against a particular set of commands - without having those commands executed, simply flip the @PrintOnly parameter to 1 (true) and execute dba_RestoreDatabases after specifying whatever parameters are needed. For example, the code below is effectively identical to that in Example A, but because @PrintOnly is specified, dba_RestoreDatabases won't actually execute any code, but will - instead - simply 'spit out' the commands it would have (otherwise) executed:
 
 ```sql
-EXEC master.dbo.dba_RestoreDatabases 
+EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'Billing,Widgets', 
     @BackupsRootPath = N'\\server\path-to-backups', 
     @RestoredRootDataPath = N'D:\SQLData', 

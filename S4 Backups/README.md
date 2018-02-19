@@ -67,7 +67,7 @@ EXEC dbo.backup_databases
     @DatabasesToBackup = N'{ widgets,hr,sales,etc | [SYSTEM] | [USER] }', 
     [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',] 
     [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
-    @BackupDirectory = N'D:\sqlbackups', 
+    @BackupDirectory = N'{ X:\pathTo\Backups\Root | [DEFAULT] }', 
     [@CopyToBackupDirectory = N'',]
     @BackupRetention = { integer_value + m | h | d | w | b specifier }, 
     [@CopyToRetention = { integer_value + m | h | d | w | b specifier },]
@@ -113,11 +113,15 @@ When @Priorities is defined as something like 'only, db,names', it will be treat
 
 **@BackupDirectory** = 'path-to-root-folder-for-backups'
 
-Required. Specifies the path to the root folder where all backups defined by @DatabasesToBackup will be written. Must be a valid Windows Path - and can be either a local path or UNC path. 
+Required. 
+Default Value = N'[DEFAULT]'.
+Specifies the path to the root folder where all backups defined by @DatabasesToBackup will be written. Must be a valid Windows Path - and can be either a local path or UNC path. 
+IF the [DEFAULT] token is used, backup_database will request the default location for SQL Server Backups by querying the registry for the current SQL Server instance.
 
 **[@CopyToBackupDirectory** = 'path-to-folder-for-COPIES-of-backups']
 
 Optional - but highly recommended. When specified, backups (written to @BackupDirectory) will be copied to @CopyToBackupDirectory as part of the backup process. Must be a valid Windows path and, by design (though not enforced), should be an 'off-box' location for proper protection purposes. 
+NOTE: The [DEFAULT] token (allowed for @BackupDirectory) is NOT supported here (it wouldn't make any sense anyhow). 
 
 **@BackupRetenion* = { integer_value + m | h | d | w | b specifier }
 
