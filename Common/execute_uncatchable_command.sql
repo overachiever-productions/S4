@@ -13,6 +13,24 @@
 		username: s4
 		password: simple
 
+	EXECUTION SAMPLES:
+			DECLARE @result varchar(2000);
+			EXEC execute_uncatchable_command 'BACKUP DATABASE Testing2 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
+			SELECT @result;
+			GO
+
+			DECLARE @result varchar(2000);
+			EXEC execute_uncatchable_command 'BACKUP DATABASE Testing77 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
+			SELECT @result;
+			GO
+
+			DECLARE @result varchar(2000);
+			EXEC execute_uncatchable_command 'EXECUTE master.dbo.xp_create_subdir N''D:\SQLBackups\Testing1'';', 'CREATEDIR', @result = @result OUTPUT;
+			SELECT @result;
+			GO
+
+
+
 */
 
 USE [admindb];
@@ -110,24 +128,3 @@ AS
 
 	RETURN 0;
 GO
-
-
-
---DECLARE @result varchar(2000);
---EXEC execute_uncatchable_command 'BACKUP DATABASE Testing2 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
---SELECT @result;
---GO
-
---DECLARE @result varchar(2000);
---EXEC execute_uncatchable_command 'BACKUP DATABASE Testing77 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
---SELECT @result;
---GO
-
---DECLARE @result varchar(2000);
---EXEC execute_uncatchable_command 'EXECUTE master.dbo.xp_create_subdir N''D:\SQLBackups\Testing1'';', 'CREATEDIR', @result = @result OUTPUT;
---SELECT @result;
---GO
-
-
-
-

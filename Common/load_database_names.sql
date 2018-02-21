@@ -121,15 +121,20 @@ AS
             SELECT name FROM sys.databases 
             WHERE recovery_model_desc = 'FULL' 
                 AND name NOT IN ('master', 'model', 'msdb', 'tempdb') 
+				AND source_database_id IS NULL  -- exclude database snapshots.
             ORDER BY name;
         ELSE 
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
             WHERE name NOT IN ('master', 'model', 'msdb','tempdb') 
+				AND source_database_id IS NULL -- exclude database snapshots
             ORDER BY name;
 
 		IF @includeAdminDBAsSystemDatabase = 1 
 			DELETE FROM @targets WHERE [database_name] = 'admindb';
+
+
+		
     END; 
 
     IF UPPER(@Input) = '[READ_FROM_FILESYSTEM]' BEGIN;

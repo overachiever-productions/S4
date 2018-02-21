@@ -1,7 +1,4 @@
 
-
-
-
 /*
 
 	NOTES:
@@ -9,7 +6,6 @@
 
 	TODO: 
 		- If xp_cmdshell ends up being enabled, drop a link to S4 documentation on what it is, why it's needed, and why it's not the security risk some folks on interwebs make it out to be. 
-
 
 */
 
@@ -87,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.3.2.16833';
+DECLARE @CurrentVersion varchar(20) = N'4.2.2.16809';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -297,15 +293,19 @@ IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
 	DROP PROC dba_RestoreDatabases;
 GO
 
-
 IF OBJECT_ID('dbo.dba_DatabaseRestore_CheckPaths','P') IS NOT NULL
 	DROP PROC dbo.dba_DatabaseRestore_CheckPaths;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Deploy new code:
 
+---------------------------------------------------------------------------
+-- Common Code:
+---------------------------------------------------------------------------
 
+-----------------------------------
 USE [admindb];
 GO
 
@@ -339,7 +339,7 @@ AS
 GO
 
 
-
+-----------------------------------
 USE [admindb];
 GO
 
@@ -436,51 +436,7 @@ AS
 	RETURN 0;
 GO
 
-
-USE [admindb];
-GO
-
-
-IF OBJECT_ID('dbo.load_default_path','FN') IS NOT NULL
-	DROP FUNCTION dbo.load_default_path;
-GO
-
-CREATE FUNCTION dbo.load_default_path(@PathType sysname) 
-RETURNS nvarchar(4000)
-AS
-BEGIN 
-	DECLARE @output sysname;
-
-	IF UPPER(@PathType) = N'BACKUPS'
-		SET @PathType = N'BACKUP';
-
-	IF UPPER(@PathType) = N'LOGS'
-		SET @PathType = N'LOG';
-
-	DECLARE @valueName nvarchar(4000);
-
-	SET @valueName = CASE @PathType
-		WHEN N'BACKUP' THEN N'BackupDirectory'
-		WHEN N'DATA' THEN N'DefaultData'
-		WHEN N'LOG' THEN N'DefaultLog'
-		ELSE N''
-	END;
-
-	IF @valueName = N''
-		RETURN 'Error. Invalid @PathType Specified.';
-
-	EXEC master..xp_instance_regread
-		N'HKEY_LOCAL_MACHINE',  
-		N'Software\Microsoft\MSSQLServer\MSSQLServer',  
-		@valueName,
-		@output OUTPUT, 
-		'no_output'
-
-	RETURN @output;
-END;
-GO
-
-
+-----------------------------------
 USE [admindb];
 GO
 
@@ -573,15 +529,20 @@ AS
             SELECT name FROM sys.databases 
             WHERE recovery_model_desc = 'FULL' 
                 AND name NOT IN ('master', 'model', 'msdb', 'tempdb') 
+				AND source_database_id IS NULL  -- exclude database snapshots.
             ORDER BY name;
         ELSE 
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
             WHERE name NOT IN ('master', 'model', 'msdb','tempdb') 
+				AND source_database_id IS NULL -- exclude database snapshots
             ORDER BY name;
 
 		IF @includeAdminDBAsSystemDatabase = 1 
 			DELETE FROM @targets WHERE [database_name] = 'admindb';
+
+
+		
     END; 
 
     IF UPPER(@Input) = '[READ_FROM_FILESYSTEM]' BEGIN;
@@ -728,7 +689,7 @@ AS
 GO
 
 
-
+-----------------------------------
 USE [admindb];
 GO
 
@@ -772,8 +733,58 @@ END
 
 GO
 
+-----------------------------------
+USE admindb;
+GO
+
+IF OBJECT_ID('dbo.load_default_path','FN') IS NOT NULL
+	DROP FUNCTION dbo.load_default_path;
+GO
+
+CREATE FUNCTION dbo.load_default_path(@PathType sysname) 
+RETURNS nvarchar(4000)
+AS
+BEGIN 
+	DECLARE @output sysname;
+
+	IF UPPER(@PathType) = N'BACKUPS'
+		SET @PathType = N'BACKUP';
+
+	IF UPPER(@PathType) = N'LOGS'
+		SET @PathType = N'LOG';
+
+	DECLARE @valueName nvarchar(4000);
+
+	SET @valueName = CASE @PathType
+		WHEN N'BACKUP' THEN N'BackupDirectory'
+		WHEN N'DATA' THEN N'DefaultData'
+		WHEN N'LOG' THEN N'DefaultLog'
+		ELSE N''
+	END;
+
+	IF @valueName = N''
+		RETURN 'Error. Invalid @PathType Specified.';
+
+	EXEC master..xp_instance_regread
+		N'HKEY_LOCAL_MACHINE',  
+		N'Software\Microsoft\MSSQLServer\MSSQLServer',  
+		@valueName,
+		@output OUTPUT, 
+		'no_output'
+
+	RETURN @output;
+END;
+GO
 
 
+
+
+
+---------------------------------------------------------------------------
+-- Backups:
+---------------------------------------------------------------------------
+
+-----------------------------------
 USE [admindb];
 GO
 
@@ -1317,8 +1328,7 @@ AS
 GO
 
 
-
-
+-----------------------------------
 USE [admindb];
 GO
 
@@ -2013,7 +2023,11 @@ GO
 
 
 
+---------------------------------------------------------------------------
+-- Restores:
+---------------------------------------------------------------------------
 
+-----------------------------------
 USE [admindb];
 GO
 
@@ -2831,7 +2845,151 @@ FINALIZE:
 GO
 
 
+-----------------------------------
+USE admindb;
+GO
 
+
+IF OBJECT_ID('dbo.copy_database','P') IS NOT NULL
+	DROP PROC dbo.copy_database;
+GO
+
+CREATE PROC dbo.copy_database 
+	@SourceDatabaseName			sysname, 
+	@TargetDatabaseName			sysname, 
+	@BackupsRootDirectory		nvarchar(2000)	= N'[DEFAULT]', 
+	@CopyToBackupDirectory		nvarchar(2000)	= NULL,
+	@DataPath					sysname			= N'[DEFAULT]', 
+	@LogPath					sysname			= N'[DEFAULT]',
+	@OperatorName				sysname			= N'Alerts',
+	@MailProfileName			sysname			= N'General'
+AS
+	SET NOCOUNT ON; 
+
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
+	IF NULLIF(@SourceDatabaseName,'') IS NULL BEGIN
+		RAISERROR('@SourceDatabaseName cannot be Empty/NULL. Please specify the name of the database you wish to copy (from).', 16, 1);
+		RETURN -1;
+	END;
+
+	IF NULLIF(@TargetDatabaseName, '') IS NULL BEGIN
+		RAISERROR('@TargetDatabaseName cannot be Empty/NULL. Please specify the name of new database that you want to create (as a copy).', 16, 1);
+		RETURN -1;
+	END;
+
+	-- Make sure the target database doesn't already exist: 
+	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName) BEGIN
+		RAISERROR('@TargetDatabaseName already exists as a database. Either pick another target database name - or drop existing target before retrying.', 16, 1);
+		RETURN -5;
+	END;
+
+	-- Allow for default paths:
+	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
+		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
+	END;
+
+	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
+		SELECT @DataPath = dbo.load_default_path('DATA');
+	END;
+
+	IF UPPER(@LogPath) = N'[DEFAULT]' BEGIN
+		SELECT @LogPath = dbo.load_default_path('LOG');
+	END;
+
+	DECLARE @retention nvarchar(10) = N'110w'; -- if we're creating/copying a new db, there shouldn't be ANY backups. Just in case, give it a very wide berth... 
+	DECLARE @copyToRetention nvarchar(10) = NULL;
+	IF @CopyToBackupDirectory IS NOT NULL 
+		SET @copyToRetention = @retention;
+
+	PRINT N'Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
+	
+	DECLARE @restored bit = 0;
+	DECLARE @errorMessage nvarchar(MAX); 
+
+	BEGIN TRY 
+		EXEC admindb.dbo.restore_databases
+			@DatabasesToRestore = @SourceDatabaseName,
+			@BackupsRootPath = @BackupsRootDirectory,
+			@RestoredRootDataPath = @DataPath,
+			@RestoredRootLogPath = @LogPath,
+			@RestoredDbNamePattern = @TargetDatabaseName,
+			@SkipLogBackups = 0,
+			@CheckConsistency = 0, 
+			@DropDatabasesAfterRestore = 0,
+			@OperatorName = @OperatorName, 
+			@MailProfileName = @MailProfileName, 
+			@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+
+	END TRY
+	BEGIN CATCH
+		SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected Exception while restoring copy of database. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+	END CATCH
+
+	-- 'sadly', restore_databases does a great job of handling most exceptions during execution - meaning that if we didn't get errors, that doesn't mean there weren't problems. So, let's check up: 
+	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName AND state_desc = N'ONLINE')
+		SET @restored = 1; -- success (the db wasn't there at the start of this sproc, and now it is (and it's online). 
+	ELSE BEGIN 
+		-- then we need to grab the latest error: 
+		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_test_id = (
+			SELECT MAX(restore_test_id) FROM dbo.restore_log WHERE test_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
+
+		IF @errorMessage IS NULL -- hmmm weird:
+			SET @errorMessage = N'Unknown error with restore operation - execution did NOT complete as expected. Please Check Email for additional details/insights.';
+
+	END
+
+	IF @errorMessage IS NULL
+		PRINT N'Restore Complete. Kicking off backup [' + @TargetDatabaseName + N'].';
+	ELSE BEGIN
+		PRINT @errorMessage;
+		RETURN -10;
+	END;
+	
+	-- Make sure the DB owner is set correctly: 
+	DECLARE @sql nvarchar(MAX) = N'ALTER AUTHORIZATION ON DATABASE::[' + @TargetDatabaseName + N'] TO sa;';
+	EXEC sp_executesql @sql;
+
+	DECLARE @backedUp bit = 0;
+	IF @restored = 1 BEGIN
+		
+		BEGIN TRY
+			EXEC admindb.dbo.backup_databases
+				@BackupType = N'FULL',
+				@DatabasesToBackup = @TargetDatabaseName,
+				@BackupDirectory = @BackupsRootDirectory,
+				@BackupRetention = @retention,
+				@CopyToBackupDirectory = @CopyToBackupDirectory, 
+				@CopyToRetention = @copyToRetention,
+				@OperatorName = @OperatorName, 
+				@MailProfileName = @MailProfileName, 
+				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+
+			SET @backedUp = 1;
+		END TRY
+		BEGIN CATCH
+			SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected Exception while executing backup of new/copied database. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+		END CATCH
+
+	END;
+
+	IF @restored = 1 AND @backedUp = 1 
+		PRINT N'Operation Complete.';
+	ELSE BEGIN
+		PRINT N'Errors occurred during execution:';
+		PRINT @errorMessage;
+	END;
+
+	RETURN 0;
+GO
+	
+
+
+---------------------------------------------------------------------------
+--- Monitoring
+---------------------------------------------------------------------------
+
+-----------------------------------
 USE [admindb];
 GO
 
@@ -3286,148 +3444,202 @@ AS
 GO
 
 
-
-
-
+-----------------------------------
 USE admindb;
 GO
 
 
-IF OBJECT_ID('dbo.copy_database','P') IS NOT NULL
-	DROP PROC dbo.copy_database;
+IF OBJECT_ID('dbo.verify_database_configurations','P') IS NOT NULL
+	DROP PROC dbo.verify_database_configurations;
 GO
 
-CREATE PROC dbo.copy_database 
-	@SourceDatabaseName			sysname, 
-	@TargetDatabaseName			sysname, 
-	@BackupsRootDirectory		nvarchar(2000)	= N'[DEFAULT]', 
-	@CopyToBackupDirectory		nvarchar(2000)	= NULL,
-	@DataPath					sysname			= N'[DEFAULT]', 
-	@LogPath					sysname			= N'[DEFAULT]',
-	@OperatorName				sysname			= N'Alerts',
-	@MailProfileName			sysname			= N'General'
+CREATE PROC dbo.verify_database_configurations 
+	@DatabasesToExclude				nvarchar(MAX) = NULL,
+	@CompatabilityExclusions		nvarchar(MAX) = NULL,
+	@ReportDatabasesNotOwnedBySA	bit	= 0,
+	@OperatorName					sysname = N'Alerts',
+	@MailProfileName				sysname = N'General',
+	@EmailSubjectPrefix				nvarchar(50) = N'[Database Configuration Alert] ',
+	@PrintOnly						bit = 0
 AS
-	SET NOCOUNT ON; 
+	SET NOCOUNT ON;
 
 	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
-	IF NULLIF(@SourceDatabaseName,'') IS NULL BEGIN
-		RAISERROR('@SourceDatabaseName cannot be Empty/NULL. Please specify the name of the database you wish to copy (from).', 16, 1);
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
+		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF NULLIF(@TargetDatabaseName, '') IS NULL BEGIN
-		RAISERROR('@TargetDatabaseName cannot be Empty/NULL. Please specify the name of new database that you want to create (as a copy).', 16, 1);
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
-	-- Make sure the target database doesn't already exist: 
-	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName) BEGIN
-		RAISERROR('@TargetDatabaseName already exists as a database. Either pick another target database name - or drop existing target before retrying.', 16, 1);
-		RETURN -5;
-	END;
-
-	-- Allow for default paths:
-	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
-		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
-	END;
-
-	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
-		SELECT @DataPath = dbo.load_default_path('DATA');
-	END;
-
-	IF UPPER(@LogPath) = N'[DEFAULT]' BEGIN
-		SELECT @LogPath = dbo.load_default_path('LOG');
-	END;
-
-	DECLARE @retention nvarchar(10) = N'110w'; -- if we're creating/copying a new db, there shouldn't be ANY backups. Just in case, give it a very wide berth... 
-	DECLARE @copyToRetention nvarchar(10) = NULL;
-	IF @CopyToBackupDirectory IS NOT NULL 
-		SET @copyToRetention = @retention;
-
-	PRINT N'Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
-	
-	DECLARE @restored bit = 0;
-	DECLARE @errorMessage nvarchar(MAX); 
-
-	BEGIN TRY 
-		EXEC admindb.dbo.restore_databases
-			@DatabasesToRestore = @SourceDatabaseName,
-			@BackupsRootPath = @BackupsRootDirectory,
-			@RestoredRootDataPath = @DataPath,
-			@RestoredRootLogPath = @LogPath,
-			@RestoredDbNamePattern = @TargetDatabaseName,
-			@SkipLogBackups = 0,
-			@CheckConsistency = 0, 
-			@DropDatabasesAfterRestore = 0,
-			@OperatorName = @OperatorName, 
-			@MailProfileName = @MailProfileName, 
-			@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
-
-	END TRY
-	BEGIN CATCH
-		SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected Exception while restoring copy of database. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-	END CATCH
-
-	-- 'sadly', restore_databases does a great job of handling most exceptions during execution - meaning that if we didn't get errors, that doesn't mean there weren't problems. So, let's check up: 
-	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName AND state_desc = N'ONLINE')
-		SET @restored = 1; -- success (the db wasn't there at the start of this sproc, and now it is (and it's online). 
-	ELSE BEGIN 
-		-- then we need to grab the latest error: 
-		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_test_id = (
-			SELECT MAX(restore_test_id) FROM dbo.restore_log WHERE test_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
-
-		IF @errorMessage IS NULL -- hmmm weird:
-			SET @errorMessage = N'Unknown error with restore operation - execution did NOT complete as expected. Please Check Email for additional details/insights.';
-
-	END
-
-	IF @errorMessage IS NULL
-		PRINT N'Restore Complete. Kicking off backup [' + @TargetDatabaseName + N'].';
-	ELSE BEGIN
-		PRINT @errorMessage;
-		RETURN -10;
-	END;
-	
-	-- Make sure the DB owner is set correctly: 
-	DECLARE @sql nvarchar(MAX) = N'ALTER AUTHORIZATION ON DATABASE::[' + @TargetDatabaseName + N'] TO sa;';
-	EXEC sp_executesql @sql;
-
-	DECLARE @backedUp bit = 0;
-	IF @restored = 1 BEGIN
+	-----------------------------------------------------------------------------
+	-- Validate Inputs: 
+	IF @PrintOnly = 0 BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 		
-		BEGIN TRY
-			EXEC admindb.dbo.backup_databases
-				@BackupType = N'FULL',
-				@DatabasesToBackup = @TargetDatabaseName,
-				@BackupDirectory = @BackupsRootDirectory,
-				@BackupRetention = @retention,
-				@CopyToBackupDirectory = @CopyToBackupDirectory, 
-				@CopyToRetention = @copyToRetention,
-				@OperatorName = @OperatorName, 
-				@MailProfileName = @MailProfileName, 
-				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -2;
+		 END;
+		ELSE BEGIN 
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalild Operator Name Specified.', 16, 1);
+				RETURN -2;
+			END;
+		END;
 
-			SET @backedUp = 1;
-		END TRY
-		BEGIN CATCH
-			SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected Exception while executing backup of new/copied database. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-		END CATCH
+		-- Profile Checks:
+		DECLARE @DatabaseMailProfile nvarchar(255)
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
+ 
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -2;
+		END; 
+	END;
+
+	IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
+		SET @DatabasesToExclude = NULL;
+
+	IF RTRIM(LTRIM(@CompatabilityExclusions)) = N''
+		SET @DatabasesToExclude = NULL;
+
+	-----------------------------------------------------------------------------
+	-- Set up / initialization:
+
+	-- start by (messily) grabbing the current version on the server:
+	DECLARE @serverVersion int;
+	SET @serverVersion = (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) * 10;
+
+	DECLARE @serialized nvarchar(MAX);
+	DECLARE @databasesToCheck table (
+		[name] sysname
+	);
+	
+	EXEC dbo.load_database_names 
+		@Input = N'[USER]',
+		@Exclusions = @DatabasesToExclude, 
+		@Mode = N'VERIFY', 
+		@BackupType = N'FULL',
+		@Output = @serialized OUTPUT;
+
+	INSERT INTO @databasesToCheck ([name])
+	SELECT [result] FROM dbo.split_string(@serialized, N',');
+
+	DECLARE @excludedComptabilityDatabases table ( 
+		[name] sysname NOT NULL
+	); 
+
+	IF @CompatabilityExclusions IS NOT NULL BEGIN 
+		INSERT INTO @excludedComptabilityDatabases ([name])
+		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',');
+	END; 
+
+	DECLARE @issues table ( 
+		issue_id int IDENTITY(1,1) NOT NULL, 
+		[database] sysname NOT NULL, 
+		issue varchar(2000) NOT NULL 
+	);
+
+	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab char(1) = CHAR(9);
+
+	-----------------------------------------------------------------------------
+	-- Checks: 
+	
+	-- Compatablity Checks: 
+	INSERT INTO @issues ([database], issue)
+	SELECT 
+		d.[name] [database],
+		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' [issue]
+	FROM 
+		sys.databases d
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
+		LEFT OUTER JOIN @excludedComptabilityDatabases e ON d.[name] LIKE e.[name] -- allow LIKE %wildcard% exclusions
+	WHERE 
+		d.[compatibility_level] <> CAST(@serverVersion AS tinyint)
+		AND e.[name] IS  NULL -- only include non-exclusions
+	ORDER BY 
+		d.[name] ;
+		
+
+	-- Page Verify: 
+	INSERT INTO @issues ([database], issue)
+	SELECT 
+		[name] [database], 
+		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET PAGE_VERIFY CHECKSUM; ' + @crlf [issue]
+	FROM 
+		sys.databases 
+	WHERE 
+		page_verify_option_desc != N'CHECKSUM'
+	ORDER BY 
+		[name];
+
+	-- OwnerChecks:
+	IF @ReportDatabasesNotOwnedBySA = 1 BEGIN
+		INSERT INTO @issues ([database], issue)
+		SELECT 
+			[name] [database], 
+			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name],'[]') + N' TO sa;' + @crlf [issue]
+		FROM 
+			sys.databases 
+		WHERE 
+			owner_sid != 0x01;
 
 	END;
 
-	IF @restored = 1 AND @backedUp = 1 
-		PRINT N'Operation Complete.';
-	ELSE BEGIN
-		PRINT N'Errors occurred during execution:';
-		PRINT @errorMessage;
+	-----------------------------------------------------------------------------
+	-- add other checks as needed/required per environment:
+
+
+
+	-----------------------------------------------------------------------------
+	-- reporting: 
+	DECLARE @emailErrorMessage nvarchar(MAX);
+	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
+		
+		DECLARE @emailSubject nvarchar(300);
+
+		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
+
+		SELECT 
+			@emailErrorMessage = @emailErrorMessage + @tab + N'[' + [database] + N']. ' + [issue] + @crlf
+		FROM 
+			@issues 
+		ORDER BY 
+			[database],
+			issue_id;
+
+	END;
+
+	-- send/display any problems:
+	IF @emailErrorMessage IS NOT NULL BEGIN
+		IF @PrintOnly = 1 
+			PRINT @emailErrorMessage;
+		ELSE BEGIN 
+			SET @emailSubject = @EmailSubjectPrefix + N' - Configuration Problems Detected';
+
+			EXEC msdb..sp_notify_operator
+				@profile_name = @MailProfileName,
+				@name = @OperatorName,
+				@subject = @emailSubject, 
+				@body = @emailErrorMessage;
+
+		END
 	END;
 
 	RETURN 0;
 GO
-	
-----------------------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------
 -- Display Versioning info:
 SELECT * FROM dbo.version_history;
-
+GO
 
