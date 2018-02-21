@@ -85,7 +85,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.2.2.16809';
+DECLARE @CurrentVersion varchar(20) = N'4.3.2.16835';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
