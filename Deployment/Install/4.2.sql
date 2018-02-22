@@ -436,6 +436,7 @@ AS
 	RETURN 0;
 GO
 
+
 -----------------------------------
 USE [admindb];
 GO
@@ -733,9 +734,11 @@ END
 
 GO
 
+
 -----------------------------------
 USE admindb;
 GO
+
 
 IF OBJECT_ID('dbo.load_default_path','FN') IS NOT NULL
 	DROP FUNCTION dbo.load_default_path;
