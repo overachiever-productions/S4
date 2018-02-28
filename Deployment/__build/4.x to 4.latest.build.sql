@@ -144,6 +144,29 @@ END;
 -----------------------------------
 --##INCLUDE: S4 Monitoring\verify_database_configurations.sql
 
+
+---------------------------------------------------------------------------
+-- Monitoring (HA):
+---------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\is_primary_database.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\job_synchronization_checks.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\respond_to_db_failover.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\server_synchronization_checks.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\server_trace_flags.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\verify_job_states.sql
+
 ---------------------------------------------------------------------------
 -- Display Versioning info:
 SELECT * FROM dbo.version_history;

@@ -83,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.3.2.16835';
+DECLARE @CurrentVersion varchar(20) = N'4.6.1.16842';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -2371,12 +2371,31 @@ AS
 		END
 
 		-- Enumerate the files and ensure we've got backups:
-		SET @command = N'dir "' + @sourcePath + N'\" /B /A-D /OD';
+		--SET @command = N'dir "' + @sourcePath + N'\" /B /A-D /OD';
 
-		IF @PrintOnly = 1 BEGIN;
-			PRINT N'-- xp_cmdshell ''' + @command + ''';';
-		END
+		--IF @PrintOnly = 1 BEGIN;
+		--	PRINT N'-- xp_cmdshell ''' + @command + ''';';
+		--END
 		
+		DECLARE @fileList nvarchar(MAX);
+
+EXEC load_backup_files
+	@SourcePath = 'D:\SQLBackups\TESTS\Billing', 
+	@Mode = 'ignored',
+	@Output = @fileList OUTPUT;
+
+
+--SELECT @fileList;
+INSERT INTO @temp ([output])
+SELECT [result] FROM dbo.split_string(@fileList, N',');
+
+
+SELECT * FROM @temp;
+
+RETURN;
+
+
+
 		INSERT INTO @temp ([output])
 		EXEC master..xp_cmdshell @command;
 		DELETE FROM @temp WHERE [output] IS NULL AND [output] NOT LIKE '%' + @databaseToRestore + '%';  -- remove 'empty' entries and any backups for databases OTHER than target.
@@ -3639,6 +3658,1923 @@ AS
 
 	RETURN 0;
 GO
+
+
+
+---------------------------------------------------------------------------
+-- Monitoring (HA):
+---------------------------------------------------------------------------
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.is_primary_database','FN') IS NOT NULL
+	DROP FUNCTION dbo.is_primary_database;
+GO
+
+CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
+RETURNS bit
+AS
+	BEGIN 
+
+		DECLARE @description sysname;
+				
+		-- Check for Mirrored Status First: 
+		SELECT 
+			@description = mirroring_role_desc
+		FROM 
+			sys.database_mirroring 
+		WHERE
+			database_id = DB_ID(@DatabaseName);
+	
+		IF @description = 'PRINCIPAL'
+			RETURN 1;
+			
+
+		-- Check for AG'd state:
+		SELECT 
+			@description = 	hars.role_desc
+		FROM 
+			sys.databases d
+			INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id
+		WHERE 
+			d.database_id = DB_ID(@DatabaseName);
+	
+		IF @description = 'PRIMARY'
+			RETURN 1;
+	
+		-- if no matches, return 0
+		RETURN 0;
+	END;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.job_synchronization_checks','P') IS NOT NULL
+	DROP PROC dbo.job_synchronization_checks
+GO
+
+CREATE PROC [dbo].[job_synchronization_checks]
+	@IgnoredJobs			nvarchar(MAX)		= '',
+	@MailProfileName		sysname				= N'General',	
+	@OperatorName			sysname				= N'Alerts',	
+	@PrintOnly			bit						= 0					-- output only to console - don't email alerts (for debugging/manual execution, etc.)
+AS 
+	SET NOCOUNT ON;
+
+	---------------------------------------------
+	-- A) Validation Checks: 
+	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -4;
+		 END;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
+				RETURN -4;
+			END;
+		END;
+
+		-- Profile Checks:
+		DECLARE @DatabaseMailProfile nvarchar(255);
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -5;
+		END; 
+	END;
+
+	----------------------------------------------
+	-- Figure out which server this should be running on (and then, from this point forward, only run on the Primary);
+	DECLARE @firstMirroredDB sysname; 
+	SET @firstMirroredDB = (SELECT TOP 1 d.name FROM sys.databases d INNER JOIN sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL ORDER BY d.name); 
+
+	-- if there are NO mirrored dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
+	IF @firstMirroredDB IS NOT NULL BEGIN 
+		-- Check to see if we're on the primary or not. 
+		IF (SELECT dbo.is_primary_database(@firstMirroredDB)) = 0 BEGIN 
+			PRINT 'Server is Not Primary. Execution Terminating (but will continue on Primary).'
+			RETURN 0; -- tests/checks are now done on the secondary
+		END
+	END 
+
+	DECLARE @localServerName sysname = @@SERVERNAME;
+	DECLARE @remoteServerName sysname; 
+	SET @remoteServerName = (SELECT TOP 1 name FROM PARTNER.master.sys.servers WHERE server_id = 0);
+
+	CREATE TABLE #IgnoredJobs (
+		name nvarchar(200) NOT NULL
+	);
+
+	----------------------------------------------
+	-- deserialize the job names to ingore via an inline-split 'function':
+	DECLARE @deserializedJobs nvarchar(MAX) = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''',N'{0}', @IgnoredJobs), N',', N''','''), N',', N' UNION SELECT ');
+
+	INSERT INTO #IgnoredJobs (name)
+	EXEC(@deserializedJobs);
+
+	----------------------------------------------
+	-- create a container for output/differences. 
+	CREATE TABLE #Divergence (
+		rowid int IDENTITY(1,1) NOT NULL,
+		name nvarchar(100) NOT NULL, 
+		[description] nvarchar(300) NOT NULL
+	);
+
+	---------------------------------------------------------------------------------------------
+	-- B) Process 'server level jobs' (or jobs that aren't mapped to a mirrorable database - i.e., WHERE Job.CategoryName != DbName):
+	DECLARE @mirrorableDatabases TABLE ( 
+		name sysname NOT NULL 
+	); 
+
+	-- get a list of Job Categories that could BE a database name (i.e., mirror-able):
+	INSERT INTO @mirrorableDatabases
+	SELECT name FROM master.sys.databases WHERE name NOT IN ('master','tempdb','model','msdb','distribution','ReportServer','ReportServerTempDB','admindb') 
+	UNION 
+	SELECT name FROM PARTNER.master.sys.databases WHERE name NOT IN ('master','tempdb','model','msdb','distribution','ReportServer','ReportServerTempDB','admindb'); 
+
+	CREATE TABLE #LocalJobs (
+		job_id uniqueidentifier, 
+		name sysname, 
+		[enabled] tinyint, 
+		[description] nvarchar(512), 
+		start_step_id int, 
+		owner_sid varbinary(85),
+		notify_level_email int, 
+		operator_name sysname,
+		category_name sysname,
+		job_step_count int
+	);
+
+	CREATE TABLE #RemoteJobs (
+		job_id uniqueidentifier, 
+		name sysname, 
+		[enabled] tinyint, 
+		[description] nvarchar(512), 
+		start_step_id int, 
+		owner_sid varbinary(85),
+		notify_level_email int, 
+		operator_name sysname,
+		category_name sysname,
+		job_step_count int
+	);
+
+	-- Load Details: 
+	INSERT INTO #LocalJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+	SELECT 
+		sj.job_id, 
+		sj.name, 
+		sj.[enabled], 
+		sj.[description], 
+		sj.start_step_id,
+		sj.owner_sid, 
+		sj.notify_level_email, 
+		ISNULL(so.name, 'local') operator_name,
+		ISNULL(sc.name, 'local') [category_name],
+		ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+	FROM 
+		msdb.dbo.sysjobs sj
+		LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+	WHERE
+		sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+
+	INSERT INTO #RemoteJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+	SELECT 
+		sj.job_id, 
+		sj.name, 
+		sj.[enabled], 
+		sj.[description], 
+		sj.start_step_id,
+		sj.owner_sid, 
+		sj.notify_level_email, 
+		ISNULL(so.name, 'local') operator_name,
+		ISNULL(sc.name, 'local') [category_name],
+		ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+	FROM 
+		PARTNER.msdb.dbo.sysjobs sj
+		LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+	WHERE
+		sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+
+	----------------------------------------------
+	-- Process high-level details about each job (i.e., jobs on ONE server only - or jobs on both servers but with differences):
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		name,
+		N'Server-Level job exists on ' + @localServerName + N' only.'
+	FROM 
+		#LocalJobs 
+	WHERE
+		name NOT IN (SELECT name FROM #RemoteJobs)
+		AND name NOT IN (SELECT name FROM @mirrorableDatabases);
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		name, 
+		N'Server-Level job exists on ' + @remoteServerName + N' only.'
+	FROM 
+		#RemoteJobs
+	WHERE
+		name NOT IN (SELECT name FROM #LocalJobs);
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		lj.name, 
+		N'Differences between Server-Level job details between servers (owner, enabled, category name, job-steps count, start-step, notification, etc)'
+	FROM 
+		#LocalJobs lj
+		INNER JOIN #RemoteJobs rj ON rj.name = lj.name
+	WHERE
+		lj.category_name NOT IN (SELECT name FROM @mirrorableDatabases) 
+		AND rj.category_name NOT IN (SELECT name FROM @mirrorableDatabases)
+		AND (
+			lj.[enabled] != rj.[enabled]
+			OR lj.[description] != rj.[description]
+			OR lj.start_step_id != rj.start_step_id
+			OR lj.owner_sid != rj.owner_sid
+			OR lj.notify_level_email != rj.notify_level_email
+			OR lj.operator_name != rj.operator_name
+			OR lj.job_step_count != rj.job_step_count
+			OR lj.category_name != rj.category_name
+		);
+
+	----------------------------------------------
+	-- now check the job steps/schedules/etc. 
+	CREATE TABLE #LocalJobSteps (
+		step_id int, 
+		[checksum] int
+	);
+
+	CREATE TABLE #RemoteJobSteps (
+		step_id int, 
+		[checksum] int
+	);
+
+	CREATE TABLE #LocalJobSchedules (
+		schedule_name sysname, 
+		[checksum] int
+	);
+
+	CREATE TABLE #RemoteJobSchedules (
+		schedule_name sysname, 
+		[checksum] int
+	);
+
+	DECLARE server_level_checker CURSOR LOCAL FAST_FORWARD FOR
+	SELECT 
+		[local].job_id local_job_id, 
+		[remote].job_id remote_job_id, 
+		[local].name 
+	FROM 
+		#LocalJobs [local]
+		INNER JOIN #RemoteJobs [remote] ON [local].name = [remote].name;
+
+	DECLARE @localJobID uniqueidentifier, @remoteJobId uniqueidentifier, @jobName sysname;
+	DECLARE @localCount int, @remoteCount int;
+
+	OPEN server_level_checker;
+	FETCH NEXT FROM server_level_checker INTO @localJobID, @remoteJobId, @jobName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN 
+	
+		-- check jobsteps first:
+		DELETE FROM #LocalJobSteps;
+		DELETE FROM #RemoteJobSteps;
+
+		INSERT INTO #LocalJobSteps (step_id, [checksum])
+		SELECT 
+			step_id, 
+			CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+		FROM msdb.dbo.sysjobsteps
+		WHERE job_id = @localJobID;
+
+		INSERT INTO #RemoteJobSteps (step_id, [checksum])
+		SELECT 
+			step_id, 
+			CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+		FROM PARTNER.msdb.dbo.sysjobsteps
+		WHERE job_id = @remoteJobId;
+
+		SELECT @localCount = COUNT(*) FROM #LocalJobSteps;
+		SELECT @remoteCount = COUNT(*) FROM #RemoteJobSteps;
+
+		IF @localCount != @remoteCount
+			INSERT INTO #Divergence (name, [description]) 
+			VALUES (
+				@jobName, 
+				N'Job Step Counts between servers are NOT the same.'
+			);
+		ELSE BEGIN 
+			INSERT INTO #Divergence (name, [description])
+			SELECT 
+				@jobName, 
+				N'Job Step details between servers are NOT the same.'
+			FROM 
+				#LocalJobSteps ljs 
+				INNER JOIN #RemoteJobSteps rjs ON rjs.step_id = ljs.step_id
+			WHERE	
+				ljs.[checksum] != rjs.[checksum];
+		END;
+
+		-- Now Check Schedules:
+		DELETE FROM #LocalJobSchedules;
+		DELETE FROM #RemoteJobSchedules;
+
+		INSERT INTO #LocalJobSchedules (schedule_name, [checksum])
+		SELECT 
+			ss.name,
+			CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
+				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [details]
+		FROM 
+			msdb.dbo.sysjobschedules sjs
+			INNER JOIN msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
+		WHERE
+			sjs.job_id = @localJobID;
+
+		INSERT INTO #RemoteJobSchedules (schedule_name, [checksum])
+		SELECT 
+			ss.name,
+			CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
+				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [details]
+		FROM 
+			PARTNER.msdb.dbo.sysjobschedules sjs
+			INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
+		WHERE
+			sjs.job_id = @remoteJobId;
+
+		SELECT @localCount = COUNT(*) FROM #LocalJobSchedules;
+		SELECT @remoteCount = COUNT(*) FROM #RemoteJobSchedules;
+
+		IF @localCount != @remoteCount
+			INSERT INTO #Divergence (name, [description]) 
+			VALUES (
+				@jobName, 
+				N'Job Schedule Counts between servers are different.'
+			);
+		ELSE BEGIN 
+			INSERT INTO #Divergence (name, [description])
+			SELECT
+				@jobName, 
+				N'Job Schedule Details between servers are different.'
+			FROM 
+				#LocalJobSchedules ljs
+				INNER JOIN #RemoteJobSchedules rjs ON rjs.schedule_name = ljs.schedule_name
+			WHERE 
+				ljs.[checksum] != rjs.[checksum];
+
+		END;
+
+		FETCH NEXT FROM server_level_checker INTO @localJobID, @remoteJobId, @jobName;
+	END;
+
+	CLOSE server_level_checker;
+	DEALLOCATE server_level_checker;
+
+	---------------------------------------------------------------------------------------------
+	-- C) Start Batch Jobs by reporting on any jobs that have a Job.CategoryName IN (@mirrorableDatabases) but are Disabled or Which have Job.CategoryName = 'Disabled' and are enabled. 
+	
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		sj.name,
+		N'Job is disabled on ' + @localServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
+	FROM 
+		msdb.dbo.sysjobs sj
+		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		INNER JOIN @mirrorableDatabases x ON sj.name = x.name
+	WHERE 
+		sj.[enabled] = 0 
+		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		sj.name,
+		N'Job is disabled on ' + @remoteServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
+	FROM 
+		PARTNER.msdb.dbo.sysjobs sj
+		INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		INNER JOIN @mirrorableDatabases x ON sj.name = x.name
+	WHERE 
+		sj.[enabled] = 0 
+		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+
+	-- Report on jobs that should be disabled, but aren't. 
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		sj.name, 
+		N'Job is enabled on ' + @localServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
+	FROM 
+		msdb.dbo.sysjobs sj
+		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+	WHERE
+		sj.[enabled] = 1
+		AND LOWER(sc.name) = 'disabled'
+		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		sj.name, 
+		N'Job is enabled on ' + @remoteServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
+	FROM 
+		PARTNER.msdb.dbo.sysjobs sj
+		INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+	WHERE
+		sj.[enabled] = 1
+		AND LOWER(sc.name) = 'disabled'
+		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+
+	---------------------------------------------------------------------------------------------
+	-- D) Check on all jobs for mirrored databases:
+	TRUNCATE TABLE #LocalJobs;
+	TRUNCATE TABLE #RemoteJobs;
+
+	DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		d.name
+	FROM 
+		master.sys.databases d
+		INNER JOIN master.sys.database_mirroring m ON m.database_id = d.database_id
+	WHERE
+		m.mirroring_guid IS NOT NULL
+	ORDER BY 
+		d.name;
+
+	DECLARE @currentMirroredDB sysname; 
+
+	OPEN looper;
+	FETCH NEXT FROM looper INTO @currentMirroredDB;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN 
+		TRUNCATE TABLE #LocalJobs;
+		TRUNCATE TABLE #RemoteJobs;
+		
+		INSERT INTO #LocalJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+		SELECT 
+			sj.job_id, 
+			sj.name, 
+			sj.[enabled], 
+			sj.[description], 
+			sj.start_step_id,
+			sj.owner_sid, 
+			sj.notify_level_email, 
+			ISNULL(so.name, 'local') operator_name,
+			ISNULL(sc.name, 'local') [category_name],
+			ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+		FROM 
+			msdb.dbo.sysjobs sj
+			LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+			LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+		WHERE
+			UPPER(sc.name) = UPPER(@currentMirroredDB)
+			AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+
+		INSERT INTO #RemoteJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+		SELECT 
+			sj.job_id, 
+			sj.name, 
+			sj.[enabled], 
+			sj.[description], 
+			sj.start_step_id,
+			sj.owner_sid, 
+			sj.notify_level_email, 
+			ISNULL(so.name, 'local') operator_name,
+			ISNULL(sc.name, 'local') [category_name],
+			ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+		FROM 
+			PARTNER.msdb.dbo.sysjobs sj
+			LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+			LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+		WHERE
+			UPPER(sc.name) = UPPER(@currentMirroredDB)
+			AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+
+		------------------------------------------
+		-- Now start comparing differences: 
+
+		-- local  only:
+		INSERT INTO #Divergence (name, [description])
+		SELECT 
+			[local].name, 
+			N'Job for database ' + @currentMirroredDB + N' exists on ' + @localServerName + N' only.'
+		FROM 
+			#LocalJobs [local]
+			LEFT OUTER JOIN #RemoteJobs [remote] ON [local].name = [remote].name
+		WHERE 
+			[remote].name IS NULL;
+
+		-- remote only:
+		INSERT INTO #Divergence (name, [description])
+		SELECT 
+			[remote].name, 
+			N'Job for database ' + @currentMirroredDB + N' exists on ' + @remoteServerName + N' only.'
+		FROM 
+			#RemoteJobs [remote]
+			LEFT OUTER JOIN #LocalJobs [local] ON [remote].name = [local].name
+		WHERE 
+			[local].name IS NULL;
+
+		-- differences:
+		INSERT INTO #Divergence (name, [description])
+		SELECT 
+			[local].name, 
+			N'Job for database ' + @currentMirroredDB + N' is different between servers (owner, start-step, notification, etc).'
+		FROM 
+			#LocalJobs [local]
+			INNER JOIN #RemoteJobs [remote] ON [remote].name = [local].name
+		WHERE
+			[local].start_step_id != [remote].start_step_id
+			OR [local].owner_sid != [remote].owner_sid
+			OR [local].notify_level_email != [remote].notify_level_email
+			OR [local].operator_name != [remote].operator_name
+			OR [local].job_step_count != [remote].job_step_count
+			OR [local].category_name != [remote].category_name;
+		
+		-- NOTE: While this script assumes the 'PRIMARY' is server that's hosting the Principal for the FIRST mirrored DB detected, the reality
+		--		is more complex - as the first mirrored db (automation) might be on SQL1, but (batches) might be 'failed' over and running on SQL2
+		IF (SELECT master.dbo.is_primary_database(@currentMirroredDB)) = 1 BEGIN 
+			-- report on any mirroring jobs that are disabled on the primary:
+			INSERT INTO #Divergence (name, [description])
+			SELECT 
+				name, 
+				N'Batch Job is disabled on ' + @localServerName + N' (PRIMARY) and should be ENABLED.'
+			FROM 
+				#LocalJobs
+			WHERE
+				[enabled] = 0; 		
+		
+			-- report on ANY mirroring jobs that are enabled on the secondary. 
+			INSERT INTO #Divergence (name, [description])
+			SELECT 
+				name, 
+				N'Batch Job is enabled on ' + @remoteServerName + N' (SECONDARY) and should be DISABLED.'
+			FROM 
+				#RemoteJobs
+			WHERE
+				[enabled] = 1; 
+		  END 
+		ELSE BEGIN -- otherwise, simply 'flip' the logic:
+			-- report on any mirroring jobs that are disabled on the primary:
+			INSERT INTO #Divergence (name, [description])
+			SELECT 
+				name, 
+				N'Batch Job is disabled on ' + @remoteServerName + N' (PRIMARY) and should be ENABLED.'
+			FROM 
+				#RemoteJobs
+			WHERE
+				[enabled] = 0; 		
+		
+			-- report on ANY mirroring jobs that are enabled on the secondary. 
+			INSERT INTO #Divergence (name, [description])
+			SELECT 
+				name, 
+				N'Batch Job is enabled on ' + @localServerName + N' (SECONDARY) and should be DISABLED.'
+			FROM 
+				#LocalJobs
+			WHERE
+				[enabled] = 1; 
+
+		END
+
+		---------------
+		-- job-steps processing:
+		TRUNCATE TABLE #LocalJobSteps;
+		TRUNCATE TABLE #RemoteJobSteps;
+		TRUNCATE TABLE #LocalJobSchedules;
+		TRUNCATE TABLE #RemoteJobSchedules;
+
+		DECLARE checker CURSOR LOCAL FAST_FORWARD FOR
+		SELECT 
+			[local].job_id local_job_id, 
+			[remote].job_id remote_job_id, 
+			[local].name 
+		FROM 
+			#LocalJobs [local]
+			INNER JOIN #RemoteJobs [remote] ON [local].name = [remote].name;
+
+		OPEN checker;
+		FETCH NEXT FROM checker INTO @localJobID, @remoteJobId, @jobName;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN 
+	
+			-- check jobsteps first:
+			DELETE FROM #LocalJobSteps;
+			DELETE FROM #RemoteJobSteps;
+
+			INSERT INTO #LocalJobSteps (step_id, [checksum])
+			SELECT 
+				step_id, 
+				CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+			FROM msdb.dbo.sysjobsteps
+			WHERE job_id = @localJobID;
+
+			INSERT INTO #RemoteJobSteps (step_id, [checksum])
+			SELECT 
+				step_id, 
+				CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+			FROM PARTNER.msdb.dbo.sysjobsteps
+			WHERE job_id = @remoteJobId;
+
+			SELECT @localCount = COUNT(*) FROM #LocalJobSteps;
+			SELECT @remoteCount = COUNT(*) FROM #RemoteJobSteps;
+
+			IF @localCount != @remoteCount
+				INSERT INTO #Divergence (name, [description]) 
+				VALUES (
+					@jobName + N' (for database ' + @currentMirroredDB + N')', 
+					N'Job Step Counts between servers are NOT the same.'
+				);
+			ELSE BEGIN 
+				INSERT INTO #Divergence
+				SELECT 
+					@jobName + N' (for database ' + @currentMirroredDB + N')', 
+					N'Job Step details between servers are NOT the same.'
+				FROM 
+					#LocalJobSteps ljs 
+					INNER JOIN #RemoteJobSteps rjs ON rjs.step_id = ljs.step_id
+				WHERE	
+					ljs.[checksum] != rjs.[checksum];
+			END;
+
+			-- Now Check Schedules:
+			DELETE FROM #LocalJobSchedules;
+			DELETE FROM #RemoteJobSchedules;
+
+			INSERT INTO #LocalJobSchedules (schedule_name, [checksum])
+			SELECT 
+				ss.name,
+				CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
+					ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_date, ss.active_end_time) [details]
+			FROM 
+				msdb.dbo.sysjobschedules sjs
+				INNER JOIN msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
+			WHERE
+				sjs.job_id = @localJobID;
+
+
+			INSERT INTO #RemoteJobSchedules (schedule_name, [checksum])
+			SELECT 
+				ss.name,
+				CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
+					ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_date, ss.active_end_time) [details]
+			FROM 
+				PARTNER.msdb.dbo.sysjobschedules sjs
+				INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
+			WHERE
+				sjs.job_id = @remoteJobId;
+
+			SELECT @localCount = COUNT(*) FROM #LocalJobSchedules;
+			SELECT @remoteCount = COUNT(*) FROM #RemoteJobSchedules;
+
+			IF @localCount != @remoteCount
+				INSERT INTO #Divergence (name, [description])
+				VALUES (
+					@jobName + N' (for database ' + @currentMirroredDB + N')', 
+					N'Job Schedule Counts between servers are different.'
+				);
+			ELSE BEGIN 
+				INSERT INTO #Divergence (name, [description])
+				SELECT
+					@jobName + N' (for database ' + @currentMirroredDB + N')', 
+					N'Job Schedule Details between servers are different.'
+				FROM 
+					#LocalJobSchedules ljs
+					INNER JOIN #RemoteJobSchedules rjs ON rjs.schedule_name = ljs.schedule_name
+				WHERE 
+					ljs.[checksum] != rjs.[checksum];
+
+			END;
+
+			FETCH NEXT FROM checker INTO @localJobID, @remoteJobId, @jobName;
+		END;
+
+		CLOSE checker;
+		DEALLOCATE checker;
+
+		---------------
+
+		FETCH NEXT FROM looper INTO @currentMirroredDB;
+	END 
+
+	CLOSE looper;
+	DEALLOCATE looper;
+
+	---------------------------------------------------------------------------------------------
+	-- X) Report on any problems or discrepencies:
+	IF(SELECT COUNT(*) FROM #Divergence WHERE name NOT IN(SELECT name FROM #IgnoredJobs)) > 0 BEGIN 
+
+		DECLARE @subject nvarchar(200) = 'SQL Server Agent Job Synchronization Problems';
+		DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
+		DECLARE @tab nchar(1) = CHAR(9);
+		DECLARE @message nvarchar(MAX) = 'Problems detected with the following SQL Server Agent Jobs: '
+		+ @crlf;
+
+		SELECT 
+			@message = @message + @tab + N'- ' + name + N' -> ' + [description] + @crlf
+		FROM 
+			#Divergence
+		ORDER BY 
+			rowid;
+
+		SELECT @message += @crlf + @tab + N'NOTE: Jobs can be synchronized by scripting them on the Primary and running scripts on the Secondary.'
+			+ @crlf + @tab + @tab + N'To Script Multiple Jobs at once: SSMS > SQL Server Agent Jobs > F7 -> then shift/ctrl + click to select multiple jobs simultaneously.';
+
+		SELECT @message += @crlf + @tab + N'NOTE: If a Job is assigned to a Mirrored DB (Job Category Name) on ONE server but not the other, it will likely '
+			+ @crlf + @tab + @tab + N'show up 2x in the list of problems - once as a Server-Level job on one Server only, and once as a Mirrored-DB Job on the other server.';
+
+		IF @PrintOnly = 1 BEGIN 
+			-- just Print out details:
+			PRINT 'SUBJECT: ' + @subject;
+			PRINT 'BODY: ' + @crlf + @message;
+
+		  END
+		ELSE BEGIN
+			-- send a message:
+			EXEC msdb..sp_notify_operator 
+				@profile_name = @MailProfileName, 
+				@name = @OperatorName, 
+				@subject = @subject,
+				@body = @message;
+		END;
+	END;
+
+	DROP TABLE #LocalJobs;
+	DROP TABLE #RemoteJobs;
+	DROP TABLE #Divergence;
+	DROP TABLE #LocalJobSteps;
+	DROP TABLE #RemoteJobSteps;
+	DROP TABLE #LocalJobSchedules;
+	DROP TABLE #RemoteJobSchedules;
+	DROP TABLE #IgnoredJobs;
+
+	RETURN 0;
+GO
+
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.respond_to_db_failover','P') IS NOT NULL
+	DROP PROC dbo.respond_to_db_failover;
+GO
+
+CREATE PROC dbo.respond_to_db_failover 
+	@MailProfileName			sysname = N'General',
+	@OperatorName				sysname = N'Alerts', 
+	@PrintOnly					bit		= 0					-- for testing (i.e., to validate things work as expected)
+AS
+	SET NOCOUNT ON;
+
+	IF @PrintOnly = 0
+		WAITFOR DELAY '00:00:03.00'; -- No, really, give things about 3 seconds (just to let db states 'settle in' to synchronizing/synchronized).
+
+	DECLARE @serverName sysname = @@serverName;
+	DECLARE @username sysname;
+	DECLARE @report nvarchar(200);
+
+	DECLARE @orphans table (
+		UserName sysname,
+		UserSID varbinary(85)
+	);
+
+	-- Start by querying current/event-ing server for list of databases and states:
+	DECLARE @databases table (
+		[db_name] sysname NOT NULL, 
+		[sync_type] sysname NOT NULL, -- 'Mirrored' or 'AvailabilityGroup'
+		[ag_name] sysname NULL, 
+		[primary_server] sysname NOT NULL, 
+		[role] sysname NOT NULL, 
+		[state] sysname NOT NULL, 
+		[is_suspended] bit NULL,
+		[is_ag_member] bit NULL,
+		[owner] sysname NULL,   -- interestingly enough, this CAN be NULL in some strange cases... 
+		[jobs_status] nvarchar(max) NULL,  -- whether we were able to turn jobs off or not and what they're set to (enabled/disabled)
+		[users_status] nvarchar(max) NULL, 
+		[other_status] nvarchar(max) NULL
+	);
+
+	-- account for Mirrored databases:
+	INSERT INTO @databases ([db_name], [sync_type], [role], [state], [owner])
+	SELECT 
+		d.[name] [db_name],
+		N'MIRRORED' [sync_type],
+		dm.mirroring_role_desc [role], 
+		dm.mirroring_state_desc [state], 
+		sp.[name] [owner]
+	FROM sys.database_mirroring dm
+	INNER JOIN sys.databases d ON dm.database_id = d.database_id
+	LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
+	WHERE 
+		dm.mirroring_guid IS NOT NULL
+	ORDER BY 
+		d.[name];
+
+	-- account for AG databases:
+	INSERT INTO @databases ([db_name], [sync_type], [ag_name], [primary_server], [role], [state], [is_suspended], [is_ag_member], [owner])
+	SELECT
+		dbcs.[database_name] [db_name],
+		N'AVAILABILITY_GROUP' [sync_type],
+		ag.[name] [ag_name],
+		ISNULL(agstates.primary_replica, '') [primary_server],
+		ISNULL(arstates.role_desc,'UNKNOWN') [role],
+		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
+		ISNULL(dbrs.is_suspended, 0) [is_suspended],
+		ISNULL(dbcs.is_database_joined, 0) [is_ag_member], 
+		x.[owner]
+	FROM
+		master.sys.availability_groups AS ag
+		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
+		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
+		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
+		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
+		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name
+	ORDER BY
+		AG.name ASC,
+		dbcs.database_name;
+
+	-- process:
+	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[db_name], 
+		[role],
+		[state]
+	FROM 
+		@databases
+	ORDER BY 
+		[db_name];
+
+	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
+	DECLARE @enabledOrDisabled bit; 
+	DECLARE @jobsStatus nvarchar(max);
+	DECLARE @usersStatus nvarchar(max);
+	DECLARE @otherStatus nvarchar(max);
+
+	DECLARE @ownerChangeCommand nvarchar(max);
+
+	OPEN processor;
+	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		
+		IF @currentState IN ('SYNCHRONIZED','SYNCHRONIZING') BEGIN 
+			IF @currentRole IN (N'PRIMARY', N'PRINCIPAL') BEGIN 
+				-----------------------------------------------------------------------------------------------
+				-- specify jobs status:
+				SET @enabledOrDisabled = 1;
+
+				-----------------------------------------------------------------------------------------------
+				-- set database owner to 'sa' if it's not owned currently by 'sa':
+				IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE name = @currentDatabase AND owner_sid = 0x01) BEGIN 
+					SET @ownerChangeCommand = N'ALTER AUTHORIZATION ON DATABASE::[' + @currentDatabase + N'] TO sa;';
+
+					IF @PrintOnly = 1
+						PRINT @ownerChangeCommand;
+					ELSE 
+						EXEC sp_executesql @ownerChangeCommand;
+				END
+
+				-----------------------------------------------------------------------------------------------
+				-- attempt to fix any orphaned users: 
+				DELETE FROM @orphans;
+				SET @report = N'[' + @currentDatabase + N'].dbo.sp_change_users_login ''Report''';
+
+				INSERT INTO @orphans
+				EXEC(@report);
+
+				DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR
+				SELECT UserName FROM @orphans;
+
+				OPEN fixer;
+				FETCH NEXT FROM fixer INTO @username;
+
+				WHILE @@FETCH_STATUS = 0 BEGIN
+
+					BEGIN TRY 
+						IF @PrintOnly = 1 
+							PRINT 'Processing Orphans for Principal Database ' + @currentDatabase
+						ELSE
+							EXEC sp_change_users_login @Action = 'Update_One', @UserNamePattern = @username, @LoginName = @username;  -- note: this only attempts to repair bindings in situations where the Login name is identical to the User name
+					END TRY 
+					BEGIN CATCH 
+						-- swallow... 
+					END CATCH
+
+					FETCH NEXT FROM fixer INTO @username;
+				END
+
+				CLOSE fixer;
+				DEALLOCATE fixer;
+
+				----------------------------------
+				-- Report on any logins that couldn't be corrected:
+				DELETE FROM @orphans;
+
+				INSERT INTO @orphans
+				EXEC(@report);
+
+				IF (SELECT COUNT(*) FROM @orphans) > 0 BEGIN 
+					SET @usersStatus = N'Orphaned Users Detected (attempted repair did NOT correct) : ';
+					SELECT @usersStatus = @usersStatus + UserName + ', ' FROM @orphans;
+
+					SET @usersStatus = LEFT(@usersStatus, LEN(@usersStatus) - 1); -- trim trailing , 
+					END
+				ELSE 
+					SET @usersStatus = N'No Orphaned Users Detected';					
+
+			  END 
+			ELSE BEGIN -- we're NOT the PRINCIPAL instance:
+				SELECT 
+					@enabledOrDisabled = 0,  -- make sure all jobs are disabled
+					@usersStatus = N'', -- nothing will show up...  
+					@otherStatus = N''; -- ditto
+			  END
+
+		  END
+		ELSE BEGIN -- db isn't in SYNCHRONIZED/SYNCHRONIZING state... 
+			-- can't do anything because of current db state. So, disable all jobs for db in question, and 'report' on outcome. 
+			SELECT 
+				@enabledOrDisabled = 0, -- preemptively disable
+				@usersStatus = N'Unable to process - due to database state',
+				@otherStatus = N'Database in non synchronized/synchronizing state';
+		END
+
+		-----------------------------------------------------------------------------------------------
+		-- Process Jobs (i.e. toggle them on or off based on whatever value was set above):
+		BEGIN TRY 
+			DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
+			SELECT 
+				sj.job_id, sj.name
+			FROM 
+				msdb.dbo.sysjobs sj
+				INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
+			WHERE 
+				LOWER(sc.name) = LOWER(@currentDatabase);
+
+			DECLARE @jobid uniqueidentifier; 
+			DECLARE @jobname sysname;
+
+			OPEN toggler; 
+			FETCH NEXT FROM toggler INTO @jobid, @jobname;
+
+			WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+				IF @PrintOnly = 1 BEGIN 
+					PRINT 'EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
+				  END
+				ELSE BEGIN
+					EXEC msdb.dbo.sp_update_job
+						@job_id = @jobid, 
+						@enabled = @enabledOrDisabled;
+				END
+
+				FETCH NEXT FROM toggler INTO @jobid, @jobname;
+			END 
+
+			CLOSE toggler;
+			DEALLOCATE toggler;
+
+			IF @enabledOrDisabled = 1
+				SET @jobsStatus = N'Jobs set to ENABLED';
+			ELSE 
+				SET @jobsStatus = N'Jobs set to DISABLED';
+
+		END TRY 
+		BEGIN CATCH 
+
+			SELECT @jobsStatus = N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN ' ENABLED ' ELSE ' DISABLED ' END + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE();
+		END CATCH
+
+		-----------------------------------------------------------------------------------------------
+		-- Update the status for this job. 
+		UPDATE @databases 
+		SET 
+			[jobs_status] = @jobsStatus,
+			[users_status] = @usersStatus,
+			[other_status] = @otherStatus
+		WHERE 
+			[db_name] = @currentDatabase;
+
+		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+	END
+
+	CLOSE processor;
+	DEALLOCATE processor;
+	
+	-----------------------------------------------------------------------------------------------
+	-- final report/summary. 
+	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab nchar(1) = CHAR(9);
+	DECLARE @message nvarchar(MAX) = N'';
+	DECLARE @subject nvarchar(400) = N'';
+	DECLARE @dbs nvarchar(4000) = N'';
+	
+	SELECT @dbs = @dbs + N'  DATABASE: ' + [db_name] + @crlf 
+		+ @tab + N'AG_MEMBERSHIP = ' + CASE WHEN [is_ag_member] = 1 THEN [ag_name] ELSE 'DISCONNECTED !!' END + @crlf
+		+ @tab + N'CURRENT_ROLE = ' + [role] + @crlf 
+		+ @tab + N'CURRENT_STATE = ' + CASE WHEN is_suspended = 1 THEN N'SUSPENDED !!' ELSE [state] END + @crlf
+		+ @tab + N'OWNER = ' + ISNULL([owner], N'NULL') + @crlf 
+		+ @tab + N'JOBS_STATUS = ' + jobs_status + @crlf 
+		+ @tab + CASE WHEN NULLIF(users_status, '') IS NULL THEN N'' ELSE N'USERS_STATUS = ' + users_status END
+		+ CASE WHEN NULLIF(other_status,'') IS NULL THEN N'' ELSE @crlf + @tab + N'OTHER_STATUS = ' + other_status END + @crlf 
+		+ @crlf
+	FROM @databases
+	ORDER BY [db_name];
+
+	SET @subject = N'Availability Groups Failover Detected on ' + @serverName;
+	SET @message = N'Post failover-response details are as follows: ';
+	SET @message = @message + @crlf + @crlf + N'SERVER NAME: ' + @serverName + @crlf;
+	SET @message = @message + @crlf + @dbs;
+
+	IF @PrintOnly = 1 BEGIN 
+		-- just Print out details:
+		PRINT 'SUBJECT: ' + @subject;
+		PRINT 'BODY: ' + @crlf + @message;
+
+		END
+	ELSE BEGIN
+		-- send a message:
+		EXEC msdb..sp_notify_operator 
+			@profile_name = @MailProfileName, 
+			@name = @OperatorName, 
+			@subject = @subject,
+			@body = @message;
+	END;	
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.server_synchronization_checks','P') IS NOT NULL
+	DROP PROC dbo.server_synchronization_checks;
+GO
+
+CREATE PROC dbo.server_synchronization_checks 
+	@IgnoreMirroredDatabaseOwnership	bit		= 0,					-- check by default. 
+	@IgnoredMasterDbObjects				nvarchar(4000) = NULL,
+	@IgnoredLogins						nvarchar(4000) = NULL,
+	@IgnoredAlerts						nvarchar(4000) = NULL,
+	@IgnoredLinkedServers				nvarchar(4000) = NULL,
+	@MailProfileName					sysname = N'General',					
+	@OperatorName						sysname = N'Alerts',					
+	@PrintOnly							bit		= 0						-- output only to console if @PrintOnly = 1
+AS
+	SET NOCOUNT ON; 
+
+	-- if we're not manually running this, make sure the server is the primary:
+	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -4;
+		 END;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
+				RETURN -4;
+			END;
+		END;
+
+		-- Profile Checks:
+		DECLARE @DatabaseMailProfile nvarchar(255);
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -5;
+		END; 
+	END;
+
+	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE name = 'PARTNER') BEGIN 
+		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
+		RETURN -5;
+	END 
+
+	IF OBJECT_ID('server_trace_flags', 'U') IS NULL BEGIN 
+		RAISERROR('Table dbo.server_trace_flags is not present in master. Synchronization check can not be processed.', 16, 1);
+		RETURN -6;
+	END
+
+	-- Start by updating master.dbo.dba_TraceFlags on both servers:
+	TRUNCATE TABLE dbo.dba_traceflags; -- truncating and replacing nets < 1 page of data and typically around 0ms of CPU. 
+
+	INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
+	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
+
+	-- Figure out which server this should be running on (and then, from this point forward, only run on the Primary);
+	DECLARE @firstMirroredDB sysname; 
+	SET @firstMirroredDB = (SELECT TOP 1 d.name FROM sys.databases d INNER JOIN sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL ORDER BY d.name); 
+
+	-- if there are NO mirrored dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
+	IF @firstMirroredDB IS NOT NULL BEGIN 
+		-- Check to see if we're on the primary or not. 
+		IF (SELECT dbo.is_primary_database(@firstMirroredDB)) = 0 BEGIN 
+			PRINT 'Server is Not Primary.'
+			RETURN 0; -- tests/checks are now done on the secondary
+		END
+	END 
+
+	DECLARE @deserializer nvarchar(MAX);
+
+	DECLARE @localServerName sysname = @@SERVERNAME;
+	DECLARE @remoteServerName sysname; 
+	SET @remoteServerName = (SELECT TOP 1 name FROM PARTNER.master.sys.servers WHERE server_id = 0);
+
+	-- Just to make sure that this job (running on both servers) has had enough time to update dba_traceflags, go ahead and give everything 200ms of 'lag'.
+	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
+	WAITFOR DELAY '00:00:00.200';
+
+	CREATE TABLE #Divergence (
+		rowid int IDENTITY(1,1) NOT NULL, 
+		name nvarchar(100) NOT NULL, 
+		[description] nvarchar(500) NOT NULL
+	);
+
+	---------------------------------------
+	-- Server Level Configuration/Settings: 
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'ConfigOption: ' + [source].name, 
+		N'Server Configuration Option is different between ' + @localServerName + N' and ' + @remoteServerName + N'. (Run ''EXEC sp_configure;'' on both servers.)'
+	FROM 
+		master.sys.configurations [source]
+		INNER JOIN PARTNER.master.sys.configurations [target] ON [source].[configuration_id] = [target].[configuration_id]
+	WHERE 
+		[source].value_in_use != [target].value_in_use;
+
+	---------------------------------------
+	-- Trace Flags: 
+	DECLARE @remoteFlags TABLE (
+		TraceFlag int NOT NULL, 
+		[Status] bit NOT NULL, 
+		[Global] bit NOT NULL, 
+		[Session] bit NOT NULL
+	);
+	
+	INSERT INTO @remoteFlags (TraceFlag, [Status], [Global], [Session])
+	SELECT TraceFlag, [Status], [Global], [Session] FROM PARTNER.master.dbo.dba_traceflags;
+	
+	-- local only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'TRACE FLAG: ' + CAST(TraceFlag AS nvarchar(5)), 
+		N'TRACE FLAG is enabled on ' + @localServerName + N' only.'
+	FROM 
+		master.dbo.dba_traceflags 
+	WHERE 
+		TraceFlag NOT IN (SELECT TraceFlag FROM @remoteFlags);
+
+	-- remote only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'TRACE FLAG: ' + CAST(TraceFlag AS nvarchar(5)), 
+		N'TRACE FLAG is enabled on ' + @remoteServerName + N' only.'
+	FROM 
+		@remoteFlags
+	WHERE 
+		TraceFlag NOT IN (SELECT TraceFlag FROM master.dbo.dba_traceflags);
+
+	-- different values: 
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'TRACE FLAG: ' + CAST(x.TraceFlag AS nvarchar(5)), 
+		N'TRACE FLAG Enabled Value is different between both servers.'
+	FROM 
+		master.dbo.dba_traceflags [x]
+		INNER JOIN @remoteFlags [y] ON x.TraceFlag = y.TraceFlag 
+	WHERE 
+		x.[Status] != y.[Status]
+		OR x.[Global] != y.[Global]
+		OR x.[Session] != y.[Session];
+
+
+	---------------------------------------
+	-- Make sure sys.messages.message_id #1480 is set so that is_event_logged = 1 (for easier/simplified role change (failover) notifications). Likewise, make sure 1440 is still set to is_event_logged = 1 (the default). 
+	-- local:
+	INSERT INTO #Divergence (name, [description])
+	SELECT
+		N'ErrorMessage: ' + CAST(message_id AS nvarchar(20)), 
+		N'The is_event_logged property for this message_id on ' + @localServerName + N' is NOT set to 1. Please run Mirroring Failover setup scripts.'
+	FROM 
+		sys.messages 
+	WHERE 
+		language_id = @@langid
+		AND message_id IN (1440, 1480)
+		AND is_event_logged = 0;
+
+		-- remote:
+		INSERT INTO #Divergence (name, [description])
+		SELECT
+			N'ErrorMessage: ' + CAST(message_id AS nvarchar(20)), 
+			N'The is_event_logged property for this message_id on ' + @remoteServerName + N' is NOT set to 1. Please run Mirroring Failover setup scripts.'
+		FROM 
+			PARTNER.master.sys.messages 
+		WHERE 
+			language_id = @@langid
+			AND message_id IN (1440, 1480)
+			AND is_event_logged = 0;
+
+	---------------------------------------
+	-- admindb versions: 
+	DECLARE @localAdminDBVersion sysname;
+	DECLARE @remoteAdminDBVersion sysname;
+
+	SELECT @localAdminDBVersion = version_number FROM admindb..version_history WHERE version_id = (SELECT MAX(version_id) FROM admindb..version_history);
+	SELECT @remoteAdminDBVersion = version_number FROM PARTNER.admindb..version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb..version_history);
+
+	IF @localAdminDBVersion <> @remoteAdminDBVersion BEGIN
+		INSERT INTO #Divergence (name, [description])
+		SELECT 
+			N'admindb versions are NOT synchronized',
+			N'Admin db on ' + @localServerName + ' is ' + @localAdminDBVersion + ' while the version on ' + @remoteServerName + ' is ' + @remoteAdminDBVersion + '.';
+
+	END;
+
+	---------------------------------------
+	-- Mirrored database ownership:
+	IF @IgnoreMirroredDatabaseOwnership = 0 BEGIN 
+		INSERT INTO #Divergence (name, [description])
+		SELECT 
+			N'Database: ' + [local].name, 
+			N'Database Owners are different between servers.'
+		FROM 
+			(SELECT d.name, d.owner_sid FROM master.sys.databases d INNER JOIN master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL) [local]
+			INNER JOIN (SELECT d.name, d.owner_sid FROM PARTNER.master.sys.databases d INNER JOIN PARTNER.master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL) [remote]
+				ON [local].name = [remote].name
+		WHERE
+			[local].owner_sid != [remote].owner_sid;
+	END
+
+	---------------------------------------
+	-- Linked Servers:
+	DECLARE @IgnoredLinkedServerNames TABLE (
+		name sysname NOT NULL
+	);
+
+	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredLinkedServers), ',', ''','''), ',', ' UNION SELECT ');
+	INSERT INTO @IgnoredLinkedServerNames(name)
+	EXEC(@deserializer);
+
+	-- local only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Linked Server: ' + [local].name,
+		N'Linked Server exists on ' + @localServerName + N' only.'
+	FROM 
+		sys.servers [local]
+		LEFT OUTER JOIN PARTNER.master.sys.servers [remote] ON [local].name = [remote].name
+	WHERE 
+		[local].server_id > 0 
+		AND [local].name <> 'PARTNER'
+		AND [local].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
+		AND [remote].name IS NULL;
+
+	-- remote only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Linked Server: ' + [remote].name,
+		N'Linked Server exists on ' + @remoteServerName + N' only.'
+	FROM 
+		PARTNER.master.sys.servers [remote]
+		LEFT OUTER JOIN master.sys.servers [local] ON [local].name = [remote].name
+	WHERE 
+		[remote].server_id > 0 
+		AND [remote].name <> 'PARTNER'
+		AND [remote].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
+		AND [local].name IS NULL;
+
+	
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Linked Server: ' + [local].name, 
+		N'Linkded server definitions are different between servers.'
+	FROM 
+		sys.servers [local]
+		INNER JOIN PARTNER.master.sys.servers [remote] ON [local].name = [remote].name
+	WHERE 
+		[local].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
+		AND ( 
+			[local].product != [remote].product
+			OR [local].provider != [remote].provider
+			-- Sadly, PARTNER is a bit of a pain/problem - it has to exist on both servers - but with slightly different versions:
+			OR (
+				CASE 
+					WHEN [local].name = 'PARTNER' AND [local].data_source != [remote].data_source THEN 0 -- non-true (i.e., non-'different' or non-problematic)
+					ELSE 1  -- there's a problem (because data sources are different, but the name is NOT 'Partner'
+				END 
+				 = 1  
+			)
+			OR [local].location != [remote].location
+			OR [local].provider_string != [remote].provider_string
+			OR [local].[catalog] != [remote].[catalog]
+			OR [local].is_remote_login_enabled != [remote].is_remote_login_enabled
+			OR [local].is_rpc_out_enabled != [remote].is_rpc_out_enabled
+			OR [local].is_collation_compatible != [remote].is_collation_compatible
+			OR [local].uses_remote_collation != [remote].uses_remote_collation
+			OR [local].collation_name != [remote].collation_name
+			OR [local].connect_timeout != [remote].connect_timeout
+			OR [local].query_timeout != [remote].query_timeout
+			OR [local].is_remote_proc_transaction_promotion_enabled != [remote].is_remote_proc_transaction_promotion_enabled
+			OR [local].is_system != [remote].is_system
+			OR [local].lazy_schema_validation != [remote].lazy_schema_validation
+		);
+		
+
+	---------------------------------------
+	-- Logins:
+	DECLARE @ignoredLoginName TABLE (
+		name sysname NOT NULL
+	);
+
+	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredLogins), ',', ''','''), ',', ' UNION SELECT ');
+	INSERT INTO @ignoredLoginName(name)
+	EXEC(@deserializer);
+
+	-- local only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Login: ' + [local].name, 
+		N'Login exists on ' + @localServerName + N' only.'
+	FROM 
+		sys.server_principals [local]
+	WHERE 
+		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
+		AND [local].name NOT IN (SELECT name FROM PARTNER.master.sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
+		AND [local].name NOT IN (SELECT name FROM @ignoredLoginName);
+
+	-- remote only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Login: ' + [remote].name, 
+		N'Login exists on ' + @remoteServerName + N' only.'
+	FROM 
+		PARTNER.master.sys.server_principals [remote]
+	WHERE 
+		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
+		AND [remote].name NOT IN (SELECT name FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
+		AND [remote].name NOT IN (SELECT name FROM @ignoredLoginName);
+
+	-- differences
+	INSERT INTO #Divergence (name, [description])
+	SELECT
+		N'Login: ' + [local].name, 
+		N'Login is different between servers. (Check SID, disabled, or password_hash (for SQL Logins).)'
+	FROM 
+		(SELECT p.name, p.[sid], p.is_disabled, l.password_hash FROM sys.server_principals p LEFT OUTER JOIN sys.sql_logins l ON p.name = l.name) [local]
+		INNER JOIN (SELECT p.name, p.[sid], p.is_disabled, l.password_hash FROM PARTNER.master.sys.server_principals p LEFT OUTER JOIN PARTNER.master.sys.sql_logins l ON p.name = l.name) [remote] ON [local].name = [remote].name
+	WHERE
+		[local].name NOT IN (SELECT name FROM @ignoredLoginName)
+		AND [local].name NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
+		AND (
+			[local].[sid] != [remote].[sid]
+			--OR [local].password_hash != [remote].password_hash  -- sadly, these are ALWAYS going to be different because of master keys/encryption details. So we can't use it for comparison purposes.
+			OR [local].is_disabled != [remote].is_disabled
+		);
+
+	---------------------------------------
+	-- Endpoints? 
+	--		[add if needed/desired.]
+
+	---------------------------------------
+	-- Server Level Triggers?
+	--		[add if needed/desired.]
+
+
+	---------------------------------------
+	-- Operators:
+	-- local only
+	INSERT INTO #Divergence (name, [description])
+	SELECT	
+		N'Operator: ' + [local].name, 
+		N'Operator exists on ' + @localServerName + N' only.'
+	FROM 
+		msdb.dbo.sysoperators [local]
+		LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators [remote] ON [local].name = [remote].name
+	WHERE 
+		[remote].name IS NULL;
+
+	-- remote only
+	INSERT INTO #Divergence (name, [description])
+	SELECT	
+		N'Operator: ' + [remote].name, 
+		N'Operator exists on ' + @remoteServerName + N' only.'
+	FROM 
+		PARTNER.msdb.dbo.sysoperators [remote]
+		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].name = [local].name
+	WHERE 
+		[local].name IS NULL;
+
+	-- differences (just checking email address in this particular config):
+	INSERT INTO #Divergence (name, [description])
+	SELECT	
+		N'Operator: ' + [local].name, 
+		N'Operator definition is different between servers. (Check email address(es) and enabled.)'
+	FROM 
+		msdb.dbo.sysoperators [local]
+		INNER JOIN PARTNER.msdb.dbo.sysoperators [remote] ON [local].name = [remote].name
+	WHERE 
+		[local].[enabled] != [remote].[enabled]
+		OR [local].[email_address] != [remote].[email_address];
+
+	---------------------------------------
+	-- Alerts:
+	DECLARE @ignoredAlertName TABLE (
+		name sysname NOT NULL
+	);
+
+	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredAlerts), ',', ''','''), ',', ' UNION SELECT ');
+	INSERT INTO @ignoredAlertName(name)
+	EXEC(@deserializer);
+
+	-- local only
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Alert: ' + [local].name, 
+		N'Alert exists on ' + @localServerName + N' only.'
+	FROM 
+		msdb.dbo.sysalerts [local]
+		LEFT OUTER JOIN PARTNER.msdb.dbo.sysalerts [remote] ON [local].name = [remote].name
+	WHERE
+		[remote].name IS NULL
+		AND [local].name NOT IN (SELECT name FROM @ignoredAlertName);
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Alert: ' + [remote].name, 
+		N'Alert exists on ' + @remoteServerName + N' only.'
+	FROM 
+		PARTNER.msdb.dbo.sysalerts [remote]
+		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].name = [local].name
+	WHERE
+		[local].name IS NULL
+		AND [remote].name NOT IN (SELECT name FROM @ignoredAlertName);
+
+	-- differences:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'Alert: ' + [local].name, 
+		N'Alert definition is different between servers.'
+	FROM	
+		msdb.dbo.sysalerts [local]
+		INNER JOIN PARTNER.msdb.dbo.sysalerts [remote] ON [local].name = [remote].name
+	WHERE 
+		[local].name NOT IN (SELECT name FROM @ignoredAlertName)
+		AND (
+		[local].message_id != [remote].message_id
+		OR [local].severity != [remote].severity
+		OR [local].[enabled] != [remote].[enabled]
+		OR [local].delay_between_responses != [remote].delay_between_responses
+		OR [local].notification_message != [remote].notification_message
+		OR [local].include_event_description != [remote].include_event_description
+		OR [local].database_name != [remote].database_name
+		OR [local].event_description_keyword != [remote].event_description_keyword
+		-- JobID is problematic. If we have a job set to respond, it'll undoubtedly have a diff ID from one server to the other. So... we just need to make sure ID != 'empty' on one server, while not on the other, etc. 
+		OR (
+			CASE 
+				WHEN [local].job_id = N'00000000-0000-0000-0000-000000000000' AND [remote].job_id = N'00000000-0000-0000-0000-000000000000' THEN 0 -- no problem
+				WHEN [local].job_id = N'00000000-0000-0000-0000-000000000000' AND [remote].job_id != N'00000000-0000-0000-0000-000000000000' THEN 1 -- problem - one alert is 'empty' and the other is not. 
+				WHEN [local].job_id != N'00000000-0000-0000-0000-000000000000' AND [remote].job_id = N'00000000-0000-0000-0000-000000000000' THEN 1 -- problem (inverse of above). 
+				WHEN ([local].job_id != N'00000000-0000-0000-0000-000000000000' AND [remote].job_id != N'00000000-0000-0000-0000-000000000000') AND ([local].job_id != [remote].job_id) THEN 0 -- they're both 'non-empty' so... we assume it's good
+			END 
+			= 1
+		)
+		OR [local].has_notification != [remote].has_notification
+		OR [local].performance_condition != [remote].performance_condition
+		OR [local].category_id != [remote].category_id
+		);
+
+	---------------------------------------
+	-- Objects in Master Database:  
+	DECLARE @localMasterObjects TABLE (
+		[object_name] sysname NOT NULL
+	);
+
+	DECLARE @ignoredMasterObjects TABLE (
+		name sysname NOT NULL
+	);
+
+	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredMasterDbObjects), ',', ''','''), ',', ' UNION SELECT ');
+	INSERT INTO @ignoredMasterObjects(name)
+	EXEC(@deserializer);
+
+	INSERT INTO @localMasterObjects ([object_name])
+	SELECT name FROM sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND name NOT IN (SELECT name FROM @ignoredMasterObjects);
+	
+	DECLARE @remoteMasterObjects TABLE (
+		[object_name] sysname NOT NULL
+	);
+
+	INSERT INTO @remoteMasterObjects ([object_name])
+	SELECT name FROM PARTNER.master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND name NOT IN (SELECT name FROM @ignoredMasterObjects);
+
+	-- local only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'object: ' + [local].[object_name], 
+		N'Object exists only in master database on ' + @localServerName + '.'
+	FROM 
+		@localMasterObjects [local]
+		LEFT OUTER JOIN @remoteMasterObjects [remote] ON [local].[object_name] = [remote].[object_name]
+	WHERE
+		[remote].[object_name] IS NULL;
+	
+	-- remote only:
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'object: ' + [remote].[object_name], 
+		N'Object exists only in master database on ' + @remoteServerName + '.'
+	FROM 
+		@remoteMasterObjects [remote]
+		LEFT OUTER JOIN @localMasterObjects [local] ON [remote].[object_name] = [local].[object_name]
+	WHERE
+		[local].[object_name] IS NULL;
+
+
+	CREATE TABLE #Definitions (
+		row_id int IDENTITY(1,1) NOT NULL, 
+		location sysname NOT NULL, 
+		[object_name] sysname NOT NULL, 
+		[type] char(2) NOT NULL,
+		[hash] varbinary(MAX) NULL
+	);
+
+	INSERT INTO #Definitions (location, [object_name], [type], [hash])
+	SELECT 
+		'local', 
+		name, 
+		[type], 
+		CASE 
+			WHEN [type] IN ('V','P','FN','IF','TF') THEN 
+				CASE
+					-- HASHBYTES barfs on > 8000 chars. So, using this: http://www.sqlnotes.info/2012/01/16/generate-md5-value-from-big-data/
+					WHEN DATALENGTH(sm.[definition]) > 8000 THEN (SELECT sys.fn_repl_hash_binary(CAST(sm.[definition] AS varbinary(MAX))))
+						--CAST((DATALENGTH(sm.[definition]) + CHECKSUM(sm.[definition])) AS varbinary(max)) -- CHECKSUM + DATALEN should give us sufficient coverage for differences. 
+					ELSE HASHBYTES('SHA1', sm.[definition])
+				END
+			ELSE NULL
+		END [hash]
+	FROM 
+		master.sys.objects o
+		LEFT OUTER JOIN master.sys.sql_modules sm ON o.object_id = sm.object_id
+		INNER JOIN @localMasterObjects x ON o.name = x.[object_name];
+
+	DECLARE localtabler CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'local';
+
+	DECLARE @currentObjectName sysname;
+	DECLARE @hash varbinary(MAX);
+	DECLARE @checksum bigint = 0;
+
+	OPEN localtabler;
+	FETCH NEXT FROM localtabler INTO @currentObjectName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN 
+		SET @checksum = 0;
+
+		-- This whole 'nested' or 'derived' query approach is to get around a WEIRD bug/problem with CHECKSUM and 'running' aggregates. 
+		SELECT @checksum = @checksum + [local].[hash] FROM ( 
+			SELECT CHECKSUM(c.column_id, c.name, c.system_type_id, c.max_length, c.[precision]) [hash]
+			FROM master.sys.columns c INNER JOIN master.sys.objects o ON o.object_id = c.object_id WHERE o.name = @currentObjectName
+		) [local];
+
+		UPDATE #Definitions SET [hash] = @checksum WHERE [object_name] = @currentObjectName AND [location] = 'local';
+
+		FETCH NEXT FROM localtabler INTO @currentObjectName;
+	END 
+
+	CLOSE localtabler;
+	DEALLOCATE localtabler;
+
+	INSERT INTO #Definitions (location, [object_name], [type], [hash])
+	SELECT 
+		'remote', 
+		name, 
+		[type], 
+		CASE 
+			WHEN [type] IN ('V','P','FN','IF','TF') THEN 
+				CASE
+					-- HASHBYTES barfs on > 8000 chars. So, using this: http://www.sqlnotes.info/2012/01/16/generate-md5-value-from-big-data/
+					WHEN DATALENGTH(sm.[definition]) > 8000 THEN (SELECT sys.fn_repl_hash_binary(CAST(sm.[definition] AS varbinary(MAX))))
+					ELSE HASHBYTES('SHA1', sm.[definition])
+				END
+			ELSE NULL
+		END [hash]
+	FROM 
+		PARTNER.master.sys.objects o
+		LEFT OUTER JOIN PARTNER.master.sys.sql_modules sm ON o.object_id = sm.object_id
+		INNER JOIN @remoteMasterObjects x ON o.name = x.[object_name];
+
+	DECLARE remotetabler CURSOR LOCAL FAST_FORWARD FOR
+	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'remote';
+
+	OPEN remotetabler;
+	FETCH NEXT FROM remotetabler INTO @currentObjectName; 
+
+	WHILE @@FETCH_STATUS = 0 BEGIN 
+		SET @checksum = 0;
+
+		-- This whole 'nested' or 'derived' query approach is to get around a WEIRD bug/problem with CHECKSUM and 'running' aggregates. 
+		SELECT @checksum = @checksum + [remote].[hash] FROM ( 
+			SELECT CHECKSUM(c.column_id, c.name, c.system_type_id, c.max_length, c.[precision]) [hash]
+			FROM PARTNER.master.sys.columns c INNER JOIN PARTNER.master.sys.objects o ON o.object_id = c.object_id WHERE o.name = @currentObjectName
+		) [remote];
+
+		UPDATE #Definitions SET [hash] = @checksum WHERE [object_name] = @currentObjectName AND [location] = 'remote';
+
+		FETCH NEXT FROM remotetabler INTO @currentObjectName; 
+	END 
+
+	CLOSE remotetabler;
+	DEALLOCATE remotetabler;
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT 
+		N'object: ' + [local].[object_name], 
+		N'Object definitions between servers are different.'
+	FROM 
+		(SELECT [object_name], [hash] FROM #Definitions WHERE [location] = 'local') [local]
+		INNER JOIN (SELECT [object_name], [hash] FROM #Definitions WHERE [location] = 'remote') [remote] ON [local].object_name = [remote].object_name
+	WHERE 
+		[local].[hash] != [remote].[hash];
+	
+	------------------------------------------------------------------------------
+	-- Report on any discrepancies: 
+	IF(SELECT COUNT(*) FROM #Divergence) > 0 BEGIN 
+
+		DECLARE @subject nvarchar(300) = N'SQL Server Synchronization Check Problems';
+		DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
+		DECLARE @tab nchar(1) = CHAR(9);
+		DECLARE @message nvarchar(MAX) = N'The following synchronization issues were detected: ' + @crlf;
+
+		SELECT 
+			@message = @message + @tab + name + N' -> ' + [description] + @crlf
+		FROM 
+			#Divergence
+		ORDER BY 
+			rowid;
+		
+		IF @PrintOnly = 1 BEGIN 
+			-- just Print out details:
+			PRINT 'SUBJECT: ' + @subject;
+			PRINT 'BODY: ' + @crlf + @message;
+
+		  END
+		ELSE BEGIN
+			-- send a message:
+			EXEC msdb..sp_notify_operator 
+				@profile_name = @MailProfileName, 
+				@name = @OperatorName, 
+				@subject = @subject,
+				@body = @message;
+		END;
+
+	END 
+
+	DROP TABLE #Divergence;
+	DROP TABLE #Definitions;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.server_trace_flags','U') IS NOT NULL
+	DROP TABLE dbo.server_trace_flags;
+GO
+
+CREATE TABLE dbo.server_trace_flags (
+	[trace_flag] [int] NOT NULL,
+	[status] [bit] NOT NULL,
+	[global] [bit] NOT NULL,
+	[session] [bit] NOT NULL,
+	CONSTRAINT [PK_server_traceflags] PRIMARY KEY CLUSTERED ([trace_flag] ASC)
+) 
+ON [PRIMARY];
+
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.verify_job_states','P') IS NOT NULL
+	DROP PROC dbo.verify_job_states;
+GO
+
+CREATE PROC dbo.verify_job_states 
+	@SendChangeNotifications	bit = 1,
+	@MailProfileName			sysname = N'General',
+	@OperatorName				sysname	= N'Alerts', 
+	@EmailSubjectPrefix			sysname = N'[SQL Agent Jobs-State Updates]',
+	@PrintOnly					bit	= 0
+AS 
+	SET NOCOUNT ON;
+
+	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -4;
+		 END;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
+				RETURN -4;
+			END;
+		END;
+
+		-- Profile Checks:
+		DECLARE @DatabaseMailProfile nvarchar(255);
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -5;
+		END; 
+	END;
+
+	DECLARE @errorMessage nvarchar(MAX) = N'';
+	DECLARE @jobsStatus nvarchar(MAX) = N'';
+
+	-- Start by querying for list of mirrored then AG'd database to process:
+	DECLARE @targetDatabases table (
+		[db_name] sysname NOT NULL, 
+		[role] sysname NOT NULL, 
+		[state] sysname NOT NULL, 
+		[owner] sysname NULL
+	);
+
+	INSERT INTO @targetDatabases ([db_name], [role], [state], [owner])
+	SELECT 
+		d.[name] [db_name],
+		dm.mirroring_role_desc [role], 
+		dm.mirroring_state_desc [state], 
+		sp.[name] [owner]
+	FROM 
+		sys.database_mirroring dm
+		INNER JOIN sys.databases d ON dm.database_id = d.database_id
+		LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
+	WHERE 
+		dm.mirroring_guid IS NOT NULL;
+
+	INSERT INTO @targetDatabases ([db_name], [role], [state], [owner])
+	SELECT 
+		dbcs.[database_name] [db_name],
+		ISNULL(arstates.role_desc,'UNKNOWN') [role],
+		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
+		x.[owner]
+	FROM 
+		master.sys.availability_groups AS ag
+		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
+		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON ar.replica_id = arstates.replica_id AND arstates.is_local = 1
+		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
+		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
+		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name;
+
+	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
+	DECLARE @enabledOrDisabled bit; 
+	DECLARE @countOfJobsToModify int;
+
+	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab nchar(1) = CHAR(9);
+
+	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[db_name], 
+		[role],
+		[state]
+	FROM 
+		@targetDatabases
+	ORDER BY 
+		[db_name];
+
+	OPEN processor;
+	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN;
+
+		SET @enabledOrDisabled = 0; -- default to disabled. 
+
+		-- if the db is synchronized/synchronizing AND PRIMARY, then enable jobs:
+		IF (@currentRole IN (N'PRINCIPAL',N'PRIMARY')) AND (@currentState IN ('SYNCHRONIZED','SYNCHRONIZING')) BEGIN
+			SET @enabledOrDisabled = 1;
+		END;
+
+		-- determine if there are any jobs OUT of sync with their expected settings:
+		SELECT @countOfJobsToModify = ISNULL((
+				SELECT COUNT(*) FROM msdb.dbo.sysjobs sj INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id WHERE LOWER(sc.name) = LOWER(@currentDatabase) AND sj.enabled != @enabledOrDisabled 
+			), 0);
+
+		IF @countOfJobsToModify > 0 BEGIN;
+
+			BEGIN TRY 
+				DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
+				SELECT 
+					sj.job_id, sj.name
+				FROM 
+					msdb.dbo.sysjobs sj
+					INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
+				WHERE 
+					LOWER(sc.name) = LOWER(@currentDatabase)
+					AND sj.[enabled] <> @enabledOrDisabled;
+
+				DECLARE @jobid uniqueidentifier; 
+				DECLARE @jobname sysname;
+
+				OPEN toggler; 
+				FETCH NEXT FROM toggler INTO @jobid, @jobname;
+
+				WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+					IF @PrintOnly = 1 BEGIN 
+						PRINT '-- EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
+					  END
+					ELSE BEGIN
+						EXEC msdb.dbo.sp_update_job
+							@job_id = @jobid, 
+							@enabled = @enabledOrDisabled;
+					END
+
+					SET @jobsStatus = @jobsStatus + @tab + N'- [' + ISNULL(@jobname, N'#ERROR#') + N'] to ' + CASE WHEN @enabledOrDisabled = 1 THEN N'ENABLED' ELSE N'DISABLED' END + N'.' + @crlf;
+
+					FETCH NEXT FROM toggler INTO @jobid, @jobname;
+				END 
+
+				CLOSE toggler;
+				DEALLOCATE toggler;
+
+			END TRY 
+			BEGIN CATCH 
+				SELECT @errorMessage = @errorMessage + N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN N' ENABLED ' ELSE N' DISABLED ' END + N'. [ Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE() + N']';
+			END CATCH
+		
+			-- cleanup cursor if it didn't get closed:
+			IF (SELECT CURSOR_STATUS('local','toggler')) > -1 BEGIN;
+				CLOSE toggler;
+				DEALLOCATE toggler;
+			END
+		END
+
+		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+	END
+
+	CLOSE processor;
+	DEALLOCATE processor;
+
+	IF (SELECT CURSOR_STATUS('local','processor')) > -1 BEGIN;
+		CLOSE processor;
+		DEALLOCATE processor;
+	END
+
+	IF (@jobsStatus <> N'') AND (@SendChangeNotifications = 1) BEGIN;
+
+		DECLARE @serverName sysname;
+		SELECT @serverName = @@SERVERNAME; 
+
+		SET @jobsStatus = N'The following changes were made to SQL Server Agent Jobs on ' + @serverName + ':' + @crlf + @jobsStatus;
+
+		IF @errorMessage <> N'' 
+			SET @jobsStatus = @jobsStatus + @crlf + @crlf + N'The following Error Details were also encountered: ' + @crlf + @tab + @errorMessage;
+
+		DECLARE @emailSubject nvarchar(2000) = @EmailSubjectPrefix + N' Change Report for ' + @serverName;
+
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @emailSubject;
+			PRINT @jobsStatus;
+
+		  END
+		ELSE BEGIN 
+			EXEC msdb.dbo.sp_notify_operator 
+				@profile_name = @MailProfileName,
+				@name = @OperatorName, 
+				@subject = @emailSubject, 
+				@body = @jobsStatus;
+		END
+	END
+
+	RETURN 0;
+
+GO
+
 
 
 ---------------------------------------------------------------------------
