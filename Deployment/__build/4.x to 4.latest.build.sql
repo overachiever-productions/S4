@@ -78,13 +78,13 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.3.2.16833';
+DECLARE @targetVersion varchar(20) = '4.6.1.16842';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Deployed via Upgrade Script. Enabling [DEFAULT] token/option for backup, data, and log paths.', GETDATE());
+	VALUES (@targetVersion, 'Deployed via Upgrade Script. Integration of 4.4.1.16835 logic (streamlined HA).', GETDATE());
 
 END;
 

@@ -154,15 +154,15 @@ AS
 	);
 	
 	INSERT INTO @remoteFlags (TraceFlag, [Status], [Global], [Session])
-	SELECT TraceFlag, [Status], [Global], [Session] FROM PARTNER.master.dbo.dba_traceflags;
+	EXEC sp_executesql 'SELECT trace_flag [status], [global], [session] FROM PARTNER.admindb.dbo.server_trace_flags;';
 	
 	-- local only:
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'TRACE FLAG: ' + CAST(TraceFlag AS nvarchar(5)), 
+		N'TRACE FLAG: ' + CAST(trace_flag AS nvarchar(5)), 
 		N'TRACE FLAG is enabled on ' + @localServerName + N' only.'
 	FROM 
-		master.dbo.dba_traceflags 
+		admin.dbo.server_trace_flags 
 	WHERE 
 		TraceFlag NOT IN (SELECT TraceFlag FROM @remoteFlags);
 
@@ -174,16 +174,16 @@ AS
 	FROM 
 		@remoteFlags
 	WHERE 
-		TraceFlag NOT IN (SELECT TraceFlag FROM master.dbo.dba_traceflags);
+		TraceFlag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
 
 	-- different values: 
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'TRACE FLAG: ' + CAST(x.TraceFlag AS nvarchar(5)), 
+		N'TRACE FLAG: ' + CAST(x.trace_flag AS nvarchar(5)), 
 		N'TRACE FLAG Enabled Value is different between both servers.'
 	FROM 
-		master.dbo.dba_traceflags [x]
-		INNER JOIN @remoteFlags [y] ON x.TraceFlag = y.TraceFlag 
+		admindb.dbo.server_trace_flags [x]
+		INNER JOIN @remoteFlags [y] ON x.trace_flag = y.TraceFlag 
 	WHERE 
 		x.[Status] != y.[Status]
 		OR x.[Global] != y.[Global]
@@ -222,7 +222,7 @@ AS
 	DECLARE @remoteAdminDBVersion sysname;
 
 	SELECT @localAdminDBVersion = version_number FROM admindb..version_history WHERE version_id = (SELECT MAX(version_id) FROM admindb..version_history);
-	SELECT @remoteAdminDBVersion = version_number FROM PARTNER.admindb..version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb..version_history);
+	SELECT @remoteAdminDBVersion = version_number FROM PARTNER.admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb.dbo.version_history);
 
 	IF @localAdminDBVersion <> @remoteAdminDBVersion BEGIN
 		INSERT INTO #Divergence (name, [description])
