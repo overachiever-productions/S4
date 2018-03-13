@@ -83,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.6.1.16842';
+DECLARE @CurrentVersion varchar(20) = N'4.6.1.16855';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -3690,7 +3690,6 @@ AS
 	
 		IF @description = 'PRINCIPAL'
 			RETURN 1;
-			
 
 		-- Check for AG'd state:
 		SELECT 
@@ -4764,13 +4763,13 @@ AS
 		RETURN -5;
 	END 
 
-	IF OBJECT_ID('server_trace_flags', 'U') IS NULL BEGIN 
+	IF OBJECT_ID('admindb.dbo.server_trace_flags', 'U') IS NULL BEGIN 
 		RAISERROR('Table dbo.server_trace_flags is not present in master. Synchronization check can not be processed.', 16, 1);
 		RETURN -6;
 	END
 
-	-- Start by updating master.dbo.dba_TraceFlags on both servers:
-	TRUNCATE TABLE dbo.dba_traceflags; -- truncating and replacing nets < 1 page of data and typically around 0ms of CPU. 
+	-- Start by updating dbo.server_trace_flags on both servers:
+	TRUNCATE TABLE dbo.server_trace_flags; -- truncating and replacing nets < 1 page of data and typically around 0ms of CPU. 
 
 	INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
 	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
@@ -4794,7 +4793,7 @@ AS
 	DECLARE @remoteServerName sysname; 
 	SET @remoteServerName = (SELECT TOP 1 name FROM PARTNER.master.sys.servers WHERE server_id = 0);
 
-	-- Just to make sure that this job (running on both servers) has had enough time to update dba_traceflags, go ahead and give everything 200ms of 'lag'.
+	-- Just to make sure that this job (running on both servers) has had enough time to update server_trace_flags, go ahead and give everything 200ms of 'lag'.
 	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
 	WAITFOR DELAY '00:00:00.200';
 
@@ -4806,10 +4805,10 @@ AS
 
 	---------------------------------------
 	-- Server Level Configuration/Settings: 
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		N'ConfigOption: ' + [source].name, 
-		N'Server Configuration Option is different between ' + @localServerName + N' and ' + @remoteServerName + N'. (Run ''EXEC sp_configure;'' on both servers.)'
+		N'ConfigOption: ' + [source].[name], 
+		N'Server Configuration Option is different between ' + @localServerName + N' and ' + @remoteServerName + N'. (Run ''EXEC sp_configure;'' on both servers and/or run ''SELECT * FROM master.sys.configurations;'' on both servers.)'
 	FROM 
 		master.sys.configurations [source]
 		INNER JOIN PARTNER.master.sys.configurations [target] ON [source].[configuration_id] = [target].[configuration_id]
@@ -4819,14 +4818,14 @@ AS
 	---------------------------------------
 	-- Trace Flags: 
 	DECLARE @remoteFlags TABLE (
-		TraceFlag int NOT NULL, 
-		[Status] bit NOT NULL, 
-		[Global] bit NOT NULL, 
-		[Session] bit NOT NULL
+		trace_flag int NOT NULL, 
+		[status] bit NOT NULL, 
+		[global] bit NOT NULL, 
+		[session] bit NOT NULL
 	);
 	
-	INSERT INTO @remoteFlags (TraceFlag, [Status], [Global], [Session])
-	EXEC sp_executesql 'SELECT trace_flag [status], [global], [session] FROM PARTNER.admindb.dbo.server_trace_flags;';
+	INSERT INTO @remoteFlags ([trace_flag], [status], [global], [session])
+	EXEC sp_executesql N'SELECT [trace_flag], [status], [global], [session] FROM PARTNER.admindb.dbo.server_trace_flags;';
 	
 	-- local only:
 	INSERT INTO #Divergence (name, [description])
@@ -4834,19 +4833,19 @@ AS
 		N'TRACE FLAG: ' + CAST(trace_flag AS nvarchar(5)), 
 		N'TRACE FLAG is enabled on ' + @localServerName + N' only.'
 	FROM 
-		admin.dbo.server_trace_flags 
+		admindb.dbo.server_trace_flags 
 	WHERE 
-		TraceFlag NOT IN (SELECT TraceFlag FROM @remoteFlags);
+		trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
 
 	-- remote only:
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'TRACE FLAG: ' + CAST(TraceFlag AS nvarchar(5)), 
+		N'TRACE FLAG: ' + CAST(trace_flag AS nvarchar(5)), 
 		N'TRACE FLAG is enabled on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteFlags
 	WHERE 
-		TraceFlag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
+		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
 
 	-- different values: 
 	INSERT INTO #Divergence (name, [description])
@@ -4855,11 +4854,11 @@ AS
 		N'TRACE FLAG Enabled Value is different between both servers.'
 	FROM 
 		admindb.dbo.server_trace_flags [x]
-		INNER JOIN @remoteFlags [y] ON x.trace_flag = y.TraceFlag 
+		INNER JOIN @remoteFlags [y] ON x.trace_flag = y.trace_flag 
 	WHERE 
-		x.[Status] != y.[Status]
-		OR x.[Global] != y.[Global]
-		OR x.[Session] != y.[Session];
+		x.[status] != y.[status]
+		OR x.[global] != y.[global]
+		OR x.[session] != y.[session];
 
 
 	---------------------------------------
@@ -4893,7 +4892,7 @@ AS
 	DECLARE @localAdminDBVersion sysname;
 	DECLARE @remoteAdminDBVersion sysname;
 
-	SELECT @localAdminDBVersion = version_number FROM admindb..version_history WHERE version_id = (SELECT MAX(version_id) FROM admindb..version_history);
+	SELECT @localAdminDBVersion = version_number FROM admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM admindb..version_history);
 	SELECT @remoteAdminDBVersion = version_number FROM PARTNER.admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb.dbo.version_history);
 
 	IF @localAdminDBVersion <> @remoteAdminDBVersion BEGIN
@@ -4916,7 +4915,7 @@ AS
 			INNER JOIN (SELECT d.name, d.owner_sid FROM PARTNER.master.sys.databases d INNER JOIN PARTNER.master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL) [remote]
 				ON [local].name = [remote].name
 		WHERE
-			[local].owner_sid != [remote].owner_sid;
+			[local].owner_sid <> [remote].owner_sid;
 	END
 
 	---------------------------------------
@@ -5168,11 +5167,11 @@ AS
 	);
 
 	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredMasterDbObjects), ',', ''','''), ',', ' UNION SELECT ');
-	INSERT INTO @ignoredMasterObjects(name)
+	INSERT INTO @ignoredMasterObjects([name])
 	EXEC(@deserializer);
 
 	INSERT INTO @localMasterObjects ([object_name])
-	SELECT name FROM sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND name NOT IN (SELECT name FROM @ignoredMasterObjects);
+	SELECT name FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
 	
 	DECLARE @remoteMasterObjects TABLE (
 		[object_name] sysname NOT NULL
@@ -5236,7 +5235,6 @@ AS
 	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'local';
 
 	DECLARE @currentObjectName sysname;
-	DECLARE @hash varbinary(MAX);
 	DECLARE @checksum bigint = 0;
 
 	OPEN localtabler;

@@ -71,7 +71,6 @@ AS
 	
 		IF @description = 'PRINCIPAL'
 			RETURN 1;
-			
 
 		-- Check for AG'd state:
 		SELECT 
