@@ -91,7 +91,7 @@ AS
 		END; 
 	END;
 
-	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE name = 'PARTNER') BEGIN 
+	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
 		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
 		RETURN -5;
 	END 
@@ -109,7 +109,7 @@ AS
 
 	-- Figure out which server this should be running on (and then, from this point forward, only run on the Primary);
 	DECLARE @firstMirroredDB sysname; 
-	SET @firstMirroredDB = (SELECT TOP 1 d.name FROM sys.databases d INNER JOIN sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL ORDER BY d.name); 
+	SET @firstMirroredDB = (SELECT TOP 1 d.[name] FROM sys.databases d INNER JOIN sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL ORDER BY d.[name]); 
 
 	-- if there are NO mirrored dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
 	IF @firstMirroredDB IS NOT NULL BEGIN 
@@ -287,7 +287,7 @@ AS
 
 		INSERT INTO #Divergence (name, [description])
 		SELECT 
-			N'Database: ' + [local].name, 
+			N'Database: ' + [local].[name], 
 			[local].sync_type + N' database owners are different between servers.'
 		FROM 
 			@localOwners [local]
@@ -348,27 +348,27 @@ AS
 	-- remote only:
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'Linked Server: ' + [remote].name,
+		N'Linked Server: ' + [remote].[name],
 		N'Linked Server exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteLinkedServers [remote]
-		LEFT OUTER JOIN master.sys.servers [local] ON [local].name = [remote].name
+		LEFT OUTER JOIN master.sys.servers [local] ON [local].[name] = [remote].[name]
 	WHERE 
 		[remote].server_id > 0 
-		AND [remote].name <> 'PARTNER'
-		AND [remote].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
-		AND [local].name IS NULL;
+		AND [remote].[name] <> 'PARTNER'
+		AND [remote].[name] NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
+		AND [local].[name] IS NULL;
 
 	
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'Linked Server: ' + [local].name, 
+		N'Linked Server: ' + [local].[name], 
 		N'Linkded server definitions are different between servers.'
 	FROM 
 		sys.servers [local]
-		INNER JOIN @remoteLinkedServers [remote] ON [local].name = [remote].name
+		INNER JOIN @remoteLinkedServers [remote] ON [local].[name] = [remote].[name]
 	WHERE 
-		[local].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
+		[local].[name] NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
 		AND ( 
 			[local].product <> [remote].product
 			OR [local].[provider] <> [remote].[provider]
@@ -439,14 +439,14 @@ AS
 	-- remote only:
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'Login: ' + [remote].name, 
+		N'Login: ' + [remote].[name], 
 		N'Login exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remotePrincipals [remote]
 	WHERE 
 		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [remote].name NOT IN (SELECT name FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [remote].name NOT IN (SELECT name FROM @ignoredLoginName);
+		AND [remote].[name] NOT IN (SELECT [name] FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
+		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredLoginName);
 
 	-- differences
 	INSERT INTO #Divergence ([name], [description])
@@ -497,33 +497,33 @@ AS
 
 	INSERT INTO #Divergence (name, [description])
 	SELECT	
-		N'Operator: ' + [local].name, 
+		N'Operator: ' + [local].[name], 
 		N'Operator exists on ' + @localServerName + N' only.'
 	FROM 
 		msdb.dbo.sysoperators [local]
-		LEFT OUTER JOIN @remoteOperators [remote] ON [local].name = [remote].name
+		LEFT OUTER JOIN @remoteOperators [remote] ON [local].[name] = [remote].[name]
 	WHERE 
-		[remote].name IS NULL;
+		[remote].[name] IS NULL;
 
 	-- remote only
 	INSERT INTO #Divergence (name, [description])
 	SELECT	
-		N'Operator: ' + [remote].name, 
+		N'Operator: ' + [remote].[name], 
 		N'Operator exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteOperators [remote]
-		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].name = [local].name
+		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].[name] = [local].[name]
 	WHERE 
-		[local].name IS NULL;
+		[local].[name] IS NULL;
 
 	-- differences (just checking email address in this particular config):
 	INSERT INTO #Divergence (name, [description])
 	SELECT	
-		N'Operator: ' + [local].name, 
+		N'Operator: ' + [local].[name], 
 		N'Operator definition is different between servers. (Check email address(es) and enabled.)'
 	FROM 
 		msdb.dbo.sysoperators [local]
-		INNER JOIN @remoteOperators [remote] ON [local].name = [remote].name
+		INNER JOIN @remoteOperators [remote] ON [local].[name] = [remote].[name]
 	WHERE 
 		[local].[enabled] <> [remote].[enabled]
 		OR [local].[email_address] <> [remote].[email_address];
@@ -561,36 +561,36 @@ AS
 	-- local only
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'Alert: ' + [local].name, 
+		N'Alert: ' + [local].[name], 
 		N'Alert exists on ' + @localServerName + N' only.'
 	FROM 
 		msdb.dbo.sysalerts [local]
-		LEFT OUTER JOIN @remoteAlerts [remote] ON [local].name = [remote].name
+		LEFT OUTER JOIN @remoteAlerts [remote] ON [local].[name] = [remote].[name]
 	WHERE
-		[remote].name IS NULL
-		AND [local].name NOT IN (SELECT name FROM @ignoredAlertName);
+		[remote].[name] IS NULL
+		AND [local].[name] NOT IN (SELECT [name] FROM @ignoredAlertName);
 
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'Alert: ' + [remote].name, 
+		N'Alert: ' + [remote].[name], 
 		N'Alert exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteAlerts [remote]
-		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].name = [local].name
+		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].[name] = [local].[name]
 	WHERE
-		[local].name IS NULL
-		AND [remote].name NOT IN (SELECT name FROM @ignoredAlertName);
+		[local].[name] IS NULL
+		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredAlertName);
 
 	-- differences:
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		N'Alert: ' + [local].name, 
+		N'Alert: ' + [local].[name], 
 		N'Alert definition is different between servers.'
 	FROM	
 		msdb.dbo.sysalerts [local]
-		INNER JOIN @remoteAlerts [remote] ON [local].name = [remote].name
+		INNER JOIN @remoteAlerts [remote] ON [local].[name] = [remote].[name]
 	WHERE 
-		[local].name NOT IN (SELECT name FROM @ignoredAlertName)
+		[local].[name] NOT IN (SELECT [name] FROM @ignoredAlertName)
 		AND (
 		[local].message_id <> [remote].message_id
 		OR [local].severity <> [remote].severity
@@ -630,7 +630,7 @@ AS
 	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',');
 
 	INSERT INTO @localMasterObjects ([object_name])
-	SELECT name FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
+	SELECT [name] FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
 	
 	DECLARE @remoteMasterObjects TABLE (
 		[object_name] sysname NOT NULL
@@ -688,7 +688,7 @@ AS
 	FROM 
 		master.sys.objects o
 		LEFT OUTER JOIN master.sys.sql_modules sm ON o.[object_id] = sm.[object_id]
-		INNER JOIN @localMasterObjects x ON o.name = x.[object_name];
+		INNER JOIN @localMasterObjects x ON o.[name] = x.[object_name];
 
 	DECLARE localtabler CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'local';
@@ -704,8 +704,8 @@ AS
 
 		-- This whole 'nested' or 'derived' query approach is to get around a WEIRD bug/problem with CHECKSUM and 'running' aggregates. 
 		SELECT @checksum = @checksum + [local].[hash] FROM ( 
-			SELECT CHECKSUM(c.column_id, c.name, c.system_type_id, c.max_length, c.[precision]) [hash]
-			FROM master.sys.columns c INNER JOIN master.sys.objects o ON o.object_id = c.object_id WHERE o.name = @currentObjectName
+			SELECT CHECKSUM(c.column_id, c.[name], c.system_type_id, c.max_length, c.[precision]) [hash]
+			FROM master.sys.columns c INNER JOIN master.sys.objects o ON o.object_id = c.object_id WHERE o.[name] = @currentObjectName
 		) [local];
 
 		UPDATE #Definitions SET [hash] = @checksum WHERE [object_name] = @currentObjectName AND [location] = 'local';
@@ -719,7 +719,7 @@ AS
 	INSERT INTO #Definitions ([location], [object_name], [type], [hash])
 	EXEC master.sys.sp_executesql N'SELECT 
 		''remote'', 
-		o.name, 
+		o.[name], 
 		[type], 
 		CASE 
 			WHEN [type] IN (''V'',''P'',''FN'',''IF'',''TF'') THEN 
@@ -732,7 +732,7 @@ AS
 	FROM 
 		PARTNER.master.sys.objects o
 		LEFT OUTER JOIN PARTNER.master.sys.sql_modules sm ON o.object_id = sm.object_id
-		INNER JOIN (SELECT [name] FROM PARTNER.master.sys.objects WHERE [type] IN (''U'',''V'',''P'',''FN'',''IF'',''TF'') AND is_ms_shipped = 0) x ON o.name = x.[name];';
+		INNER JOIN (SELECT [name] FROM PARTNER.master.sys.objects WHERE [type] IN (''U'',''V'',''P'',''FN'',''IF'',''TF'') AND is_ms_shipped = 0) x ON o.[name] = x.[name];';
 
 	DECLARE remotetabler CURSOR LOCAL FAST_FORWARD FOR
 	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'remote';
@@ -741,11 +741,12 @@ AS
 	FETCH NEXT FROM remotetabler INTO @currentObjectName; 
 
 	WHILE @@FETCH_STATUS = 0 BEGIN 
+		SET @checksum = 0; -- otherwise, it'll get passed into sp_executesql with the PREVIOUS value.... 
 
 		-- This whole 'nested' or 'derived' query approach is to get around a WEIRD bug/problem with CHECKSUM and 'running' aggregates. 
 		EXEC master.sys.sp_executesql N'SELECT @checksum = ISNULL(@checksum,0) + [remote].[hash] FROM ( 
-			SELECT CHECKSUM(c.column_id, c.name, c.system_type_id, c.max_length, c.[precision]) [hash]
-			FROM PARTNER.master.sys.columns c INNER JOIN PARTNER.master.sys.objects o ON o.object_id = c.object_id WHERE o.name = @currentObjectName
+			SELECT CHECKSUM(c.column_id, c.[name], c.system_type_id, c.max_length, c.[precision]) [hash]
+			FROM PARTNER.master.sys.columns c INNER JOIN PARTNER.master.sys.objects o ON o.object_id = c.object_id WHERE o.[name] = @currentObjectName
 		) [remote];', N'@checksum bigint OUTPUT, @currentObjectName sysname', @checksum = @checksum OUTPUT, @currentObjectName = @currentObjectName;
 
 		UPDATE #Definitions SET [hash] = @checksum WHERE [object_name] = @currentObjectName AND [location] = 'remote';
@@ -776,7 +777,7 @@ AS
 		DECLARE @message nvarchar(MAX) = N'The following synchronization issues were detected: ' + @crlf;
 
 		SELECT 
-			@message = @message + @tab + name + N' -> ' + [description] + @crlf
+			@message = @message + @tab + [name] + N' -> ' + [description] + @crlf
 		FROM 
 			#Divergence
 		ORDER BY 

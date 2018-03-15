@@ -73,7 +73,7 @@
 						j.[enabled] [is_enabled],
 						CASE WHEN j.category = m.[db_name] THEN 1 ELSE 0 END [is_mirrored], 
 						CASE WHEN m.[role] = 'PRINCIPAL' THEN 1 ELSE 0 END [is_primary], 
-						CASE WHEN (j.category != 'Disabled' AND m.[db_name] = j.category) THEN 1 ELSE 0 END [should_be_enabled]
+						CASE WHEN (j.category <> 'Disabled' AND m.[db_name] = j.category) THEN 1 ELSE 0 END [should_be_enabled]
 					FROM 
 						jobs j 
 						LEFT OUTER JOIN mirrored m ON j.category = m.db_name
@@ -84,7 +84,7 @@
 				FROM 
 					core 
 				WHERE 
-					is_enabled != should_be_enabled
+					is_enabled <> should_be_enabled
 					AND (is_mirrored = 1 AND is_primary = 1)
 				ORDER BY 
 					category;
@@ -105,7 +105,7 @@ CREATE PROC [dbo].[job_synchronization_checks]
 	@IgnoredJobs			nvarchar(MAX)		= '',
 	@MailProfileName		sysname				= N'General',	
 	@OperatorName			sysname				= N'Alerts',	
-	@PrintOnly			bit						= 0					-- output only to console - don't email alerts (for debugging/manual execution, etc.)
+	@PrintOnly				bit						= 0					-- output only to console - don't email alerts (for debugging/manual execution, etc.)
 AS 
 	SET NOCOUNT ON;
 
@@ -128,7 +128,7 @@ AS
 		DECLARE @DatabaseMailProfile nvarchar(255);
 		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
  
-		IF @DatabaseMailProfile != @MailProfileName BEGIN
+		IF @DatabaseMailProfile <> @MailProfileName BEGIN
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
 			RETURN -5;
 		END; 
@@ -150,18 +150,16 @@ AS
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
-	SET @remoteServerName = (SELECT TOP 1 name FROM PARTNER.master.sys.servers WHERE server_id = 0);
+	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
 	CREATE TABLE #IgnoredJobs (
 		name nvarchar(200) NOT NULL
 	);
 
 	----------------------------------------------
-	-- deserialize the job names to ingore via an inline-split 'function':
-	DECLARE @deserializedJobs nvarchar(MAX) = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''',N'{0}', @IgnoredJobs), N',', N''','''), N',', N' UNION SELECT ');
-
-	INSERT INTO #IgnoredJobs (name)
-	EXEC(@deserializedJobs);
+	-- deserialize the job names to ingore:
+	INSERT INTO #IgnoredJobs ([name])
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',');
 
 	----------------------------------------------
 	-- create a container for output/differences. 
@@ -172,20 +170,21 @@ AS
 	);
 
 	---------------------------------------------------------------------------------------------
-	-- B) Process 'server level jobs' (or jobs that aren't mapped to a mirrorable database - i.e., WHERE Job.CategoryName != DbName):
+	-- B) Process 'server level jobs' (or jobs that aren't mapped to a mirrorable database - i.e., WHERE Job.CategoryName <> DbName):
 	DECLARE @mirrorableDatabases TABLE ( 
-		name sysname NOT NULL 
+		[name] sysname NOT NULL 
 	); 
 
 	-- get a list of Job Categories that could BE a database name (i.e., mirror-able):
 	INSERT INTO @mirrorableDatabases
-	SELECT name FROM master.sys.databases WHERE name NOT IN ('master','tempdb','model','msdb','distribution','ReportServer','ReportServerTempDB','admindb') 
+	EXEC master.sys.sp_executesql 
+	N'SELECT name FROM master.sys.databases WHERE name NOT IN (''master'',''tempdb'',''model'',''msdb'',''distribution'',''ReportServer'',''ReportServerTempDB'',''admindb'') 
 	UNION 
-	SELECT name FROM PARTNER.master.sys.databases WHERE name NOT IN ('master','tempdb','model','msdb','distribution','ReportServer','ReportServerTempDB','admindb'); 
+	SELECT name FROM PARTNER.master.sys.databases WHERE name NOT IN (''master'',''tempdb'',''model'',''msdb'',''distribution'',''ReportServer'',''ReportServerTempDB'',''admindb'');'; 
 
 	CREATE TABLE #LocalJobs (
 		job_id uniqueidentifier, 
-		name sysname, 
+		[name] sysname, 
 		[enabled] tinyint, 
 		[description] nvarchar(512), 
 		start_step_id int, 
@@ -198,7 +197,7 @@ AS
 
 	CREATE TABLE #RemoteJobs (
 		job_id uniqueidentifier, 
-		name sysname, 
+		[name] sysname, 
 		[enabled] tinyint, 
 		[description] nvarchar(512), 
 		start_step_id int, 
@@ -210,7 +209,7 @@ AS
 	);
 
 	-- Load Details: 
-	INSERT INTO #LocalJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+	INSERT INTO #LocalJobs (job_id, [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
 	SELECT 
 		sj.job_id, 
 		sj.name, 
@@ -219,75 +218,75 @@ AS
 		sj.start_step_id,
 		sj.owner_sid, 
 		sj.notify_level_email, 
-		ISNULL(so.name, 'local') operator_name,
-		ISNULL(sc.name, 'local') [category_name],
+		ISNULL(so.[name], 'local') operator_name,
+		ISNULL(sc.[name], 'local') [category_name],
 		ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
 	FROM 
 		msdb.dbo.sysjobs sj
 		LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 		LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
 	WHERE
-		sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+		sj.name NOT IN (SELECT [name] FROM #IgnoredJobs); 
 
-	INSERT INTO #RemoteJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
-	SELECT 
-		sj.job_id, 
-		sj.name, 
-		sj.[enabled], 
-		sj.[description], 
-		sj.start_step_id,
-		sj.owner_sid, 
-		sj.notify_level_email, 
-		ISNULL(so.name, 'local') operator_name,
-		ISNULL(sc.name, 'local') [category_name],
-		ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
-	FROM 
-		PARTNER.msdb.dbo.sysjobs sj
-		LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
-	WHERE
-		sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+	INSERT INTO #RemoteJobs (job_id, [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+	EXEC master.sys.sp_executesql N'SELECT 
+	sj.job_id, 
+	sj.[name], 
+	sj.[enabled], 
+	sj.[description], 
+	sj.start_step_id,
+	sj.owner_sid, 
+	sj.notify_level_email, 
+	ISNULL(so.name, ''local'') operator_name,
+	ISNULL(sc.name, ''local'') [category_name],
+	ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+FROM 
+	PARTNER.msdb.dbo.sysjobs sj
+	LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+	LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id';
+
+	DELETE FROM #RemoteJobs WHERE [name] IN (SELECT [name] FROM #IgnoredJobs);
 
 	----------------------------------------------
 	-- Process high-level details about each job (i.e., jobs on ONE server only - or jobs on both servers but with differences):
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		name,
+		[name],
 		N'Server-Level job exists on ' + @localServerName + N' only.'
 	FROM 
 		#LocalJobs 
 	WHERE
-		name NOT IN (SELECT name FROM #RemoteJobs)
-		AND name NOT IN (SELECT name FROM @mirrorableDatabases);
+		[name] NOT IN (SELECT [name] FROM #RemoteJobs)
+		AND [name] NOT IN (SELECT [name] FROM @mirrorableDatabases);
 
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		name, 
+		[name], 
 		N'Server-Level job exists on ' + @remoteServerName + N' only.'
 	FROM 
 		#RemoteJobs
 	WHERE
-		name NOT IN (SELECT name FROM #LocalJobs);
+		[name] NOT IN (SELECT name FROM #LocalJobs);
 
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		lj.name, 
+		lj.[name], 
 		N'Differences between Server-Level job details between servers (owner, enabled, category name, job-steps count, start-step, notification, etc)'
 	FROM 
 		#LocalJobs lj
-		INNER JOIN #RemoteJobs rj ON rj.name = lj.name
+		INNER JOIN #RemoteJobs rj ON rj.[name] = lj.[name]
 	WHERE
-		lj.category_name NOT IN (SELECT name FROM @mirrorableDatabases) 
-		AND rj.category_name NOT IN (SELECT name FROM @mirrorableDatabases)
+		lj.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases) 
+		AND rj.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases)
 		AND (
-			lj.[enabled] != rj.[enabled]
-			OR lj.[description] != rj.[description]
-			OR lj.start_step_id != rj.start_step_id
-			OR lj.owner_sid != rj.owner_sid
-			OR lj.notify_level_email != rj.notify_level_email
-			OR lj.operator_name != rj.operator_name
-			OR lj.job_step_count != rj.job_step_count
-			OR lj.category_name != rj.category_name
+			lj.[enabled] <> rj.[enabled]
+			OR lj.[description] <> rj.[description]
+			OR lj.start_step_id <> rj.start_step_id
+			OR lj.owner_sid <> rj.owner_sid
+			OR lj.notify_level_email <> rj.notify_level_email
+			OR lj.operator_name <> rj.operator_name
+			OR lj.job_step_count <> rj.job_step_count
+			OR lj.category_name <> rj.category_name
 		);
 
 	----------------------------------------------
@@ -319,7 +318,7 @@ AS
 		[local].name 
 	FROM 
 		#LocalJobs [local]
-		INNER JOIN #RemoteJobs [remote] ON [local].name = [remote].name;
+		INNER JOIN #RemoteJobs [remote] ON [local].[name] = [remote].[name];
 
 	DECLARE @localJobID uniqueidentifier, @remoteJobId uniqueidentifier, @jobName sysname;
 	DECLARE @localCount int, @remoteCount int;
@@ -336,28 +335,28 @@ AS
 		INSERT INTO #LocalJobSteps (step_id, [checksum])
 		SELECT 
 			step_id, 
-			CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+			CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, [database_name]) [checksum]
 		FROM msdb.dbo.sysjobsteps
 		WHERE job_id = @localJobID;
 
 		INSERT INTO #RemoteJobSteps (step_id, [checksum])
-		SELECT 
+		EXEC master.sys.sp_executesql N'SELECT 
 			step_id, 
-			CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+			CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, [database_name]) [checksum]
 		FROM PARTNER.msdb.dbo.sysjobsteps
-		WHERE job_id = @remoteJobId;
+		WHERE job_id = @remoteJobId;', N'@remoteJobID uniqueidentifier', @remoteJobId = @remoteJobId;
 
 		SELECT @localCount = COUNT(*) FROM #LocalJobSteps;
 		SELECT @remoteCount = COUNT(*) FROM #RemoteJobSteps;
 
-		IF @localCount != @remoteCount
-			INSERT INTO #Divergence (name, [description]) 
+		IF @localCount <> @remoteCount
+			INSERT INTO #Divergence ([name], [description]) 
 			VALUES (
 				@jobName, 
 				N'Job Step Counts between servers are NOT the same.'
 			);
 		ELSE BEGIN 
-			INSERT INTO #Divergence (name, [description])
+			INSERT INTO #Divergence ([name], [description])
 			SELECT 
 				@jobName, 
 				N'Job Step details between servers are NOT the same.'
@@ -365,7 +364,7 @@ AS
 				#LocalJobSteps ljs 
 				INNER JOIN #RemoteJobSteps rjs ON rjs.step_id = ljs.step_id
 			WHERE	
-				ljs.[checksum] != rjs.[checksum];
+				ljs.[checksum] <> rjs.[checksum];
 		END;
 
 		-- Now Check Schedules:
@@ -376,7 +375,7 @@ AS
 		SELECT 
 			ss.name,
 			CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
-				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [details]
+				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [checksum]
 		FROM 
 			msdb.dbo.sysjobschedules sjs
 			INNER JOIN msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
@@ -384,27 +383,27 @@ AS
 			sjs.job_id = @localJobID;
 
 		INSERT INTO #RemoteJobSchedules (schedule_name, [checksum])
-		SELECT 
+		EXEC master.sys.sp_executesql N'SELECT 
 			ss.name,
 			CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
-				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [details]
+				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [checksum]
 		FROM 
 			PARTNER.msdb.dbo.sysjobschedules sjs
 			INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
 		WHERE
-			sjs.job_id = @remoteJobId;
+			sjs.job_id = @remoteJobId;', N'@remoteJobID uniqueidentifier', @remoteJobId = @remoteJobId;
 
 		SELECT @localCount = COUNT(*) FROM #LocalJobSchedules;
 		SELECT @remoteCount = COUNT(*) FROM #RemoteJobSchedules;
 
-		IF @localCount != @remoteCount
-			INSERT INTO #Divergence (name, [description]) 
+		IF @localCount <> @remoteCount
+			INSERT INTO #Divergence ([name], [description]) 
 			VALUES (
 				@jobName, 
 				N'Job Schedule Counts between servers are different.'
 			);
 		ELSE BEGIN 
-			INSERT INTO #Divergence (name, [description])
+			INSERT INTO #Divergence ([name], [description])
 			SELECT
 				@jobName, 
 				N'Job Schedule Details between servers are different.'
@@ -412,7 +411,7 @@ AS
 				#LocalJobSchedules ljs
 				INNER JOIN #RemoteJobSchedules rjs ON rjs.schedule_name = ljs.schedule_name
 			WHERE 
-				ljs.[checksum] != rjs.[checksum];
+				ljs.[checksum] <> rjs.[checksum];
 
 		END;
 
@@ -423,56 +422,69 @@ AS
 	DEALLOCATE server_level_checker;
 
 	---------------------------------------------------------------------------------------------
-	-- C) Start Batch Jobs by reporting on any jobs that have a Job.CategoryName IN (@mirrorableDatabases) but are Disabled or Which have Job.CategoryName = 'Disabled' and are enabled. 
+	-- C) Start Batch Jobs by reporting on any jobs that have a Job.CategoryName IN (@mirrorableDatabases) but are Disabled or which have Job.CategoryName = 'Disabled' and are enabled. 
 	
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		sj.name,
+		sj.[name],
 		N'Job is disabled on ' + @localServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
 	FROM 
 		msdb.dbo.sysjobs sj
 		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		INNER JOIN @mirrorableDatabases x ON sj.name = x.name
+		INNER JOIN @mirrorableDatabases x ON sj.[name] = x.[name]
 	WHERE 
 		sj.[enabled] = 0 
-		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+		AND sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs); 
 
-	INSERT INTO #Divergence (name, [description])
+	DECLARE @remoteJobCategories table (
+		[name] sysname NOT NULL,
+		[enabled] tinyint NOT NULL,
+		[category_name] sysname NOT NULL
+	);
+
+	INSERT INTO @remoteJobCategories ([name], [enabled], [category_name])
+	EXEC master.sys.sp_executesql N'SELECT 
+		sj.[name], 
+		sj.[enabled], 
+		sc.[name] category_name
+	FROM 
+		PARTNER.msdb.dbo.sysjobs sj 
+		INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id;';
+
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		sj.name,
+		rjc.[name],
 		N'Job is disabled on ' + @remoteServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
 	FROM 
-		PARTNER.msdb.dbo.sysjobs sj
-		INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		INNER JOIN @mirrorableDatabases x ON sj.name = x.name
+		@remoteJobCategories rjc
+		INNER JOIN @mirrorableDatabases x ON rjc.[name] = x.[name]
 	WHERE 
-		sj.[enabled] = 0 
-		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+		rjc.[enabled] = 0 
+		AND rjc.[name] NOT IN (SELECT [name] FROM #IgnoredJobs); 
 
 	-- Report on jobs that should be disabled, but aren't. 
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
-		sj.name, 
+		sj.[name], 
 		N'Job is enabled on ' + @localServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
 	FROM 
 		msdb.dbo.sysjobs sj
 		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 	WHERE
 		sj.[enabled] = 1
-		AND LOWER(sc.name) = 'disabled'
-		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+		AND LOWER(sc.[name]) = 'disabled'
+		AND sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs);
 
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		sj.name, 
+		rjc.[name], 
 		N'Job is enabled on ' + @remoteServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
 	FROM 
-		PARTNER.msdb.dbo.sysjobs sj
-		INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		@remoteJobCategories rjc
 	WHERE
-		sj.[enabled] = 1
-		AND LOWER(sc.name) = 'disabled'
-		AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+		rjc.[enabled] = 1
+		AND LOWER(rjc.[category_name]) = 'disabled'
+		AND rjc.[name] NOT IN (SELECT [name] FROM #IgnoredJobs);
 
 	---------------------------------------------------------------------------------------------
 	-- D) Check on all jobs for mirrored databases:
@@ -481,14 +493,14 @@ AS
 
 	DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
-		d.name
+		d.[name]
 	FROM 
 		master.sys.databases d
 		INNER JOIN master.sys.database_mirroring m ON m.database_id = d.database_id
 	WHERE
 		m.mirroring_guid IS NOT NULL
 	ORDER BY 
-		d.name;
+		d.[name];
 
 	DECLARE @currentMirroredDB sysname; 
 
@@ -499,94 +511,95 @@ AS
 		TRUNCATE TABLE #LocalJobs;
 		TRUNCATE TABLE #RemoteJobs;
 		
-		INSERT INTO #LocalJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+		INSERT INTO #LocalJobs (job_id, [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
 		SELECT 
 			sj.job_id, 
-			sj.name, 
+			sj.[name], 
 			sj.[enabled], 
 			sj.[description], 
 			sj.start_step_id,
 			sj.owner_sid, 
 			sj.notify_level_email, 
-			ISNULL(so.name, 'local') operator_name,
-			ISNULL(sc.name, 'local') [category_name],
+			ISNULL(so.[name], 'local') operator_name,
+			ISNULL(sc.[name], 'local') [category_name],
 			ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
 		FROM 
 			msdb.dbo.sysjobs sj
 			LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 			LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
 		WHERE
-			UPPER(sc.name) = UPPER(@currentMirroredDB)
-			AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+			UPPER(sc.[name]) = UPPER(@currentMirroredDB)
+			AND sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs);
 
-		INSERT INTO #RemoteJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
-		SELECT 
+		INSERT INTO #RemoteJobs (job_id, [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+		EXEC master.sys.sp_executesql N'SELECT 
 			sj.job_id, 
-			sj.name, 
+			sj.[name], 
 			sj.[enabled], 
 			sj.[description], 
 			sj.start_step_id,
 			sj.owner_sid, 
 			sj.notify_level_email, 
-			ISNULL(so.name, 'local') operator_name,
-			ISNULL(sc.name, 'local') [category_name],
+			ISNULL(so.[name], ''local'') operator_name,
+			ISNULL(sc.[name], ''local'') [category_name],
 			ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
 		FROM 
 			PARTNER.msdb.dbo.sysjobs sj
 			LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 			LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
 		WHERE
-			UPPER(sc.name) = UPPER(@currentMirroredDB)
-			AND sj.name NOT IN (SELECT name FROM #IgnoredJobs);
+			UPPER(sc.[name]) = UPPER(@currentMirroredDB);', N'@currentMirroredDB sysname', @currentMirroredDB = @currentMirroredDB;
+
+		DELETE FROM #RemoteJobs WHERE [name] IN (SELECT [name] FROM #IgnoredJobs);
 
 		------------------------------------------
 		-- Now start comparing differences: 
 
 		-- local  only:
-		INSERT INTO #Divergence (name, [description])
+		INSERT INTO #Divergence ([name], [description])
 		SELECT 
-			[local].name, 
+			[local].[name], 
 			N'Job for database ' + @currentMirroredDB + N' exists on ' + @localServerName + N' only.'
 		FROM 
 			#LocalJobs [local]
-			LEFT OUTER JOIN #RemoteJobs [remote] ON [local].name = [remote].name
+			LEFT OUTER JOIN #RemoteJobs [remote] ON [local].[name] = [remote].[name]
 		WHERE 
-			[remote].name IS NULL;
+			[remote].[name] IS NULL;
 
 		-- remote only:
-		INSERT INTO #Divergence (name, [description])
+		INSERT INTO #Divergence ([name], [description])
 		SELECT 
-			[remote].name, 
+			[remote].[name], 
 			N'Job for database ' + @currentMirroredDB + N' exists on ' + @remoteServerName + N' only.'
 		FROM 
 			#RemoteJobs [remote]
-			LEFT OUTER JOIN #LocalJobs [local] ON [remote].name = [local].name
+			LEFT OUTER JOIN #LocalJobs [local] ON [remote].[name] = [local].[name]
 		WHERE 
-			[local].name IS NULL;
+			[local].[name] IS NULL;
 
 		-- differences:
-		INSERT INTO #Divergence (name, [description])
+		INSERT INTO #Divergence ([name], [description])
 		SELECT 
-			[local].name, 
+			[local].[name], 
 			N'Job for database ' + @currentMirroredDB + N' is different between servers (owner, start-step, notification, etc).'
 		FROM 
 			#LocalJobs [local]
-			INNER JOIN #RemoteJobs [remote] ON [remote].name = [local].name
+			INNER JOIN #RemoteJobs [remote] ON [remote].[name] = [local].[name]
 		WHERE
-			[local].start_step_id != [remote].start_step_id
-			OR [local].owner_sid != [remote].owner_sid
-			OR [local].notify_level_email != [remote].notify_level_email
-			OR [local].operator_name != [remote].operator_name
-			OR [local].job_step_count != [remote].job_step_count
-			OR [local].category_name != [remote].category_name;
+			[local].start_step_id <> [remote].start_step_id
+			OR [local].owner_sid <> [remote].owner_sid
+			OR [local].notify_level_email <> [remote].notify_level_email
+			OR [local].operator_name <> [remote].operator_name
+			OR [local].job_step_count <> [remote].job_step_count
+			OR [local].category_name <> [remote].category_name;
 		
 		-- NOTE: While this script assumes the 'PRIMARY' is server that's hosting the Principal for the FIRST mirrored DB detected, the reality
 		--		is more complex - as the first mirrored db (automation) might be on SQL1, but (batches) might be 'failed' over and running on SQL2
 		IF (SELECT master.dbo.is_primary_database(@currentMirroredDB)) = 1 BEGIN 
 			-- report on any mirroring jobs that are disabled on the primary:
-			INSERT INTO #Divergence (name, [description])
+			INSERT INTO #Divergence ([name], [description])
 			SELECT 
-				name, 
+				[name], 
 				N'Batch Job is disabled on ' + @localServerName + N' (PRIMARY) and should be ENABLED.'
 			FROM 
 				#LocalJobs
@@ -594,9 +607,9 @@ AS
 				[enabled] = 0; 		
 		
 			-- report on ANY mirroring jobs that are enabled on the secondary. 
-			INSERT INTO #Divergence (name, [description])
+			INSERT INTO #Divergence ([name], [description])
 			SELECT 
-				name, 
+				[name], 
 				N'Batch Job is enabled on ' + @remoteServerName + N' (SECONDARY) and should be DISABLED.'
 			FROM 
 				#RemoteJobs
@@ -605,9 +618,9 @@ AS
 		  END 
 		ELSE BEGIN -- otherwise, simply 'flip' the logic:
 			-- report on any mirroring jobs that are disabled on the primary:
-			INSERT INTO #Divergence (name, [description])
+			INSERT INTO #Divergence ([name], [description])
 			SELECT 
-				name, 
+				[name], 
 				N'Batch Job is disabled on ' + @remoteServerName + N' (PRIMARY) and should be ENABLED.'
 			FROM 
 				#RemoteJobs
@@ -615,9 +628,9 @@ AS
 				[enabled] = 0; 		
 		
 			-- report on ANY mirroring jobs that are enabled on the secondary. 
-			INSERT INTO #Divergence (name, [description])
+			INSERT INTO #Divergence ([name], [description])
 			SELECT 
-				name, 
+				[name], 
 				N'Batch Job is enabled on ' + @localServerName + N' (SECONDARY) and should be DISABLED.'
 			FROM 
 				#LocalJobs
@@ -637,10 +650,10 @@ AS
 		SELECT 
 			[local].job_id local_job_id, 
 			[remote].job_id remote_job_id, 
-			[local].name 
+			[local].[name] 
 		FROM 
 			#LocalJobs [local]
-			INNER JOIN #RemoteJobs [remote] ON [local].name = [remote].name;
+			INNER JOIN #RemoteJobs [remote] ON [local].[name] = [remote].[name];
 
 		OPEN checker;
 		FETCH NEXT FROM checker INTO @localJobID, @remoteJobId, @jobName;
@@ -654,22 +667,22 @@ AS
 			INSERT INTO #LocalJobSteps (step_id, [checksum])
 			SELECT 
 				step_id, 
-				CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+				CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, [database_name]) [detail]
 			FROM msdb.dbo.sysjobsteps
 			WHERE job_id = @localJobID;
 
 			INSERT INTO #RemoteJobSteps (step_id, [checksum])
-			SELECT 
+			EXEC master.sys.sp_executesql N'SELECT 
 				step_id, 
-				CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, database_name) [detail]
+				CHECKSUM(step_name, subsystem, command, on_success_action, on_fail_action, [database_name]) [detail]
 			FROM PARTNER.msdb.dbo.sysjobsteps
-			WHERE job_id = @remoteJobId;
+			WHERE job_id = @remoteJobId;', N'@remoteJobID uniqueidentifier', @remoteJobId = @remoteJobId;
 
 			SELECT @localCount = COUNT(*) FROM #LocalJobSteps;
 			SELECT @remoteCount = COUNT(*) FROM #RemoteJobSteps;
 
-			IF @localCount != @remoteCount
-				INSERT INTO #Divergence (name, [description]) 
+			IF @localCount <> @remoteCount
+				INSERT INTO #Divergence ([name], [description]) 
 				VALUES (
 					@jobName + N' (for database ' + @currentMirroredDB + N')', 
 					N'Job Step Counts between servers are NOT the same.'
@@ -683,7 +696,7 @@ AS
 					#LocalJobSteps ljs 
 					INNER JOIN #RemoteJobSteps rjs ON rjs.step_id = ljs.step_id
 				WHERE	
-					ljs.[checksum] != rjs.[checksum];
+					ljs.[checksum] <> rjs.[checksum];
 			END;
 
 			-- Now Check Schedules:
@@ -703,20 +716,20 @@ AS
 
 
 			INSERT INTO #RemoteJobSchedules (schedule_name, [checksum])
-			SELECT 
-				ss.name,
+			EXEC master.sys.sp_executesql N'SELECT 
+				ss.[name],
 				CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
 					ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_date, ss.active_end_time) [details]
 			FROM 
 				PARTNER.msdb.dbo.sysjobschedules sjs
 				INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
 			WHERE
-				sjs.job_id = @remoteJobId;
+				sjs.job_id = @remoteJobId;', N'@remoteJobID uniqueidentifier', @remoteJobId = @remoteJobId;
 
 			SELECT @localCount = COUNT(*) FROM #LocalJobSchedules;
 			SELECT @remoteCount = COUNT(*) FROM #RemoteJobSchedules;
 
-			IF @localCount != @remoteCount
+			IF @localCount <> @remoteCount
 				INSERT INTO #Divergence (name, [description])
 				VALUES (
 					@jobName + N' (for database ' + @currentMirroredDB + N')', 
@@ -731,7 +744,7 @@ AS
 					#LocalJobSchedules ljs
 					INNER JOIN #RemoteJobSchedules rjs ON rjs.schedule_name = ljs.schedule_name
 				WHERE 
-					ljs.[checksum] != rjs.[checksum];
+					ljs.[checksum] <> rjs.[checksum];
 
 			END;
 
