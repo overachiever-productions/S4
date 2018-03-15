@@ -1,5 +1,38 @@
 
 
+-- MKC: 
+--	Next/TODO/PICKUP:
+--		1) I'm NOT doing 'lambdas' in this sproc - those'll be in/for ANOTHER sproc. I've documented why and some basics in trello. 
+--		2) in here, instead, I need to address 2 issues: 
+--				a) that I need to re-load/repopulate the #FileList table if it's been > x seconds? (or always?) since it was last populated. 
+--					that way, if it takes 2 hours to restore a FULL, and 14 new T-LOGs have been added SINCE we started the full, we don't SKIP/MISS those additional/new T-LOGs 
+--						likewise, we also wouldn't miss a DIFF if it happened in this time-period too. 
+
+--				b) LSN stuff. 
+---						i've started spelunking here:  D:\Repositories\S4\S4 Restore\~~test cases for LSNs and TLog restore errors.sql
+--						Looks like i've effectively got 2x options:
+--							i) I could just ignore/swallow specific errors/messages about 'this t-log backup is too old, a newer one will work' - up to N times... 
+--							ii) I can work-out the LSNs and query/process for those BEFORE attempting to restore, and then 'go that route'. 
+--								option 2 (ii) seems like it'll take a bit more effort/work. I might just want, for now, to go with option 1 (i). 
+
+--				I also want/need to 'log' info into dbo.restore_log about which files were appended. 
+--					AND, i want/need to grab the TIME-STAMP of the last/most-recently restored T-LOG file and ... if that's > @someThreshold, need to throw an error/alert. 
+
+--				SO. to that end, I will have to load the HEADER for each/every file I process - and then just keep tabs on the @mostRecentlyAppliedBackup per each db... and, at the end of processing/restoring each db, if that value > some diff threshold, drop an alert/warning into the #errors table. 
+--			NOTE: I can't keep track of @mostRecentlyRestoredBackup in a table... - that info has to be processed per db. 
+--				for example, let's say i'm restoring 3x databases. one takes 45 minutes to restore, the others take 2 minutes each. 
+--					if... i start with the 2x databases first, then 'record' when their 'last successful restored backup' timestamp was, then go to the 45 minute restore... 
+--					when i finish with the 45 minute operation, the first 2 dbs would have restored in 2 minutes and could/would likely only be, say, 10 minutes old 'at best/worst'. now, if i evaluate that value after 45+ minutes, they MIGHT look like
+--					they're 45+ minutes 'stale'. 
+--				HMMMMM. 
+--					that poses a problem for 'vectoring' 'lambda' queries as well. 
+--						I can see 2x options for addressing that: 
+--							a) I roll the lambda query INTO this routine - and process the lambda + staleness at the end of the restore operation... 
+--							b) i use the 'RestoreCompleted' column from dbo.restore_log ... as the 'vector point' in running these lambda checks... 
+
+
+
+
 /*
 	WARNINGS:
 		- Used INCORRECTLY, this sproc CAN drop/overwrite production databases. 
@@ -39,11 +72,8 @@
 
 	TODO:
 		- Look at implementing MINIMAL 'retry' logic - as per dba_BackupDatabases. Or... maybe don't... 
-		- POSSIBLY look at an option where @DatabasesToRestore can be set to [QUERY_FILE_SYSTEM] and... we then do a query against @BackupsRootPath for 
-			all FOLDER names (not file names) and then execute restore operations against any (non-system-named) folders to get a list of DBs to restore. 
-			that ... wouldn't suck at all.
 
-		- Possible issue where TIMING isn't the right way to determine which LOG backups to use. i.e., suppose we start a FULL _OR_ DIFF backup at 6PM - and it takes 20 minutes to exeucte. 
+		- Possible issue where TIMING isn't the right way to determine which LOG backups to use. i.e., suppose we start a FULL _OR_ DIFF backup at 6PM - and it takes 20 minutes to execute. 
 			then... suppose we're doing T-LOG backups every 5 minutes - i.e., 5 after the hour. 
 				I'm _PRETTY_ sure that we'd want the 6:25 backup as our next T-LOG backup... 
 					BUT there are two other possibilities:
@@ -403,12 +433,31 @@ AS
 		END
 
 		-- Enumerate the files and ensure we've got backups:
-		SET @command = N'dir "' + @sourcePath + N'\" /B /A-D /OD';
+		--SET @command = N'dir "' + @sourcePath + N'\" /B /A-D /OD';
 
-		IF @PrintOnly = 1 BEGIN;
-			PRINT N'-- xp_cmdshell ''' + @command + ''';';
-		END
+		--IF @PrintOnly = 1 BEGIN;
+		--	PRINT N'-- xp_cmdshell ''' + @command + ''';';
+		--END
 		
+		DECLARE @fileList nvarchar(MAX);
+
+EXEC load_backup_files
+	@SourcePath = 'D:\SQLBackups\TESTS\Billing', 
+	@Mode = 'ignored',
+	@Output = @fileList OUTPUT;
+
+
+--SELECT @fileList;
+INSERT INTO @temp ([output])
+SELECT [result] FROM dbo.split_string(@fileList, N',');
+
+
+SELECT * FROM @temp;
+
+RETURN;
+
+
+
 		INSERT INTO @temp ([output])
 		EXEC master..xp_cmdshell @command;
 		DELETE FROM @temp WHERE [output] IS NULL AND [output] NOT LIKE '%' + @databaseToRestore + '%';  -- remove 'empty' entries and any backups for databases OTHER than target.

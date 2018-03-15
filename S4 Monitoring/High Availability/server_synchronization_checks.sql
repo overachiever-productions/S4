@@ -85,7 +85,7 @@ AS
 		DECLARE @DatabaseMailProfile nvarchar(255);
 		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
  
-		IF @DatabaseMailProfile != @MailProfileName BEGIN
+		IF @DatabaseMailProfile <> @MailProfileName BEGIN
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
 			RETURN -5;
 		END; 
@@ -120,11 +120,9 @@ AS
 		END
 	END 
 
-	DECLARE @deserializer nvarchar(MAX);
-
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
-	SET @remoteServerName = (SELECT TOP 1 name FROM PARTNER.master.sys.servers WHERE server_id = 0);
+	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
 	-- Just to make sure that this job (running on both servers) has had enough time to update server_trace_flags, go ahead and give everything 200ms of 'lag'.
 	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
@@ -138,15 +136,23 @@ AS
 
 	---------------------------------------
 	-- Server Level Configuration/Settings: 
+	DECLARE @remoteConfig table ( 
+		configuration_id int NOT NULL, 
+		value_in_use sql_variant NULL
+	);	
+
+	INSERT INTO @remoteConfig (configuration_id, value_in_use)
+	EXEC master.sys.sp_executesql N'SELECT configuration_id, value_in_use FROM PARTNER.master.sys.configurations;';
+
 	INSERT INTO #Divergence ([name], [description])
 	SELECT 
 		N'ConfigOption: ' + [source].[name], 
 		N'Server Configuration Option is different between ' + @localServerName + N' and ' + @remoteServerName + N'. (Run ''EXEC sp_configure;'' on both servers and/or run ''SELECT * FROM master.sys.configurations;'' on both servers.)'
 	FROM 
 		master.sys.configurations [source]
-		INNER JOIN PARTNER.master.sys.configurations [target] ON [source].[configuration_id] = [target].[configuration_id]
+		INNER JOIN @remoteConfig [target] ON [source].[configuration_id] = [target].[configuration_id]
 	WHERE 
-		[source].value_in_use != [target].value_in_use;
+		[source].value_in_use <> [target].value_in_use;
 
 	---------------------------------------
 	-- Trace Flags: 
@@ -189,9 +195,9 @@ AS
 		admindb.dbo.server_trace_flags [x]
 		INNER JOIN @remoteFlags [y] ON x.trace_flag = y.trace_flag 
 	WHERE 
-		x.[status] != y.[status]
-		OR x.[global] != y.[global]
-		OR x.[session] != y.[session];
+		x.[status] <> y.[status]
+		OR x.[global] <> y.[global]
+		OR x.[session] <> y.[session];
 
 
 	---------------------------------------
@@ -208,17 +214,26 @@ AS
 		AND message_id IN (1440, 1480)
 		AND is_event_logged = 0;
 
-		-- remote:
-		INSERT INTO #Divergence (name, [description])
-		SELECT
-			N'ErrorMessage: ' + CAST(message_id AS nvarchar(20)), 
-			N'The is_event_logged property for this message_id on ' + @remoteServerName + N' is NOT set to 1. Please run Mirroring Failover setup scripts.'
-		FROM 
-			PARTNER.master.sys.messages 
-		WHERE 
-			language_id = @@langid
-			AND message_id IN (1440, 1480)
-			AND is_event_logged = 0;
+	-- remote:
+	DECLARE @remoteMessages table (
+		language_id smallint NOT NULL, 
+		message_id int NOT NULL, 
+		is_event_logged bit NOT NULL
+	);
+
+	INSERT INTO @remoteMessages (language_id, message_id, is_event_logged)
+	EXEC sp_executesql N'SELECT language_id, message_id, is_event_logged FROM PARTNER.master.sys.messages WHERE message_id IN (1440, 1480);';
+
+	INSERT INTO #Divergence (name, [description])
+	SELECT
+		N'ErrorMessage: ' + CAST(message_id AS nvarchar(20)), 
+		N'The is_event_logged property for this message_id on ' + @remoteServerName + N' is NOT set to 1. Please run Mirroring Failover setup scripts.'
+	FROM 
+		@remoteMessages
+	WHERE 
+		language_id = @@langid
+		AND message_id IN (1440, 1480)
+		AND is_event_logged = 0;
 
 	---------------------------------------
 	-- admindb versions: 
@@ -226,27 +241,57 @@ AS
 	DECLARE @remoteAdminDBVersion sysname;
 
 	SELECT @localAdminDBVersion = version_number FROM admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM admindb..version_history);
-	SELECT @remoteAdminDBVersion = version_number FROM PARTNER.admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb.dbo.version_history);
+	EXEC sys.sp_executesql N'SELECT @remoteVersion = version_number FROM PARTNER.admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb.dbo.version_history);', N'@remoteVersion sysname OUTPUT', @remoteVersion = @remoteAdminDBVersion OUTPUT;
 
 	IF @localAdminDBVersion <> @remoteAdminDBVersion BEGIN
 		INSERT INTO #Divergence (name, [description])
 		SELECT 
 			N'admindb versions are NOT synchronized',
 			N'Admin db on ' + @localServerName + ' is ' + @localAdminDBVersion + ' while the version on ' + @remoteServerName + ' is ' + @remoteAdminDBVersion + '.';
-
 	END;
 
 	---------------------------------------
 	-- Mirrored database ownership:
 	IF @IgnoreMirroredDatabaseOwnership = 0 BEGIN 
+		DECLARE @localOwners table ( 
+			[name] nvarchar(128) NOT NULL, 
+			sync_type sysname NOT NULL, 
+			owner_sid varbinary(85) NULL
+		);
+
+		-- mirrored (local) dbs: 
+		INSERT INTO @localOwners ([name], sync_type, owner_sid)
+		SELECT d.[name], N'Mirrored' [sync_type], d.owner_sid FROM master.sys.databases d INNER JOIN master.sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL; 
+
+		-- AG'd (local) dbs: 
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @localOwners ([name], sync_type, owner_sid)
+			EXEC master.sys.sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM sys.databases WHERE replica_id IS NOT NULL;';  -- has to be dynamic sql - otherwise replica_id will throw an error during sproc creation... 
+		END
+
+		DECLARE @remoteOwners table ( 
+			[name] nvarchar(128) NOT NULL, 
+			sync_type sysname NOT NULL,
+			owner_sid varbinary(85) NULL
+		);
+
+		-- Mirrored (remote) dbs:
+		INSERT INTO @remoteOwners ([name], sync_type, owner_sid) 
+		EXEC sp_executesql N'SELECT d.[name], ''Mirrored'' [sync_type], d.owner_sid FROM PARTNER.master.sys.databases d INNER JOIN PARTNER.master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL;';
+
+		-- AG'd (local) dbs: 
+		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			INSERT INTO @localOwners ([name], sync_type, owner_sid)
+			EXEC sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM sys.databases WHERE replica_id IS NOT NULL;';			
+		END
+
 		INSERT INTO #Divergence (name, [description])
 		SELECT 
 			N'Database: ' + [local].name, 
-			N'Database Owners are different between servers.'
+			[local].sync_type + N' database owners are different between servers.'
 		FROM 
-			(SELECT d.name, d.owner_sid FROM master.sys.databases d INNER JOIN master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL) [local]
-			INNER JOIN (SELECT d.name, d.owner_sid FROM PARTNER.master.sys.databases d INNER JOIN PARTNER.master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL) [remote]
-				ON [local].name = [remote].name
+			@localOwners [local]
+			INNER JOIN @remoteOwners [remote] ON [local].[name] = [remote].[name]
 		WHERE
 			[local].owner_sid <> [remote].owner_sid;
 	END
@@ -254,26 +299,51 @@ AS
 	---------------------------------------
 	-- Linked Servers:
 	DECLARE @IgnoredLinkedServerNames TABLE (
-		name sysname NOT NULL
+		entry_id int IDENTITY(1,1) NOT NULL, 
+		[name] sysname NOT NULL
 	);
 
-	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredLinkedServers), ',', ''','''), ',', ' UNION SELECT ');
-	INSERT INTO @IgnoredLinkedServerNames(name)
-	EXEC(@deserializer);
+	INSERT INTO @IgnoredLinkedServerNames([name])
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredLinkedServers, N',');
+
+	DECLARE @remoteLinkedServers table ( 
+		[server_id] int NOT NULL,
+		[name] sysname NOT NULL,
+		[location] nvarchar(4000) NULL,
+		[provider_string] nvarchar(4000) NULL,
+		[catalog] sysname NULL,
+		[product] sysname NOT NULL,
+		[data_source] nvarchar(4000) NULL,
+		[provider] sysname NOT NULL,
+		[is_remote_login_enabled] bit NOT NULL,
+		[is_rpc_out_enabled] bit NOT NULL,
+		[is_collation_compatible] bit NOT NULL,
+		[uses_remote_collation] bit NOT NULL,
+		[collation_name] sysname NULL,
+		[connect_timeout] int NULL,
+		[query_timeout] int NULL,
+		[is_remote_proc_transaction_promotion_enabled] bit NULL,
+		[is_system] bit NOT NULL,
+		[lazy_schema_validation] bit NOT NULL
+	);
+
+	INSERT INTO @remoteLinkedServers ([server_id], [name], [location], provider_string, [catalog], product, [data_source], [provider], is_remote_login_enabled, is_rpc_out_enabled, is_collation_compatible, uses_remote_collation,
+		 collation_name, connect_timeout, query_timeout, is_remote_proc_transaction_promotion_enabled, is_system, lazy_schema_validation)
+	EXEC master.sys.sp_executesql N'SELECT [server_id], [name], [location], provider_string, [catalog], product, [data_source], [provider], is_remote_login_enabled, is_rpc_out_enabled, is_collation_compatible, uses_remote_collation, collation_name, connect_timeout, query_timeout, is_remote_proc_transaction_promotion_enabled, is_system, lazy_schema_validation FROM PARTNER.master.sys.servers;';
 
 	-- local only:
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		N'Linked Server: ' + [local].name,
+		N'Linked Server: ' + [local].[name],
 		N'Linked Server exists on ' + @localServerName + N' only.'
 	FROM 
 		sys.servers [local]
-		LEFT OUTER JOIN PARTNER.master.sys.servers [remote] ON [local].name = [remote].name
+		LEFT OUTER JOIN @remoteLinkedServers [remote] ON [local].[name] = [remote].[name]
 	WHERE 
 		[local].server_id > 0 
-		AND [local].name <> 'PARTNER'
-		AND [local].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
-		AND [remote].name IS NULL;
+		AND [local].[name] <> 'PARTNER'
+		AND [local].[name] NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
+		AND [remote].[name] IS NULL;
 
 	-- remote only:
 	INSERT INTO #Divergence (name, [description])
@@ -281,7 +351,7 @@ AS
 		N'Linked Server: ' + [remote].name,
 		N'Linked Server exists on ' + @remoteServerName + N' only.'
 	FROM 
-		PARTNER.master.sys.servers [remote]
+		@remoteLinkedServers [remote]
 		LEFT OUTER JOIN master.sys.servers [local] ON [local].name = [remote].name
 	WHERE 
 		[remote].server_id > 0 
@@ -296,57 +366,75 @@ AS
 		N'Linkded server definitions are different between servers.'
 	FROM 
 		sys.servers [local]
-		INNER JOIN PARTNER.master.sys.servers [remote] ON [local].name = [remote].name
+		INNER JOIN @remoteLinkedServers [remote] ON [local].name = [remote].name
 	WHERE 
 		[local].name NOT IN (SELECT name FROM @IgnoredLinkedServerNames)
 		AND ( 
-			[local].product != [remote].product
-			OR [local].provider != [remote].provider
+			[local].product <> [remote].product
+			OR [local].[provider] <> [remote].[provider]
 			-- Sadly, PARTNER is a bit of a pain/problem - it has to exist on both servers - but with slightly different versions:
 			OR (
 				CASE 
-					WHEN [local].name = 'PARTNER' AND [local].data_source != [remote].data_source THEN 0 -- non-true (i.e., non-'different' or non-problematic)
+					WHEN [local].[name] = 'PARTNER' AND [local].[data_source] <> [remote].[data_source] THEN 0 -- non-true (i.e., non-'different' or non-problematic)
 					ELSE 1  -- there's a problem (because data sources are different, but the name is NOT 'Partner'
 				END 
 				 = 1  
 			)
-			OR [local].location != [remote].location
-			OR [local].provider_string != [remote].provider_string
-			OR [local].[catalog] != [remote].[catalog]
-			OR [local].is_remote_login_enabled != [remote].is_remote_login_enabled
-			OR [local].is_rpc_out_enabled != [remote].is_rpc_out_enabled
-			OR [local].is_collation_compatible != [remote].is_collation_compatible
-			OR [local].uses_remote_collation != [remote].uses_remote_collation
-			OR [local].collation_name != [remote].collation_name
-			OR [local].connect_timeout != [remote].connect_timeout
-			OR [local].query_timeout != [remote].query_timeout
-			OR [local].is_remote_proc_transaction_promotion_enabled != [remote].is_remote_proc_transaction_promotion_enabled
-			OR [local].is_system != [remote].is_system
-			OR [local].lazy_schema_validation != [remote].lazy_schema_validation
+			OR [local].[location] <> [remote].[location]
+			OR [local].provider_string <> [remote].provider_string
+			OR [local].[catalog] <> [remote].[catalog]
+			OR [local].is_remote_login_enabled <> [remote].is_remote_login_enabled
+			OR [local].is_rpc_out_enabled <> [remote].is_rpc_out_enabled
+			OR [local].is_collation_compatible <> [remote].is_collation_compatible
+			OR [local].uses_remote_collation <> [remote].uses_remote_collation
+			OR [local].collation_name <> [remote].collation_name
+			OR [local].connect_timeout <> [remote].connect_timeout
+			OR [local].query_timeout <> [remote].query_timeout
+			OR [local].is_remote_proc_transaction_promotion_enabled <> [remote].is_remote_proc_transaction_promotion_enabled
+			OR [local].is_system <> [remote].is_system
+			OR [local].lazy_schema_validation <> [remote].lazy_schema_validation
 		);
 		
 
 	---------------------------------------
 	-- Logins:
 	DECLARE @ignoredLoginName TABLE (
-		name sysname NOT NULL
+		entry_id int IDENTITY(1,1) NOT NULL, 
+		[name] sysname NOT NULL
 	);
 
-	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredLogins), ',', ''','''), ',', ' UNION SELECT ');
-	INSERT INTO @ignoredLoginName(name)
-	EXEC(@deserializer);
+	INSERT INTO @ignoredLoginName([name])
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredLogins, N',');
+
+	DECLARE @remotePrincipals table ( 
+		[principal_id] int NOT NULL,
+		[name] sysname NOT NULL,
+		[sid] varbinary(85) NULL,
+		[type] char(1) NOT NULL,
+		[is_disabled] bit NULL
+	);
+
+	INSERT INTO @remotePrincipals (principal_id, [name], [sid], [type], is_disabled)
+	EXEC master.sys.sp_executesql N'SELECT principal_id, [name], [sid], [type], is_disabled FROM PARTNER.master.sys.server_principals;';
+
+	DECLARE @remoteLogins table (
+		[name] sysname NOT NULL,
+		[password_hash] varbinary(256) NULL
+	);
+	INSERT INTO @remoteLogins ([name], password_hash)
+	EXEC master.sys.sp_executesql N'SELECT [name], password_hash FROM PARTNER.master.sys.sql_logins;';
 
 	-- local only:
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		N'Login: ' + [local].name, 
+		N'Login: ' + [local].[name], 
 		N'Login exists on ' + @localServerName + N' only.'
 	FROM 
 		sys.server_principals [local]
 	WHERE 
 		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [local].name NOT IN (SELECT name FROM PARTNER.master.sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [local].name NOT IN (SELECT name FROM @ignoredLoginName);
+		AND [local].[name] NOT IN (SELECT [name] FROM @remotePrincipals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
+		AND [local].[name] NOT IN (SELECT [name] FROM @ignoredLoginName);
 
 	-- remote only:
 	INSERT INTO #Divergence (name, [description])
@@ -354,27 +442,27 @@ AS
 		N'Login: ' + [remote].name, 
 		N'Login exists on ' + @remoteServerName + N' only.'
 	FROM 
-		PARTNER.master.sys.server_principals [remote]
+		@remotePrincipals [remote]
 	WHERE 
 		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
 		AND [remote].name NOT IN (SELECT name FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
 		AND [remote].name NOT IN (SELECT name FROM @ignoredLoginName);
 
 	-- differences
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT
-		N'Login: ' + [local].name, 
+		N'Login: ' + [local].[name], 
 		N'Login is different between servers. (Check SID, disabled, or password_hash (for SQL Logins).)'
 	FROM 
-		(SELECT p.name, p.[sid], p.is_disabled, l.password_hash FROM sys.server_principals p LEFT OUTER JOIN sys.sql_logins l ON p.name = l.name) [local]
-		INNER JOIN (SELECT p.name, p.[sid], p.is_disabled, l.password_hash FROM PARTNER.master.sys.server_principals p LEFT OUTER JOIN PARTNER.master.sys.sql_logins l ON p.name = l.name) [remote] ON [local].name = [remote].name
+		(SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM sys.server_principals p LEFT OUTER JOIN sys.sql_logins l ON p.[name] = l.[name]) [local]
+		INNER JOIN (SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM @remotePrincipals p LEFT OUTER JOIN @remoteLogins l ON p.[name] = l.[name]) [remote] ON [local].[name] = [remote].[name]
 	WHERE
-		[local].name NOT IN (SELECT name FROM @ignoredLoginName)
-		AND [local].name NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
+		[local].[name] NOT IN (SELECT [name] FROM @ignoredLoginName)
+		AND [local].[name] NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
 		AND (
-			[local].[sid] != [remote].[sid]
-			--OR [local].password_hash != [remote].password_hash  -- sadly, these are ALWAYS going to be different because of master keys/encryption details. So we can't use it for comparison purposes.
-			OR [local].is_disabled != [remote].is_disabled
+			[local].[sid] <> [remote].[sid]
+			--OR [local].password_hash <> [remote].password_hash  -- sadly, these are ALWAYS going to be different because of master keys/encryption details. So we can't use it for comparison purposes.
+			OR [local].is_disabled <> [remote].is_disabled
 		);
 
 	---------------------------------------
@@ -385,17 +473,35 @@ AS
 	-- Server Level Triggers?
 	--		[add if needed/desired.]
 
+	---------------------------------------
+	-- Other potential things to check/review:
+	--		Audit Specs
+	--		XEs 
+	--		credentials/proxies
+	--		service accounts (i.e., SQL Server and SQL Server Agent)
+	--		perform volume maint-tasks, lock pages in memory... 
+	--		etc...
 
 	---------------------------------------
 	-- Operators:
 	-- local only
+
+	DECLARE @remoteOperators table (
+		[name] sysname NOT NULL,
+		[enabled] tinyint NOT NULL,
+		[email_address] nvarchar(100) NULL
+	);
+
+	INSERT INTO @remoteOperators ([name], [enabled], email_address)
+	EXEC master.sys.sp_executesql N'SELECT [name], [enabled], email_address FROM PARTNER.msdb.dbo.sysoperators;';
+
 	INSERT INTO #Divergence (name, [description])
 	SELECT	
 		N'Operator: ' + [local].name, 
 		N'Operator exists on ' + @localServerName + N' only.'
 	FROM 
 		msdb.dbo.sysoperators [local]
-		LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators [remote] ON [local].name = [remote].name
+		LEFT OUTER JOIN @remoteOperators [remote] ON [local].name = [remote].name
 	WHERE 
 		[remote].name IS NULL;
 
@@ -405,7 +511,7 @@ AS
 		N'Operator: ' + [remote].name, 
 		N'Operator exists on ' + @remoteServerName + N' only.'
 	FROM 
-		PARTNER.msdb.dbo.sysoperators [remote]
+		@remoteOperators [remote]
 		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].name = [local].name
 	WHERE 
 		[local].name IS NULL;
@@ -417,20 +523,40 @@ AS
 		N'Operator definition is different between servers. (Check email address(es) and enabled.)'
 	FROM 
 		msdb.dbo.sysoperators [local]
-		INNER JOIN PARTNER.msdb.dbo.sysoperators [remote] ON [local].name = [remote].name
+		INNER JOIN @remoteOperators [remote] ON [local].name = [remote].name
 	WHERE 
-		[local].[enabled] != [remote].[enabled]
-		OR [local].[email_address] != [remote].[email_address];
+		[local].[enabled] <> [remote].[enabled]
+		OR [local].[email_address] <> [remote].[email_address];
 
 	---------------------------------------
 	-- Alerts:
 	DECLARE @ignoredAlertName TABLE (
-		name sysname NOT NULL
+		entry_id int IDENTITY(1,1) NOT NULL,
+		[name] sysname NOT NULL
 	);
 
-	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredAlerts), ',', ''','''), ',', ' UNION SELECT ');
-	INSERT INTO @ignoredAlertName(name)
-	EXEC(@deserializer);
+	INSERT INTO @ignoredAlertName([name])
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredAlerts, N',');
+
+	DECLARE @remoteAlerts table (
+		[name] sysname NOT NULL,
+		[message_id] int NOT NULL,
+		[severity] int NOT NULL,
+		[enabled] tinyint NOT NULL,
+		[delay_between_responses] int NOT NULL,
+		[notification_message] nvarchar(512) NULL,
+		[include_event_description] tinyint NOT NULL,
+		[database_name] nvarchar(512) NULL,
+		[event_description_keyword] nvarchar(100) NULL,
+		[job_id] uniqueidentifier NOT NULL,
+		[has_notification] int NOT NULL,
+		[performance_condition] nvarchar(512) NULL,
+		[category_id] int NOT NULL
+	);
+
+	INSERT INTO @remoteAlerts ([name], message_id, severity, [enabled], delay_between_responses, notification_message, include_event_description, [database_name], event_description_keyword,
+			job_id, has_notification, performance_condition, category_id)
+	EXEC master.sys.sp_executesql N'SELECT [name], message_id, severity, [enabled], delay_between_responses, notification_message, include_event_description, [database_name], event_description_keyword, job_id, has_notification, performance_condition, category_id FROM PARTNER.msdb.dbo.sysalerts;';
 
 	-- local only
 	INSERT INTO #Divergence (name, [description])
@@ -439,7 +565,7 @@ AS
 		N'Alert exists on ' + @localServerName + N' only.'
 	FROM 
 		msdb.dbo.sysalerts [local]
-		LEFT OUTER JOIN PARTNER.msdb.dbo.sysalerts [remote] ON [local].name = [remote].name
+		LEFT OUTER JOIN @remoteAlerts [remote] ON [local].name = [remote].name
 	WHERE
 		[remote].name IS NULL
 		AND [local].name NOT IN (SELECT name FROM @ignoredAlertName);
@@ -449,7 +575,7 @@ AS
 		N'Alert: ' + [remote].name, 
 		N'Alert exists on ' + @remoteServerName + N' only.'
 	FROM 
-		PARTNER.msdb.dbo.sysalerts [remote]
+		@remoteAlerts [remote]
 		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].name = [local].name
 	WHERE
 		[local].name IS NULL
@@ -462,31 +588,31 @@ AS
 		N'Alert definition is different between servers.'
 	FROM	
 		msdb.dbo.sysalerts [local]
-		INNER JOIN PARTNER.msdb.dbo.sysalerts [remote] ON [local].name = [remote].name
+		INNER JOIN @remoteAlerts [remote] ON [local].name = [remote].name
 	WHERE 
 		[local].name NOT IN (SELECT name FROM @ignoredAlertName)
 		AND (
-		[local].message_id != [remote].message_id
-		OR [local].severity != [remote].severity
-		OR [local].[enabled] != [remote].[enabled]
-		OR [local].delay_between_responses != [remote].delay_between_responses
-		OR [local].notification_message != [remote].notification_message
-		OR [local].include_event_description != [remote].include_event_description
-		OR [local].database_name != [remote].database_name
-		OR [local].event_description_keyword != [remote].event_description_keyword
-		-- JobID is problematic. If we have a job set to respond, it'll undoubtedly have a diff ID from one server to the other. So... we just need to make sure ID != 'empty' on one server, while not on the other, etc. 
+		[local].message_id <> [remote].message_id
+		OR [local].severity <> [remote].severity
+		OR [local].[enabled] <> [remote].[enabled]
+		OR [local].delay_between_responses <> [remote].delay_between_responses
+		OR [local].notification_message <> [remote].notification_message
+		OR [local].include_event_description <> [remote].include_event_description
+		OR [local].[database_name] <> [remote].[database_name]
+		OR [local].event_description_keyword <> [remote].event_description_keyword
+		-- JobID is problematic. If we have a job set to respond, it'll undoubtedly have a diff ID from one server to the other. So... we just need to make sure ID <> 'empty' on one server, while not on the other, etc. 
 		OR (
 			CASE 
 				WHEN [local].job_id = N'00000000-0000-0000-0000-000000000000' AND [remote].job_id = N'00000000-0000-0000-0000-000000000000' THEN 0 -- no problem
-				WHEN [local].job_id = N'00000000-0000-0000-0000-000000000000' AND [remote].job_id != N'00000000-0000-0000-0000-000000000000' THEN 1 -- problem - one alert is 'empty' and the other is not. 
-				WHEN [local].job_id != N'00000000-0000-0000-0000-000000000000' AND [remote].job_id = N'00000000-0000-0000-0000-000000000000' THEN 1 -- problem (inverse of above). 
-				WHEN ([local].job_id != N'00000000-0000-0000-0000-000000000000' AND [remote].job_id != N'00000000-0000-0000-0000-000000000000') AND ([local].job_id != [remote].job_id) THEN 0 -- they're both 'non-empty' so... we assume it's good
+				WHEN [local].job_id = N'00000000-0000-0000-0000-000000000000' AND [remote].job_id <> N'00000000-0000-0000-0000-000000000000' THEN 1 -- problem - one alert is 'empty' and the other is not. 
+				WHEN [local].job_id <> N'00000000-0000-0000-0000-000000000000' AND [remote].job_id = N'00000000-0000-0000-0000-000000000000' THEN 1 -- problem (inverse of above). 
+				WHEN ([local].job_id <> N'00000000-0000-0000-0000-000000000000' AND [remote].job_id <> N'00000000-0000-0000-0000-000000000000') AND ([local].job_id <> [remote].job_id) THEN 0 -- they're both 'non-empty' so... we assume it's good
 			END 
 			= 1
 		)
-		OR [local].has_notification != [remote].has_notification
-		OR [local].performance_condition != [remote].performance_condition
-		OR [local].category_id != [remote].category_id
+		OR [local].has_notification <> [remote].has_notification
+		OR [local].performance_condition <> [remote].performance_condition
+		OR [local].category_id <> [remote].category_id
 		);
 
 	---------------------------------------
@@ -496,12 +622,12 @@ AS
 	);
 
 	DECLARE @ignoredMasterObjects TABLE (
-		name sysname NOT NULL
+		entry_id int IDENTITY(1,1) NOT NULL, 
+		[name] sysname NOT NULL
 	);
 
-	SET @deserializer = N'SELECT ' + REPLACE(REPLACE(REPLACE(N'''{0}''', '{0}', @IgnoredMasterDbObjects), ',', ''','''), ',', ' UNION SELECT ');
 	INSERT INTO @ignoredMasterObjects([name])
-	EXEC(@deserializer);
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',');
 
 	INSERT INTO @localMasterObjects ([object_name])
 	SELECT name FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
@@ -511,7 +637,8 @@ AS
 	);
 
 	INSERT INTO @remoteMasterObjects ([object_name])
-	SELECT name FROM PARTNER.master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND name NOT IN (SELECT name FROM @ignoredMasterObjects);
+	EXEC master.sys.sp_executesql N'SELECT [name] FROM PARTNER.master.sys.objects WHERE [type] IN (''U'',''V'',''P'',''FN'',''IF'',''TF'') AND is_ms_shipped = 0;';
+	DELETE FROM @remoteMasterObjects WHERE [object_name] IN (SELECT [name] FROM @ignoredMasterObjects);
 
 	-- local only:
 	INSERT INTO #Divergence (name, [description])
@@ -538,30 +665,29 @@ AS
 
 	CREATE TABLE #Definitions (
 		row_id int IDENTITY(1,1) NOT NULL, 
-		location sysname NOT NULL, 
+		[location] sysname NOT NULL, 
 		[object_name] sysname NOT NULL, 
 		[type] char(2) NOT NULL,
 		[hash] varbinary(MAX) NULL
 	);
 
-	INSERT INTO #Definitions (location, [object_name], [type], [hash])
+	INSERT INTO #Definitions ([location], [object_name], [type], [hash])
 	SELECT 
 		'local', 
-		name, 
+		[name], 
 		[type], 
 		CASE 
 			WHEN [type] IN ('V','P','FN','IF','TF') THEN 
 				CASE
 					-- HASHBYTES barfs on > 8000 chars. So, using this: http://www.sqlnotes.info/2012/01/16/generate-md5-value-from-big-data/
 					WHEN DATALENGTH(sm.[definition]) > 8000 THEN (SELECT sys.fn_repl_hash_binary(CAST(sm.[definition] AS varbinary(MAX))))
-						--CAST((DATALENGTH(sm.[definition]) + CHECKSUM(sm.[definition])) AS varbinary(max)) -- CHECKSUM + DATALEN should give us sufficient coverage for differences. 
 					ELSE HASHBYTES('SHA1', sm.[definition])
 				END
 			ELSE NULL
 		END [hash]
 	FROM 
 		master.sys.objects o
-		LEFT OUTER JOIN master.sys.sql_modules sm ON o.object_id = sm.object_id
+		LEFT OUTER JOIN master.sys.sql_modules sm ON o.[object_id] = sm.[object_id]
 		INNER JOIN @localMasterObjects x ON o.name = x.[object_name];
 
 	DECLARE localtabler CURSOR LOCAL FAST_FORWARD FOR 
@@ -590,24 +716,23 @@ AS
 	CLOSE localtabler;
 	DEALLOCATE localtabler;
 
-	INSERT INTO #Definitions (location, [object_name], [type], [hash])
-	SELECT 
-		'remote', 
-		name, 
+	INSERT INTO #Definitions ([location], [object_name], [type], [hash])
+	EXEC master.sys.sp_executesql N'SELECT 
+		''remote'', 
+		o.name, 
 		[type], 
 		CASE 
-			WHEN [type] IN ('V','P','FN','IF','TF') THEN 
+			WHEN [type] IN (''V'',''P'',''FN'',''IF'',''TF'') THEN 
 				CASE
-					-- HASHBYTES barfs on > 8000 chars. So, using this: http://www.sqlnotes.info/2012/01/16/generate-md5-value-from-big-data/
 					WHEN DATALENGTH(sm.[definition]) > 8000 THEN (SELECT sys.fn_repl_hash_binary(CAST(sm.[definition] AS varbinary(MAX))))
-					ELSE HASHBYTES('SHA1', sm.[definition])
+					ELSE HASHBYTES(''SHA1'', sm.[definition])
 				END
 			ELSE NULL
 		END [hash]
 	FROM 
 		PARTNER.master.sys.objects o
 		LEFT OUTER JOIN PARTNER.master.sys.sql_modules sm ON o.object_id = sm.object_id
-		INNER JOIN @remoteMasterObjects x ON o.name = x.[object_name];
+		INNER JOIN (SELECT [name] FROM PARTNER.master.sys.objects WHERE [type] IN (''U'',''V'',''P'',''FN'',''IF'',''TF'') AND is_ms_shipped = 0) x ON o.name = x.[name];';
 
 	DECLARE remotetabler CURSOR LOCAL FAST_FORWARD FOR
 	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'remote';
@@ -616,13 +741,12 @@ AS
 	FETCH NEXT FROM remotetabler INTO @currentObjectName; 
 
 	WHILE @@FETCH_STATUS = 0 BEGIN 
-		SET @checksum = 0;
 
 		-- This whole 'nested' or 'derived' query approach is to get around a WEIRD bug/problem with CHECKSUM and 'running' aggregates. 
-		SELECT @checksum = @checksum + [remote].[hash] FROM ( 
+		EXEC master.sys.sp_executesql N'SELECT @checksum = ISNULL(@checksum,0) + [remote].[hash] FROM ( 
 			SELECT CHECKSUM(c.column_id, c.name, c.system_type_id, c.max_length, c.[precision]) [hash]
 			FROM PARTNER.master.sys.columns c INNER JOIN PARTNER.master.sys.objects o ON o.object_id = c.object_id WHERE o.name = @currentObjectName
-		) [remote];
+		) [remote];', N'@checksum bigint OUTPUT, @currentObjectName sysname', @checksum = @checksum OUTPUT, @currentObjectName = @currentObjectName;
 
 		UPDATE #Definitions SET [hash] = @checksum WHERE [object_name] = @currentObjectName AND [location] = 'remote';
 
@@ -640,7 +764,7 @@ AS
 		(SELECT [object_name], [hash] FROM #Definitions WHERE [location] = 'local') [local]
 		INNER JOIN (SELECT [object_name], [hash] FROM #Definitions WHERE [location] = 'remote') [remote] ON [local].object_name = [remote].object_name
 	WHERE 
-		[local].[hash] != [remote].[hash];
+		[local].[hash] <> [remote].[hash];
 	
 	------------------------------------------------------------------------------
 	-- Report on any discrepancies: 

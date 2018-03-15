@@ -1,1 +1,7 @@
 ## empty for now... 
+/Deployment/__build/S4BuildPrototype.exe
+/Deployment/__build/C5.dll
+/Deployment/__build/__Notes and Directions.txt
+/S4 Restore/~~test cases for LSNs and TLog restore errors.sql
+/S4 Restore/~~ spelunking for added reliability to restore operations.sql
+/S4 Restore/~~ inital attempt at dbo.load_backup_files.sql
