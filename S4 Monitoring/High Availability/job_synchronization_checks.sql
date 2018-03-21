@@ -1,11 +1,5 @@
 /*
 
-	BUGs:
-		- currently (correctly reporting on jobs that are not-enabled but set to a category of other than 'disabled'. 
-		- but... not reporting on situations where a job is assigned to, say, 'billing' on one server, and 'disabled' on the other server. 
-				that's a dumb/weird combo that doesn't make sense.
-
-
 	DEPENDENCIES:
 		- PARTNER (linked server to Mirroring 'partner')
 		- admindb.dbo.is_primary_database()
@@ -116,7 +110,7 @@ AS
 	SET NOCOUNT ON;
 
 	---------------------------------------------
-	-- A) Validation Checks: 
+	-- Validation Checks: 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
 		IF ISNULL(@OperatorName, '') IS NULL BEGIN
@@ -141,53 +135,65 @@ AS
 	END;
 
 	----------------------------------------------
-	-- Figure out which server this should be running on (and then, from this point forward, only run on the Primary);
-	DECLARE @firstMirroredDB sysname; 
-	SET @firstMirroredDB = (SELECT TOP 1 d.name FROM sys.databases d INNER JOIN sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL ORDER BY d.name); 
-
-	-- if there are NO mirrored dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
-	IF @firstMirroredDB IS NOT NULL BEGIN 
-		-- Check to see if we're on the primary or not. 
-		IF (SELECT dbo.is_primary_database(@firstMirroredDB)) = 0 BEGIN 
-			PRINT 'Server is Not Primary. Execution Terminating (but will continue on Primary).'
-			RETURN 0; -- tests/checks are now done on the secondary
-		END
-	END 
+	-- Determine which server to run checks on. 
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
+	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
+	
+	DECLARE @synchronizingDatabases table ( 
+		server_name sysname, 
+		sync_type sysname,
+		[database_name] sysname
+	)
+
+	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
+	SELECT @localServerName [server_name], N'MIRRORED' sync_type, d.[name] [database_name] FROM sys.databases d INNER JOIN sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL;
+
+	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
+	SELECT @localServerName [server_name], N'AG' [sync_type], d.[name] [database_name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_cluster_states hars ON d.replica_id = hars.replica_id;
+
+	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
+	EXEC master.sys.sp_executesql N'SELECT @remoteServerName [server_name], N''MIRRORED'' sync_type, d.[name] [database_name] FROM sys.databases d INNER JOIN sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL;', N'@remoteServerName sysname', @remoteServerName = @remoteServerName;
+
+	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
+	EXEC master.sys.sp_executesql N'SELECT @remoteServerName [server_name], N''AG'' [sync_type], d.[name] [database_name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_cluster_states hars ON d.replica_id = hars.replica_id;', N'@remoteServerName sysname', @remoteServerName = @remoteServerName;
+
+	DECLARE @firstSyncedDB sysname; 
+	SELECT @firstSyncedDB = (SELECT TOP (1) [name] FROM @synchronizingDatabases ORDER BY [name], server_name);
+
+	-- if there are NO mirrored/AG'd dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
+	IF @firstSyncedDB IS NOT NULL BEGIN 
+		-- Check to see if we're on the primary or not. 
+		IF (SELECT dbo.is_primary_database(@firstSyncedDB)) = 0 BEGIN 
+			PRINT 'Server is Not Primary. Execution Terminating (but will continue on Primary).'
+			RETURN 0; -- tests/checks are now done on the secondary
+		END
+	END 
+
+	----------------------------------------------
+	-- establish which jobs to ignore (if any):
 	CREATE TABLE #IgnoredJobs (
 		name nvarchar(200) NOT NULL
 	);
 
-	----------------------------------------------
-	-- deserialize the job names to ingore:
 	INSERT INTO #IgnoredJobs ([name])
 	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',');
 
 	----------------------------------------------
 	-- create a container for output/differences. 
 	CREATE TABLE #Divergence (
-		rowid int IDENTITY(1,1) NOT NULL,
-		name nvarchar(100) NOT NULL, 
+		row_id int IDENTITY(1,1) NOT NULL,
+		[name] nvarchar(100) NOT NULL, 
 		[description] nvarchar(300) NOT NULL
 	);
 
+
 	---------------------------------------------------------------------------------------------
-	-- B) Process 'server level jobs' (or jobs that aren't mapped to a mirrorable database - i.e., WHERE Job.CategoryName <> DbName):
-	DECLARE @mirrorableDatabases TABLE ( 
-		[name] sysname NOT NULL 
-	); 
-
-	-- get a list of Job Categories that could BE a database name (i.e., mirror-able):
-	INSERT INTO @mirrorableDatabases
-	EXEC master.sys.sp_executesql 
-	N'SELECT name FROM master.sys.databases WHERE name NOT IN (''master'',''tempdb'',''model'',''msdb'',''distribution'',''ReportServer'',''ReportServerTempDB'',''admindb'') 
-	UNION 
-	SELECT name FROM PARTNER.master.sys.databases WHERE name NOT IN (''master'',''tempdb'',''model'',''msdb'',''distribution'',''ReportServer'',''ReportServerTempDB'',''admindb'');'; 
-
+	-- Process server-level jobs (jobs that aren't mapped to a Mirrored/AG'd database). 
+	--		here we're just looking for differences in enabled states and/or differences between the job definitions/details from one server to the next. 
 	CREATE TABLE #LocalJobs (
 		job_id uniqueidentifier, 
 		[name] sysname, 
@@ -254,7 +260,7 @@ FROM
 	DELETE FROM #RemoteJobs WHERE [name] IN (SELECT [name] FROM #IgnoredJobs);
 
 	----------------------------------------------
-	-- Process high-level details about each job (i.e., jobs on ONE server only - or jobs on both servers but with differences):
+	-- Process high-level details about each job
 	INSERT INTO #Divergence ([name], [description])
 	SELECT 
 		[name],
@@ -263,7 +269,7 @@ FROM
 		#LocalJobs 
 	WHERE
 		[name] NOT IN (SELECT [name] FROM #RemoteJobs)
-		AND [name] NOT IN (SELECT [name] FROM @mirrorableDatabases);
+		AND [name] NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @localServerName);
 
 	INSERT INTO #Divergence ([name], [description])
 	SELECT 
@@ -272,7 +278,8 @@ FROM
 	FROM 
 		#RemoteJobs
 	WHERE
-		[name] NOT IN (SELECT name FROM #LocalJobs);
+		[name] NOT IN (SELECT [name] FROM #LocalJobs)
+		AND [name] NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @remoteServerName);
 
 	INSERT INTO #Divergence ([name], [description])
 	SELECT 
@@ -282,8 +289,8 @@ FROM
 		#LocalJobs lj
 		INNER JOIN #RemoteJobs rj ON rj.[name] = lj.[name]
 	WHERE
-		lj.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases) 
-		AND rj.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases)
+		lj.category_name NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @localServerName) 
+		AND rj.category_name NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @remoteServerName)
 		AND 
 		(
 			lj.[enabled] <> rj.[enabled]
@@ -429,74 +436,56 @@ FROM
 	DEALLOCATE server_level_checker;
 
 	---------------------------------------------------------------------------------------------
-	-- C) Start Batch Jobs by reporting on any jobs that have a Job.CategoryName IN (@mirrorableDatabases) but are Disabled or which have Job.CategoryName = 'Disabled' and are enabled. 
+	-- Process Batch-Jobs. There are three possible scenarios or situations to be aware of: 
+	--		a) job.categoryname = 'a synchronizing db name] AND job.enabled = 0 on the PRIMARY (which it shouldn't be, because unless category is set to disabled, this job will be re-enabled post-failover). 
+	--		b) job.categoryname = 'DISABLED' on the SECONDARY and job.enabled = 1... which is bad. Shouldn't be that way. 
+	--		c) job.categoryname = 'a synchronizing db name' and job.enabled != to what should be set for the current role (i.e., enabled on PRIMARY and disabled on SECONDARY). 
+	--			only local variant of scenario c = scenario a, and the remote/partner variant of c = scenario b. 
 	
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		sj.[name],
-		N'Job is disabled on ' + @localServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
-	FROM 
-		msdb.dbo.sysjobs sj
-		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		INNER JOIN @mirrorableDatabases x ON sc.[name] = x.[name]
-	WHERE 
-		sj.[enabled] = 0 
-		AND sc.[name] NOT IN (SELECT [name] FROM @mirrorableDatabases)
-		AND sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs); 
+	
 
-	DECLARE @remoteJobCategories table (
-		[name] sysname NOT NULL,
-		[enabled] tinyint NOT NULL,
-		[category_name] sysname NOT NULL
-	);
+	-- scenario a:
+	--INSERT INTO #Divergence ([name], [description])
+	--SELECT 
+	--	sj.[name], 
+	--	N'Batch-Job is disabled on ' + @localServerName + N'. Following a failover, this job will be re-enabled on the secondary. To prevent job from being re-enabled following failovers, set job category to ''Disabled''.'
+	--FROM 
+	--	msdb.dbo.sysjobs sj
+	--	INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+	--WHERE 
+	--	sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs)
+	--	AND sj.[enabled] = 0 
+	--	AND sc.[name] IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @localServerName);
 
-	INSERT INTO @remoteJobCategories ([name], [enabled], [category_name])
-	EXEC master.sys.sp_executesql N'SELECT 
-		sj.[name], 
-		sj.[enabled], 
-		sc.[name] category_name
-	FROM 
-		PARTNER.msdb.dbo.sysjobs sj 
-		INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id;';
+	--DECLARE @remoteJobCategories table (
+	--	[name] sysname NOT NULL,
+	--	[enabled] tinyint NOT NULL,
+	--	[category_name] sysname NOT NULL
+	--);
 
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		rjc.[name],
-		N'Job is disabled on ' + @remoteServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
-	FROM 
-		@remoteJobCategories rjc
-		INNER JOIN @mirrorableDatabases x ON rjc.[category_name] = x.[name]
-	WHERE 
-		rjc.[enabled] = 0 
-		AND rjc.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases)
-		AND rjc.[name] NOT IN (SELECT [name] FROM #IgnoredJobs); 
+	---- scenario b:
+	--INSERT INTO @remoteJobCategories ([name], [enabled], [category_name])
+	--EXEC master.sys.sp_executesql N'SELECT 
+	--	sj.[name], 
+	--	sj.[enabled], 
+	--	sc.[name] [category_name]
+	--FROM 
+	--	PARTNER.msdb.dbo.sysjobs sj 
+	--	INNER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id;';
 
-	-- Report on jobs that should be disabled, but aren't. 
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		sj.[name], 
-		N'Job is enabled on ' + @localServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
-	FROM 
-		msdb.dbo.sysjobs sj
-		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-	WHERE
-		sj.[enabled] = 1
-		AND LOWER(sc.[name]) = 'disabled'
-		AND sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs);
-
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		rjc.[name], 
-		N'Job is enabled on ' + @remoteServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
-	FROM 
-		@remoteJobCategories rjc
-	WHERE
-		rjc.[enabled] = 1
-		AND LOWER(rjc.[category_name]) = 'disabled'
-		AND rjc.[name] NOT IN (SELECT [name] FROM #IgnoredJobs);
+	--INSERT INTO #Divergence ([name], [description])
+	--SELECT 
+	--	rjc.[name],
+	--	N'Job is enabled on ' + @remoteServerName + N', but the job''s category name is set to ''Disabled'' (meaning that this job WILL be disabled following a failover).'
+	--FROM 
+	--	@remoteJobCategories rjc
+	--WHERE 
+	--	rjc.[name] NOT IN (SELECT [name] FROM #IgnoredJobs) 
+	--	AND rjc.[enabled] = 1 
+	--	AND UPPER(rjc.category_name) = N'DISABLED';
 
 	---------------------------------------------------------------------------------------------
-	-- D) Check on all jobs for mirrored databases:
+	-- D) Check on job details for batch-jobs:
 	TRUNCATE TABLE #LocalJobs;
 	TRUNCATE TABLE #RemoteJobs;
 
@@ -602,14 +591,19 @@ FROM
 			OR [local].job_step_count <> [remote].job_step_count
 			OR [local].category_name <> [remote].category_name;
 		
-		-- NOTE: While this script assumes the 'PRIMARY' is server that's hosting the Principal for the FIRST mirrored DB detected, the reality
-		--		is more complex - as the first mirrored db (automation) might be on SQL1, but (batches) might be 'failed' over and running on SQL2
+
+		-- Process Batch-Jobs. There are three possible scenarios or situations to be aware of: 
+		--		a) job.categoryname = 'a synchronizing db name] AND job.enabled = 0 on the PRIMARY (which it shouldn't be, because unless category is set to disabled, this job will be re-enabled post-failover). 
+		--		b) job.categoryname = 'DISABLED' on the SECONDARY and job.enabled = 1... which is bad. Shouldn't be that way. 
+		--		c) job.categoryname = 'a synchronizing db name' and job.enabled != to what should be set for the current role (i.e., enabled on PRIMARY and disabled on SECONDARY). 
+		--			only local variant of scenario c = scenario a, and the remote/partner variant of c = scenario b. 
+
 		IF (SELECT master.dbo.is_primary_database(@currentMirroredDB)) = 1 BEGIN 
 			-- report on any mirroring jobs that are disabled on the primary:
 			INSERT INTO #Divergence ([name], [description])
 			SELECT 
 				[name], 
-				N'Batch Job is disabled on ' + @localServerName + N' (PRIMARY) and should be ENABLED.'
+				N'Batch Job is disabled on ' + @localServerName + N' (PRIMARY) and should be ENABLED - or disabled and have job category set to ''Disabled'' - otherwise, it WILL be ENABLED following a failover.'
 			FROM 
 				#LocalJobs
 			WHERE
@@ -630,7 +624,7 @@ FROM
 			INSERT INTO #Divergence ([name], [description])
 			SELECT 
 				[name], 
-				N'Batch Job is disabled on ' + @remoteServerName + N' (PRIMARY) and should be ENABLED.'
+				N'Batch Job is disabled on ' + @remoteServerName + N' (PRIMARY) and should be ENABLED - or disabled and have job category set to ''Disabled'' - otherwise it WILL be ENABLED following a failover.'
 			FROM 
 				#RemoteJobs
 			WHERE
