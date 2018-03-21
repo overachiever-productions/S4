@@ -1,5 +1,11 @@
 /*
 
+	BUGs:
+		- currently (correctly reporting on jobs that are not-enabled but set to a category of other than 'disabled'. 
+		- but... not reporting on situations where a job is assigned to, say, 'billing' on one server, and 'disabled' on the other server. 
+				that's a dumb/weird combo that doesn't make sense.
+
+
 	DEPENDENCIES:
 		- PARTNER (linked server to Mirroring 'partner')
 		- admindb.dbo.is_primary_database()
@@ -278,7 +284,8 @@ FROM
 	WHERE
 		lj.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases) 
 		AND rj.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases)
-		AND (
+		AND 
+		(
 			lj.[enabled] <> rj.[enabled]
 			OR lj.[description] <> rj.[description]
 			OR lj.start_step_id <> rj.start_step_id
@@ -431,9 +438,10 @@ FROM
 	FROM 
 		msdb.dbo.sysjobs sj
 		INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		INNER JOIN @mirrorableDatabases x ON sj.[name] = x.[name]
+		INNER JOIN @mirrorableDatabases x ON sc.[name] = x.[name]
 	WHERE 
 		sj.[enabled] = 0 
+		AND sc.[name] NOT IN (SELECT [name] FROM @mirrorableDatabases)
 		AND sj.[name] NOT IN (SELECT [name] FROM #IgnoredJobs); 
 
 	DECLARE @remoteJobCategories table (
@@ -457,13 +465,14 @@ FROM
 		N'Job is disabled on ' + @remoteServerName + N', but the job''s category name is not set to ''Disabled'' (meaning this job will be ENABLED on the secondary following a failover).'
 	FROM 
 		@remoteJobCategories rjc
-		INNER JOIN @mirrorableDatabases x ON rjc.[name] = x.[name]
+		INNER JOIN @mirrorableDatabases x ON rjc.[category_name] = x.[name]
 	WHERE 
 		rjc.[enabled] = 0 
+		AND rjc.category_name NOT IN (SELECT [name] FROM @mirrorableDatabases)
 		AND rjc.[name] NOT IN (SELECT [name] FROM #IgnoredJobs); 
 
 	-- Report on jobs that should be disabled, but aren't. 
-	INSERT INTO #Divergence (name, [description])
+	INSERT INTO #Divergence ([name], [description])
 	SELECT 
 		sj.[name], 
 		N'Job is enabled on ' + @localServerName + N', but job category name is ''Disabled'' (meaning this job will be DISABLED on secondary following a failover).'
