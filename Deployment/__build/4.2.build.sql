@@ -85,7 +85,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.6.3.16857';
+DECLARE @CurrentVersion varchar(20) = N'4.6.4.16864';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -376,6 +376,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\High Availability\verify_job_states.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\compare_jobs.sql
 
 
 ---------------------------------------------------------------------------
