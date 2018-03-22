@@ -504,6 +504,7 @@ FROM
 		-- Now start comparing differences: 
 
 		-- local  only:
+	-- TODO: create separate checks/messages for jobs existing only on one server or the other AND the whole 'OR is disabled' on one server or the other). 
 		INSERT INTO #Divergence ([name], [description])
 		SELECT 
 			[local].[name], 
