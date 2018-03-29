@@ -1,56 +1,13 @@
 
 /*
 
-	NOTE: this is actively querying tables that don't existin in SQL SErver 2008/2008R2 (i.e., the hadr tables). 
-
-
-	
-	otherwise... the rub here is that the tests I'm doing for Mirrored DBs are a lot different than for AG'd dbs... 
-
-	Here are the signatures of each sproc, for example: 
-
-			CREATE PROC dbo.dba_Mirroring_HealthCheck 
-				@OperatorName			sysname, 
-				@MailProfileName		sysname,
-				@MinutesBack			int				= 10,
-				@TransDelayThreshold	int				= 8600,
-				@AvgDelayThreshold		int				= 2800,
-				@WitnessEnabled			bit, 		
-				@PrintOnly				bit				= 0	
-
-
-		vs
-
-		CREATE PROC dbo.dba_AvailabilityGroups_HealthCheck 
-			@MailProfileName		sysname,
-			@OperatorName			sysname, 
-			@ConsoleOnly			bit				= 0		
-
-
-
-		the signature for the AG'd checks is nicer... but... i need to monitor more things via the mirroring checks. 
-
-		either way, the global/big picture for this sproc/approach is that i'll:
-			a) make sure this is the primary of the first 'synced' database - or exit execution. 
-			b) run any/all alerts for any mirrored dbs. 
-			c) run any/all alerts for any AG'd dbs. 
-			d) report on any findings/issues. 
-
-			that way, yeah, i'll STILL have 'duplicate' logic for mirrored and AG'd databases - but it won't be in 2x different sprocs. it'll be in one, single, location. (sucks. but sucks LESS.) 
-
-
-
-		otherwise, some high-level plans/ideas on 'fixing' the discrepencies in the current signatures:
-			1. Mirroring.@WitnessEnabled is something I SHOULD BE able to programatically determine via code - and then just checkon the witness if/when there is one (per each db) - instead of assuming that all dbs will have one or not as that 'switch' implies... 
-			2. make sure to look at health of all 2x/3x servers involved - whether mirrored or AG'd. (harder with mirrored, obviously). 
-			3. are there DATA /synchronization checks i can run against an AG'd database? If so... streamline/synthesize the 'check' switches/ @params so they'll work for both scenarios. 
 				
-				otherwise, it MIGHT make more sense to look at something like these:
-					https://skreebydba.com/2016/10/31/monitoring-and-alerting-for-availability-groups/
+			It MIGHT make more sense to look at something like these:
+				https://skreebydba.com/2016/10/31/monitoring-and-alerting-for-availability-groups/
 
-					i.e., data-flow alerts and other alerts... 
+				i.e., data-flow alerts and other alerts... 
 
-					still, the ability to set a threshold from within code and analyze 'rate of stall/redo' and other stuff is pretty nice to have. 
+				still, the ability to set a threshold from within code and analyze 'rate of stall/redo' and other stuff is pretty nice to have. 
 						GUESSING i get some queue and resend/redo and other 'queue' lenght thingies via PerfMon for AGs (assuming I can't find DMVs/DMFs like I'm using with mirroring).
 
 
