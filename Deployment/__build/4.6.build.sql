@@ -85,7 +85,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.6.4.16864';
+DECLARE @CurrentVersion varchar(20) = N'4.6.5.16870';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -299,6 +299,17 @@ IF OBJECT_ID('dbo.dba_DatabaseRestore_CheckPaths','P') IS NOT NULL
 	DROP PROC dbo.dba_DatabaseRestore_CheckPaths;
 GO
 
+
+-------------------------------------------------------------
+-- Potential FORMER versions of HA monitoring (pre 1.0):
+IF OBJECT_ID('dbo.dba_AvailabilityGroups_HealthCheck','P') IS NOT NULL
+	DROP PROC dbo.dba_AvailabilityGroups_HealthCheck;
+GO
+
+IF OBJECT_ID('dbo.dba_Mirroring_HealthCheck','P') IS NOT NULL
+	DROP PROC dbo.dba_Mirroring_HealthCheck;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Deploy new code:
@@ -379,6 +390,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\High Availability\compare_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\data_synchronization_checks.sql
 
 
 ---------------------------------------------------------------------------

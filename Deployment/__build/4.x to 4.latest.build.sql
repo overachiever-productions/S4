@@ -78,13 +78,13 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.6.4.16864';
+DECLARE @targetVersion varchar(20) = '4.6.5.16870';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Deployed via Upgrade Script. Improved Job-Sync Checks and Validations.', GETDATE());
+	VALUES (@targetVersion, 'Update. Job-sync, Server-sync, and data-sync checks completed.', GETDATE());
 
 END;
 
@@ -169,6 +169,9 @@ END;
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\High Availability\compare_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\High Availability\data_synchronization_checks.sql
 
 ---------------------------------------------------------------------------
 -- Display Versioning info:
