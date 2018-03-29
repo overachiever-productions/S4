@@ -142,7 +142,6 @@ AS
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
-	
 	DECLARE @synchronizingDatabases table ( 
 		server_name sysname, 
 		sync_type sysname,
@@ -167,7 +166,7 @@ AS
 	-- if there are NO mirrored/AG'd dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
 	IF @firstSyncedDB IS NOT NULL BEGIN 
 		-- Check to see if we're on the primary or not. 
-		IF (SELECT dbo.is_primary_database(@firstSyncedDB)) = 0 BEGIN 
+		IF (SELECT admindb.dbo.is_primary_database(@firstSyncedDB)) = 0 BEGIN 
 			PRINT 'Server is Not Primary. Execution Terminating (but will continue on Primary).'
 			RETURN 0; -- tests/checks are now done on the secondary
 		END
@@ -176,7 +175,7 @@ AS
 	----------------------------------------------
 	-- establish which jobs to ignore (if any):
 	CREATE TABLE #IgnoredJobs (
-		name nvarchar(200) NOT NULL
+		[name] nvarchar(200) NOT NULL
 	);
 
 	INSERT INTO #IgnoredJobs ([name])
