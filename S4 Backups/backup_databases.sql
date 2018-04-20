@@ -141,6 +141,11 @@ AS
 		RETURN -1;
 	END;
 
+	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
+		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
 	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
 		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
@@ -311,7 +316,7 @@ AS
 	IF(RIGHT(@BackupDirectory, 1) = '\')
 		SET @BackupDirectory = LEFT(@BackupDirectory, LEN(@BackupDirectory) - 1);
 
-	IF(RIGHT(@CopyToBackupDirectory, 1) = '\')
+	IF(RIGHT(ISNULL(@CopyToBackupDirectory, N''), 1) = '\')
 		SET @CopyToBackupDirectory = LEFT(@CopyToBackupDirectory, LEN(@CopyToBackupDirectory) - 1);
 
 	----------------------------------------------------------------------------------------------------------------------------------------------------------

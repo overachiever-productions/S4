@@ -105,7 +105,7 @@ AS
 
 	-- Account for named instances:
 	DECLARE @serverName sysname = '';
-	IF @@SERVICENAME != N'MSSQLSERVER'
+	IF @@SERVICENAME <> N'MSSQLSERVER'
 		SET @serverName = N' -S .\' + @@SERVICENAME;
 		
 	SET @command = REPLACE(@command, '{0}', @serverName);
@@ -113,7 +113,7 @@ AS
 	--PRINT @command;
 
 	INSERT INTO #Results (result)
-	EXEC master..xp_cmdshell @command;
+	EXEC master.sys.xp_cmdshell @command;
 
 	DELETE r
 	FROM 

@@ -1,4 +1,4 @@
---##OUTPUT: ..\Updates
+--##OUTPUT: \\Deployment\Updates
 
 /*
 

@@ -1,4 +1,4 @@
---##OUTPUT: ..\Install
+--##OUTPUT: \\Deployment\Install\
 --##NOTE: This is a build/file (instructions for compiling a full deployment/upgrade script). Check Install and Upgrades folders for output.
 
 /*
