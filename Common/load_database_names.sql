@@ -37,10 +37,10 @@ IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_database_names 
-	@Input				nvarchar(MAX),				-- [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -54,7 +54,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	IF ISNULL(@Input, N'') = N'' BEGIN;
-		RAISERROR('@Input cannot be null or empty - it must either be the specialized token [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
+		RAISERROR('@Input cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
 
@@ -63,8 +63,8 @@ AS
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY', 16, 1);
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST', 16, 1);
 		RETURN -2;
 	END
 
@@ -104,7 +104,7 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-    IF UPPER(@Input) = '[SYSTEM]' BEGIN;
+    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') BEGIN;
 	    INSERT INTO @targets ([database_name])
         SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
 
@@ -115,7 +115,7 @@ AS
 		END
     END; 
 
-    IF UPPER(@Input) = '[USER]' BEGIN; 
+    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') BEGIN; 
         IF @BackupType = 'LOG'
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
@@ -132,8 +132,6 @@ AS
 
 		IF @includeAdminDBAsSystemDatabase = 1 
 			DELETE FROM @targets WHERE [database_name] = 'admindb';
-
-
 		
     END; 
 
@@ -199,7 +197,7 @@ AS
 	END
 
 	-- Exclude any databases specified for exclusion:
-	IF ISNULL(@Exclusions, '') != '' BEGIN;
+	IF ISNULL(@Exclusions, '') <> '' BEGIN;
 	
 		DECLARE @removedDbs nvarchar(1200);
 		SET @removedDbs = N',' + @Exclusions + N',';
