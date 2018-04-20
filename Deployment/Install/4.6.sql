@@ -83,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.6.5.16870';
+DECLARE @CurrentVersion varchar(20) = N'4.6.7.16892';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -320,6 +320,41 @@ GO
 USE [admindb];
 GO
 
+
+IF OBJECT_ID('dbo.get_engine_version','FN') IS NOT NULL
+	DROP FUNCTION dbo.get_engine_version;
+GO
+
+CREATE FUNCTION dbo.get_engine_version() 
+RETURNS decimal(4,2)
+AS
+	BEGIN 
+		DECLARE @output decimal(4,2);
+		
+		DECLARE @major sysname, @minor sysname, @full sysname;
+		SELECT 
+			@major = CAST(SERVERPROPERTY('ProductMajorVersion') AS sysname), 
+			@minor = CAST(SERVERPROPERTY('ProductMinorVersion') AS sysname), 
+			@full = CAST(SERVERPROPERTY('ProductVersion') AS sysname); 
+
+		IF @major IS NULL BEGIN
+			SELECT @major = LEFT(@full, 2);
+			SELECT @minor = REPLACE((SUBSTRING(@full, LEN(@major) + 2, 2)), N'.', N'');
+		END;
+
+		SET @output = CAST((@major + N'.' + @minor) AS decimal(4,2));
+
+		RETURN @output;
+	END;
+GO
+
+
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.check_paths','P') IS NOT NULL
 	DROP PROC dbo.check_paths;
 GO
@@ -423,7 +458,7 @@ AS
 
 	-- Account for named instances:
 	DECLARE @serverName sysname = '';
-	IF @@SERVICENAME != N'MSSQLSERVER'
+	IF @@SERVICENAME <> N'MSSQLSERVER'
 		SET @serverName = N' -S .\' + @@SERVICENAME;
 		
 	SET @command = REPLACE(@command, '{0}', @serverName);
@@ -431,7 +466,7 @@ AS
 	--PRINT @command;
 
 	INSERT INTO #Results (result)
-	EXEC master..xp_cmdshell @command;
+	EXEC master.sys.xp_cmdshell @command;
 
 	DELETE r
 	FROM 
@@ -457,10 +492,10 @@ IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_database_names 
-	@Input				nvarchar(MAX),				-- [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -474,7 +509,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	IF ISNULL(@Input, N'') = N'' BEGIN;
-		RAISERROR('@Input cannot be null or empty - it must either be the specialized token [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
+		RAISERROR('@Input cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
 
@@ -483,8 +518,8 @@ AS
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY', 16, 1);
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST', 16, 1);
 		RETURN -2;
 	END
 
@@ -524,7 +559,7 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-    IF UPPER(@Input) = '[SYSTEM]' BEGIN;
+    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') BEGIN;
 	    INSERT INTO @targets ([database_name])
         SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
 
@@ -535,7 +570,7 @@ AS
 		END
     END; 
 
-    IF UPPER(@Input) = '[USER]' BEGIN; 
+    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') BEGIN; 
         IF @BackupType = 'LOG'
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
@@ -552,8 +587,6 @@ AS
 
 		IF @includeAdminDBAsSystemDatabase = 1 
 			DELETE FROM @targets WHERE [database_name] = 'admindb';
-
-
 		
     END; 
 
@@ -619,7 +652,7 @@ AS
 	END
 
 	-- Exclude any databases specified for exclusion:
-	IF ISNULL(@Exclusions, '') != '' BEGIN;
+	IF ISNULL(@Exclusions, '') <> '' BEGIN;
 	
 		DECLARE @removedDbs nvarchar(1200);
 		SET @removedDbs = N',' + @Exclusions + N',';
@@ -1381,6 +1414,11 @@ AS
 		RETURN -1;
 	END;
 
+	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
+		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
 	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
 		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
@@ -1551,7 +1589,7 @@ AS
 	IF(RIGHT(@BackupDirectory, 1) = '\')
 		SET @BackupDirectory = LEFT(@BackupDirectory, LEN(@BackupDirectory) - 1);
 
-	IF(RIGHT(@CopyToBackupDirectory, 1) = '\')
+	IF(RIGHT(ISNULL(@CopyToBackupDirectory, N''), 1) = '\')
 		SET @CopyToBackupDirectory = LEFT(@CopyToBackupDirectory, LEN(@CopyToBackupDirectory) - 1);
 
 	----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2036,6 +2074,1153 @@ NextDatabase:
 GO
 
 
+-----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.print_logins','P') IS NOT NULL
+	DROP PROC dbo.print_logins;
+GO
+
+CREATE PROC dbo.print_logins 
+	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
+	@ExcludedDatabases						nvarchar(MAX)			= NULL,
+	@DatabasePriorities						nvarchar(MAX)			= NULL,
+	@ExcludedLogins							nvarchar(MAX)			= NULL, 
+	@ExcludedUsers							nvarchar(MAX)			= NULL,
+	@ExcludeMSAndServiceLogins				bit						= 1,
+	@DisablePolicyChecks					bit						= 0,
+	@DisableExpiryChecks					bit						= 0, 
+	@ForceMasterAsDefaultDB					bit						= 0,
+	@WarnOnLoginsHomedToOtherDatabases		bit						= 0				-- warns when a) set to 1, and b) default_db is NOT master NOR the current DB where the user is defined... (for a corresponding login).
+AS
+	SET NOCOUNT ON; 
+
+	IF NULLIF(@TargetDatabases,'') IS NULL BEGIN
+		RAISERROR('Parameter @TargetDatabases cannot be NULL or empty.', 16, 1)
+		RETURN -1;
+	END; 
+
+	DECLARE @ignoredDatabases table (
+		[database_name] sysname NOT NULL
+	);
+
+	DECLARE @ingnoredLogins table (
+		[login_name] sysname NOT NULL 
+	);
+
+	DECLARE @ingoredUsers table (
+		[user_name] sysname NOT NULL
+	);
+
+	CREATE TABLE #Users (
+		[name] sysname NOT NULL, 
+		[sid] varbinary(85) NOT NULL
+	);
+
+	CREATE TABLE #Orphans (
+		name sysname NOT NULL, 
+		[sid] varbinary(85) NOT NULL
+	);
+
+	SELECT * 
+	INTO #SqlLogins
+	FROM master.sys.sql_logins;
+
+	DECLARE @name sysname;
+	DECLARE @sid varbinary(85); 
+	DECLARE @passwordHash varbinary(256);
+	DECLARE @policyChecked nvarchar(3);
+	DECLARE @expirationChecked nvarchar(3);
+	DECLARE @defaultDb sysname;
+	DECLARE @defaultLang sysname;
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @tab nchar(1) = NCHAR(9);
+	DECLARE @info nvarchar(MAX);
+
+	INSERT INTO @ignoredDatabases ([database_name])
+	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',');
+
+	INSERT INTO @ingnoredLogins ([login_name])
+	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',');
+
+	IF @ExcludeMSAndServiceLogins = 1 BEGIN
+		INSERT INTO @ingnoredLogins ([login_name])
+		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',');		
+	END;
+
+	INSERT INTO @ingoredUsers ([user_name])
+	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',');
+
+	-- remove ignored logins:
+	DELETE l 
+	FROM [#SqlLogins] l
+	INNER JOIN @ingnoredLogins i ON l.[name] LIKE i.[login_name];	
+			
+	DECLARE @currentDatabase sysname;
+	DECLARE @command nvarchar(MAX);
+	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT name, [sid] FROM [{0}].sys.database_principals WHERE type = ''S'' AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
+
+	DECLARE @dbNames nvarchar(MAX); 
+	EXEC admindb.dbo.[load_database_names]
+		@Input = @TargetDatabases,
+		@Exclusions = @ExcludedDatabases,
+		@Priorities = @DatabasePriorities,
+		@Mode = N'LIST',
+		@Output = @dbNames OUTPUT;
+
+	SET @TargetDatabases = @dbNames;
+
+	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT [result] 
+	FROM admindb.dbo.[split_string](@TargetDatabases, N',');
+
+	OPEN [db_walker];
+	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+
+		PRINT '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
+		PRINT '-- DATABASE: ' + @currentDatabase 
+		PRINT '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
+
+		DELETE FROM [#Users];
+		DELETE FROM [#Orphans];
+
+		SET @command = REPLACE(@principalsTemplate, N'{0}', @currentDatabase); 
+		INSERT INTO #Users ([name], [sid])
+		EXEC master.sys.sp_executesql @command;
+
+		-- remove any ignored users: 
+		DELETE u 
+		FROM [#Users] u 
+		INNER JOIN 
+			@ingoredUsers i ON i.[user_name] LIKE u.[name];
+
+		INSERT INTO #Orphans (name, [sid])
+		SELECT 
+			u.[name], 
+			u.[sid]
+		FROM 
+			#Users u 
+			INNER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+		WHERE
+			l.[name] IS NULL OR l.[sid] IS NULL;
+
+		SET @info = N'';
+
+		-- Report on Orphans:
+		SELECT @info = @info + 
+			N'-- ORPHAN DETECTED: ' + [name] + N' (SID: ' + CONVERT(nvarchar(MAX), [sid], 2) + N')' + @crlf
+		FROM 
+			[#Orphans]
+		ORDER BY 
+			[name]; 
+
+		IF NULLIF(@info,'') IS NOT NULL
+			PRINT @info; 
+
+		-- Report on differently-homed logins if/as directed:
+		IF @WarnOnLoginsHomedToOtherDatabases = 1 BEGIN
+			SET @info = N'';
+
+			SELECT @info = @info +
+				N'-- NOTE: Login ' + u.[name] + N' is set to use [' + l.[default_database_name] + N'] as its default database instead of [' + @currentDatabase + N'].'
+			FROM 
+				[#Users] u
+				LEFT OUTER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+			WHERE 
+				u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
+				AND u.[name] NOT IN (SELECT [name] FROM #Orphans)
+				AND l.default_database_name <> 'master'  -- master is fine... 
+				AND l.default_database_name <> @currentDatabase; 				
+				
+			IF NULLIF(@info, N'') IS NOT NULL 
+				PRINT @info;
+		END;
+
+		-- Output LOGINS:
+		SET @info = N'';
+
+		SELECT @info = @info +
+			N'IF NOT EXISTS (SELECT NULL FROM master.sys.sql_logins WHERE [name] = ''' + u.[name] + N''') BEGIN ' 
+			+ @crlf + @tab + N'CREATE LOGIN [' + u.[name] + N'] WITH '
+			+ @crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
+			+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), u.[sid], 2) + N','
+			+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+			+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+			+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
+			+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
+			+ @crlf + N'END;'
+			+ @crlf
+			+ @crlf
+		FROM 
+			#Users u
+			INNER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+		WHERE 
+			u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
+			AND u.[name] NOT IN (SELECT name FROM #Orphans);
+			
+		IF NULLIF(@info, N'') IS NOT NULL
+			PRINT @info;
+
+		PRINT @crlf;
+
+		FETCH NEXT FROM [db_walker] INTO @currentDatabase;
+	END; 
+
+	CLOSE [db_walker];
+	DEALLOCATE [db_walker];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+
+IF OBJECT_ID('dbo.script_server_logins','P') IS NOT NULL
+	DROP PROC dbo.script_server_logins;
+GO
+
+CREATE PROC dbo.script_server_logins
+	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
+	@ExcludedDatabases						nvarchar(MAX)			= NULL,
+	@DatabasePriorities						nvarchar(MAX)			= NULL,
+	@ExcludedLogins							nvarchar(MAX)			= NULL, 
+	@ExcludedUsers							nvarchar(MAX)			= NULL,
+	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
+	@CopyToPath								nvarchar(2000)			= NULL, 	
+	@ExcludeMSAndServiceLogins				bit						= 1,
+	@DisablePolicyChecks					bit						= 0,
+	@DisableExpiryChecks					bit						= 0, 
+	@ForceMasterAsDefaultDB					bit						= 0,
+	@WarnOnLoginsHomedToOtherDatabases		bit						= 0,
+	@AddServerNameToFileName				bit						= 1,
+	@OperatorName							sysname					= N'Alerts',
+	@MailProfileName						sysname					= N'General',
+	@EmailSubjectPrefix						nvarchar(50)			= N'[Login Exports] ',	 
+	@PrintOnly								bit						= 0	
+AS
+	SET NOCOUNT ON; 
+
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
+		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+	
+	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
+		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
+	DECLARE @edition sysname;
+	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
+		WHEN 2 THEN 'STANDARD'
+		WHEN 3 THEN 'ENTERPRISE'
+		WHEN 4 THEN 'EXPRESS'
+		ELSE NULL
+	END;
+
+	IF @edition = N'STANDARD' OR @edition IS NULL BEGIN
+		-- check for Web:
+		IF @@VERSION LIKE '%web%' SET @edition = 'WEB';
+	END;
+	
+	IF @edition IS NULL BEGIN
+		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
+		RETURN -2;
+	END;
+
+	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
+		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
+		RETURN -3;
+	END;
+
+	IF (@PrintOnly = 0) AND (@edition <> 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
+
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -4;
+		 END;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
+				RETURN -4;
+			END;
+		END;
+
+		-- Profile Checks:
+		DECLARE @databaseMailProfile nvarchar(255);
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+		IF @databaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -5;
+		END; 
+	END;
+
+	IF UPPER(@OutputPath) = N'[DEFAULT]' BEGIN
+		SELECT @OutputPath = dbo.load_default_path('BACKUP');
+	END;
+
+	IF NULLIF(@OutputPath, N'') IS NULL BEGIN
+		RAISERROR('@OutputPath cannot be NULL and must be a valid path.', 16, 1);
+		RETURN -6;
+	END;
+
+	IF @PrintOnly = 1 BEGIN
+		-- just process the sproc that prints outputs/details: 
+		EXEC admindb.dbo.[print_logins]
+		    @TargetDatabases = @TargetDatabases, 
+		    @ExcludedDatabases = @ExcludedDatabases, 
+		    @DatabasePriorities = @DatabasePriorities, 
+		    @ExcludedLogins = @ExcludedLogins, 
+		    @ExcludedUsers = @ExcludedUsers, 
+		    @ExcludeMSAndServiceLogins = @ExcludeMSAndServiceLogins, 
+		    @DisablePolicyChecks = @DisablePolicyChecks, 
+		    @DisableExpiryChecks = @DisableExpiryChecks, 
+		    @ForceMasterAsDefaultDB = @ForceMasterAsDefaultDB, 
+		    @WarnOnLoginsHomedToOtherDatabases = @WarnOnLoginsHomedToOtherDatabases; 
+
+		RETURN 0; 
+	END; 
+
+	-- if we're still here, we need to dynamically output/execute dbo.print_logins so that output is directed to a file (and copied if needed)
+	--		while catching and alerting on any errors or problems. 
+
+	DECLARE @errorDetails nvarchar(MAX);
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @tab nchar(1) = NCHAR(9);
+
+	-- normalize paths: 
+	IF(RIGHT(@OutputPath, 1) = '\')
+		SET @OutputPath = LEFT(@OutputPath, LEN(@OutputPath) - 1);
+
+	IF(RIGHT(ISNULL(@CopyToPath, N''), 1) = '\')
+		SET @CopyToPath = LEFT(@CopyToPath, LEN(@CopyToPath) - 1);
+
+	DECLARE @outputFileName varchar(2000);
+	SET @outputFileName = @OutputPath + '\' + CASE WHEN @AddServerNameToFileName = 1 THEN @@SERVERNAME + '_' ELSE '' END + N'Logins.sql';
+
+	DECLARE @errors table ( 
+		error_id int IDENTITY(1,1) NOT NULL, 
+		error nvarchar(MAX) 
+	);
+
+	DECLARE @xpCmdShellOutput table (
+		result_id int IDENTITY(1,1) NOT NULL, 
+		result nvarchar(MAX) NULL
+	);
+
+	-- Set up a 'translation' of the sproc call (for execution via xp_cmdshell): 
+	DECLARE @sqlCommand varchar(MAX); 
+	SET @sqlCommand = N'EXEC admindb.dbo.print_logins @TargetDatabases = N''{0}'', @ExcludedDatabases = N''{1}'', @DatabasePriorities = N''{2}'', @ExcludedLogins = N''{3}'', @ExcludedUsers = N''{4}'', '
+		+ '@ExcludeMSAndServiceLogins = {5}, @DisablePolicyChecks = {6}, @DisableExpiryChecks = {7}, @ForceMasterAsDefaultDB = {8}, @WarnOnLoginsHomedToOtherDatabases = {9};';
+
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{0}', CAST(@TargetDatabases AS varchar(MAX)));
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{1}', CAST(ISNULL(@ExcludedDatabases, N'NULL') AS varchar(MAX)));
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{2}', CAST(ISNULL(@DatabasePriorities, N'NULL') AS varchar(MAX)));
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{3}', CAST(ISNULL(@ExcludedLogins, N'NULL') AS varchar(MAX)));
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{4}', CAST(ISNULL(@ExcludedUsers, N'NULL') AS varchar(MAX)));
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{5}', CASE WHEN @ExcludeMSAndServiceLogins = 1 THEN '1' ELSE '0' END);
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{6}', CASE WHEN @DisablePolicyChecks = 1 THEN '1' ELSE '0' END);
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{7}', CASE WHEN @DisableExpiryChecks = 1 THEN '1' ELSE '0' END);
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{8}', CASE WHEN @ForceMasterAsDefaultDB = 1 THEN '1' ELSE '0' END);
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{9}', CASE WHEN @WarnOnLoginsHomedToOtherDatabases = 1 THEN '1' ELSE '0' END);
+
+	IF LEN(@sqlCommand) > 8000 BEGIN 
+		INSERT INTO @errors (error) VALUES ('Combined length of all input parameters to dbo.print_logins exceeds 8000 characters and can NOT be executed dynamically. DUMP/OUTPUT of logins can not and did NOT proceed as expected.')
+		GOTO REPORTING;
+	END; 
+
+	DECLARE @command varchar(8000) = 'sqlcmd {0} -q "{1}" -o "{2}"';
+
+	-- replace parameters: 
+	SET @command = REPLACE(@command, '{0}', CASE WHEN UPPER(@@SERVICENAME) = 'MSSQLSERVER' THEN '' ELSE ' -S .\' + UPPER(@@SERVICENAME) END);
+	SET @command = REPLACE(@command, '{1}', @sqlCommand);
+	SET @command = REPLACE(@command, '{2}', @outputFileName);
+
+	BEGIN TRY
+
+		INSERT INTO @xpCmdShellOutput ([result])
+		EXEC master.sys.[xp_cmdshell] @command;
+
+		DELETE FROM @xpCmdShellOutput WHERE [result] IS NULL; 
+
+		IF EXISTS (SELECT NULL FROM @xpCmdShellOutput) BEGIN 
+			SET @errorDetails = N'';
+			SELECT 
+				@errorDetails = @errorDetails + [result] + @crlf + @tab
+			FROM 
+				@xpCmdShellOutput 
+			ORDER BY 
+				[result_id];
+
+			SET @errorDetails = N'Unexpected problem while attempting to write logins to disk: ' + @crlf + @crlf + @tab + @errorDetails + @crlf + @crlf + N'COMMAND: [' + @command + N']';
+
+			INSERT INTO @errors (error) VALUES (@errorDetails);
+		END
+
+
+		-- Verify that the file was written as expected: 
+		SET @command = 'for %a in ("' + @outputFileName + '") do @echo %~ta';
+		DELETE FROM @xpCmdShellOutput; 
+
+		INSERT INTO @xpCmdShellOutput ([result])
+		EXEC master.sys.[xp_cmdshell] @command;
+
+		DECLARE @timeStamp datetime; 
+		SELECT @timeStamp = MAX(CAST([result] AS datetime)) FROM @xpCmdShellOutput WHERE [result] IS NOT NULL;
+
+		IF DATEDIFF(MINUTE, @timeStamp, GETDATE()) > 2 BEGIN 
+			SET @errorDetails = N'TimeStamp for [' + @outputFileName + N'] reads ' + CONVERT(nvarchar(30), @timeStamp, 120) + N'. Current Execution Time is: ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'. File writing operations did NOT throw an error, but time-stamp difference shows ' + @outputFileName + N' file was NOT written as expected.' ;
+			
+			INSERT INTO @errors (error) VALUES (@errorDetails);
+		END;
+
+		-- copy the file if/as needed:
+		IF @CopyToPath IS NOT NULL BEGIN
+
+			DELETE FROM @xpCmdShellOutput;
+			SET @command = 'COPY "{0}" "{1}\"';
+
+			SET @command = REPLACE(@command, '{0}', @outputFileName);
+			SET @command = REPLACE(@command, '{1}', @CopyToPath);
+
+			INSERT INTO @xpCmdShellOutput ([result])
+			EXEC master.sys.[xp_cmdshell] @command;
+
+			DELETE FROM @xpCmdShellOutput WHERE [result] IS NULL OR [result] LIKE '%1 file(s) copied.%'; 
+
+			IF EXISTS (SELECT NULL FROM @xpCmdShellOutput) BEGIN 
+
+				SET @errorDetails = N'';
+				SELECT 
+					@errorDetails = @errorDetails + [result] + @crlf + @tab
+				FROM 
+					@xpCmdShellOutput 
+				ORDER BY 
+					[result_id];
+
+				SET @errorDetails = N'Unexpected problem while copying file from @OutputPath to @CopyFilePath : ' + @crlf + @crlf + @tab + @errorDetails + @crlf + @crlf + N'COMMAND: [' + @command + N']';
+
+				INSERT INTO @errors (error) VALUES (@errorDetails);
+			END 
+		END;
+
+	END TRY 
+	BEGIN CATCH
+		SET @errorDetails = N'Unexpected Exception while executing command: [' + ISNULL(@command, N'#ERROR#') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+
+		INSERT INTO @errors (error) VALUES (@errorDetails);
+	END CATCH
+	
+
+REPORTING: 
+	IF EXISTS (SELECT NULL FROM @errors) BEGIN
+		DECLARE @emailErrorMessage nvarchar(MAX) = N'The following errors were encountered: ' + @crlf + @crlf;
+
+		SELECT 
+			@emailErrorMessage = @emailErrorMessage + N'- ' + [error] + @crlf
+		FROM 
+			@errors
+		ORDER BY 
+			error_id;
+
+		DECLARE @emailSubject nvarchar(2000);
+		SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
+	
+		IF @edition <> 'EXPRESS' BEGIN;
+			EXEC msdb.dbo.sp_notify_operator
+				@profile_name = @MailProfileName,
+				@name = @OperatorName,
+				@subject = @emailSubject, 
+				@body = @emailErrorMessage;
+		END;		
+
+	END;
+
+	RETURN 0;
+GO
+
+
+
+
+
+
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.print_configuration','P') IS NOT NULL
+	DROP PROC dbo.print_configuration;
+GO
+
+CREATE PROC dbo.print_configuration 
+
+AS
+	SET NOCOUNT ON;
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- meta / formatting: 
+	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab char(1) = CHAR(9);
+
+	DECLARE @sectionMarker nvarchar(2000) = N'--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
+	
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Hardware: 
+	PRINT @sectionMarker;
+	PRINT N'-- Hardware'
+	PRINT @sectionMarker;	
+
+	DECLARE @output nvarchar(MAX) = @crlf + @tab;
+	SET @output = @output + N'-- Processors' + @crlf; 
+
+	SELECT @output = @output
+		+ @tab + @tab + N'PhysicalCpuCount: ' + CAST(cpu_count/hyperthread_ratio AS sysname) + @crlf
+		+ @tab + @tab + N'HyperthreadRatio: ' + CAST([hyperthread_ratio] AS sysname) + @crlf
+		+ @tab + @tab + N'LogicalCpuCount: ' + CAST(cpu_count AS sysname) + @crlf
+	FROM 
+		sys.dm_os_sys_info;
+
+	DECLARE @cpuFamily sysname; 
+	EXEC sys.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'HARDWARE\DESCRIPTION\System\CentralProcessor\0', N'ProcessorNameString', @cpuFamily OUT;
+
+	SET @output = @output + @tab + @tab + N'ProcessorFamily: ' + @cpuFamily + @crlf;
+	PRINT @output;
+
+	SET @output = @crlf + @tab + N'-- Memory' + @crlf;
+	SELECT @output = @output + @tab + @tab + N'PhysicalMemoryOnServer: ' + CAST(physical_memory_kb/1024 AS sysname) + N'MB ' + @crlf FROM sys.[dm_os_sys_info];
+	SET @output = @output + @tab + @tab + N'MemoryNodes: ' + @crlf;
+
+	SELECT @output = @output 
+		+ @tab + @tab + @tab + N'NODE_ID: ' + CAST(node_id AS sysname) + N' - ' + node_state_desc + N' (OnlineSchedulerCount: ' + CAST(online_scheduler_count AS sysname) + N', CpuAffinity: ' + CAST(cpu_affinity_mask AS sysname) + N')' + @crlf
+	FROM sys.dm_os_nodes;
+	
+	PRINT @output;
+
+	SET @output = @crlf + @crlf + @tab + N'-- Disks' + @crlf;
+
+	DECLARE @disks table (
+		[volume_mount_point] nvarchar(256) NULL,
+		[file_system_type] nvarchar(256) NULL,
+		[logical_volume_name] nvarchar(256) NULL,
+		[total_gb] decimal(18,2) NULL,
+		[available_gb] decimal(18,2) NULL
+	);
+
+	INSERT INTO @disks ([volume_mount_point], [file_system_type], [logical_volume_name], [total_gb], [available_gb])
+	SELECT DISTINCT 
+		vs.volume_mount_point, 
+		vs.file_system_type, 
+		vs.logical_volume_name, 
+		CONVERT(DECIMAL(18,2),vs.total_bytes/1073741824.0) AS [total_gb],
+		CONVERT(DECIMAL(18,2), vs.available_bytes/1073741824.0) AS [available_gb]  
+	FROM 
+		sys.master_files AS f
+		CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.[file_id]) AS vs; 
+
+	SELECT @output = @output
+		+ @tab + @tab + volume_mount_point + @crlf + @tab + @tab + @tab + N'Label: ' + logical_volume_name + N', FileSystem: ' + file_system_type + N', TotalGB: ' + CAST([total_gb] AS sysname)  + N', AvailableGB: ' + CAST([available_gb] AS sysname) + @crlf
+	FROM 
+		@disks 
+	ORDER BY 
+		[volume_mount_point];	
+
+	PRINT @output + @crlf;
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Process Installation Details:
+	PRINT @sectionMarker;
+	PRINT N'-- Installation Details'
+	PRINT @sectionMarker;
+
+	DECLARE @properties table (
+		row_id int IDENTITY(1,1) NOT NULL, 
+		segment_name sysname, 
+		property_name sysname
+	);
+
+	INSERT INTO @properties (segment_name, property_name)
+	VALUES 
+	(N'ProductDetails', 'Edition'), 
+	(N'ProductDetails', 'ProductLevel'), 
+	(N'ProductDetails', 'ProductUpdateLevel'),
+	(N'ProductDetails', 'ProductVersion'),
+	(N'ProductDetails', 'ProductMajorVersion'),
+	(N'ProductDetails', 'ProductMinorVersion'),
+
+	(N'InstanceDetails', 'ServerName'),
+	(N'InstanceDetails', 'InstanceName'),
+	(N'InstanceDetails', 'IsClustered'),
+	(N'InstanceDetails', 'Collation'),
+
+	(N'InstanceFeatures', 'FullTextInstalled'),
+	(N'InstanceFeatures', 'IntegratedSecurityOnly'),
+	(N'InstanceFeatures', 'FilestreamConfiguredLevel'),
+	(N'InstanceFeatures', 'HadrEnabled'),
+	(N'InstanceFeatures', 'InstanceDefaultDataPath'),
+	(N'InstanceFeatures', 'InstanceDefaultLogPath'),
+	(N'InstanceFeatures', 'ErrorLogFileName'),
+	(N'InstanceFeatures', 'BuildClrVersion');
+
+	DECLARE propertyizer CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		segment_name,
+		property_name 
+	FROM 
+		@properties
+	ORDER BY 
+		row_id;
+
+	DECLARE @segment sysname; 
+	DECLARE @propertyName sysname;
+	DECLARE @propertyValue sysname;
+	DECLARE @segmentFamily sysname = N'';
+
+	DECLARE @sql nvarchar(MAX);
+
+	OPEN propertyizer; 
+
+	FETCH NEXT FROM propertyizer INTO @segment, @propertyName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		
+		SET @sql = N'SELECT @output = CAST(SERVERPROPERTY(''' + @propertyName + N''') as sysname);';
+
+		EXEC sys.sp_executesql 
+			@stmt = @sql, 
+			@params = N'@output sysname OUTPUT', 
+			@output = @propertyValue OUTPUT;
+
+		IF @segment <> @segmentFamily BEGIN 
+			SET @segmentFamily = @segment;
+
+			PRINT @crlf + @tab + N'-- ' + @segmentFamily;
+		END 
+		
+		PRINT @tab + @tab + @propertyName + ': ' + ISNULL(@propertyValue, N'NULL');
+
+		FETCH NEXT FROM propertyizer INTO @segment, @propertyName;
+	END;
+
+	CLOSE propertyizer; 
+	DEALLOCATE propertyizer;
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Output Service Details:
+	PRINT @crlf + @crlf;
+	PRINT @sectionMarker;
+	PRINT N'-- Service Details'
+	PRINT @sectionMarker;	
+
+	DECLARE @memoryType sysname = N'CONVENTIONAL';
+	IF EXISTS (SELECT NULL FROM sys.dm_os_memory_nodes WHERE [memory_node_id] <> 64 AND [locked_page_allocations_kb] <> 0) 
+		SET @memoryType = N'LOCKED';
+
+
+	PRINT @crlf + @tab + N'-- LPIM CONFIG: ' +  @crlf + @tab + @tab + @memoryType;
+
+	DECLARE @command nvarchar(MAX);
+	SET @command = N'SELECT 
+	servicename, 
+	startup_type_desc, 
+	service_account, 
+	is_clustered, 
+	cluster_nodename, 
+	[filename] [path], 
+	{0} ifi_enabled 
+FROM 
+	sys.dm_server_services;';	
+
+	IF ((SELECT admindb.dbo.get_engine_version()) >= 13.00) -- ifi added to 2016+
+		SET @command = REPLACE(@command, N'{0}', 'instant_file_initialization_enabled');
+	ELSE 
+		SET @command = REPLACE(@command, N'{0}', '''?''');
+
+
+	DECLARE @serviceDetails table (
+		[servicename] nvarchar(256) NOT NULL,
+		[startup_type_desc] nvarchar(256) NOT NULL,
+		[service_account] nvarchar(256) NOT NULL,
+		[is_clustered] nvarchar(1) NOT NULL,
+		[cluster_nodename] nvarchar(256) NULL,
+		[path] nvarchar(256) NOT NULL,
+		[ifi_enabled] nvarchar(1) NOT NULL
+	);
+	
+	INSERT INTO @serviceDetails ([servicename],  [startup_type_desc], [service_account], [is_clustered], [cluster_nodename], [path], [ifi_enabled])
+	EXEC master.sys.[sp_executesql] @command;
+
+	SET @output = @crlf + @tab;
+
+	SELECT 
+		@output = @output 
+		+ N'-- ' + [servicename] + @crlf 
+		+ @tab + @tab + N'StartupType: ' + [startup_type_desc] + @crlf 
+		+ @tab + @tab + N'ServiceAccount: ' + service_account + @crlf 
+		+ @tab + @tab + N'IsClustered: ' + [is_clustered] + CASE WHEN [cluster_nodename] IS NOT NULL THEN + N' (' + cluster_nodename + N')' ELSE N'' END + @crlf  
+		+ @tab + @tab + N'FilePath: ' + [path] + @crlf
+		+ @tab + @tab + N'IFI Enabled: ' + [ifi_enabled] + @crlf + @crlf + @tab
+
+	FROM 
+		@serviceDetails;
+
+
+	PRINT @output;
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- TODO: Cluster Details (if/as needed). 
+
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Global Trace Flags
+	DECLARE @traceFlags table (
+		[trace_flag] [int] NOT NULL,
+		[status] [bit] NOT NULL,
+		[global] [bit] NOT NULL,
+		[session] [bit] NOT NULL
+	)
+
+	INSERT INTO @traceFlags (trace_flag, [status], [global], [session])
+	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
+
+	PRINT @sectionMarker;
+	PRINT N'-- Trace Flags'
+	PRINT @sectionMarker;
+
+	SET @output = N'' + @crlf;
+
+	SELECT @output = @output 
+		+ @tab + N'-- ' + CAST([trace_flag] AS sysname) + N': ' + CASE WHEN [status] = 1 THEN 'ENABLED' ELSE 'DISABLED' END + @crlf
+	FROM 
+		@traceFlags 
+	WHERE 
+		[global] = 1;
+
+	PRINT @output + @crlf;
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Configuration Settings (outside of norms): 
+
+	DECLARE @config_defaults TABLE (
+		[name] nvarchar(35) NOT NULL,
+		default_value sql_variant NOT NULL
+	);
+
+	INSERT INTO @config_defaults (name, default_value) VALUES 
+	('access check cache bucket count',0),
+	('access check cache quota',0),
+	('Ad Hoc Distributed Queries',0),
+	('affinity I/O mask',0),
+	('affinity mask',0),
+	('affinity64 I/O mask',0),
+	('affinity64 mask',0),
+	('Agent XPs',1),
+	('allow polybase export', 0),
+	('allow updates',0),
+	('automatic soft-NUMA disabled', 0), -- default is good in best in most cases
+	('awe enabled',0),
+	('backup checksum default', 0), -- this should really be 1
+	('backup compression default',0),
+	('blocked process threshold (s)',0),
+	('c2 audit mode',0),
+	('clr enabled',0),
+	('clr strict', 1), -- 2017+ (enabled by default)
+	('common criteria compliance enabled',0),
+	('contained database authentication', 0),
+	('cost threshold for parallelism',5),
+	('cross db ownership chaining',0),
+	('cursor threshold',-1),
+	('Database Mail XPs',0),
+	('default full-text language',1033),
+	('default language',0),
+	('default trace enabled',1),
+	('disallow results from triggers',0),
+	('EKM provider enabled',0),
+	('external scripts enabled',0),  -- 2016+
+	('filestream access level',0),
+	('fill factor (%)',0),
+	('ft crawl bandwidth (max)',100),
+	('ft crawl bandwidth (min)',0),
+	('ft notify bandwidth (max)',100),
+	('ft notify bandwidth (min)',0),
+	('index create memory (KB)',0),
+	('in-doubt xact resolution',0),
+	('hadoop connectivity', 0),  -- 2016+
+	('lightweight pooling',0),
+	('locks',0),
+	('max degree of parallelism',0),
+	('max full-text crawl range',4),
+	('max server memory (MB)',2147483647),
+	('max text repl size (B)',65536),
+	('max worker threads',0),
+	('media retention',0),
+	('min memory per query (KB)',1024),
+	('min server memory (MB)',0), -- NOTE: SQL Server apparently changes this one 'in-flight' on a regular basis
+	('nested triggers',1),
+	('network packet size (B)',4096),
+	('Ole Automation Procedures',0),
+	('open objects',0),
+	('optimize for ad hoc workloads',0),
+	('PH timeout (s)',60),
+	('polybase network encryption',1),
+	('precompute rank',0),
+	('priority boost',0),
+	('query governor cost limit',0),
+	('query wait (s)',-1),
+	('recovery interval (min)',0),
+	('remote access',1),
+	('remote admin connections',0),
+	('remote data archive',0),
+	('remote login timeout (s)',10),
+	('remote proc trans',0),
+	('remote query timeout (s)',600),
+	('Replication XPs',0),
+	('scan for startup procs',0),
+	('server trigger recursion',1),
+	('set working set size',0),
+	('show advanced options',0),
+	('SMO and DMO XPs',1),
+	('SQL Mail XPs',0),
+	('transform noise words',0),
+	('two digit year cutoff',2049),
+	('user connections',0),
+	('user options',0),
+	('xp_cmdshell',0);
+
+	PRINT @sectionMarker;
+	PRINT N'-- Modified Configuration Options'
+	PRINT @sectionMarker;	
+
+	SET @output = N'';
+
+	SELECT @output = @output +
+		+ @tab + N'-- ' + c.[name] + @crlf
+		+ @tab + @tab + N'DEFAULT: ' + CAST([d].[default_value] AS sysname) + @crlf
+		+ @tab + @tab + N'VALUE_IN_USE: ' +  CAST(c.[value_in_use] AS sysname) + @crlf
+		+ @tab + @tab + N'VALUE: ' + CAST(c.[value] AS sysname) + @crlf + @crlf
+	FROM sys.configurations c 
+	INNER JOIN @config_defaults d ON c.name = d.name
+	WHERE
+		c.value <> c.value_in_use
+		OR c.value_in_use <> d.default_value;
+	
+
+	PRINT @output;
+
+
+		-- Server Log - config setttings (path and # to keep/etc.)
+
+		-- base paths - backups, data, log... 
+
+		-- count of all logins... 
+		-- list of all logins with SysAdmin membership.
+
+		-- list of all dbs, files/file-paths... and rough sizes/details. 
+
+		-- DDL triggers. 
+
+		-- endpoints. 
+
+		-- linked servers. 
+
+		-- credentials (list and detail - sans passwords/sensitive info). 
+
+		-- Resource Governor Pools/settings/etc. 
+
+		-- Audit Specs? (yes - though... guessing they're hard-ish to script?)  -- and these are things i can add-in later - i.e., 30 - 60 minutes here/there to add in audits, XEs, and the likes... 
+
+		-- XEs ? (yeah... why not). 
+
+		-- Mirrored DB configs. (partners, listeners, certs, etc.)
+
+		-- AG configs + listeners and such. 
+
+		-- replication pubs and subs
+
+		-- Mail Settings. Everything. 
+			-- profiles and which one is the default. 
+			--		list of accounts per profile (in ranked order)
+			-- accounts and all details. 
+
+
+		-- SQL Server Agent - 
+			-- config settings. 
+			-- operators
+			-- alerts
+			-- operators
+			-- JOBS... all of 'em.  (guessing I can FIND a script that'll do this for me - i.e., someone else has likely written it).
+
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.script_server_configuration','P') IS NOT NULL
+	DROP PROC dbo.script_server_configuration;
+GO
+
+CREATE PROC dbo.script_server_configuration 
+	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
+	@CopyToPath								nvarchar(2000)			= NULL, 
+	@AddServerNameToFileName				bit						= 1, 
+	@OperatorName							sysname					= N'Alerts',
+	@MailProfileName						sysname					= N'General',
+	@EmailSubjectPrefix						nvarchar(50)			= N'[Server Configuration Export] ',	 
+	@PrintOnly								bit						= 0	
+
+AS
+	SET NOCOUNT ON; 
+
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+    IF OBJECT_ID('dbo.get_engine_version', 'FN') IS NULL BEGIN
+        RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
+	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
+		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+	
+	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
+		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
+	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
+	DECLARE @edition sysname;
+	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
+		WHEN 2 THEN 'STANDARD'
+		WHEN 3 THEN 'ENTERPRISE'
+		WHEN 4 THEN 'EXPRESS'
+		ELSE NULL
+	END;
+
+	IF @edition = N'STANDARD' OR @edition IS NULL BEGIN
+		-- check for Web:
+		IF @@VERSION LIKE '%web%' SET @edition = 'WEB';
+	END;
+	
+	IF @edition IS NULL BEGIN
+		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
+		RETURN -2;
+	END;
+
+	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
+		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
+		RETURN -3;
+	END;
+
+	IF (@PrintOnly = 0) AND (@edition <> 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
+
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -4;
+		 END;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
+				RETURN -4;
+			END;
+		END;
+
+		-- Profile Checks:
+		DECLARE @databaseMailProfile nvarchar(255);
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+		IF @databaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -5;
+		END; 
+	END;
+
+	IF UPPER(@OutputPath) = N'[DEFAULT]' BEGIN
+		SELECT @OutputPath = dbo.load_default_path('BACKUP');
+	END;
+
+	IF NULLIF(@OutputPath, N'') IS NULL BEGIN
+		RAISERROR('@OutputPath cannot be NULL and must be a valid path.', 16, 1);
+		RETURN -6;
+	END;
+
+	IF @PrintOnly = 1 BEGIN 
+		
+		-- just execute the sproc that prints info to the screen: 
+		EXEC admindb.dbo.print_configuration;
+
+		RETURN 0;
+	END; 
+
+
+	-- if we're still here, we need to dynamically output/execute dbo.print_configuration so that output is directed to a file (and copied if needed)
+	--		while catching and alerting on any errors or problems. 
+	DECLARE @errorDetails nvarchar(MAX);
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @tab nchar(1) = NCHAR(9);
+
+	-- normalize paths: 
+	IF(RIGHT(@OutputPath, 1) = '\')
+		SET @OutputPath = LEFT(@OutputPath, LEN(@OutputPath) - 1);
+
+	IF(RIGHT(ISNULL(@CopyToPath, N''), 1) = '\')
+		SET @CopyToPath = LEFT(@CopyToPath, LEN(@CopyToPath) - 1);
+
+	DECLARE @outputFileName varchar(2000);
+	SET @outputFileName = @OutputPath + '\' + CASE WHEN @AddServerNameToFileName = 1 THEN @@SERVERNAME + '_' ELSE '' END + N'Server_Configuration.txt';
+
+	DECLARE @errors table ( 
+		error_id int IDENTITY(1,1) NOT NULL, 
+		error nvarchar(MAX) 
+	);
+
+	DECLARE @xpCmdShellOutput table (
+		result_id int IDENTITY(1,1) NOT NULL, 
+		result nvarchar(MAX) NULL
+	);
+
+	-- Set up a 'translation' of the sproc call (for execution via xp_cmdshell): 
+	DECLARE @sqlCommand varchar(MAX); 
+	SET @sqlCommand = N'EXEC admindb.dbo.print_configuration;';
+
+	DECLARE @command varchar(8000) = 'sqlcmd {0} -q "{1}" -o "{2}"';
+
+	-- replace parameters: 
+	SET @command = REPLACE(@command, '{0}', CASE WHEN UPPER(@@SERVICENAME) = 'MSSQLSERVER' THEN '' ELSE ' -S .\' + UPPER(@@SERVICENAME) END);
+	SET @command = REPLACE(@command, '{1}', @sqlCommand);
+	SET @command = REPLACE(@command, '{2}', @outputFileName);
+
+	BEGIN TRY
+
+		INSERT INTO @xpCmdShellOutput ([result])
+		EXEC master.sys.[xp_cmdshell] @command;
+
+		DELETE FROM @xpCmdShellOutput WHERE [result] IS NULL; 
+
+		IF EXISTS (SELECT NULL FROM @xpCmdShellOutput) BEGIN 
+			SET @errorDetails = N'';
+			SELECT 
+				@errorDetails = @errorDetails + [result] + @crlf + @tab
+			FROM 
+				@xpCmdShellOutput 
+			ORDER BY 
+				[result_id];
+
+			SET @errorDetails = N'Unexpected problem while attempting to write configuration details to disk: ' + @crlf + @crlf + @tab + @errorDetails + @crlf + @crlf + N'COMMAND: [' + @command + N']';
+
+			INSERT INTO @errors (error) VALUES (@errorDetails);
+		END
+		
+		-- Verify that the file was written as expected: 
+		SET @command = 'for %a in ("' + @outputFileName + '") do @echo %~ta';
+		DELETE FROM @xpCmdShellOutput; 
+
+		INSERT INTO @xpCmdShellOutput ([result])
+		EXEC master.sys.[xp_cmdshell] @command;
+
+		DECLARE @timeStamp datetime; 
+		SELECT @timeStamp = MAX(CAST([result] AS datetime)) FROM @xpCmdShellOutput WHERE [result] IS NOT NULL;
+
+		IF DATEDIFF(MINUTE, @timeStamp, GETDATE()) > 2 BEGIN 
+			SET @errorDetails = N'TimeStamp for [' + @outputFileName + N'] reads ' + CONVERT(nvarchar(30), @timeStamp, 120) + N'. Current Execution Time is: ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'. File writing operations did NOT throw an error, but time-stamp difference shows ' + @outputFileName + N' file was NOT written as expected.' ;
+			
+			INSERT INTO @errors (error) VALUES (@errorDetails);
+		END;
+
+		-- copy the file if/as needed:
+		IF @CopyToPath IS NOT NULL BEGIN
+
+			DELETE FROM @xpCmdShellOutput;
+			SET @command = 'COPY "{0}" "{1}\"';
+
+			SET @command = REPLACE(@command, '{0}', @outputFileName);
+			SET @command = REPLACE(@command, '{1}', @CopyToPath);
+
+			INSERT INTO @xpCmdShellOutput ([result])
+			EXEC master.sys.[xp_cmdshell] @command;
+
+			DELETE FROM @xpCmdShellOutput WHERE [result] IS NULL OR [result] LIKE '%1 file(s) copied.%'; 
+
+			IF EXISTS (SELECT NULL FROM @xpCmdShellOutput) BEGIN 
+
+				SET @errorDetails = N'';
+				SELECT 
+					@errorDetails = @errorDetails + [result] + @crlf + @tab
+				FROM 
+					@xpCmdShellOutput 
+				ORDER BY 
+					[result_id];
+
+				SET @errorDetails = N'Unexpected problem while copying file from @OutputPath to @CopyFilePath : ' + @crlf + @crlf + @tab + @errorDetails + @crlf + @crlf + N'COMMAND: [' + @command + N']';
+
+				INSERT INTO @errors (error) VALUES (@errorDetails);
+			END 
+		END;
+
+	END TRY 
+	BEGIN CATCH
+		SET @errorDetails = N'Unexpected Exception while executing command: [' + ISNULL(@command, N'#ERROR#') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+
+		INSERT INTO @errors (error) VALUES (@errorDetails);
+	END CATCH
+
+REPORTING: 
+	IF EXISTS (SELECT NULL FROM @errors) BEGIN
+		DECLARE @emailErrorMessage nvarchar(MAX) = N'The following errors were encountered: ' + @crlf + @crlf;
+
+		SELECT 
+			@emailErrorMessage = @emailErrorMessage + N'- ' + [error] + @crlf
+		FROM 
+			@errors
+		ORDER BY 
+			error_id;
+
+		DECLARE @emailSubject nvarchar(2000);
+		SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
+	
+		IF @edition <> 'EXPRESS' BEGIN;
+			EXEC msdb.dbo.sp_notify_operator
+				@profile_name = @MailProfileName,
+				@name = @OperatorName,
+				@subject = @emailSubject, 
+				@body = @emailErrorMessage;
+		END;		
+
+	END;
+
+	RETURN 0;
+GO
+
+
 
 ---------------------------------------------------------------------------
 -- Restores:
@@ -2079,6 +3264,11 @@ AS
         RETURN -1;
     END;
     
+    IF OBJECT_ID('dbo.get_engine_version', 'FN') IS NULL BEGIN
+        RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
     IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
         RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
         RETURN -1;
@@ -2328,7 +3518,7 @@ AS
     );
 
     -- SQL Server 2016 adds SnapshotURL of nvarchar(360) for azure stuff:
-    IF EXISTS (SELECT NULL FROM (SELECT SERVERPROPERTY('ProductMajorVersion') AS [ProductMajorVersion]) x WHERE x.ProductMajorVersion = '13') BEGIN;
+	IF (SELECT admindb.dbo.get_engine_version()) >= 13.0 BEGIN
         ALTER TABLE #FileList ADD SnapshotURL nvarchar(360) NULL;
     END
 
