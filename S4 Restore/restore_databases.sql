@@ -18,6 +18,7 @@
         - Requires dbo.restore_log - to log information about restore operations AND failures. 
         - Requires dbo.load_database_names - sproc used to 'parse' or determine which dbs to target based upon inputs.
         - Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
+		- Requires dbo.get_engine_version() - to validate version-level features/capabilities.
         - Requires dbo.execute_uncatchable_command - to address problems with TRY/CATCH error handling within SQL Server. 
         - Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
         - Requires a configured Database Mail Profile + SQL Server Agent Operator. 
@@ -99,6 +100,11 @@ AS
         RETURN -1;
     END;
     
+    IF OBJECT_ID('dbo.get_engine_version', 'FN') IS NULL BEGIN
+        RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
     IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
         RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
         RETURN -1;
@@ -348,7 +354,7 @@ AS
     );
 
     -- SQL Server 2016 adds SnapshotURL of nvarchar(360) for azure stuff:
-    IF EXISTS (SELECT NULL FROM (SELECT SERVERPROPERTY('ProductMajorVersion') AS [ProductMajorVersion]) x WHERE x.ProductMajorVersion = '13') BEGIN;
+	IF (SELECT admindb.dbo.get_engine_version()) >= 13.0 BEGIN
         ALTER TABLE #FileList ADD SnapshotURL nvarchar(360) NULL;
     END
 
