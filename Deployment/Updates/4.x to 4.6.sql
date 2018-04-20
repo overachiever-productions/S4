@@ -83,7 +83,7 @@ IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targe
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Update. Job-sync, Server-sync, and data-sync checks completed.', GETDATE());
+	VALUES (@targetVersion, 'Update. Added ability to script logins and server configs.', GETDATE());
 
 END;
 
