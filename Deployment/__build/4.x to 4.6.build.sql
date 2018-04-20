@@ -78,7 +78,7 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.6.5.16870';
+DECLARE @targetVersion varchar(20) = '4.6.7.16892';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
@@ -93,9 +93,13 @@ END;
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Deploy latest code / code updates:
 
+
 ---------------------------------------------------------------------------
 -- Common Code:
 ---------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: Common\get_engine_version.sql
 
 -----------------------------------
 --##INCLUDE: Common\check_paths.sql
@@ -122,6 +126,18 @@ END;
 
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\print_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\script_server_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\print_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\script_server_configuration.sql
 
 
 ---------------------------------------------------------------------------
@@ -172,6 +188,7 @@ END;
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\High Availability\data_synchronization_checks.sql
+
 
 ---------------------------------------------------------------------------
 -- Display Versioning info:

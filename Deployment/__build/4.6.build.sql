@@ -85,7 +85,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.6.5.16870';
+DECLARE @CurrentVersion varchar(20) = N'4.6.7.16892';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -319,6 +319,9 @@ GO
 ---------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: Common\get_engine_version.sql
+
+-----------------------------------
 --##INCLUDE: Common\check_paths.sql
 
 -----------------------------------
@@ -343,6 +346,18 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\print_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\script_server_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\print_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Configuration\script_server_configuration.sql
 
 
 ---------------------------------------------------------------------------
