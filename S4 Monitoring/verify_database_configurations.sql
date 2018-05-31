@@ -129,7 +129,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		d.[name] [database],
-		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' [issue]
+		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name], '[]') + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
 	FROM 
 		sys.databases d
 		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
