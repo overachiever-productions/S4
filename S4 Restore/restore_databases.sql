@@ -1,7 +1,5 @@
 
 
--- note: variant version of this in ~~ file... 
-
 /*
     WARNINGS:
         - Used INCORRECTLY, this sproc CAN drop/overwrite production databases. 
@@ -81,6 +79,7 @@ CREATE PROC dbo.restore_databases
     @RestoredDbNamePattern			nvarchar(40) = N'{0}_test',
     @AllowReplace					nchar(7) = NULL,		-- NULL or the exact term: N'REPLACE'...
     @SkipLogBackups					bit = 0,
+	@ExecuteRecovery				bit = 1,
     @CheckConsistency				bit = 1,
     @DropDatabasesAfterRestore		bit = 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int = 1,				-- number of failed DROP operations we'll tolerate before early termination.
@@ -151,12 +150,17 @@ AS
         END; 
     END;
 
+	IF @ExecuteRecovery = 0 AND @DropDatabasesAfterRestore = 1 BEGIN
+		RAISERROR(N'@ExecuteRecovery cannot be set to false (0) when @DropDatabasesAfterRestore is set to true (1).', 16, 1);
+		RETURN -5;
+	END;
+
     IF @MaxNumberOfFailedDrops <= 0 BEGIN
         RAISERROR('@MaxNumberOfFailedDrops must be set to a value of 1 or higher.', 16, 1);
         RETURN -6;
     END;
 
-    IF NULLIF(@AllowReplace, '') IS NOT NULL AND UPPER(@AllowReplace) != N'REPLACE' BEGIN
+    IF NULLIF(@AllowReplace, '') IS NOT NULL AND UPPER(@AllowReplace) <> N'REPLACE' BEGIN
         RAISERROR('The @AllowReplace switch must be set to NULL or the exact term N''REPLACE''.', 16, 1);
         RETURN -4;
     END;
@@ -174,7 +178,7 @@ AS
     IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
         SET @DatabasesToExclude = NULL;
 
-    IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) != N'[READ_FROM_FILESYSTEM]') BEGIN
+    IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) <> N'[READ_FROM_FILESYSTEM]') BEGIN
         RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the [READ_FROM_FILESYSTEM] token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
         RETURN -20;
     END;
@@ -192,8 +196,8 @@ AS
     DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
     DECLARE @tab char(1) = CHAR(9);
     DECLARE @executionID uniqueidentifier = NEWID();
-    DECLARE @restoreSucceeded bit;
-    DECLARE @failedDrops int = 0;
+    DECLARE @executeDropAllowed bit;
+    DECLARE @failedDropCount int = 0;
 
     -- Allow for default paths:
     IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
@@ -210,22 +214,22 @@ AS
 
     -- Verify Paths: 
     EXEC dbo.check_paths @BackupsRootPath, @isValid OUTPUT;
-    IF @isValid = 0 BEGIN;
+    IF @isValid = 0 BEGIN
         SET @earlyTermination = N'@BackupsRootPath (' + @BackupsRootPath + N') is invalid - restore operations terminated prematurely.';
         GOTO FINALIZE;
-    END
+    END;
     
     EXEC dbo.check_paths @RestoredRootDataPath, @isValid OUTPUT;
-    IF @isValid = 0 BEGIN;
+    IF @isValid = 0 BEGIN
         SET @earlyTermination = N'@RestoredRootDataPath (' + @RestoredRootDataPath + N') is invalid - restore operations terminated prematurely.';
         GOTO FINALIZE;
-    END
+    END;
 
     EXEC dbo.check_paths @RestoredRootLogPath, @isValid OUTPUT;
-    IF @isValid = 0 BEGIN;
+    IF @isValid = 0 BEGIN
         SET @earlyTermination = N'@RestoredRootLogPath (' + @RestoredRootLogPath + N') is invalid - restore operations terminated prematurely.';
         GOTO FINALIZE;
-    END
+    END;
 
     -----------------------------------------------------------------------------
     -- Construct list of databases to restore:
@@ -246,10 +250,10 @@ AS
     INSERT INTO @dbsToRestore ([database_name])
     SELECT [result] FROM dbo.split_string(@serialized, N',');
 
-    IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN;
+    IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN
         RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
         RETURN -20;
-    END
+    END;
 
     IF @PrintOnly = 1 BEGIN;
         PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
@@ -327,7 +331,7 @@ AS
                 RefSlot int NULL,
                 Allocation smallint NULL
         );
-    END
+    END;
 
     CREATE TABLE #FileList (
         LogicalName nvarchar(128) NOT NULL, 
@@ -356,26 +360,26 @@ AS
     -- SQL Server 2016 adds SnapshotURL of nvarchar(360) for azure stuff:
 	IF (SELECT admindb.dbo.get_engine_version()) >= 13.0 BEGIN
         ALTER TABLE #FileList ADD SnapshotURL nvarchar(360) NULL;
-    END
+    END;
 
     DECLARE @command nvarchar(2000);
 
     OPEN restorer;
 
     FETCH NEXT FROM restorer INTO @databaseToRestore;
-    WHILE @@FETCH_STATUS = 0 BEGIN;
+    WHILE @@FETCH_STATUS = 0 BEGIN
         
         SET @statusDetail = NULL; -- reset every 'loop' through... 
         SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
         IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern != '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
             SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
-        IF @PrintOnly = 0 BEGIN;
+        IF @PrintOnly = 0 BEGIN
             INSERT INTO dbo.restore_log (execution_id, [database], restored_as, restore_start, error_details)
             VALUES (@executionID, @databaseToRestore, @restoredName, GETUTCDATE(), '#UNKNOWN ERROR#');
 
             SELECT @restoreLogId = SCOPE_IDENTITY();
-        END
+        END;
 
         -- Verify Path to Source db's backups:
         SET @sourcePath = @BackupsRootPath + N'\' + @databaseToRestore;
@@ -383,36 +387,36 @@ AS
         IF @isValid = 0 BEGIN 
             SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
             GOTO NextDatabase;
-        END
+        END;
 
         -- Determine how to respond to an attempt to overwrite an existing database (i.e., is it explicitly confirmed or... should we throw an exception).
-        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN;
+        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
             
             -- if this is a 'failure' from a previous execution, drop the DB and move on, otherwise, make sure we are explicitly configured to REPLACE. 
-            IF EXISTS (SELECT NULL FROM @NonDroppedFromPreviousExecution WHERE [Database] = @databaseToRestore AND RestoredAs = @restoredName) BEGIN;
+            IF EXISTS (SELECT NULL FROM @NonDroppedFromPreviousExecution WHERE [Database] = @databaseToRestore AND RestoredAs = @restoredName) BEGIN
                 SET @command = N'DROP DATABASE [' + @restoredName + N'];';
                 
                 EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
                 SET @statusDetail = @outcome;
 
-                IF @statusDetail IS NOT NULL BEGIN;
+                IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
-                END
-              END
-            ELSE BEGIN;
-                IF ISNULL(@AllowReplace, '') != N'REPLACE' BEGIN;
+                END;
+              END;
+            ELSE BEGIN
+                IF ISNULL(@AllowReplace, '') <> N'REPLACE' BEGIN
                     SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
                     GOTO NextDatabase;
-                END
-            END
-        END
+                END;
+            END;
+        END;
 
         -- Enumerate the files and ensure we've got backups:
         SET @command = N'dir "' + @sourcePath + N'\" /B /A-D /OD';
 
-        IF @PrintOnly = 1 BEGIN;
+        IF @PrintOnly = 1 BEGIN
             PRINT N'-- xp_cmdshell ''' + @command + ''';';
-        END
+        END;
         
         INSERT INTO @temp ([output])
         EXEC master..xp_cmdshell @command;
@@ -425,23 +429,23 @@ AS
                 SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] found in "' + @sourcePath + N'".';
             
             GOTO NextDatabase;	
-        END
+        END;
 
         -- Find the most recent FULL to 'seed' the restore;
         DELETE FROM @temp WHERE id < (SELECT MAX(id) FROM @temp WHERE [output] LIKE 'FULL%');
         SELECT @pathToDatabaseBackup = @sourcePath + N'\' + [output] FROM @temp WHERE [output] LIKE 'FULL%';
 
-        IF @PrintOnly = 1 BEGIN;
+        IF @PrintOnly = 1 BEGIN
             PRINT N'-- FULL Backup found at: ' + @pathToDatabaseBackup;
-        END
+        END;
 
         -- Query file destinations:
         SET @move = N'';
         SET @command = N'RESTORE FILELISTONLY FROM DISK = N''' + @pathToDatabaseBackup + ''';';
 
-        IF @PrintOnly = 1 BEGIN;
+        IF @PrintOnly = 1 BEGIN
             PRINT N'-- ' + @command;
-        END
+        END;
 
         BEGIN TRY 
             DELETE FROM #FileList;
@@ -452,14 +456,13 @@ AS
             SELECT @statusDetail = N'Unexpected Error Restoring FileList: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
             
             GOTO NextDatabase;
-        END CATCH
+        END CATCH;
     
-        -- Make sure we got some files (i.e. RESTORE FILELIST doesn't always throw exceptions if the path you send it sucks:
-        IF ((SELECT COUNT(*) FROM #FileList) < 2) BEGIN;
+        -- Make sure we got some files (i.e. RESTORE FILELIST doesn't always throw exceptions if the path you send it sucks):
+        IF ((SELECT COUNT(*) FROM #FileList) < 2) BEGIN
             SET @statusDetail = N'The backup located at "' + @pathToDatabaseBackup + N'" is invalid, corrupt, or does not contain a viable FULL backup.';
-            
             GOTO NextDatabase;
-        END 
+        END ;
         
         -- Map File Destinations:
         DECLARE @LogicalFileName sysname, @FileId bigint, @Type char(1);
@@ -487,7 +490,7 @@ AS
             SET @move = @move + N''', '
 
             FETCH NEXT FROM mover INTO @LogicalFileName, @FileId, @Type;
-        END
+        END;
 
         CLOSE mover;
         DEALLOCATE mover;
@@ -495,22 +498,22 @@ AS
         SET @move = LEFT(@move, LEN(@move) - 1); -- remove the trailing ", "... 
 
         -- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
-        IF @AllowReplace = N'REPLACE' BEGIN;
+        IF @AllowReplace = N'REPLACE' BEGIN
             
             -- only attempt to set to single-user mode if ONLINE (i.e., if somehow stuck in restoring... don't bother, just replace):
-            IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN;
+            IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
                 BEGIN TRY 
                     SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
 
-                    IF @PrintOnly = 1 BEGIN;
+                    IF @PrintOnly = 1 BEGIN
                         PRINT @command;
-                      END
+                      END;
                     ELSE BEGIN
                         SET @outcome = NULL;
                         EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
                         SET @statusDetail = @outcome;
-                    END
+                    END;
 
                     -- give things just a second to 'die down':
                     WAITFOR DELAY '00:00:02';
@@ -522,8 +525,8 @@ AS
 
                 IF @statusDetail IS NOT NULL
                 GOTO NextDatabase;
-            END
-        END
+            END;
+        END;
 
         -- Set up the Restore Command and Execute:
         SET @command = REPLACE(@fullRestoreTemplate, N'{0}', @restoredName);
@@ -537,26 +540,26 @@ AS
             SET @command = REPLACE(@command, N'{replace}',  N'');
 
         BEGIN TRY 
-            IF @PrintOnly = 1 BEGIN;
+            IF @PrintOnly = 1 BEGIN
                 PRINT @command;
-              END
-            ELSE BEGIN;
+              END;
+            ELSE BEGIN
                 SET @outcome = NULL;
                 EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
                 SET @statusDetail = @outcome;
-            END
+            END;
         END TRY 
         BEGIN CATCH
             SELECT @statusDetail = N'Unexpected Exception while executing FULL Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();			
         END CATCH
 
-        IF @statusDetail IS NOT NULL BEGIN;
+        IF @statusDetail IS NOT NULL BEGIN
             GOTO NextDatabase;
-        END
+        END;
 
         -- Restore any DIFF backups as needed:
-        IF EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE 'DIFF%') BEGIN;
+        IF EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE 'DIFF%') BEGIN
             DELETE FROM @temp WHERE id < (SELECT MAX(id) FROM @temp WHERE [output] LIKE N'DIFF%');
 
             SELECT @pathToDatabaseBackup = @sourcePath + N'\' + [output] FROM @temp WHERE [output] LIKE 'DIFF%';
@@ -564,46 +567,46 @@ AS
             SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
 
             BEGIN TRY
-                IF @PrintOnly = 1 BEGIN;
+                IF @PrintOnly = 1 BEGIN
                     PRINT @command;
-                  END
-                ELSE BEGIN;
+                  END;
+                ELSE BEGIN
                     SET @outcome = NULL;
                     EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
                     SET @statusDetail = @outcome;
-                END
+                END;
             END TRY
             BEGIN CATCH
                 SELECT @statusDetail = N'Unexpected Exception while executing DIFF Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
             END CATCH
 
-            IF @statusDetail IS NOT NULL BEGIN;
+            IF @statusDetail IS NOT NULL BEGIN
                 GOTO NextDatabase;
-            END
-        END
+            END;
+        END;
 
         -- Restore any LOG backups if specified and if present:
-        IF @SkipLogBackups = 0 BEGIN;
+        IF @SkipLogBackups = 0 BEGIN
             DECLARE logger CURSOR LOCAL FAST_FORWARD FOR 
             SELECT [output] FROM @temp WHERE [output] LIKE 'LOG%' ORDER BY id ASC;			
 
             OPEN logger;
             FETCH NEXT FROM logger INTO @pathToDatabaseBackup;
 
-            WHILE @@FETCH_STATUS = 0 BEGIN;
+            WHILE @@FETCH_STATUS = 0 BEGIN
                 SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @sourcePath + N'\' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
                 
                 BEGIN TRY 
-                    IF @PrintOnly = 1 BEGIN;
+                    IF @PrintOnly = 1 BEGIN
                         PRINT @command;
-                      END
-                    ELSE BEGIN;
+                      END;
+                    ELSE BEGIN
                         SET @outcome = NULL;
                         EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
                         SET @statusDetail = @outcome;
-                    END
+                    END;
                 END TRY
                 BEGIN CATCH
                     SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
@@ -612,45 +615,47 @@ AS
                     IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN;
                         CLOSE logger;
                         DEALLOCATE logger;
-                    END
+                    END;
                     
                 END CATCH
 
-                IF @statusDetail IS NOT NULL BEGIN;
+                IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
-                END
+                END;
 
                 FETCH NEXT FROM logger INTO @pathToDatabaseBackup;
-            END
+            END;
 
             CLOSE logger;
             DEALLOCATE logger;
-        END
+        END;
 
         -- Recover the database:
-        SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' WITH RECOVERY;';
+		IF @ExecuteRecovery = 1 BEGIN
+			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' WITH RECOVERY;';
 
-        BEGIN TRY
-            IF @PrintOnly = 1 BEGIN;
-                PRINT @command;
-              END
-            ELSE BEGIN
-                SET @outcome = NULL;
-                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+			BEGIN TRY
+				IF @PrintOnly = 1 BEGIN
+					PRINT @command;
+				  END;
+				ELSE BEGIN
+					SET @outcome = NULL;
+					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
 
-                SET @statusDetail = @outcome;
-            END;
-        END TRY	
-        BEGIN CATCH
-            SELECT @statusDetail = N'Unexpected Exception while attempting to RECOVER database [' + @restoredName + N'. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-        END CATCH
+					SET @statusDetail = @outcome;
+				END;
+			END TRY	
+			BEGIN CATCH
+				SELECT @statusDetail = N'Unexpected Exception while attempting to RECOVER database [' + @restoredName + N'. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+			END CATCH
 
-        IF @statusDetail IS NOT NULL BEGIN;
-            GOTO NextDatabase;
-        END
+			IF @statusDetail IS NOT NULL BEGIN
+				GOTO NextDatabase;
+			END;
+		END;
 
         -- If we've made it here, then we need to update logging/meta-data:
-        IF @PrintOnly = 0 BEGIN;
+        IF @PrintOnly = 0 BEGIN
             UPDATE dbo.restore_log 
             SET 
                 restore_succeeded = 1, 
@@ -658,10 +663,10 @@ AS
                 error_details = NULL
             WHERE 
                 restore_test_id = @restoreLogId;
-        END
+        END;
 
         -- Run consistency checks if specified:
-        IF @CheckConsistency = 1 BEGIN;
+        IF @CheckConsistency = 1 BEGIN
 
             SET @command = N'DBCC CHECKDB([' + @restoredName + N']) WITH NO_INFOMSGS, ALL_ERRORMSGS, TABLERESULTS;'; -- outputting data for review/analysis. 
 
@@ -673,7 +678,7 @@ AS
                     error_details = '#UNKNOWN ERROR CHECKING CONSISTENCY#'
                 WHERE
                     restore_test_id = @restoreLogId;
-            END
+            END;
 
             BEGIN TRY 
                 IF @PrintOnly = 1 
@@ -683,7 +688,7 @@ AS
                     INSERT INTO ##DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
                     EXEC sp_executesql @command; 
 
-                    IF EXISTS (SELECT NULL FROM ##DBCC_OUTPUT) BEGIN; -- consistency errors: 
+                    IF EXISTS (SELECT NULL FROM ##DBCC_OUTPUT) BEGIN -- consistency errors: 
                         SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName, N'[]') + N'. Details: ' + @crlf;
                         SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM ##DBCC_OUTPUT ORDER BY RowID;
 
@@ -695,8 +700,8 @@ AS
                         WHERE 
                             restore_test_id = @restoreLogId;
 
-                      END
-                    ELSE BEGIN; -- there were NO errors:
+                      END;
+                    ELSE BEGIN -- there were NO errors:
                         UPDATE dbo.restore_log
                         SET
                             consistency_end = GETUTCDATE(),
@@ -705,8 +710,8 @@ AS
                         WHERE 
                             restore_test_id = @restoreLogId;
 
-                    END
-                END
+                    END;
+                END;
 
             END TRY	
             BEGIN CATCH
@@ -714,38 +719,36 @@ AS
                 GOTO NextDatabase;
             END CATCH
 
-        END
+        END;
 
         -- Drop the database if specified and if all SAFE drop precautions apply:
-        IF @DropDatabasesAfterRestore = 1 BEGIN;
+        IF @DropDatabasesAfterRestore = 1 BEGIN
             
             -- Make sure we can/will ONLY restore databases that we've restored in this session. 
-            SELECT @restoreSucceeded = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
+            SELECT @executeDropAllowed = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
 
             IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
-                SET @restoreSucceeded = 1; 
+                SET @executeDropAllowed = 1; 
             
-            IF ISNULL(@restoreSucceeded, 0) = 0 BEGIN 
-                -- We can't drop this database.
-                SET @failedDrops = @failedDrops + 1;
+            IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
 
                 UPDATE dbo.restore_log
                 SET 
                     [dropped] = 'ERROR', 
-                    error_details = error_details + @crlf + '(NOTE: DROP was configured but SKIPPED due to ERROR state.)'
+                    error_details = error_details + @crlf + N'(NOTE: Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.)'
                 WHERE 
                     restore_test_id = @restoreLogId;
 
-                GOTO NextDatabase;
-            END
+                SET @executeDropAllowed = 1; 
+            END;
 
-            IF @restoreSucceeded = 1 BEGIN; -- this is a db we restored in this 'session' - so we can drop it:
+            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
                 SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
 
                 BEGIN TRY 
                     IF @PrintOnly = 1 
                         PRINT @command;
-                    ELSE BEGIN;
+                    ELSE BEGIN
                         UPDATE dbo.restore_log 
                         SET 
                             [dropped] = N'ATTEMPTED'
@@ -754,24 +757,22 @@ AS
 
                         EXEC sys.sp_executesql @command;
 
-                        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN;
-                            SET @failedDrops = @failedDrops;
+                        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
                             SET @statusDetail = N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
 
                             GOTO NextDatabase;
-                          END
-                        ELSE 
+                          END;
+                        ELSE -- happy / expected outcome:
                             UPDATE dbo.restore_log
                             SET 
                                 dropped = 'DROPPED'
                             WHERE 
                                 restore_test_id = @restoreLogId;
-                    END
+                    END;
 
                 END TRY 
                 BEGIN CATCH
                     SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-                    SET @failedDrops = @failedDrops + 1;
 
                     UPDATE dbo.restore_log
                     SET 
@@ -781,16 +782,16 @@ AS
 
                     GOTO NextDatabase;
                 END CATCH
-            END
+            END;
 
-          END
-        ELSE BEGIN;
+          END;
+        ELSE BEGIN
             UPDATE dbo.restore_log 
             SET 
-                dropped = 'NOT-DROPPED'
+                dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
             WHERE
                 restore_test_id = @restoreLogId;
-        END
+        END;
 
         PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
 
@@ -800,29 +801,33 @@ NextDatabase:
         DELETE FROM @temp; -- always make sure to clear the list of files handled for the previous database... 
 
         -- Record any status details as needed:
-        IF @statusDetail IS NOT NULL BEGIN;
+        IF @statusDetail IS NOT NULL BEGIN
 
-            IF @PrintOnly = 1 BEGIN;
+            IF @PrintOnly = 1 BEGIN
                 PRINT N'ERROR: ' + @statusDetail;
-              END
-            ELSE BEGIN;
+              END;
+            ELSE BEGIN
                 UPDATE dbo.restore_log
                 SET 
                     restore_end = GETUTCDATE(),
                     error_details = @statusDetail
                 WHERE 
                     restore_test_id = @restoreLogId;
-            END
+            END;
 
             PRINT N'-- Operations for database [' + @restoredName + N'] failed.' + @crlf + @crlf;
-        END
+        END;
 
         -- Check-up on total number of 'failed drops':
-        IF @failedDrops >= @MaxNumberOfFailedDrops BEGIN;
-            -- we're done - no more processing (don't want to risk running out of space with too many restore operations.
-            SET @earlyTermination = N'Max number of databases that could NOT be dropped after restore/testing was reached. Early terminatation forced to reduce risk of causing storage problems.';
-            GOTO FINALIZE;
-        END
+		IF @DropDatabasesAfterRestore = 1 BEGIN 
+			SELECT @failedDropCount = COUNT(*) FROM admindb.dbo.[restore_log] WHERE [execution_id] = @executionID AND [dropped] IN ('ATTEMPTED', 'ERROR');
+
+			IF @failedDropCount >= @MaxNumberOfFailedDrops BEGIN 
+				-- we're done - no more processing (don't want to risk running out of space with too many restore operations.
+				SET @earlyTermination = N'Max number of databases that could NOT be dropped after restore/testing was reached. Early terminatation forced to reduce risk of causing storage problems.';
+				GOTO FINALIZE;
+			END;
+		END;
 
         FETCH NEXT FROM restorer INTO @databaseToRestore;
     END
@@ -831,23 +836,23 @@ NextDatabase:
 FINALIZE:
 
     -- close/deallocate any cursors left open:
-    IF (SELECT CURSOR_STATUS('local','restorer')) > -1 BEGIN;
+    IF (SELECT CURSOR_STATUS('local','restorer')) > -1 BEGIN
         CLOSE restorer;
         DEALLOCATE restorer;
-    END
+    END;
 
-    IF (SELECT CURSOR_STATUS('local','mover')) > -1 BEGIN;
+    IF (SELECT CURSOR_STATUS('local','mover')) > -1 BEGIN
         CLOSE mover;
         DEALLOCATE mover;
-    END
+    END;
 
-    IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN;
+    IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN
         CLOSE logger;
         DEALLOCATE logger;
-    END
+    END;
 
     -- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
-    IF (NULLIF(@earlyTermination,'') IS NOT NULL) OR (EXISTS (SELECT NULL FROM dbo.restore_log WHERE execution_id = @executionID AND error_details IS NOT NULL)) BEGIN;
+    IF (NULLIF(@earlyTermination,'') IS NOT NULL) OR (EXISTS (SELECT NULL FROM dbo.restore_log WHERE execution_id = @executionID AND error_details IS NOT NULL)) BEGIN
 
         SET @emailErrorMessage = N'The following Errors were encountered: ' + @crlf;
 
@@ -861,16 +866,16 @@ FINALIZE:
             restore_test_id;
 
         -- notify too that we stopped execution due to early termination:
-        IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN;
+        IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN
             SET @emailErrorMessage = @emailErrorMessage + @tab + N'- ' + @earlyTermination;
-        END
-    END
+        END;
+    END;
     
-    IF @emailErrorMessage IS NOT NULL BEGIN;
+    IF @emailErrorMessage IS NOT NULL BEGIN
 
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
-        ELSE BEGIN;
+        ELSE BEGIN
             SET @emailSubject = @emailSubjectPrefix + N' - ERROR';
 
             EXEC msdb..sp_notify_operator
@@ -878,8 +883,8 @@ FINALIZE:
                 @name = @OperatorName,
                 @subject = @emailSubject, 
                 @body = @emailErrorMessage;
-        END
-    END 
+        END;
+    END;
 
     RETURN 0;
 GO
