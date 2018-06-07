@@ -15,6 +15,8 @@
     DEPENDENCIES:
         - Requires dbo.restore_log - to log information about restore operations AND failures. 
         - Requires dbo.load_database_names - sproc used to 'parse' or determine which dbs to target based upon inputs.
+		- Requires dbo.load_backup_files - sproc used to extract (in re-usable form) lists of available backup files at a specified path.
+		- Requires dbo.load_header_details - sproc used to pull meta-data about backups from backup files. 
         - Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
 		- Requires dbo.get_engine_version() - to validate version-level features/capabilities.
         - Requires dbo.execute_uncatchable_command - to address problems with TRY/CATCH error handling within SQL Server. 
@@ -71,22 +73,22 @@ GO
 
 CREATE PROC dbo.restore_databases 
     @DatabasesToRestore				nvarchar(MAX),
-    @DatabasesToExclude				nvarchar(MAX) = NULL,
-    @Priorities						nvarchar(MAX) = NULL,
-    @BackupsRootPath				nvarchar(MAX) = N'[DEFAULT]',
-    @RestoredRootDataPath			nvarchar(MAX) = N'[DEFAULT]',
-    @RestoredRootLogPath			nvarchar(MAX) = N'[DEFAULT]',
-    @RestoredDbNamePattern			nvarchar(40) = N'{0}_test',
-    @AllowReplace					nchar(7) = NULL,		-- NULL or the exact term: N'REPLACE'...
-    @SkipLogBackups					bit = 0,
-	@ExecuteRecovery				bit = 1,
-    @CheckConsistency				bit = 1,
-    @DropDatabasesAfterRestore		bit = 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
-    @MaxNumberOfFailedDrops			int = 1,				-- number of failed DROP operations we'll tolerate before early termination.
-    @OperatorName					sysname = N'Alerts',
-    @MailProfileName				sysname = N'General',
-    @EmailSubjectPrefix				nvarchar(50) = N'[RESTORE TEST] ',
-    @PrintOnly						bit = 0
+    @DatabasesToExclude				nvarchar(MAX)	= NULL,
+    @Priorities						nvarchar(MAX)	= NULL,
+    @BackupsRootPath				nvarchar(MAX)	= N'[DEFAULT]',
+    @RestoredRootDataPath			nvarchar(MAX)	= N'[DEFAULT]',
+    @RestoredRootLogPath			nvarchar(MAX)	= N'[DEFAULT]',
+    @RestoredDbNamePattern			nvarchar(40)	= N'{0}_test',
+    @AllowReplace					nchar(7)		= NULL,				-- NULL or the exact term: N'REPLACE'...
+    @SkipLogBackups					bit				= 0,
+	@ExecuteRecovery				bit				= 1,
+    @CheckConsistency				bit				= 1,
+    @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
+    @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
+    @OperatorName					sysname			= N'Alerts',
+    @MailProfileName				sysname			= N'General',
+    @EmailSubjectPrefix				nvarchar(50)	= N'[RESTORE TEST] ',
+    @PrintOnly						bit				= 0
 AS
     SET NOCOUNT ON;
 
@@ -103,6 +105,16 @@ AS
         RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
+
+	IF OBJECT_ID('dbo.load_backup_files', 'P') IS NULL BEGIN 
+		RAISERROR('S4 Stored Procedure dbo.load_backup_files not defined - unable to continue.', 16, 1);
+        RETURN -1;
+	END; 
+
+	IF OBJECT_ID('dbo.load_header_details', 'P') IS NULL BEGIN 
+		RAISERROR('S4 Stored Procedure dbo.load_header_details not defined - unable to continue.', 16, 1);
+        RETURN -1;
+	END; 
 
     IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
         RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
@@ -279,6 +291,24 @@ AS
     DECLARE @statusDetail nvarchar(500);
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
+	DECLARE @fileList nvarchar(MAX); 
+	DECLARE @backupName sysname;
+	DECLARE @fileListXml nvarchar(MAX);
+
+-- TODO: look at other attributes (size, encrypted, etc?)
+	DECLARE @restoredFiles table (
+		ID int IDENTITY(1,1) NOT NULL, 
+		[FileName] nvarchar(400) NOT NULL, 
+		[Type] varchar(4) NOT NULL,  -- FULL, DIFF, LOG
+		Detected datetime NOT NULL, 
+		BackupCreated datetime NULL, 
+		Applied datetime NULL, 
+		BackupSize int NULL, 
+		Compressed bit NULL, 
+		[Encrypted] bit NULL
+	); 
+
+	DECLARE @backupDate datetime, @backupSize int, @compressed bit, @encrypted bit;
 
     DECLARE @temp TABLE (
         [id] int IDENTITY(1,1), 
@@ -369,8 +399,12 @@ AS
     FETCH NEXT FROM restorer INTO @databaseToRestore;
     WHILE @@FETCH_STATUS = 0 BEGIN
         
-        SET @statusDetail = NULL; -- reset every 'loop' through... 
-        SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
+		-- reset every 'loop' through... 
+        SET @statusDetail = NULL; 
+        DELETE FROM @restoredFiles;
+		
+		
+		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
         IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern != '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
             SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
@@ -411,15 +445,11 @@ AS
             END;
         END;
 
-        -- Enumerate the files and ensure we've got backups:
-        SET @command = N'dir "' + @sourcePath + N'\" /B /A-D /OD';
+		-- Enumerate the files and ensure we've got backups:
+		EXEC dbo.[load_backup_files] @sourcePath, @Output = @fileList OUTPUT;
+		INSERT INTO @temp ([output])
+		SELECT [result] FROM dbo.[split_string](@fileList, N',');	
 
-        IF @PrintOnly = 1 BEGIN
-            PRINT N'-- xp_cmdshell ''' + @command + ''';';
-        END;
-        
-        INSERT INTO @temp ([output])
-        EXEC master..xp_cmdshell @command;
         DELETE FROM @temp WHERE [output] IS NULL AND [output] NOT LIKE '%' + @databaseToRestore + '%';  -- remove 'empty' entries and any backups for databases OTHER than target.
 
         IF NOT EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE 'FULL%') BEGIN 
@@ -433,11 +463,21 @@ AS
 
         -- Find the most recent FULL to 'seed' the restore;
         DELETE FROM @temp WHERE id < (SELECT MAX(id) FROM @temp WHERE [output] LIKE 'FULL%');
-        SELECT @pathToDatabaseBackup = @sourcePath + N'\' + [output] FROM @temp WHERE [output] LIKE 'FULL%';
+		SELECT @backupName = [output] FROM @temp WHERE [output] LIKE 'FULL%';
+		SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName;
 
         IF @PrintOnly = 1 BEGIN
             PRINT N'-- FULL Backup found at: ' + @pathToDatabaseBackup;
         END;
+
+		-- define the list of files to be processed:
+		INSERT INTO @restoredFiles ([FileName], [Type], [Detected])
+		SELECT 
+			[output], 
+			CASE WHEN [output] LIKE 'FULL%' THEN 'FULL' WHEN [output] LIKE 'DIFF%' THEN 'DIFF' WHEN [output] LIKE 'LOG%' THEN 'LOG' ELSE '' END [Type],
+			GETDATE() -- detected (i.e., when this file was 'found' and 'added' for processing.  
+		FROM 
+			@temp;
 
         -- Query file destinations:
         SET @move = N'';
@@ -558,11 +598,27 @@ AS
             GOTO NextDatabase;
         END;
 
-        -- Restore any DIFF backups as needed:
+		-- Update MetaData: 
+		EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+
+		UPDATE @restoredFiles 
+		SET 
+			[Applied] = GETDATE(), 
+			[BackupCreated] = @backupDate, 
+			[BackupSize] = @backupSize, 
+			[Compressed] = @compressed, 
+			[Encrypted] = @encrypted
+		WHERE 
+			[FileName] = @backupName;
+        
+-- TODO: if it's been any serious amount of time... we need to add new files to @temp... or try to... 
+	
+		-- Restore any DIFF backups as needed:
         IF EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE 'DIFF%') BEGIN
             DELETE FROM @temp WHERE id < (SELECT MAX(id) FROM @temp WHERE [output] LIKE N'DIFF%');
 
-            SELECT @pathToDatabaseBackup = @sourcePath + N'\' + [output] FROM @temp WHERE [output] LIKE 'DIFF%';
+			SELECT @backupName = [output] FROM @temp WHERE [output] LIKE 'DIFF%';
+            SELECT @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
 
             SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
 
@@ -584,6 +640,20 @@ AS
             IF @statusDetail IS NOT NULL BEGIN
                 GOTO NextDatabase;
             END;
+
+			-- Update MetaData: 
+			EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+
+			UPDATE @restoredFiles 
+			SET 
+				[Applied] = GETDATE(), 
+				[BackupCreated] = @backupDate, 
+				[BackupSize] = @backupSize, 
+				[Compressed] = @compressed, 
+				[Encrypted] = @encrypted
+			WHERE 
+				[FileName] = @backupName;
+
         END;
 
         -- Restore any LOG backups if specified and if present:
@@ -592,10 +662,12 @@ AS
             SELECT [output] FROM @temp WHERE [output] LIKE 'LOG%' ORDER BY id ASC;			
 
             OPEN logger;
-            FETCH NEXT FROM logger INTO @pathToDatabaseBackup;
+            FETCH NEXT FROM logger INTO @backupName;
 
             WHILE @@FETCH_STATUS = 0 BEGIN
-                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @sourcePath + N'\' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+				SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName;
+
+                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
                 
                 BEGIN TRY 
                     IF @PrintOnly = 1 BEGIN
@@ -609,7 +681,7 @@ AS
                     END;
                 END TRY
                 BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+                    SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 
                     -- this has to be closed/deallocated - or we'll run into it on the 'next' database/pass.
                     IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN;
@@ -619,16 +691,32 @@ AS
                     
                 END CATCH
 
+				-- Update MetaData: 
+				EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+
+				UPDATE @restoredFiles 
+				SET 
+					[Applied] = GETDATE(), 
+					[BackupCreated] = @backupDate, 
+					[BackupSize] = @backupSize, 
+					[Compressed] = @compressed, 
+					[Encrypted] = @encrypted
+				WHERE 
+					[FileName] = @backupName;
+
                 IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
                 END;
 
-                FETCH NEXT FROM logger INTO @pathToDatabaseBackup;
+                FETCH NEXT FROM logger INTO @backupName;
             END;
 
             CLOSE logger;
             DEALLOCATE logger;
         END;
+
+-- TODO: if it's been any decent amount of time ... 
+--  we need to run ANOTHER search against t-log backups - to look for new ones to apply. 
 
         -- Recover the database:
 		IF @ExecuteRecovery = 1 BEGIN
@@ -792,6 +880,34 @@ AS
             WHERE
                 restore_test_id = @restoreLogId;
         END;
+
+		-- serialize restored file details and push into dbo.restore_log
+		
+		SELECT @fileListXml = (
+			SELECT 
+				[FileName] [name], 
+				BackupCreated [created],
+				Detected [detected], 
+				Applied [applied], 
+				BackupSize [size], 
+				Compressed [compressed], 
+				[Encrypted] [encrypted]
+			FROM 
+				@restoredFiles 
+			ORDER BY 
+				ID
+			FOR XML PATH('file'), ROOT('files')
+		);
+
+		IF @PrintOnly = 1
+			PRINT @fileListXml; 
+		ELSE BEGIN
+			UPDATE dbo.[restore_log] 
+			SET 
+				restored_files = @fileListXml
+			WHERE 
+				[restore_test_id] = @restoreLogId;
+		END;
 
         PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
 
