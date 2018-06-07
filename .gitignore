@@ -5,3 +5,5 @@
 /S4 Restore/~~test cases for LSNs and TLog restore errors.sql
 /S4 Restore/~~ spelunking for added reliability to restore operations.sql
 /S4 Restore/~~ inital attempt at dbo.load_backup_files.sql
+/S4 Restore/~~ extract FILE HEADERONLY info from backups - initial testing and dev.sql
+/S4 Restore/~~ restore_databases - resiliency version (in progress).sql
