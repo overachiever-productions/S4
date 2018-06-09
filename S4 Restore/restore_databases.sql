@@ -295,11 +295,15 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 
--- TODO: look at other attributes (size, encrypted, etc?)
+	DECLARE @logFilesToRestore table ( 
+		id int IDENTITY(1,1) NOT NULL, 
+		log_file sysname NOT NULL
+	);
+	DECLARE @currentLogFileID int = 0;
+
 	DECLARE @restoredFiles table (
 		ID int IDENTITY(1,1) NOT NULL, 
 		[FileName] nvarchar(400) NOT NULL, 
-		[Type] varchar(4) NOT NULL,  -- FULL, DIFF, LOG
 		Detected datetime NOT NULL, 
 		BackupCreated datetime NULL, 
 		Applied datetime NULL, 
@@ -309,11 +313,6 @@ AS
 	); 
 
 	DECLARE @backupDate datetime, @backupSize int, @compressed bit, @encrypted bit;
-
-    DECLARE @temp TABLE (
-        [id] int IDENTITY(1,1), 
-        [output] varchar(500)
-    );
 
     -- Assemble a list of dbs (if any) that were NOT dropped during the last execution (only) - so that we can drop them before proceeding. 
     DECLARE @NonDroppedFromPreviousExecution table( 
@@ -403,14 +402,13 @@ AS
         SET @statusDetail = NULL; 
         DELETE FROM @restoredFiles;
 		
-		
 		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
         IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern != '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
             SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
         IF @PrintOnly = 0 BEGIN
             INSERT INTO dbo.restore_log (execution_id, [database], restored_as, restore_start, error_details)
-            VALUES (@executionID, @databaseToRestore, @restoredName, GETUTCDATE(), '#UNKNOWN ERROR#');
+            VALUES (@executionID, @databaseToRestore, @restoredName, GETDATE(), '#UNKNOWN ERROR#');
 
             SELECT @restoreLogId = SCOPE_IDENTITY();
         END;
@@ -445,39 +443,23 @@ AS
             END;
         END;
 
-		-- Enumerate the files and ensure we've got backups:
-		EXEC dbo.[load_backup_files] @sourcePath, @Output = @fileList OUTPUT;
-		INSERT INTO @temp ([output])
-		SELECT [result] FROM dbo.[split_string](@fileList, N',');	
+		-- Check for a FULL backup: 
+		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
+		
+		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
+			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] found in "' + @sourcePath + N'".';
+			GOTO NextDatabase;	
+		END;
 
-        DELETE FROM @temp WHERE [output] IS NULL AND [output] NOT LIKE '%' + @databaseToRestore + '%';  -- remove 'empty' entries and any backups for databases OTHER than target.
-
-        IF NOT EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE 'FULL%') BEGIN 
-            IF EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE '%access%denied%') 
-                SET @statusDetail = N'Access to path "' + @sourcePath + N'" is denied.';
-            ELSE 
-                SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] found in "' + @sourcePath + N'".';
-            
-            GOTO NextDatabase;	
-        END;
-
-        -- Find the most recent FULL to 'seed' the restore;
-        DELETE FROM @temp WHERE id < (SELECT MAX(id) FROM @temp WHERE [output] LIKE 'FULL%');
-		SELECT @backupName = [output] FROM @temp WHERE [output] LIKE 'FULL%';
+        -- Load Backup details/etc. 
+		SELECT @backupName = @fileList;
 		SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName;
 
-        IF @PrintOnly = 1 BEGIN
-            PRINT N'-- FULL Backup found at: ' + @pathToDatabaseBackup;
-        END;
-
 		-- define the list of files to be processed:
-		INSERT INTO @restoredFiles ([FileName], [Type], [Detected])
+		INSERT INTO @restoredFiles ([FileName], [Detected])
 		SELECT 
-			[output], 
-			CASE WHEN [output] LIKE 'FULL%' THEN 'FULL' WHEN [output] LIKE 'DIFF%' THEN 'DIFF' WHEN [output] LIKE 'LOG%' THEN 'LOG' ELSE '' END [Type],
-			GETDATE() -- detected (i.e., when this file was 'found' and 'added' for processing.  
-		FROM 
-			@temp;
+			@backupName, 
+			GETDATE(); -- detected (i.e., when this file was 'found' and 'added' for processing).  
 
         -- Query file destinations:
         SET @move = N'';
@@ -500,7 +482,7 @@ AS
     
         -- Make sure we got some files (i.e. RESTORE FILELIST doesn't always throw exceptions if the path you send it sucks):
         IF ((SELECT COUNT(*) FROM #FileList) < 2) BEGIN
-            SET @statusDetail = N'The backup located at "' + @pathToDatabaseBackup + N'" is invalid, corrupt, or does not contain a viable FULL backup.';
+            SET @statusDetail = N'The backup located at [' + @pathToDatabaseBackup + N'] is invalid, corrupt, or does not contain a viable FULL backup.';
             GOTO NextDatabase;
         END ;
         
@@ -560,7 +542,7 @@ AS
 
                 END TRY
                 BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while setting target database: "' + @restoredName + N'" into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+                    SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
                 END CATCH
 
                 IF @statusDetail IS NOT NULL
@@ -611,16 +593,17 @@ AS
 		WHERE 
 			[FileName] = @backupName;
         
--- TODO: if it's been any serious amount of time... we need to add new files to @temp... or try to... 
-	
-		-- Restore any DIFF backups as needed:
-        IF EXISTS (SELECT NULL FROM @temp WHERE [output] LIKE 'DIFF%') BEGIN
-            DELETE FROM @temp WHERE id < (SELECT MAX(id) FROM @temp WHERE [output] LIKE N'DIFF%');
-
-			SELECT @backupName = [output] FROM @temp WHERE [output] LIKE 'DIFF%';
-            SELECT @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
+		-- Restore any DIFF backups if present:
+		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'DIFF', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
+		
+		IF NULLIF(@fileList, N'') IS NOT NULL BEGIN
+			SET @backupName = @fileList;
+			SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
 
             SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+
+			INSERT INTO @restoredFiles ([FileName], [Detected])
+			SELECT @backupName, GETDATE();
 
             BEGIN TRY
                 IF @PrintOnly = 1 BEGIN
@@ -653,19 +636,30 @@ AS
 				[Encrypted] = @encrypted
 			WHERE 
 				[FileName] = @backupName;
+		END;
 
-        END;
 
         -- Restore any LOG backups if specified and if present:
         IF @SkipLogBackups = 0 BEGIN
-            DECLARE logger CURSOR LOCAL FAST_FORWARD FOR 
-            SELECT [output] FROM @temp WHERE [output] LIKE 'LOG%' ORDER BY id ASC;			
+			
+			-- reset values per every 'loop' of main processing body:
+			DELETE FROM @logFilesToRestore;
 
-            OPEN logger;
-            FETCH NEXT FROM logger INTO @backupName;
+			EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
+			INSERT INTO @logFilesToRestore ([log_file])
+			SELECT result FROM dbo.[split_string](@fileList, N',');
+			
+			-- re-update the counter: 
+			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
 
-            WHILE @@FETCH_STATUS = 0 BEGIN
+			-- start a loop to process files while they're still available: 
+			WHILE EXISTS (SELECT NULL FROM @logFilesToRestore WHERE [id] = @currentLogFileID) BEGIN
+
+				SELECT @backupName = log_file FROM @logFilesToRestore WHERE id = @currentLogFileID;
 				SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName;
+
+				INSERT INTO @restoredFiles ([FileName], [Detected])
+				SELECT @backupName, GETDATE();
 
                 SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
                 
@@ -708,15 +702,19 @@ AS
                     GOTO NextDatabase;
                 END;
 
-                FETCH NEXT FROM logger INTO @backupName;
-            END;
+				-- Check for any new files if we're now 'out' of files to process: 
+				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
 
-            CLOSE logger;
-            DEALLOCATE logger;
+					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
+					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
+					INSERT INTO @logFilesToRestore ([log_file])
+					SELECT result FROM dbo.[split_string](@fileList, N',');
+				END;
+
+				-- increment: 
+				SET @currentLogFileID = @currentLogFileID + 1;
+			END;
         END;
-
--- TODO: if it's been any decent amount of time ... 
---  we need to run ANOTHER search against t-log backups - to look for new ones to apply. 
 
         -- Recover the database:
 		IF @ExecuteRecovery = 1 BEGIN
@@ -747,7 +745,7 @@ AS
             UPDATE dbo.restore_log 
             SET 
                 restore_succeeded = 1, 
-                restore_end = GETUTCDATE(), 
+                restore_end = GETDATE(), 
                 error_details = NULL
             WHERE 
                 restore_test_id = @restoreLogId;
@@ -761,7 +759,7 @@ AS
             IF @PrintOnly = 0 BEGIN 
                 UPDATE dbo.restore_log
                 SET 
-                    consistency_start = GETUTCDATE(),
+                    consistency_start = GETDATE(),
                     consistency_succeeded = 0, 
                     error_details = '#UNKNOWN ERROR CHECKING CONSISTENCY#'
                 WHERE
@@ -782,7 +780,7 @@ AS
 
                         UPDATE dbo.restore_log
                         SET 
-                            consistency_end = GETUTCDATE(),
+                            consistency_end = GETDATE(),
                             consistency_succeeded = 0,
                             error_details = @statusDetail
                         WHERE 
@@ -792,7 +790,7 @@ AS
                     ELSE BEGIN -- there were NO errors:
                         UPDATE dbo.restore_log
                         SET
-                            consistency_end = GETUTCDATE(),
+                            consistency_end = GETDATE(),
                             consistency_succeeded = 1, 
                             error_details = NULL
                         WHERE 
@@ -885,6 +883,7 @@ AS
 		
 		SELECT @fileListXml = (
 			SELECT 
+				ROW_NUMBER() OVER (ORDER BY ID) [@id],
 				[FileName] [name], 
 				BackupCreated [created],
 				Detected [detected], 
@@ -914,8 +913,6 @@ AS
         -- If we made this this far, there have been no errors... and we can drop through into processing the next database... 
 NextDatabase:
 
-        DELETE FROM @temp; -- always make sure to clear the list of files handled for the previous database... 
-
         -- Record any status details as needed:
         IF @statusDetail IS NOT NULL BEGIN
 
@@ -925,7 +922,7 @@ NextDatabase:
             ELSE BEGIN
                 UPDATE dbo.restore_log
                 SET 
-                    restore_end = GETUTCDATE(),
+                    restore_end = GETDATE(),
                     error_details = @statusDetail
                 WHERE 
                     restore_test_id = @restoreLogId;

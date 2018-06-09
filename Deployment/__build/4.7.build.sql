@@ -85,7 +85,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.6.7.16892';
+DECLARE @CurrentVersion varchar(20) = N'4.7.0.16942';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -182,6 +182,7 @@ IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 		restore_start datetime NOT NULL, 
 		restore_end datetime NULL, 
 		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
+		restored_files xml NULL, -- added v4.7.0.16942
 		consistency_start datetime NULL, 
 		consistency_end datetime NULL, 
 		consistency_succeeded bit NULL, 
@@ -196,6 +197,10 @@ END;
 SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
 IF @objectId IS NOT NULL BEGIN;
 
+	-- v4.7.0.16942 - convert restore_log datetimes from UTC to local... 
+	DECLARE @HoursDiff int; 
+	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
+
 	PRINT 'Importing Previous Data.... ';
 	SET IDENTITY_INSERT dbo.restore_log ON;
 
@@ -207,11 +212,11 @@ IF @objectId IS NOT NULL BEGIN;
         TestDate,
         [Database],
         RestoredAs,
-        RestoreStart,
-        RestoreEnd,
+        DATEADD(HOUR, 0 - @HoursDiff, RestoreStart) RestoreStart,
+		DATEADD(HOUR, 0 - @HoursDiff, RestoreEnd0 RestoreEnd,
         RestoreSucceeded,
-        ConsistencyCheckStart,
-        ConsistencyCheckEnd,
+        DATEADD(HOUR, 0 - @HoursDiff, ConsistencyCheckStart) ConsistencyCheckStart,
+        DATEADD(HOUR, 0 - @HoursDiff, ConsistencyCheckEnd) ConsistencyCheckEnd,
         ConsistencyCheckSucceeded,
         Dropped,
         ErrorDetails
@@ -369,6 +374,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Tools\copy_database.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 ---------------------------------------------------------------------------
 --- Monitoring

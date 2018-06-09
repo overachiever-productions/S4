@@ -2,26 +2,6 @@
 
 /*
 
-	UPDATES 
-		(List of specific/disting 'updates' or 'patches' defined in this script):
-		- 4.2.0.16786. Rollup of multiple 4.1 and 4.1.x changes - includding initial addition of monitoring scripts and upgrades/changes to backup removal processes to address bugs with 'synchronized' host servers and system databases, etc. 
-
-
-	CHANGELOG:
-		(List of all changes since 4.0). 
-
-		- 4.1.0.16761. BugFix: Optimizing logic in dbo.[remove_backups] to account for mirrored and AG'd backups of system databases (i.e., server-name in backup path). 
-		- 4.1.0.16763. Updating documentation for dbo.backup_databases. Integrating @ServerNameInSystemBackupPath into [backup_databases].
-		- 4.1.0.16764. Integrated file-removal for mirrored servers/hosts into change and deployment scripts. 
-		- 4.1.1.16773. Modifying + testing load_database_names and backup_databases to be able to ignore HADR checks if/when server version < 11.0. 
-		- 4.1.1.16780. High-level planning and specifications planning for additional code/sproc to test RPOs and 'staleness' of restored (or non-restored) data as part of regular restore test outcomes. 
-		- 4.1.2.16785. Hours writing and testing query to provide 'lambda' query capabilities for testing both restore-test validation (data-stale/fresh concerns) and RPOs (as well as RTOs) under smoke and rubble testing scenarios. 
-		- 4.2.0.16786. Initial addition of monitoring scripts (verify_backup_execution and verify_database_activity) + rollup of changes. 
-		---> ROLLUP: 4.2.0.16786.
-		- 4.x.x.x. etc... 
-
-
-
 	NOTES:
 		- It's effectively impossible to 'intelligently' process changes in the script below (via T-SQL 'as is'). Because, if we, say a) check for @version = suchAndSuch and if it's not found, then try to run a bunch of code... 
 			then that CODE will be a bunch of IF/ELSE statements that create/drop sprocs UDFs and the likes and... ultimately which have gobs of their own logic in place. In other words we can't say: 
@@ -66,25 +46,91 @@ IF OBJECT_ID('dba_VerifyBackupExecution', 'P') IS NOT NULL BEGIN
 	DROP PROC dbo.dba_VerifyBackupExecution;
 END;
 
--- 4.4.1.16836
--- cleanup of any previous/older system objects in the master database:
---IF OBJECT_ID('dbo.dba_traceflags','U') IS NOT NULL
---	DROP TABLE dbo.dba_traceflags;
---GO
-
 
 USE [admindb];
 GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.6.7.16892';
+DECLARE @targetVersion varchar(20) = '4.7.0.16942';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Update. Added ability to script logins and server configs.', GETDATE());
+	VALUES (@targetVersion, 'Update. Dynamic retrieval of backup files during restore operations.', GETDATE());
+
+	-- confirm that restored_files is present: 
+	IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
+
+		BEGIN TRANSACTION
+			ALTER TABLE dbo.restore_log
+				DROP CONSTRAINT DF_restore_log_test_date;
+
+			ALTER TABLE dbo.restore_log
+				DROP CONSTRAINT DF_restore_log_restore_succeeded;
+			
+			ALTER TABLE dbo.restore_log
+				DROP CONSTRAINT DF_restore_log_dropped;
+			
+			CREATE TABLE dbo.Tmp_restore_log
+				(
+				restore_test_id int NOT NULL IDENTITY (1, 1),
+				execution_id uniqueidentifier NOT NULL,
+				test_date date NOT NULL,
+				[database] sysname NOT NULL,
+				restored_as sysname NOT NULL,
+				restore_start datetime NOT NULL,
+				restore_end datetime NULL,
+				restore_succeeded bit NOT NULL,
+				restored_files xml NULL,
+				consistency_start datetime NULL,
+				consistency_end datetime NULL,
+				consistency_succeeded bit NULL,
+				dropped varchar(20) NOT NULL,
+				error_details nvarchar(MAX) NULL
+				)  ON [PRIMARY];
+			
+			ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+				DF_restore_log_test_date DEFAULT (getdate()) FOR test_date;
+			
+			ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+				DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
+			
+			ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+				DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
+			
+			SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
+			
+				 EXEC('INSERT INTO dbo.Tmp_restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+					SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
+			
+			SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
+			
+			DROP TABLE dbo.restore_log;
+			
+			EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
+			
+			ALTER TABLE dbo.restore_log ADD CONSTRAINT
+				PK_restore_log PRIMARY KEY CLUSTERED 
+				(
+				restore_test_id
+				) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
+
+			
+		COMMIT;
+
+	END;
+
+
+	-- execute UTC to local conversion:
+	DECLARE @currentVersion decimal(2,1); 
+	SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
+
+	IF @currentVersion < 4.7 BEGIN 
+		PRINT 'doing';
+
+	END;
 
 END;
 
@@ -150,6 +196,12 @@ END;
 -----------------------------------
 --##INCLUDE: S4 Restore\Tools\copy_database.sql
 
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_header_details.sql
+
 ---------------------------------------------------------------------------
 --- Monitoring
 ---------------------------------------------------------------------------
@@ -194,3 +246,4 @@ END;
 -- Display Versioning info:
 SELECT * FROM dbo.version_history;
 GO
+
