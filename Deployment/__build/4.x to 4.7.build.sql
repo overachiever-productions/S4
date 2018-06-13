@@ -121,20 +121,26 @@ IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targe
 				(
 				restore_test_id
 				) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
-
 			
 		COMMIT;
 
 	END;
 
-
-	-- execute UTC to local conversion:
+	-- v4.7.0.16942 - convert restore_log datetimes from UTC to local...
 	DECLARE @currentVersion decimal(2,1); 
 	SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
 
 	IF @currentVersion < 4.7 BEGIN 
-		PRINT 'doing';
 
+		DECLARE @hoursDiff int; 
+		SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
+
+		UPDATE dbo.[restore_log]
+		SET 
+			[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
+			[restore_end] = DATEADD(HOUR, 0 - @hoursDiff, [restore_end]),
+			[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start])	,
+			[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end]);
 	END;
 
 END;

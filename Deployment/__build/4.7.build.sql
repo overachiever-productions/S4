@@ -198,7 +198,7 @@ SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_Datab
 IF @objectId IS NOT NULL BEGIN;
 
 	-- v4.7.0.16942 - convert restore_log datetimes from UTC to local... 
-	DECLARE @HoursDiff int; 
+	DECLARE @hoursDiff int; 
 	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
 
 	PRINT 'Importing Previous Data.... ';
@@ -213,7 +213,7 @@ IF @objectId IS NOT NULL BEGIN;
         [Database],
         RestoredAs,
         DATEADD(HOUR, 0 - @HoursDiff, RestoreStart) RestoreStart,
-		DATEADD(HOUR, 0 - @HoursDiff, RestoreEnd0 RestoreEnd,
+		DATEADD(HOUR, 0 - @HoursDiff, RestoreEnd) RestoreEnd,
         RestoreSucceeded,
         DATEADD(HOUR, 0 - @HoursDiff, ConsistencyCheckStart) ConsistencyCheckStart,
         DATEADD(HOUR, 0 - @HoursDiff, ConsistencyCheckEnd) ConsistencyCheckEnd,
@@ -232,7 +232,6 @@ END
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Cleanup and Remove any/all previous code from the master database:
-
 
 USE [master];
 GO
