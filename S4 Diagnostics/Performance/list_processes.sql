@@ -15,7 +15,7 @@
 
 
 
-EXEC dbo.list_consumers 
+EXEC dbo.list_processes 
 	@TopNRows = 50, 
 	@ExcludeSelf = 0, 
 	@DetailedMemoryStats = 1, 
@@ -28,11 +28,11 @@ USE [admindb];
 GO
 
 
-IF OBJECT_ID('dbo.list_consumers','P') IS NOT NULL
-	DROP PROC dbo.list_consumers;
+IF OBJECT_ID('dbo.list_processes','P') IS NOT NULL
+	DROP PROC dbo.list_processes;
 GO
 
-CREATE PROC dbo.list_consumers 
+CREATE PROC dbo.list_processes 
 	@TopNRows								int			=	-1,		-- TOP is only used if @TopNRows > 0. 
 	@OrderBy								sysname		= N'CPU',	-- CPU | DURATION | READS | WRITES | MEMORY
 	@IncludePlanHandle						bit			= 1,		
