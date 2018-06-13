@@ -83,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.7.2.16947';
+DECLARE @CurrentVersion varchar(20) = N'4.7.3.16947';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -4528,6 +4528,7 @@ CREATE PROC dbo.list_processes
 	@ExcludeMirroringWaits					bit			= 1,		-- optional 'ignore' wait types/families.
 	@ExcludeNegativeDurations				bit			= 1,		-- exclude service broker and some other system-level operations/etc. 
 	-- vNEXT				--@ExcludeSOmeOtherSetOfWaitTypes		bit			= 1			-- ditto... 
+	@ExcludeFTSDaemonProcesses				bit			= 1,
 	@ExcludeSystemProcesses					bit			= 1,			-- spids < 50... 
 	@ExcludeSelf							bit			= 1
 AS 
@@ -4555,10 +4556,11 @@ AS
 		sys.[dm_exec_requests] r
 		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
 	WHERE
-		r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} )
+		r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWAITs} )
 		{ExcludeSystemProcesses}
 		{ExcludeSelf}
 		{ExcludeNegative}
+		{ExcludeFTS}
 	{OrderBy};';
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
@@ -4598,6 +4600,18 @@ AS
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeNegative}', N'');
 	END; 
+
+	IF @ExcludeFTSDaemonProcesses = 1 BEGIN
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N', ''FT_COMPROWSET_RWLOCK'', ''FT_IFTS_RWLOCK'', ''FT_IFTS_SCHEDULER_IDLE_WAIT'', ''FT_IFTSHC_MUTEX'', ''FT_IFTSISM_MUTEX'', ''FT_MASTER_MERGE'', ''FULLTEXT GATHERER'' ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'AND r.command NOT LIKE ''FT%'' ');
+	  END;
+	ELSE BEGIN 
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'');
+	END; 
+
+
+--PRINT @topSQL;
 
 	INSERT INTO [#ranked] ([session_id], [cpu], [reads], [writes], [duration], [memory])
 	EXEC sys.[sp_executesql] @topSQL; 
@@ -4670,8 +4684,6 @@ AS
 		x.[row_number]; 
 
 
-
-
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
 		d.[session_id],
@@ -4687,10 +4699,10 @@ AS
 		d.[reads],
 		d.[writes], 
 		CASE WHEN d.[elapsed_time] < 0 
-			THEN N''-'' + RIGHT(''000'' + CAST([elapsed_time] / 3600 AS sysname),3) + '':'' + RIGHT(''00'' + CAST(([elapsed_time] / 60) % 60 AS sysname),2) + '':'' + RIGHT(''00'' + CAST([elapsed_time] % 60 AS sysname),2) + ''.'' + RIGHT(''000'' + CAST([elapsed_time] % 1000 AS sysname), 3) 
-			ELSE RIGHT(''000'' + CAST([elapsed_time] / 3600 AS sysname),3) + '':'' + RIGHT(''00'' + CAST(([elapsed_time] / 60) % 60 AS sysname),2) + '':'' + RIGHT(''00'' + CAST([elapsed_time] % 60 AS sysname),2) + ''.'' + RIGHT(''000'' + CAST([elapsed_time] % 1000 AS sysname), 3)
+			THEN N''-'' + RIGHT(''000'' + CAST(([elapsed_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([elapsed_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([elapsed_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([elapsed_time]) AS sysname), 3)
+			ELSE RIGHT(''000'' + CAST(([elapsed_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([elapsed_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([elapsed_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([elapsed_time]) AS sysname), 3)
 		END [elapsed_time],
-		RIGHT(''000'' + CAST([wait_time] / 3600 AS sysname),3) + '':'' + RIGHT(''00'' + CAST(([wait_time] / 60) % 60 AS sysname),2) + '':'' + RIGHT(''00'' + CAST([wait_time] % 60 AS sysname),2) + ''.'' + RIGHT(''000'' + CAST([wait_time] % 1000 AS sysname), 3) [wait_time],
+		RIGHT(''000'' + CAST(([wait_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
 		d.[program_name],
 		d.[host_name],
 		d.[percent_complete], 

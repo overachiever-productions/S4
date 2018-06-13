@@ -152,7 +152,7 @@ USE [master];
 GO
 
 
-IF NOT EXISTS (SELECT NULL FROM master.sys.[certificates] WHERE [certificate_id] = 101) BEGIN 
+IF NOT EXISTS (SELECT NULL FROM master.sys.[symmetric_keys] WHERE [symmetric_key_id] = 101) BEGIN 
 	
 	CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'make sure to add a secure pass-phrase with cryptographic ENTROPY here!';
 

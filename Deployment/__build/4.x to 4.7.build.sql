@@ -57,13 +57,13 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.7.2.16947';
+DECLARE @targetVersion varchar(20) = '4.7.3.16947';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Update. Dynamic retrieval of backup files during restore operations.', GETDATE());
+	VALUES (@targetVersion, 'Update. Dynamic retrieval of backup files during restore operations + bugfixes and list_proceses.', GETDATE());
 
 	-- confirm that restored_files is present: 
 	IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
@@ -139,8 +139,10 @@ IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targe
 		SET 
 			[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
 			[restore_end] = DATEADD(HOUR, 0 - @hoursDiff, [restore_end]),
-			[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start])	,
+			[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start]),
 			[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end]);
+
+		PRINT 'Updated dbo.restore_log.... (UTC shift)';
 	END;
 
 END;
