@@ -41,18 +41,23 @@ GO
 
 -- 4.2.0.16786
 IF OBJECT_ID('dba_VerifyBackupExecution', 'P') IS NOT NULL BEGIN
-	-- 
-	PRINT 'Older version of dba_VerifyBackupExecution found. Check for jobs to replace/update... '
 	DROP PROC dbo.dba_VerifyBackupExecution;
+	SELECT 'Older version of dba_VerifyBackupExecution found. Check for jobs to replace/update... ' [WARNING: Potential Configuration Changes Required (verify backups)]
 END;
 
+--------------------------------------------------------------
+-- 4.7.2.16947
+IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
+	DROP PROC dbo.dba_FilterAndSendAlerts;
+	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING: Potential Configuration Changes Required (alert filtering)];
+END;
 
 USE [admindb];
 GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.7.0.16942';
+DECLARE @targetVersion varchar(20) = '4.7.2.16947';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
@@ -212,6 +217,18 @@ END;
 -----------------------------------
 --##INCLUDE: S4 Monitoring\verify_database_configurations.sql
 
+---------------------------------------------------------------------------
+--- Monitoring
+---------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\verify_backup_execution.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\verify_database_configurations.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\process_alerts.sql
 
 ---------------------------------------------------------------------------
 -- Monitoring (HA):

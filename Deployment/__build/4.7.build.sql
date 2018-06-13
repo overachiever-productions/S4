@@ -85,7 +85,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.7.0.16942';
+DECLARE @CurrentVersion varchar(20) = N'4.7.2.16947';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -247,7 +247,6 @@ IF OBJECT_ID('dbo.dba_DatabaseRestore_Log','U') IS NOT NULL
 	DROP TABLE dbo.dba_DatabaseRestore_Log;
 GO
 
-
 -- UDFs:
 IF OBJECT_ID('dbo.dba_SplitString','TF') IS NOT NULL
 	DROP FUNCTION dbo.dba_SplitString;
@@ -314,6 +313,15 @@ GO
 IF OBJECT_ID('dbo.dba_Mirroring_HealthCheck','P') IS NOT NULL
 	DROP PROC dbo.dba_Mirroring_HealthCheck;
 GO
+
+--------------------------------------------------------------
+-- Potential FORMER versions of alert filtering: 
+IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
+	DROP PROC dbo.dba_FilterAndSendAlerts;
+	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required];
+END;
+GO
+
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -391,6 +399,8 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Monitoring\verify_database_configurations.sql
 
+-----------------------------------
+--##INCLUDE: S4 Monitoring\process_alerts.sql
 
 ---------------------------------------------------------------------------
 -- Monitoring (HA):

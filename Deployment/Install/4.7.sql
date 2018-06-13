@@ -83,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.7.0.16942';
+DECLARE @CurrentVersion varchar(20) = N'4.7.2.16947';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -245,7 +245,6 @@ IF OBJECT_ID('dbo.dba_DatabaseRestore_Log','U') IS NOT NULL
 	DROP TABLE dbo.dba_DatabaseRestore_Log;
 GO
 
-
 -- UDFs:
 IF OBJECT_ID('dbo.dba_SplitString','TF') IS NOT NULL
 	DROP FUNCTION dbo.dba_SplitString;
@@ -312,6 +311,15 @@ GO
 IF OBJECT_ID('dbo.dba_Mirroring_HealthCheck','P') IS NOT NULL
 	DROP PROC dbo.dba_Mirroring_HealthCheck;
 GO
+
+--------------------------------------------------------------
+-- Potential FORMER versions of alert filtering: 
+IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
+	DROP PROC dbo.dba_FilterAndSendAlerts;
+	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required];
+END;
+GO
+
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -5147,6 +5155,139 @@ AS
 	RETURN 0;
 GO
 
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.process_alerts','P') IS NOT NULL
+	DROP PROC dbo.process_alerts;
+GO
+
+CREATE PROC dbo.process_alerts 
+	@ErrorNumber				int, 
+	@Severity					int, 
+	@Message					nvarchar(2048),
+	@OperatorName				sysname					= N'Alerts',
+	@MailProfileName			sysname					= N'General'
+AS 
+	SET NOCOUNT ON; 
+
+	DECLARE @ignoredErrorNumbers TABLE ( 
+		[error_number] int NOT NULL
+	);
+
+	INSERT INTO @ignoredErrorNumbers ([error_number])
+	VALUES
+	(7886) -- A read operation on a large object failed while sending data to the client. Example of a common-ish error you MAY wish to ignore, etc.  
+	,(17806) -- SSPI handshake failure
+	,(18056) -- The client was unable to reuse a session with SPID ###, which had been reset for connection pooling. The failure ID is 8. 
+	--,(otherIdHere)
+	--,(etc)
+	;
+
+	IF EXISTS (SELECT NULL FROM @ignoredErrorNumbers WHERE [error_number] = @ErrorNumber)
+		RETURN 0; -- this is an ignored alert - we're done.
+
+	DECLARE @body nvarchar(MAX); 
+	
+	SET @body = N'DATE/TIME: {0}
+
+DESCRIPTION: {1}
+
+ERROR NUMBER: {2}' ;
+
+	SET @body = REPLACE(@body, '{0}', CONVERT(nvarchar(20), GETDATE(), 100));
+	SET @body = REPLACE(@body, '{1}', @Message);
+	SET @body = REPLACE(@body, '{2}', @ErrorNumber);
+
+	DECLARE @subject nvarchar(256) = N'SQL Server Alert System: ''Severity {0}'' occurred on {1}';
+
+	SET @subject = REPLACE(@subject, '{0}', @Severity);
+	SET @subject = REPLACE(@subject, '{1}', @@SERVERNAME); 
+	
+	EXEC msdb.dbo.sp_notify_operator
+		@profile_name = @MailProfileName, 
+		@name = @OperatorName,
+		@subject = @subject, 
+		@body = @body;
+
+	RETURN 0;
+
+GO
+
+
+
+
+/*
+
+----------------------------------------------------------------------------------------------------------------------
+-- Job Creation (Step 3):
+--	NOTE: script below ASSUMES convention of 'Alerts' as operator to notify in case of problems... 
+
+USE [msdb];
+GO
+
+BEGIN TRANSACTION;
+	DECLARE @ReturnCode int;
+	SELECT @ReturnCode = 0;
+	IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Monitoring' AND category_class=1) BEGIN
+		EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Monitoring';
+		IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback;
+	END;
+
+	DECLARE @jobId BINARY(16);
+	EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'Process Alerts', 
+			@enabled=1, 
+			@notify_level_eventlog=0, 
+			@notify_level_email=2, 
+			@notify_level_netsend=0, 
+			@notify_level_page=0, 
+			@delete_level=0, 
+			@description=N'NOTE: This job responds to alerts (and filters out specific error messages/ids) and therefore does NOT have a schedule.', 
+			@category_name=N'Monitoring', 
+			@owner_login_name=N'sa', 
+			@notify_email_operator_name=N'Alerts', 
+			@job_id = @jobId OUTPUT;
+	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+	EXEC @ReturnCode = msdb.dbo.sp_add_jobstep 
+			@job_id=@jobId, 
+			@step_name=N'Filter and Send Alerts', 
+			@step_id=1, 
+			@cmdexec_success_code=0, 
+			@on_success_action=1, 
+			@on_success_step_id=0, 
+			@on_fail_action=2, 
+			@on_fail_step_id=0, 
+			@retry_attempts=0, 
+			@retry_interval=0, 
+			@os_run_priority=0, @subsystem=N'TSQL', 
+			@command=N'DECLARE @ErrorNumber int, @Severity int;
+SET @ErrorNumber = CONVERT(int, N''$(ESCAPE_SQUOTE(A-ERR))'');
+SET @Severity = CONVERT(int, N''$(ESCAPE_NONE(A-SEV))'');
+
+EXEC admindb.dbo.process_alerts 
+	@ErrorNumber = @ErrorNumber, 
+	@Severity = @Severity,
+	@Message = N''$(ESCAPE_SQUOTE(A-MSG))'';', 
+			@database_name=N'admindb', 
+			@flags=0;
+	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+	EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1;
+	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+	EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)';
+	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+	COMMIT TRANSACTION;
+	GOTO EndSave;
+	QuitWithRollback:
+		IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+	EndSave:
+
+GO
+
+
+*/
 
 
 ---------------------------------------------------------------------------
