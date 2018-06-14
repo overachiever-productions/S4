@@ -30,7 +30,7 @@ GO
 CREATE PROC dbo.load_header_details 
 	@BackupPath			nvarchar(800), 
 	@BackupDate			datetime		OUTPUT, 
-	@BackupSize			int				OUTPUT, 
+	@BackupSize			bigint			OUTPUT, 
 	@Compressed			bit				OUTPUT, 
 	@Encrypted			bit				OUTPUT
 
@@ -121,7 +121,7 @@ AS
 	-- Return Output Details: 
 	SELECT 
 		@BackupDate = [BackupFinishDate], 
-		@BackupSize = CAST((ISNULL([CompressedBackupSize], [BackupSize])) AS int), 
+		@BackupSize = CAST((ISNULL([CompressedBackupSize], [BackupSize])) AS bigint), 
 		@Compressed = [Compressed], 
 		@Encrypted = CASE WHEN EncryptorThumbprint IS NOT NULL THEN 1 ELSE 0 END
 	FROM 

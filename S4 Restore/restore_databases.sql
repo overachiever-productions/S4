@@ -307,12 +307,12 @@ AS
 		Detected datetime NOT NULL, 
 		BackupCreated datetime NULL, 
 		Applied datetime NULL, 
-		BackupSize int NULL, 
+		BackupSize bigint NULL, 
 		Compressed bit NULL, 
 		[Encrypted] bit NULL
 	); 
 
-	DECLARE @backupDate datetime, @backupSize int, @compressed bit, @encrypted bit;
+	DECLARE @backupDate datetime, @backupSize bigint, @compressed bit, @encrypted bit;
 
     -- Assemble a list of dbs (if any) that were NOT dropped during the last execution (only) - so that we can drop them before proceeding. 
     DECLARE @NonDroppedFromPreviousExecution table( 

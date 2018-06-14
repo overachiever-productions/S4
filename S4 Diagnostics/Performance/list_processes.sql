@@ -3,10 +3,12 @@
 /*
 
 -- TODO: Parameter Validation.... 
+-- TODO: test change to N'ORDER BY ' + LOWER(@OrderBy) + N' DESC' in @topSQL for IF @topRows > 0... 
+--			pretty sure those changes make sense - but need to verify.
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
--- TODO: verify that @OrderBY is working and is performing fine... 
 
+-- vNEXT: thread count column... (MIGHT make sense to make it optional... might make sense to just ALWAYS include it).
 -- vNEXT: batch vs statement plans/text (i.e., offsets and the likes). 
 -- vNEXT: detailed blocking info... (blocking chains if @DetailedBlockingInfo = 1 (expressed as xml)... 
 -- vNEXT: temddb info (spills, usage, overhead, etc). 
@@ -15,11 +17,15 @@
 
 
 
-EXEC dbo.list_processes 
-	@TopNRows = 50, 
-	@ExcludeSelf = 0, 
-	@DetailedMemoryStats = 1, 
-	@IncludePlanHandle = 0;
+EXEC admindb.dbo.[list_processes]
+    @TopNRows = 20,			-- > 0 = SELECT TOP... otherwise ALL rows... 
+    @OrderBy = N'CPU',  -- CPU | READS | WRITES | DURATION | MEMORY
+    @IncludePlanHandle = 1,
+    @IncludeIsolationLevel = 0,
+	@ExcludeFTSDaemonProcesses = 1,
+    @ExcludeSystemProcesses = 1, 
+    @ExcludeSelf = 1;
+
 
 */
 
@@ -87,7 +93,7 @@ AS
 	  END;
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{TOP}', N'');
-		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
 	END; 
 		
 	IF @ExcludeSystemProcesses = 1 BEGIN 
