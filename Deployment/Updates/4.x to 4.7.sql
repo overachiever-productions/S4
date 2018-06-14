@@ -56,13 +56,13 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.7.3.16947';
+DECLARE @targetVersion varchar(20) = '4.7.2556.1';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
 
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Update. Dynamic retrieval of backup files during restore operations + bugfixes and list_proceses.', GETDATE());
+	VALUES (@targetVersion, 'Update. Dynamic backup files during restore. Bug Fixes + versioning change.', GETDATE());
 
 	-- confirm that restored_files is present: 
 	IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
@@ -3311,12 +3311,12 @@ AS
 		Detected datetime NOT NULL, 
 		BackupCreated datetime NULL, 
 		Applied datetime NULL, 
-		BackupSize int NULL, 
+		BackupSize bigint NULL, 
 		Compressed bit NULL, 
 		[Encrypted] bit NULL
 	); 
 
-	DECLARE @backupDate datetime, @backupSize int, @compressed bit, @encrypted bit;
+	DECLARE @backupDate datetime, @backupSize bigint, @compressed bit, @encrypted bit;
 
     -- Assemble a list of dbs (if any) that were NOT dropped during the last execution (only) - so that we can drop them before proceeding. 
     DECLARE @NonDroppedFromPreviousExecution table( 
@@ -4224,7 +4224,7 @@ GO
 CREATE PROC dbo.load_header_details 
 	@BackupPath			nvarchar(800), 
 	@BackupDate			datetime		OUTPUT, 
-	@BackupSize			int				OUTPUT, 
+	@BackupSize			bigint			OUTPUT, 
 	@Compressed			bit				OUTPUT, 
 	@Encrypted			bit				OUTPUT
 
@@ -4315,7 +4315,7 @@ AS
 	-- Return Output Details: 
 	SELECT 
 		@BackupDate = [BackupFinishDate], 
-		@BackupSize = CAST((ISNULL([CompressedBackupSize], [BackupSize])) AS int), 
+		@BackupSize = CAST((ISNULL([CompressedBackupSize], [BackupSize])) AS bigint), 
 		@Compressed = [Compressed], 
 		@Encrypted = CASE WHEN EncryptorThumbprint IS NOT NULL THEN 1 ELSE 0 END
 	FROM 
@@ -5051,7 +5051,7 @@ AS
 	  END;
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{TOP}', N'');
-		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
 	END; 
 		
 	IF @ExcludeSystemProcesses = 1 BEGIN 
