@@ -321,7 +321,7 @@ AS
     );
 
     DECLARE @LatestBatch uniqueidentifier;
-    SELECT @LatestBatch = (SELECT TOP 1 execution_id FROM dbo.restore_log ORDER BY restore_test_id DESC);
+    SELECT @LatestBatch = (SELECT TOP(1) execution_id FROM dbo.restore_log ORDER BY restore_test_id DESC);
 
     INSERT INTO @NonDroppedFromPreviousExecution ([Database], RestoredAs)
     SELECT [database], [restored_as]
@@ -428,9 +428,13 @@ AS
             IF EXISTS (SELECT NULL FROM @NonDroppedFromPreviousExecution WHERE [Database] = @databaseToRestore AND RestoredAs = @restoredName) BEGIN
                 SET @command = N'DROP DATABASE [' + @restoredName + N'];';
                 
-                EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
-                SET @statusDetail = @outcome;
-
+				IF @PrintOnly = 1 BEGIN
+						PRINT @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
+				  END;
+				ELSE BEGIN
+					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
+					SET @statusDetail = @outcome;
+				END;
                 IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
                 END;
