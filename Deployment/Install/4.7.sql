@@ -3605,7 +3605,7 @@ AS
                 SET @command = N'DROP DATABASE [' + @restoredName + N'];';
                 
 				IF @PrintOnly = 1 BEGIN
-						PRINT @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
+						PRINT N'-- ' + @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
 				  END;
 				ELSE BEGIN
 					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
