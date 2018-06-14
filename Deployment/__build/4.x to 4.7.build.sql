@@ -57,7 +57,7 @@ GO
 
 ----------------------------------------------------------------------------------------
 -- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.7.2556.1';
+DECLARE @targetVersion varchar(20) = '4.7.2556.3';
 IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
 	
 	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';

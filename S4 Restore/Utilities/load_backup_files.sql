@@ -74,7 +74,7 @@ AS
 
 		-- now dump everything but the most recent DIFF - if there is one: 
 		IF EXISTS(SELECT NULL FROM @results WHERE [output] LIKE 'DIFF%')
-			DELETE FROM @results WHERE id <> (SELECT id FROM @results WHERE [output] LIKE 'DIFF%'); 
+			DELETE FROM @results WHERE id <> (SELECT MAX(id) FROM @results WHERE [output] LIKE 'DIFF%'); 
 		ELSE
 			DELETE FROM @results;
 	END;

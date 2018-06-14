@@ -83,7 +83,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 END;
 
 
-DECLARE @CurrentVersion varchar(20) = N'4.7.2556.1';
+DECLARE @CurrentVersion varchar(20) = N'4.7.2556.3';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -4360,7 +4360,7 @@ AS
 
 		-- now dump everything but the most recent DIFF - if there is one: 
 		IF EXISTS(SELECT NULL FROM @results WHERE [output] LIKE 'DIFF%')
-			DELETE FROM @results WHERE id <> (SELECT id FROM @results WHERE [output] LIKE 'DIFF%'); 
+			DELETE FROM @results WHERE id <> (SELECT MAX(id) FROM @results WHERE [output] LIKE 'DIFF%'); 
 		ELSE
 			DELETE FROM @results;
 	END;
