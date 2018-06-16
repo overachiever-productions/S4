@@ -1,52 +1,69 @@
---##OUTPUT: \\Deployment\Install\
+--##OUTPUT: \\Deployment
 --##NOTE: This is a build/file (instructions for compiling a full deployment/upgrade script). Check Install and Upgrades folders for output.
 
 /*
 
-	NOTES:
-		- This script assumes that there MAY (or may NOT) be older S4 scripts on the server and, if found, will migrate data (backup and restore logs) and cleanup/remove older code from masterdb.  
+	REFERENCE:
+		- License, documentation, and source code at: 
+			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+			username: s4
+			password: simple
 
-	TODO: 
+	NOTES:
+		- This script will either install/deploy S4 version ##{{S4version}} or upgrade a PREVIOUSLY deployed version of S4 to ##{{S4version}}.
+		- This script will enable xp_cmdshell if it is not currently enabled. 
+		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
+
+	vNEXT: 
 		- If xp_cmdshell ends up being enabled, drop a link to S4 documentation on what it is, why it's needed, and why it's not the security risk some folks on interwebs make it out to be. 
+
+
+	Deployment Steps/Overview: 
+		1. Enable xp_cmdshell if not enabled. 
+		2. Create admindb if not already present.
+		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
+		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
+		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
+		6. Deploy S4 version ##{{S4version}} code to admindb (overwriting any previous versions). 
+		7. Reporting on current + any previous versions of S4 installed. 
 
 */
 
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 1. Enable xp_cmdshell if/as needed: 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
 GO
 
 IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND value_in_use = 0) BEGIN;
 
-	PRINT 'NOTE: Enabling xp_cmdshell for use by SysAdmin role-members only.';
+	SELECT 'Enabling xp_cmdshell for use by SysAdmin role-members only.' [NOTE: Server Configuration Change Made (xp_cmdshell)];
 
 	IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = 'show advanced options' AND value_in_use = 0) BEGIN
 
 		EXEC sp_configure 'show advanced options', 1;
-			
 		RECONFIGURE;
 
 		EXEC sp_configure 'xp_cmdshell', 1;
-		
 		RECONFIGURE;
-
 
 		-- switch BACK to not-showing advanced options:
 		EXEC sp_configure 'show advanced options', 1;
-			
 		RECONFIGURE;
 
 	  END;
 	ELSE BEGIN
-
 		EXEC sp_configure 'xp_cmdshell', 1;
-		
 		RECONFIGURE;
 	END;
 END;
 GO
 
-
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 2. Create admindb if/as needed: 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
 GO
@@ -60,11 +77,13 @@ IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') B
 END;
 GO
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 3. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 USE [admindb];
 GO
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- create and populate version history info:
 IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 
 	CREATE TABLE dbo.version_history (
@@ -84,8 +103,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-
-DECLARE @CurrentVersion varchar(20) = N'4.7.2556.3';
+DECLARE @CurrentVersion varchar(20) = N'##{{S4version}}';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -98,18 +116,17 @@ IF NULLIF(@version,'') IS NOT NULL BEGIN
 	IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @version) BEGIN
 		INSERT INTO dbo.version_history (version_number, [description], deployed)
 		VALUES ( @version, N'Found during deployment of ' + @CurrentVersion + N'.', @createDate);
-	END
+	END;
 END;
+GO
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 4. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
--- Add current version info:
-IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
-	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@CurrentVersion, 'Initial Installation/Deployment.', GETDATE());
-END;
+USE [admindb];
+GO
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Setup and Copy info from backup and restore logs... 
 IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
 
 		CREATE TABLE dbo.backup_log  (
@@ -133,14 +150,41 @@ IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
 			error_details nvarchar(MAX) NULL, 
 			CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
 		);	
-
 END;
 
--- copy over data from previous deployments if present. 
--- NOTE: done in a separate check to help keep things idempotent... i.e., if there's an error/failure AFTER creating the table... we wouldn't branch to this logic again IF it's part of the table creation.
+IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
+
+	CREATE TABLE dbo.restore_log  (
+		restore_test_id int IDENTITY(1,1) NOT NULL,
+		execution_id uniqueidentifier NOT NULL,
+		test_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
+		[database] sysname NOT NULL, 
+		restored_as sysname NOT NULL, 
+		restore_start datetime NOT NULL, 
+		restore_end datetime NULL, 
+		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
+		restored_files xml NULL, -- added v4.7.0.16942
+		consistency_start datetime NULL, 
+		consistency_end datetime NULL, 
+		consistency_succeeded bit NULL, 
+		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
+		error_details nvarchar(MAX) NULL, 
+		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id)
+	);
+
+END;
+GO
+
+---------------------------------------------------------------------------
+-- Copy previous log data (v3 and below) if this is a new v4 install. 
+---------------------------------------------------------------------------
+
+DECLARE @objectId int;
+SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = N'dba_DatabaseBackups_Log';
+
 IF @objectId IS NOT NULL BEGIN 
 		
-	PRINT 'Importing Previous Data.... ';
+	PRINT 'Importing Previous Data from backup log....';
 	SET IDENTITY_INSERT dbo.backup_log ON;
 
 	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
@@ -165,43 +209,15 @@ IF @objectId IS NOT NULL BEGIN
 	FROM 
 		master.dbo.dba_DatabaseBackups_Log
 	WHERE 
-		BackupID NOT IN (SELECT backup_id FROM dbo.backup_log);
+		BackupId NOT IN (SELECT backup_id FROM dbo.backup_log);
 
 	SET IDENTITY_INSERT dbo.backup_log OFF;
-END
-
-
-IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
-
-	CREATE TABLE dbo.restore_log  (
-		restore_test_id int IDENTITY(1,1) NOT NULL,
-		execution_id uniqueidentifier NOT NULL,
-		test_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
-		[database] sysname NOT NULL, 
-		restored_as sysname NOT NULL, 
-		restore_start datetime NOT NULL, 
-		restore_end datetime NULL, 
-		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
-		restored_files xml NULL, -- added v4.7.0.16942
-		consistency_start datetime NULL, 
-		consistency_end datetime NULL, 
-		consistency_succeeded bit NULL, 
-		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
-		error_details nvarchar(MAX) NULL, 
-		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id)
-	);
-
 END;
 
--- copy over data as needed:
 SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
 IF @objectId IS NOT NULL BEGIN;
 
-	-- v4.7.0.16942 - convert restore_log datetimes from UTC to local... 
-	DECLARE @hoursDiff int; 
-	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
-
-	PRINT 'Importing Previous Data.... ';
+	PRINT 'Importing Previous Data from restore log.... ';
 	SET IDENTITY_INSERT dbo.restore_log ON;
 
 	INSERT INTO dbo.restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
@@ -212,11 +228,11 @@ IF @objectId IS NOT NULL BEGIN;
         TestDate,
         [Database],
         RestoredAs,
-        DATEADD(HOUR, 0 - @HoursDiff, RestoreStart) RestoreStart,
-		DATEADD(HOUR, 0 - @HoursDiff, RestoreEnd) RestoreEnd,
+        RestoreStart,
+		RestoreEnd,
         RestoreSucceeded,
-        DATEADD(HOUR, 0 - @HoursDiff, ConsistencyCheckStart) ConsistencyCheckStart,
-        DATEADD(HOUR, 0 - @HoursDiff, ConsistencyCheckEnd) ConsistencyCheckEnd,
+        ConsistencyCheckStart,
+        ConsistencyCheckEnd,
         ConsistencyCheckSucceeded,
         Dropped,
         ErrorDetails
@@ -227,11 +243,107 @@ IF @objectId IS NOT NULL BEGIN;
 
 	SET IDENTITY_INSERT dbo.restore_log OFF;
 
-END
+END;
+GO
 
+---------------------------------------------------------------------------
+-- Make sure the admindb.dbo.restore_log.restored_files column exists ... 
+---------------------------------------------------------------------------
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Cleanup and Remove any/all previous code from the master database:
+USE [admindb];
+GO
+
+IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
+
+	BEGIN TRANSACTION
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_test_date;
+
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_restore_succeeded;
+			
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_dropped;
+			
+		CREATE TABLE dbo.Tmp_restore_log
+			(
+			restore_test_id int NOT NULL IDENTITY (1, 1),
+			execution_id uniqueidentifier NOT NULL,
+			test_date date NOT NULL,
+			[database] sysname NOT NULL,
+			restored_as sysname NOT NULL,
+			restore_start datetime NOT NULL,
+			restore_end datetime NULL,
+			restore_succeeded bit NOT NULL,
+			restored_files xml NULL,
+			consistency_start datetime NULL,
+			consistency_end datetime NULL,
+			consistency_succeeded bit NULL,
+			dropped varchar(20) NOT NULL,
+			error_details nvarchar(MAX) NULL
+			)  ON [PRIMARY];
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_test_date DEFAULT (getdate()) FOR test_date;
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
+			
+				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+				SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
+			
+		DROP TABLE dbo.restore_log;
+			
+		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
+			
+		ALTER TABLE dbo.restore_log ADD CONSTRAINT
+			PK_restore_log PRIMARY KEY CLUSTERED 
+			(
+			restore_test_id
+			) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
+			
+	COMMIT;
+END;
+GO
+
+---------------------------------------------------------------------------
+-- Process UTC to local time change (v4.7). 
+---------------------------------------------------------------------------
+
+USE [admindb];
+GO
+
+DECLARE @currentVersion decimal(2,1); 
+SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
+
+IF @currentVersion < 4.7 BEGIN 
+
+	DECLARE @hoursDiff int; 
+	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
+
+	UPDATE dbo.[restore_log]
+	SET 
+		[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
+		[restore_end] = DATEADD(HOUR, 0 - @hoursDiff, [restore_end]),
+		[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start]),
+		[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end])
+	WHERE 
+		[restore_test_id] > 0;
+
+	PRINT 'Updated dbo.restore_log.... (UTC shift)';
+END;
+GO
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 5. Cleanup and pre-v4 objects (i.e., in master db)... 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
 GO
@@ -302,7 +414,6 @@ IF OBJECT_ID('dbo.dba_DatabaseRestore_CheckPaths','P') IS NOT NULL
 	DROP PROC dbo.dba_DatabaseRestore_CheckPaths;
 GO
 
-
 -------------------------------------------------------------
 -- Potential FORMER versions of HA monitoring (pre 1.0):
 IF OBJECT_ID('dbo.dba_AvailabilityGroups_HealthCheck','P') IS NOT NULL
@@ -317,14 +428,17 @@ GO
 -- Potential FORMER versions of alert filtering: 
 IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
 	DROP PROC dbo.dba_FilterAndSendAlerts;
-	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required];
+	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required (alert filtering)];
 END;
 GO
 
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Deploy new code:
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 6. Deploy new/updated code.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [admindb];
+GO
 
 ---------------------------------------------------------------------------
 -- Common Code:
@@ -436,9 +550,26 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Monitoring\High Availability\data_synchronization_checks.sql
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
+DECLARE @CurrentVersion varchar(20) = N'##{{S4version}}';
+DECLARE @VersionDescription nvarchar(200) = N'##{{S4version_summary}}';
+DECLARE @InstallType nvarchar(20) = N'Install. ';
 
----------------------------------------------------------------------------
--- Display Versioning info:
-SELECT * FROM dbo.version_history;
+IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
+	SET @InstallType = N'Update. ';
+
+SET @VersionDescription = @InstallType + @VersionDescription;
+
+-- Add current version info:
+IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
+	INSERT INTO dbo.version_history (version_number, [description], deployed)
+	VALUES (@CurrentVersion, 'Initial Installation/Deployment.', GETDATE());
+END;
 GO
 
+-----------------------------------
+SELECT * FROM dbo.version_history;
+GO

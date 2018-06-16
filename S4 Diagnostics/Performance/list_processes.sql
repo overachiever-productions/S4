@@ -2,6 +2,7 @@
 
 /*
 
+
 -- TODO: Parameter Validation.... 
 -- TODO: test change to N'ORDER BY ' + LOWER(@OrderBy) + N' DESC' in @topSQL for IF @topRows > 0... 
 --			pretty sure those changes make sense - but need to verify.
@@ -216,6 +217,7 @@ AS
 		d.[status],
 		d.[last_wait_type],
 		{memory}
+		d.[db_name],
 		t.[text],  -- statement_text?
 		--{batch_text} ??? 
 		d.[cpu_time],

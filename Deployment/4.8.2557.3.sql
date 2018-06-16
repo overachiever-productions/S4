@@ -1,156 +1,442 @@
 
 /*
 
+	REFERENCE:
+		- License, documentation, and source code at: 
+			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+			username: s4
+			password: simple
+
 	NOTES:
-		- It's effectively impossible to 'intelligently' process changes in the script below (via T-SQL 'as is'). Because, if we, say a) check for @version = suchAndSuch and if it's not found, then try to run a bunch of code... 
-			then that CODE will be a bunch of IF/ELSE statements that create/drop sprocs UDFs and the likes and... ultimately which have gobs of their own logic in place. In other words we can't say: 
-					IF @something = true BEGIN
-							IF OBJECT_ID('Something') IS NOT NULL 
-								DROP Something;
-							GO 
+		- This script will either install/deploy S4 version 4.8.2557.3 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2557.3.
+		- This script will enable xp_cmdshell if it is not currently enabled. 
+		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
-							CREATE PROC 
-								@here
-							AS 
-								lots of complex 
-								logic
-								and branching 
-
-							and the likes
-
-								RETURN;
-							GO
-					END; -- end the IF... 
-
-			To get around that, the only REAL option is... object drop/create statements would have to be wrapped in 'ticks' and run via sp_executesql... which... sucks. 
+	vNEXT: 
+		- If xp_cmdshell ends up being enabled, drop a link to S4 documentation on what it is, why it's needed, and why it's not the security risk some folks on interwebs make it out to be. 
 
 
-			So. intead, this script/approach takes a hybrid approach that'll have to work until... it no longer works. Which is: 
-				- check for and push any DML and or even SOME DDL (modifications to tables and such) changes within IF blocks per each rollup/release defined. 
-				- Add meta-data to the version_history table about any changes. 
-				- bundle up ALL scripts/changes since 4.0 until the LATEST version of the code and... put those at the 'bottom' of this script. 
-					(which means that the idea/approach here is: a) drop/recreate ALL objects to the VERY latest version and b) 'iterate' over each major rollup/update and push and meta-data about said rollup into the history ALL while having a 'chance' to push any 
-						DDL changes and such that would be dependent on each rollup/release. 
+	Deployment Steps/Overview: 
+		1. Enable xp_cmdshell if not enabled. 
+		2. Create admindb if not already present.
+		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
+		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
+		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
+		6. Deploy S4 version 4.8.2557.3 code to admindb (overwriting any previous versions). 
+		7. Reporting on current + any previous versions of S4 installed. 
 
 */
 
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 1. Enable xp_cmdshell if/as needed: 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 USE [master];
 GO
 
--- 4.2.0.16786
-IF OBJECT_ID('dba_VerifyBackupExecution', 'P') IS NOT NULL BEGIN
-	DROP PROC dbo.dba_VerifyBackupExecution;
-	SELECT 'Older version of dba_VerifyBackupExecution found. Check for jobs to replace/update... ' [WARNING: Potential Configuration Changes Required (verify backups)]
-END;
+IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND value_in_use = 0) BEGIN;
 
---------------------------------------------------------------
--- 4.7.2.16947
-IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
-	DROP PROC dbo.dba_FilterAndSendAlerts;
-	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING: Potential Configuration Changes Required (alert filtering)];
+	SELECT 'Enabling xp_cmdshell for use by SysAdmin role-members only.' [NOTE: Server Configuration Change Made (xp_cmdshell)];
+
+	IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = 'show advanced options' AND value_in_use = 0) BEGIN
+
+		EXEC sp_configure 'show advanced options', 1;
+		RECONFIGURE;
+
+		EXEC sp_configure 'xp_cmdshell', 1;
+		RECONFIGURE;
+
+		-- switch BACK to not-showing advanced options:
+		EXEC sp_configure 'show advanced options', 1;
+		RECONFIGURE;
+
+	  END;
+	ELSE BEGIN
+		EXEC sp_configure 'xp_cmdshell', 1;
+		RECONFIGURE;
+	END;
 END;
+GO
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 2. Create admindb if/as needed: 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [master];
+GO
+
+IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') BEGIN
+	CREATE DATABASE [admindb];  -- TODO: look at potentially defining growth size details - based upon what is going on with model/etc. 
+
+	ALTER AUTHORIZATION ON DATABASE::[admindb] TO sa;
+
+	ALTER DATABASE [admindb] SET RECOVERY SIMPLE;  -- i.e., treat like master/etc. 
+END;
+GO
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 3. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
 GO
 
-----------------------------------------------------------------------------------------
--- Latest Rollup/Version:
-DECLARE @targetVersion varchar(20) = '4.7.2556.3';
-IF NOT EXISTS(SELECT NULL FROM dbo.version_history WHERE version_number = @targetVersion) BEGIN
-	
-	PRINT N'Deploying v' + @targetVersion + N' Updates.... ';
+IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 
-	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@targetVersion, 'Update. Dynamic backup files during restore. Bug Fixes + versioning change.', GETDATE());
+	CREATE TABLE dbo.version_history (
+		version_id int IDENTITY(1,1) NOT NULL, 
+		version_number varchar(20) NOT NULL, 
+		[description] nvarchar(200) NULL, 
+		deployed datetime NOT NULL CONSTRAINT DF_version_info_deployed DEFAULT GETDATE(), 
+		CONSTRAINT PK_version_info PRIMARY KEY CLUSTERED (version_id)
+	);
 
-	-- confirm that restored_files is present: 
-	IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
-
-		BEGIN TRANSACTION
-			ALTER TABLE dbo.restore_log
-				DROP CONSTRAINT DF_restore_log_test_date;
-
-			ALTER TABLE dbo.restore_log
-				DROP CONSTRAINT DF_restore_log_restore_succeeded;
-			
-			ALTER TABLE dbo.restore_log
-				DROP CONSTRAINT DF_restore_log_dropped;
-			
-			CREATE TABLE dbo.Tmp_restore_log
-				(
-				restore_test_id int NOT NULL IDENTITY (1, 1),
-				execution_id uniqueidentifier NOT NULL,
-				test_date date NOT NULL,
-				[database] sysname NOT NULL,
-				restored_as sysname NOT NULL,
-				restore_start datetime NOT NULL,
-				restore_end datetime NULL,
-				restore_succeeded bit NOT NULL,
-				restored_files xml NULL,
-				consistency_start datetime NULL,
-				consistency_end datetime NULL,
-				consistency_succeeded bit NULL,
-				dropped varchar(20) NOT NULL,
-				error_details nvarchar(MAX) NULL
-				)  ON [PRIMARY];
-			
-			ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-				DF_restore_log_test_date DEFAULT (getdate()) FOR test_date;
-			
-			ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-				DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
-			
-			ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-				DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
-			
-			SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
-			
-				 EXEC('INSERT INTO dbo.Tmp_restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-					SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
-			
-			SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
-			
-			DROP TABLE dbo.restore_log;
-			
-			EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
-			
-			ALTER TABLE dbo.restore_log ADD CONSTRAINT
-				PK_restore_log PRIMARY KEY CLUSTERED 
-				(
-				restore_test_id
-				) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
-			
-		COMMIT;
-
-	END;
-
-	-- v4.7.0.16942 - convert restore_log datetimes from UTC to local...
-	DECLARE @currentVersion decimal(2,1); 
-	SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
-
-	IF @currentVersion < 4.7 BEGIN 
-
-		DECLARE @hoursDiff int; 
-		SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
-
-		UPDATE dbo.[restore_log]
-		SET 
-			[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
-			[restore_end] = DATEADD(HOUR, 0 - @hoursDiff, [restore_end]),
-			[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start]),
-			[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end]);
-
-		PRINT 'Updated dbo.restore_log.... (UTC shift)';
-	END;
-
+	EXEC sys.sp_addextendedproperty
+		@name = 'S4',
+		@value = 'TRUE',
+		@level0type = 'Schema',
+		@level0name = 'dbo',
+		@level1type = 'Table',
+		@level1name = 'version_history';
 END;
 
+DECLARE @CurrentVersion varchar(20) = N'4.8.2557.3';
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Deploy latest code / code updates:
+-- Add previous details if any are present: 
+DECLARE @version sysname; 
+DECLARE @objectId int;
+DECLARE @createDate datetime;
+SELECT @objectId = [object_id], @createDate = create_date FROM master.sys.objects WHERE [name] = N'dba_DatabaseBackups_Log';
+SELECT @version = CAST([value] AS sysname) FROM master.sys.extended_properties WHERE major_id = @objectId AND [name] = 'Version';
 
+IF NULLIF(@version,'') IS NOT NULL BEGIN
+	IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @version) BEGIN
+		INSERT INTO dbo.version_history (version_number, [description], deployed)
+		VALUES ( @version, N'Found during deployment of ' + @CurrentVersion + N'.', @createDate);
+	END;
+END;
+GO
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 4. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
+
+		CREATE TABLE dbo.backup_log  (
+			backup_id int IDENTITY(1,1) NOT NULL,
+			execution_id uniqueidentifier NOT NULL,
+			backup_date date NOT NULL CONSTRAINT DF_backup_log_log_date DEFAULT (GETDATE()),
+			[database] sysname NOT NULL, 
+			backup_type sysname NOT NULL,
+			backup_path nvarchar(1000) NOT NULL, 
+			copy_path nvarchar(1000) NULL, 
+			backup_start datetime NOT NULL, 
+			backup_end datetime NULL, 
+			backup_succeeded bit NOT NULL CONSTRAINT DF_backup_log_backup_succeeded DEFAULT (0), 
+			verification_start datetime NULL, 
+			verification_end datetime NULL, 
+			verification_succeeded bit NULL, 
+			copy_succeeded bit NULL, 
+			copy_seconds int NULL, 
+			failed_copy_attempts int NULL, 
+			copy_details nvarchar(MAX) NULL,
+			error_details nvarchar(MAX) NULL, 
+			CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
+		);	
+END;
+
+IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
+
+	CREATE TABLE dbo.restore_log  (
+		restore_test_id int IDENTITY(1,1) NOT NULL,
+		execution_id uniqueidentifier NOT NULL,
+		test_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
+		[database] sysname NOT NULL, 
+		restored_as sysname NOT NULL, 
+		restore_start datetime NOT NULL, 
+		restore_end datetime NULL, 
+		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
+		restored_files xml NULL, -- added v4.7.0.16942
+		consistency_start datetime NULL, 
+		consistency_end datetime NULL, 
+		consistency_succeeded bit NULL, 
+		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
+		error_details nvarchar(MAX) NULL, 
+		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id)
+	);
+
+END;
+GO
+
+---------------------------------------------------------------------------
+-- Copy previous log data (v3 and below) if this is a new v4 install. 
+---------------------------------------------------------------------------
+
+DECLARE @objectId int;
+SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = N'dba_DatabaseBackups_Log';
+
+IF @objectId IS NOT NULL BEGIN 
+		
+	PRINT 'Importing Previous Data from backup log....';
+	SET IDENTITY_INSERT dbo.backup_log ON;
+
+	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
+		verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
+	SELECT 
+		BackupId,
+        ExecutionId,
+        BackupDate,
+        [Database],
+        BackupType,
+        BackupPath,
+        CopyToPath,
+        BackupStart,
+        BackupEnd,
+        BackupSucceeded,
+        VerificationCheckStart,
+        VerificationCheckEnd,
+        VerificationCheckSucceeded,
+        CopyDetails,
+		0,     --FailedCopyAttempts,
+        ErrorDetails
+	FROM 
+		master.dbo.dba_DatabaseBackups_Log
+	WHERE 
+		BackupId NOT IN (SELECT backup_id FROM dbo.backup_log);
+
+	SET IDENTITY_INSERT dbo.backup_log OFF;
+END;
+
+SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
+IF @objectId IS NOT NULL BEGIN;
+
+	PRINT 'Importing Previous Data from restore log.... ';
+	SET IDENTITY_INSERT dbo.restore_log ON;
+
+	INSERT INTO dbo.restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
+		consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+	SELECT 
+		RestorationTestId,
+        ExecutionId,
+        TestDate,
+        [Database],
+        RestoredAs,
+        RestoreStart,
+		RestoreEnd,
+        RestoreSucceeded,
+        ConsistencyCheckStart,
+        ConsistencyCheckEnd,
+        ConsistencyCheckSucceeded,
+        Dropped,
+        ErrorDetails
+	FROM 
+		master.dbo.dba_DatabaseRestore_Log
+	WHERE 
+		RestorationTestId NOT IN (SELECT restore_test_id FROM dbo.restore_log);
+
+	SET IDENTITY_INSERT dbo.restore_log OFF;
+
+END;
+GO
+
+---------------------------------------------------------------------------
+-- Make sure the admindb.dbo.restore_log.restored_files column exists ... 
+---------------------------------------------------------------------------
+
+USE [admindb];
+GO
+
+IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
+
+	BEGIN TRANSACTION
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_test_date;
+
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_restore_succeeded;
+			
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_dropped;
+			
+		CREATE TABLE dbo.Tmp_restore_log
+			(
+			restore_test_id int NOT NULL IDENTITY (1, 1),
+			execution_id uniqueidentifier NOT NULL,
+			test_date date NOT NULL,
+			[database] sysname NOT NULL,
+			restored_as sysname NOT NULL,
+			restore_start datetime NOT NULL,
+			restore_end datetime NULL,
+			restore_succeeded bit NOT NULL,
+			restored_files xml NULL,
+			consistency_start datetime NULL,
+			consistency_end datetime NULL,
+			consistency_succeeded bit NULL,
+			dropped varchar(20) NOT NULL,
+			error_details nvarchar(MAX) NULL
+			)  ON [PRIMARY];
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_test_date DEFAULT (getdate()) FOR test_date;
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
+			
+				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+				SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
+			
+		DROP TABLE dbo.restore_log;
+			
+		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
+			
+		ALTER TABLE dbo.restore_log ADD CONSTRAINT
+			PK_restore_log PRIMARY KEY CLUSTERED 
+			(
+			restore_test_id
+			) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
+			
+	COMMIT;
+END;
+GO
+
+---------------------------------------------------------------------------
+-- Process UTC to local time change (v4.7). 
+---------------------------------------------------------------------------
+
+USE [admindb];
+GO
+
+DECLARE @currentVersion decimal(2,1); 
+SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
+
+IF @currentVersion < 4.7 BEGIN 
+
+	DECLARE @hoursDiff int; 
+	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
+
+	UPDATE dbo.[restore_log]
+	SET 
+		[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
+		[restore_end] = DATEADD(HOUR, 0 - @hoursDiff, [restore_end]),
+		[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start]),
+		[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end])
+	WHERE 
+		[restore_test_id] > 0;
+
+	PRINT 'Updated dbo.restore_log.... (UTC shift)';
+END;
+GO
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 5. Cleanup and pre-v4 objects (i.e., in master db)... 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [master];
+GO
+
+-------------------------------------------------------------
+-- Tables:
+IF OBJECT_ID('dbo.dba_DatabaseBackups_Log','U') IS NOT NULL
+	DROP TABLE dbo.dba_DatabaseBackups_Log;
+GO
+
+IF OBJECT_ID('dbo.dba_DatabaseRestore_Log','U') IS NOT NULL
+	DROP TABLE dbo.dba_DatabaseRestore_Log;
+GO
+
+-- UDFs:
+IF OBJECT_ID('dbo.dba_SplitString','TF') IS NOT NULL
+	DROP FUNCTION dbo.dba_SplitString;
+GO
+
+-------------------------------------------------------------
+-- Sprocs:
+-- common:
+IF OBJECT_ID('dbo.dba_CheckPaths','P') IS NOT NULL
+	DROP PROC dbo.dba_CheckPaths;
+GO
+
+IF OBJECT_ID('dbo.dba_ExecuteAndFilterNonCatchableCommand','P') IS NOT NULL
+	DROP PROC dbo.dba_ExecuteAndFilterNonCatchableCommand;
+GO
+
+IF OBJECT_ID('dbo.dba_LoadDatabaseNames','P') IS NOT NULL
+	DROP PROC dbo.dba_LoadDatabaseNames;
+GO
+
+-- Backups:
+IF OBJECT_ID('[dbo].[dba_RemoveBackupFiles]','P') IS NOT NULL
+	DROP PROC [dbo].[dba_RemoveBackupFiles];
+GO
+
+IF OBJECT_ID('dbo.dba_BackupDatabases','P') IS NOT NULL
+	DROP PROC dbo.dba_BackupDatabases;
+GO
+
+IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
+	DROP PROC dba_RestoreDatabases;
+GO
+
+IF OBJECT_ID('dba_VerifyBackupExecution', 'P') IS NOT NULL
+	DROP PROC dbo.dba_VerifyBackupExecution;
+GO
+
+-------------------------------------------------------------
+-- Potential FORMER versions of basic code (pre 1.0).
+
+IF OBJECT_ID('dbo.dba_DatabaseBackups','P') IS NOT NULL
+	DROP PROC dbo.dba_DatabaseBackups;
+GO
+
+IF OBJECT_ID('dbo.dba_ExecuteNonCatchableCommand','P') IS NOT NULL
+	DROP PROC dbo.dba_ExecuteNonCatchableCommand;
+GO
+
+IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
+	DROP PROC dba_RestoreDatabases;
+GO
+
+IF OBJECT_ID('dbo.dba_DatabaseRestore_CheckPaths','P') IS NOT NULL
+	DROP PROC dbo.dba_DatabaseRestore_CheckPaths;
+GO
+
+-------------------------------------------------------------
+-- Potential FORMER versions of HA monitoring (pre 1.0):
+IF OBJECT_ID('dbo.dba_AvailabilityGroups_HealthCheck','P') IS NOT NULL
+	DROP PROC dbo.dba_AvailabilityGroups_HealthCheck;
+GO
+
+IF OBJECT_ID('dbo.dba_Mirroring_HealthCheck','P') IS NOT NULL
+	DROP PROC dbo.dba_Mirroring_HealthCheck;
+GO
+
+--------------------------------------------------------------
+-- Potential FORMER versions of alert filtering: 
+IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
+	DROP PROC dbo.dba_FilterAndSendAlerts;
+	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required (alert filtering)];
+END;
+GO
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 6. Deploy new/updated code.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [admindb];
+GO
 
 ---------------------------------------------------------------------------
 -- Common Code:
@@ -4335,659 +4621,6 @@ GO
 
 
 ---------------------------------------------------------------------------
---- Monitoring
----------------------------------------------------------------------------
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.verify_backup_execution','P') IS NOT NULL
-	DROP PROC dbo.verify_backup_execution;
-GO
-
-CREATE PROC dbo.verify_backup_execution 
-	@DatabasesToCheck					nvarchar(MAX),
-	@DatabasesToExclude					nvarchar(MAX)		= NULL,
-	@FullBackupAlertThresholdHours		int, 
-	@LogBackupAlertThresholdMinutes		int,
-	@MonitoredJobs						nvarchar(MAX)		= NULL, 
-	@AllowNonAccessibleSecondaries		bit					= 0,
-	@MinimumElapsedSecondsToConsider	int					= 60,   -- if a specified backup job has been running < @MinimumElapsedSecondsToConsider, then there's NO reason to raise an alert. 
-	@MaximumElapsedSecondsToIgnore		int					= 300,			-- if a backup job IS running longer than normal, but is STILL under @MaximumElapsedSecondsToIgnore, then there's no reason to raise an alert. 
-	@OperatorName						sysname				= N'Alerts',
-	@MailProfileName					sysname				= N'General',
-	@EmailSubjectPrefix					nvarchar(50)		= N'[Database Backups - Failed Checkups] ', 
-	@PrintOnly							bit					= 0
-AS
-	SET NOCOUNT ON; 
-
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
-
-	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs: 
-
-	-- Operator Checks:
-	IF ISNULL(@OperatorName, '') IS NULL BEGIN
-		RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
-		RETURN -4;
-		END;
-	ELSE BEGIN
-		IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-			RAISERROR('Invalild Operator Name Specified.', 16, 1);
-			RETURN -4;
-		END;
-	END;
-
-	-- Profile Checks:
-	DECLARE @DatabaseMailProfile nvarchar(255);
-	EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
- 
-	IF @DatabaseMailProfile != @MailProfileName BEGIN
-		RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
-		RETURN -5;
-	END;
-
-	-----------------------------------------------------------------------------
-
-	DECLARE @outputs table (
-		output_id int IDENTITY(1,1) NOT NULL, 
-		[type] sysname NOT NULL, -- warning or error 
-		[message] nvarchar(MAX)
-	);
-
-	DECLARE @errorMessage nvarchar(MAX) = '';
-
-	-----------------------------------------------------------------------------
-	-- Determine which databases to check:
-	DECLARE @databaseToCheckForFullBackups table (
-		[name] sysname NOT NULL
-	);
-
-	DECLARE @databaseToCheckForLogBackups table (
-		[name] sysname NOT NULL
-	);
-
-	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_database_names 
-		@Input = @DatabasesToCheck,
-		@Exclusions = @DatabasesToExclude, 
-		@Priorities = NULL, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'FULL',
-		@Output = @serialized OUTPUT;
-
-	INSERT INTO @databaseToCheckForFullBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
-
-
-	-- TODO: If these are somehow in the @Exclusions list... then... don't add them. 
-	INSERT INTO @databaseToCheckForFullBackups ([name])
-	VALUES ('master'),('msdb');
-
-	EXEC dbo.load_database_names 
-		@Input = @DatabasesToCheck,
-		@Exclusions = @DatabasesToExclude, 
-		@Priorities = NULL, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'LOG',
-		@Output = @serialized OUTPUT;
-
-	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
-
-
-	-- Verify that there are backups to check:
-
-	-----------------------------------------------------------------------------
-	-- Determine which jobs to check:
-	DECLARE @specifiedJobs table ( 
-		jobname sysname NOT NULL
-	);
-
-	DECLARE @jobsToCheck table ( 
-		jobname sysname NOT NULL, 
-		jobid uniqueidentifier NULL
-	);
-
-	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',');
-
-	INSERT INTO @jobsToCheck (jobname, jobid)
-	SELECT 
-		s.jobname, 
-		j.job_id [jobid]
-	FROM 
-		@specifiedJobs s
-		LEFT OUTER JOIN msdb..sysjobs j ON s.jobname = j.[name];
-
-	-----------------------------------------------------------------------------
-	-- backup checks:
-
-	BEGIN TRY
-
-		-- FULL Backup Checks: 
-		DECLARE @backupStatuses table (
-			backup_id int IDENTITY(1,1) NOT NULL,
-			[database_name] sysname NOT NULL, 
-			[backup_type] sysname NOT NULL, 
-			[minutes_since_last_backup] int
-		);
-
-		WITH core AS (
-			SELECT 
-				b.[database_name],
-				CASE b.[type]	
-					WHEN 'D' THEN 'FULL'
-					WHEN 'I' THEN 'DIFF'
-					WHEN 'L' THEN 'LOG'
-					ELSE 'OTHER'  -- options include, F, G, P, Q, [NULL] 
-				END [backup_type],
-				MAX(b.backup_finish_date) [last_completion]
-			FROM 
-				@databaseToCheckForFullBackups x
-				INNER JOIN msdb.dbo.backupset b ON x.[name] = b.[database_name]
-			WHERE
-				b.is_damaged = 0
-				AND b.has_incomplete_metadata = 0
-				AND b.is_copy_only = 0
-			GROUP BY 
-				b.[database_name], 
-				b.[type]
-		) 
-	
-		INSERT INTO @backupStatuses ([database_name], backup_type, minutes_since_last_backup)
-		SELECT 
-			[database_name],
-			[backup_type],
-			DATEDIFF(MINUTE, last_completion, GETDATE()) [minutes_since_last_backup]
-		FROM 
-			core
-		ORDER BY 
-			[core].[database_name];
-
-		-- Grab a list of any dbs that were specified for checkups, but which aren't on the server - then report on those, and use the temp-table for exclusions from subsequent checks:
-		DECLARE @phantoms table (
-			[name] sysname NOT NULL
-		);
-
-		INSERT INTO @phantoms ([name])
-		SELECT [name] FROM @databaseToCheckForFullBackups WHERE [name] NOT IN (SELECT [name] FROM master.sys.databases WHERE state_desc = 'ONLINE');
-
-		-- Remove non-accessible secondaries (Mirrored or AG'd) as needed/specified:
-		IF @AllowNonAccessibleSecondaries = 1 BEGIN
-
-			DECLARE @activeSecondaries table ( 
-				[name] sysname NOT NULL
-			);
-
-			INSERT INTO @activeSecondaries ([name])
-			SELECT [name] FROM master.sys.databases 
-			WHERE [name] IN (SELECT d.[name] FROM master.sys.databases d INNER JOIN master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL AND m.mirroring_role_desc != 'PRINCIPAL' )
-			OR [name] IN (
-				SELECT d.name 
-				FROM master.sys.databases d 
-				INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id
-				WHERE hars.role_desc != 'PRIMARY'
-			); -- grab any dbs that are in an AG where the current role != PRIMARY. 
-
-
-			-- remove secondaries from any list of CHECKS and from the list of statuses we've pulled back (because evaluation is a comparison of BOTH sides of the union/join of these sets).
-			DELETE FROM @backupStatuses WHERE [database_name] IN (SELECT [name] FROM @activeSecondaries);
-
-			DELETE FROM @phantoms WHERE [name] IN (SELECT [name] FROM @activeSecondaries);
-			DELETE FROM @databaseToCheckForFullBackups WHERE [name] IN (SELECT [name] FROM @activeSecondaries);
-			DELETE FROM @databaseToCheckForLogBackups WHERE [name] IN (SELECT [name] FROM @activeSecondaries);
-
-		END;
-
-		INSERT INTO @outputs ([type], [message])
-		SELECT 
-			N'WARNING',
-			N'Database [' + [name] + N'] was configured for backup checks/verifications - but is NOT currently listed as an ONLINE database on the server.'
-		FROM 
-			@phantoms
-		ORDER BY 
-			[name];
-
-		-- Report on databases that were specified for checks, but which have NEVER been backed-up:
-		INSERT INTO @outputs ([type], [message])
-		SELECT 
-			N'WARNING', 
-			N'Database [' + [name] + '] has been configured for regular FULL backup checks/verifications - but has NEVER been backed up.'
-		FROM 
-			@databaseToCheckForFullBackups
-		WHERE 
-			[name] NOT IN (SELECT [database_name] FROM @backupStatuses WHERE backup_type = 'FULL')
-			AND [name] NOT IN (SELECT [name] FROM @phantoms);
-		
-		-- Report on databases that were specified for checks, but which haven't had FULL backups in > @FullBackupAlertThresholdHours:
-		INSERT INTO @outputs ([type], [message])
-		SELECT 
-			N'WARNING' [type], 
-			N'The last successful FULL backup for database [' + [database_name] + N'] was ' + CAST((minutes_since_last_backup / 60) AS sysname) + N' hours (and ' + CAST((minutes_since_last_backup % 60) AS sysname) + N' minutes) ago - which exceeds the currently specified value of ' + CAST(@FullBackupAlertThresholdHours AS sysname) + N' hours for @FullBackupAlertThresholdHours.'
-		FROM 
-			@backupStatuses
-		WHERE 
-			backup_type = 'FULL'
-			AND minutes_since_last_backup > 60 * @FullBackupAlertThresholdHours
-		ORDER BY 
-			minutes_since_last_backup DESC;
-
-		-- Report on User DBs specified for checkups that are set to NON-SIMPLE recovery, and which haven't had their T-Logs backed up:
-		INSERT INTO @outputs ([type], [message])
-		SELECT 
-			N'WARNING',
-			N'Database [' + [name] + N'] has been configured for regular LOG backup checks/verifiation - but has NEVER had its Transaction Log backed up.'
-		FROM 
-			@databaseToCheckForLogBackups
-		WHERE 
-			[name] NOT IN (SELECT [database_name] FROM @backupStatuses WHERE backup_type = 'LOG')
-			AND [name] NOT IN (SELECT [name] FROM @phantoms);
-
-		-- Report on databases in NON-SIMPLE recovery mode that haven't had their T-Logs backed up in > @LogBackupAlertThresholdMinutes:
-		INSERT INTO @outputs ([type], [message])
-		SELECT 
-			N'WARNING', 
-			N'The last successful Transaction Log backup for database [' + [database_name] + N'] was ' + CAST((minutes_since_last_backup / 60) AS sysname) + N' hours (and ' + CAST((minutes_since_last_backup % 60) AS sysname) + N' minutes) ago - which exceeds the currently specified value of ' + CAST(@LogBackupAlertThresholdMinutes AS sysname) + N' minutes for @LogBackupAlertThresholdMinutes.'
-		FROM 
-			@backupStatuses
-		WHERE 
-			backup_type = 'LOG'
-			AND minutes_since_last_backup > @LogBackupAlertThresholdMinutes
-		ORDER BY 
-			minutes_since_last_backup DESC;
-	
-	END TRY
-	BEGIN CATCH
-		SELECT @errorMessage = N'Exception during Backup Checks: [' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE() + N']'; 
-
-		INSERT INTO @outputs ([type], [message])
-		VALUES ('EXCEPTION', @errorMessage);
-
-		SET @errorMessage = '';
-	END CATCH
-
-	-----------------------------------------------------------------------------
-	-- job checks:
-
-
-	IF (SELECT COUNT(*) FROM @jobsToCheck) > 0 BEGIN
-
-		BEGIN TRY
-			-- Warn about any jobs specified for checks that aren't actual jobs (i.e., where the names couldn't match a SQL Agent job).
-			INSERT INTO @outputs ([type], [message])
-			SELECT 
-				N'WARNING', 
-				N'Job [' + jobname + '] was configured for a regular checkup - but is NOT a VALID SQL Server Agent Job Name.'
-			FROM 
-				@jobsToCheck 
-			WHERE 
-				jobid IS NULL
-			ORDER BY 
-				jobname;
-
-			-- otherwise, make sure that if the job is currently running, it hasn't exceeded 130% of the time it normally takes to run. 
-			DECLARE @currentJobName sysname, @currentJobID uniqueidentifier;
-			DECLARE @instanceCounts int, @avgRunDuration int;
-
-			DECLARE @isExecuting bit, @elapsed int;
-		
-			DECLARE checker CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT jobname, jobid FROM @jobsToCheck WHERE jobid IS NOT NULL; 
-
-			OPEN checker;
-			FETCH NEXT FROM checker INTO @currentJobName, @currentJobID;
-
-			WHILE @@FETCH_STATUS = 0 BEGIN
-				SET @isExecuting = 0;
-				SET @elapsed = 0;
-
-				WITH core AS ( 
-					SELECT job_id, 
-						DATEDIFF(SECOND, run_requested_date, GETDATE()) [elapsed] 
-					FROM msdb.dbo.sysjobactivity 
-					WHERE run_requested_date IS NOT NULL AND stop_execution_date IS NULL
-				)
-
-				SELECT 
-					@isExecuting = CASE when job_id IS NULL THEN 0 ELSE 1 END, 
-					@elapsed = elapsed 
-				FROM 
-					core
-				WHERE 
-					job_id = @currentJobID;
-
-				-- 4.2.3.16822 Only check for 'long-running' jobs if a) duration is > @MinimumElapsedSecondsToConsider (i.e., don't alert for a job running 220% over normal IF 220% over normal is, say, 10 seconds TOTAL)
-				--		 _AND_ b) if @elapsed is >  @MaximumElapsedSecondsToIgnore - i.e., don't alert if 'total elapsed' time is, say, 3 minutes - who cares...  (in 15 minutes when we run again, IF this job is still running (and that's a problem), THEN we'll get an alert). 
-				IF (@isExecuting = 1) AND (@elapsed > @MinimumElapsedSecondsToConsider) AND (@elapsed > @MaximumElapsedSecondsToIgnore) BEGIN	
-
-					-- check on execution durations:
-					SELECT 
-						@instanceCounts = COUNT(*), 
-						@avgRunDuration = AVG(run_duration) 
-					FROM (
-						SELECT TOP(20)
-							run_duration 
-						FROM 
-							msdb.dbo.sysjobhistory 
-						WHERE 
-							job_id = @currentJobID
-							AND step_id = 0 AND run_status = 1 -- only grab metrics/durations for the ENTIRE duration of (successful only) executions.
-						ORDER BY 
-							run_date DESC, 
-							run_time DESC
-						) latest;
-				
-
-					IF @instanceCounts < 6 BEGIN 
-						-- Arguably, we could send a 'warning' here ... but that's lame. At present, there is NOT a problem - because we don't have enough history to determine if this execution is 'out of scope' or not. 
-						--		so, rather than causing false-alarms/red-herrings, just spit out a bit of info into the job history instead.
-						PRINT 'History for job [' + @currentJobName + '] only contains information on the last ' + CAST(@instanceCounts AS sysname) + N' executions of the job. Meaning there is not enough history to determine abnormalities.'
-
-				       END;
-					ELSE BEGIN
-
-						-- otherwise, if the current execution duration is > 220% of normal execution - raise an alert... 
-						IF @elapsed > @avgRunDuration * 2.2 BEGIN
-							INSERT INTO @outputs ([type], [message])
-							SELECT 
-								N'WARNING',
-								N'Job [' + @currentJobName + N'] is currently running, and has been running for ' + CAST(@elapsed AS sysname) + N' seconds - which is greater than 220% of the average time it has taken to execute over the last ' + CAST(@instanceCounts AS sysname) + N' executions.'
-						END;
-					END;
-				
-				END;
-
-				FETCH NEXT FROM checker INTO @currentJobName, @currentJobID;
-			END;
-
-
-		END TRY
-		BEGIN CATCH
-			SELECT @errorMessage = N'Exception during Job Checks: [' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE() + N']'; 
-
-			INSERT INTO @outputs ([type], [message])
-			VALUES ('EXCEPTION', @errorMessage);			
-		END CATCH
-
-		CLOSE checker;
-		DEALLOCATE checker;
-
-	END;  -- /IF JobChecks
-
-
-	IF EXISTS (SELECT NULL FROM @outputs) BEGIN
-
-		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
-		DECLARE @tab nchar(1) = NCHAR(9); 
-
-		DECLARE @message nvarchar(MAX); 
-		DECLARE @subject nvarchar(2000);
-
-		IF EXISTS (SELECT NULL FROM @outputs WHERE [type] = 'EXCEPTION') 
-			SET @subject = @EmailSubjectPrefix + N' Exceptions Detected';
-		ELSE  
-			SET @subject = @EmailSubjectPrefix + N' Warnings Detected';
-
-		SET @message = N'The following problems were encountered during execution:' + @crlf + @crlf;
-
-		--MKC: Insane. The following does NOT work. It returns only the LAST row from a multi-row 'set'. (remove the order-by, and ALL results return. Crazy.)
-			--SELECT 
-			--	@message = @message + @tab + N'[' + [type] + N'] - ' + [message] + @crlf
-			--FROM 
-			--	@outputs
-			--ORDER BY 
-			--	CASE WHEN [type] = 'EXCEPTION' THEN 0 ELSE 1 END ASC, output_id ASC;
-
-		-- So, instead of combining 'types' of outputs, i'm just hacking this to concatenate 2x different result 'sets' or types of results. (I could try a CTE + Windowing Function... or .. something else, but this is easiest for now). 
-		SELECT 
-			@message = @message + @tab + N'[' + [type] + N'] - ' + [message] + @crlf
-		FROM 
-			@outputs
-		WHERE 
-			[type] = 'EXCEPTION'
-		ORDER BY 
-			output_id ASC;
-
-		-- + this:
-		SELECT 
-			@message = @message + @tab + N'[' + [type] + N'] - ' + [message] + @crlf
-		FROM 
-			@outputs
-		WHERE 
-			[type] = 'WARNING'
-		ORDER BY 
-			output_id ASC;
-
-		IF @PrintOnly = 1 BEGIN
-			
-			PRINT @subject;
-			PRINT @message;
-
-		  END
-		ELSE BEGIN 
-			EXEC msdb..sp_notify_operator
-				@profile_name = @MailProfileName,
-				@name = @OperatorName,
-				@subject = @subject, 
-				@body = @message;
-		END;
-
-	END;
-
-	RETURN 0;
-GO
-
-
------------------------------------
-USE admindb;
-GO
-
-
-IF OBJECT_ID('dbo.verify_database_configurations','P') IS NOT NULL
-	DROP PROC dbo.verify_database_configurations;
-GO
-
-CREATE PROC dbo.verify_database_configurations 
-	@DatabasesToExclude				nvarchar(MAX) = NULL,
-	@CompatabilityExclusions		nvarchar(MAX) = NULL,
-	@ReportDatabasesNotOwnedBySA	bit	= 0,
-	@OperatorName					sysname = N'Alerts',
-	@MailProfileName				sysname = N'General',
-	@EmailSubjectPrefix				nvarchar(50) = N'[Database Configuration Alert] ',
-	@PrintOnly						bit = 0
-AS
-	SET NOCOUNT ON;
-
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-
-	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs: 
-	IF @PrintOnly = 0 BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
-		
-		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN
-			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
-			RETURN -2;
-		 END;
-		ELSE BEGIN 
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-				RAISERROR('Invalild Operator Name Specified.', 16, 1);
-				RETURN -2;
-			END;
-		END;
-
-		-- Profile Checks:
-		DECLARE @DatabaseMailProfile nvarchar(255)
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
- 
-		IF @DatabaseMailProfile != @MailProfileName BEGIN
-			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
-			RETURN -2;
-		END; 
-	END;
-
-	IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
-		SET @DatabasesToExclude = NULL;
-
-	IF RTRIM(LTRIM(@CompatabilityExclusions)) = N''
-		SET @DatabasesToExclude = NULL;
-
-	-----------------------------------------------------------------------------
-	-- Set up / initialization:
-
-	-- start by (messily) grabbing the current version on the server:
-	DECLARE @serverVersion int;
-	SET @serverVersion = (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) * 10;
-
-	DECLARE @serialized nvarchar(MAX);
-	DECLARE @databasesToCheck table (
-		[name] sysname
-	);
-	
-	EXEC dbo.load_database_names 
-		@Input = N'[USER]',
-		@Exclusions = @DatabasesToExclude, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'FULL',
-		@Output = @serialized OUTPUT;
-
-	INSERT INTO @databasesToCheck ([name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
-
-	DECLARE @excludedComptabilityDatabases table ( 
-		[name] sysname NOT NULL
-	); 
-
-	IF @CompatabilityExclusions IS NOT NULL BEGIN 
-		INSERT INTO @excludedComptabilityDatabases ([name])
-		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',');
-	END; 
-
-	DECLARE @issues table ( 
-		issue_id int IDENTITY(1,1) NOT NULL, 
-		[database] sysname NOT NULL, 
-		issue varchar(2000) NOT NULL 
-	);
-
-	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
-	DECLARE @tab char(1) = CHAR(9);
-
-	-----------------------------------------------------------------------------
-	-- Checks: 
-	
-	-- Compatablity Checks: 
-	INSERT INTO @issues ([database], issue)
-	SELECT 
-		d.[name] [database],
-		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name], '[]') + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
-	FROM 
-		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
-		LEFT OUTER JOIN @excludedComptabilityDatabases e ON d.[name] LIKE e.[name] -- allow LIKE %wildcard% exclusions
-	WHERE 
-		d.[compatibility_level] <> CAST(@serverVersion AS tinyint)
-		AND e.[name] IS  NULL -- only include non-exclusions
-	ORDER BY 
-		d.[name] ;
-		
-
-	-- Page Verify: 
-	INSERT INTO @issues ([database], issue)
-	SELECT 
-		[name] [database], 
-		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET PAGE_VERIFY CHECKSUM; ' + @crlf [issue]
-	FROM 
-		sys.databases 
-	WHERE 
-		page_verify_option_desc != N'CHECKSUM'
-	ORDER BY 
-		[name];
-
-	-- OwnerChecks:
-	IF @ReportDatabasesNotOwnedBySA = 1 BEGIN
-		INSERT INTO @issues ([database], issue)
-		SELECT 
-			[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name],'[]') + N' TO sa;' + @crlf [issue]
-		FROM 
-			sys.databases 
-		WHERE 
-			owner_sid != 0x01;
-
-	END;
-
-	-----------------------------------------------------------------------------
-	-- add other checks as needed/required per environment:
-
-
-
-	-----------------------------------------------------------------------------
-	-- reporting: 
-	DECLARE @emailErrorMessage nvarchar(MAX);
-	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
-		
-		DECLARE @emailSubject nvarchar(300);
-
-		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
-
-		SELECT 
-			@emailErrorMessage = @emailErrorMessage + @tab + N'[' + [database] + N']. ' + [issue] + @crlf
-		FROM 
-			@issues 
-		ORDER BY 
-			[database],
-			issue_id;
-
-	END;
-
-	-- send/display any problems:
-	IF @emailErrorMessage IS NOT NULL BEGIN
-		IF @PrintOnly = 1 
-			PRINT @emailErrorMessage;
-		ELSE BEGIN 
-			SET @emailSubject = @EmailSubjectPrefix + N' - Configuration Problems Detected';
-
-			EXEC msdb..sp_notify_operator
-				@profile_name = @MailProfileName,
-				@name = @OperatorName,
-				@subject = @emailSubject, 
-				@body = @emailErrorMessage;
-
-		END
-	END;
-
-	RETURN 0;
-GO
-
-
----------------------------------------------------------------------------
 --- Diagnostics
 ---------------------------------------------------------------------------
 
@@ -5178,6 +4811,7 @@ AS
 		d.[status],
 		d.[last_wait_type],
 		{memory}
+		d.[db_name],
 		t.[text],  -- statement_text?
 		--{batch_text} ??? 
 		d.[cpu_time],
@@ -5234,7 +4868,7 @@ GO
 
 ---------------------------------------------------------------------------
 --- Monitoring
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -8888,9 +8522,26 @@ GO
 
 
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
+DECLARE @CurrentVersion varchar(20) = N'4.8.2557.3';
+DECLARE @VersionDescription nvarchar(200) = N'Streamlined Deployment System - Single File, auto build details.';
+DECLARE @InstallType nvarchar(20) = N'Install. ';
 
----------------------------------------------------------------------------
--- Display Versioning info:
-SELECT * FROM dbo.version_history;
+IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
+	SET @InstallType = N'Update. ';
+
+SET @VersionDescription = @InstallType + @VersionDescription;
+
+-- Add current version info:
+IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
+	INSERT INTO dbo.version_history (version_number, [description], deployed)
+	VALUES (@CurrentVersion, 'Initial Installation/Deployment.', GETDATE());
+END;
 GO
 
+-----------------------------------
+SELECT * FROM dbo.version_history;
+GO
