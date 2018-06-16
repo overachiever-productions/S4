@@ -566,7 +566,7 @@ SET @VersionDescription = @InstallType + @VersionDescription;
 -- Add current version info:
 IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@CurrentVersion, 'Initial Installation/Deployment.', GETDATE());
+	VALUES (@CurrentVersion, @VersionDescription, GETDATE());
 END;
 GO
 

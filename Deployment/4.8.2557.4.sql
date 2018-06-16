@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.8.2557.3 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2557.3.
+		- This script will either install/deploy S4 version 4.8.2557.4 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2557.4.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.8.2557.3 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.8.2557.4 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.8.2557.3';
+DECLARE @CurrentVersion varchar(20) = N'4.8.2557.4';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -8526,7 +8526,7 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.8.2557.3';
+DECLARE @CurrentVersion varchar(20) = N'4.8.2557.4';
 DECLARE @VersionDescription nvarchar(200) = N'Streamlined Deployment System - Single File, auto build details.';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
@@ -8538,7 +8538,7 @@ SET @VersionDescription = @InstallType + @VersionDescription;
 -- Add current version info:
 IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @CurrentVersion) BEGIN
 	INSERT INTO dbo.version_history (version_number, [description], deployed)
-	VALUES (@CurrentVersion, 'Initial Installation/Deployment.', GETDATE());
+	VALUES (@CurrentVersion, @VersionDescription, GETDATE());
 END;
 GO
 
