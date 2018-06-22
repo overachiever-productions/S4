@@ -1,12 +1,15 @@
 
 /*
+	TODO
+		- Implement logic to handle logins NOT mapped to ANY db - as per: https://trello.com/c/dCbst8kZ/46-bug-print-logins (I've got a stub-in for this in the main loop... (line 203-ish)
+
+
 	NOTE: 
 		- Not really intended to be called directly. Should typically be called by dbo.script_server_logins. 
 
 	DEPENDENCIES:
 		- dbo.split_string
 		- dbo.
-
 
 
 	SIGNATURE / EXAMPLE: 
@@ -122,7 +125,7 @@ AS
 		@Input = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@Priorities = @DatabasePriorities,
-		@Mode = N'LIST',
+		@Mode = N'LIST_ACTIVE',
 		@Output = @dbNames OUTPUT;
 
 	SET @TargetDatabases = @dbNames;
@@ -194,6 +197,13 @@ AS
 			IF NULLIF(@info, N'') IS NOT NULL 
 				PRINT @info;
 		END;
+
+-- TODO: Implement.... 
+-- Process 'logins only' logins (i.e., not mapped to any databases as users): 
+--IF LOWER(@currentDatabase) = N'master' BEGIN
+--	PRINT ' --- - - - -------  this is the master db... do extra stuff here. ';
+
+--END; 
 
 		-- Output LOGINS:
 		SET @info = N'';

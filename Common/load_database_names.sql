@@ -1,6 +1,8 @@
 
 
 /*
+	TODO: 
+		- Implement logic for LIST_ALL mode - which will also include snapshots, offline dbs, and 'synchronizing' dbs... (i.e., all/everything).
 
 	DEPENDENCIES:
 		
@@ -40,7 +42,7 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL  -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -63,8 +65,8 @@ AS
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST', 16, 1);
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL', 16, 1);
 		RETURN -2;
 	END
 
@@ -176,7 +178,7 @@ AS
 		END
     END;
 
-	IF UPPER(@Mode) IN (N'BACKUP') BEGIN;
+	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
@@ -191,11 +193,13 @@ AS
 			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
 		END
 
+		-- Note, snapshots were removed earlier... 
+
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
 		DELETE FROM @targets 
 		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
-
+	
 	-- Exclude any databases specified for exclusion:
 	IF ISNULL(@Exclusions, '') <> '' BEGIN;
 	
@@ -272,7 +276,7 @@ AS
 	SET @Output = N'';
 	SELECT @Output = @Output + [database_name] + ',' FROM @targets ORDER BY entry_id;
 
-	IF ISNULL(@Output,'') != ''
+	IF ISNULL(@Output,'') <> ''
 		SET @Output = LEFT(@Output, LEN(@Output) - 1);
 
 	RETURN 0;
