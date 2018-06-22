@@ -42,8 +42,10 @@ GO
 CREATE PROC dbo.list_processes 
 	@TopNRows								int			=	-1,		-- TOP is only used if @TopNRows > 0. 
 	@OrderBy								sysname		= N'CPU',	-- CPU | DURATION | READS | WRITES | MEMORY
-	@IncludePlanHandle						bit			= 1,		
+	@IncludePlanHandle						bit			= 1,	
+	@ExtractExecutionCost					bit			= 0,	
 	@IncludeIsolationLevel					bit			= 0,
+	@ExecutionDetails						bit			= 1,		
 	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
 	-- vNEXT				---@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
@@ -151,13 +153,14 @@ AS
 		[granted_mb] decimal(20,2) NOT NULL,
 		[requested_mb] decimal(20,2) NOT NULL,
 		[ideal_mb] decimal(20,2) NOT NULL,
-		[db_name] sysname NULL,
 		[text] nvarchar(max) NULL,
 		[cpu_time] int NOT NULL,
 		[reads] bigint NOT NULL,
 		[writes] bigint NOT NULL,
 		[elapsed_time] int NOT NULL,
 		[wait_time] int NOT NULL,
+		[db_name] sysname NULL,
+		[login_name] sysname NULL,
 		[program_name] sysname NULL,
 		[host_name] sysname NULL,
 		[percent_complete] real NOT NULL,
@@ -166,8 +169,8 @@ AS
 		[plan_handle] varbinary(64) NULL
 	);
 
-	INSERT INTO [#detail] ([row_number], [session_id], [blocked_by], [isolation_level], [status], [last_wait_type], [command], [granted_mb], [requested_mb], [ideal_mb], [db_name],
-		 [cpu_time], [reads], [writes], [elapsed_time], [wait_time], [program_name], [host_name], [percent_complete], [open_tran], [sql_handle], [plan_handle])
+	INSERT INTO [#detail] ([row_number], [session_id], [blocked_by], [isolation_level], [status], [last_wait_type], [command], [granted_mb], [requested_mb], [ideal_mb], 
+		 [cpu_time], [reads], [writes], [elapsed_time], [wait_time], [db_name], [login_name], [program_name], [host_name], [percent_complete], [open_tran], [sql_handle], [plan_handle])
 	SELECT
 		x.[row_number],
 		r.session_id, 
@@ -185,14 +188,15 @@ AS
 		r.command, 
 		x.[memory] [granted_mb],
 		ISNULL(CAST((g.requested_memory_kb / 1024.0) as decimal(20,2)),0) AS requested_mb,
-		ISNULL(CAST((g.ideal_memory_kb  / 1024.0) as decimal(20,2)),0) AS ideal_mb,
-		DB_NAME(r.database_id) [db_name],	
+		ISNULL(CAST((g.ideal_memory_kb  / 1024.0) as decimal(20,2)),0) AS ideal_mb,	
 		--t.[text],
 		x.[cpu] [cpu_time],
 		x.reads,
 		x.writes,
 		x.[duration] [elapsed_time],
 		r.wait_time,
+		DB_NAME(r.database_id) [db_name],
+		s.[login_name],
 		s.[program_name],
 		s.[host_name],
 		r.percent_complete,
@@ -217,22 +221,23 @@ AS
 		d.[status],
 		d.[last_wait_type],
 		{memory}
-		d.[db_name],
 		t.[text],  -- statement_text?
 		--{batch_text} ??? 
 		d.[cpu_time],
 		d.[reads],
 		d.[writes], 
 		CASE WHEN d.[elapsed_time] < 0 
-			THEN N''-'' + RIGHT(''000'' + CAST(([elapsed_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([elapsed_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([elapsed_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([elapsed_time]) AS sysname), 3)
-			ELSE RIGHT(''000'' + CAST(([elapsed_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([elapsed_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([elapsed_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([elapsed_time]) AS sysname), 3)
+			THEN N''-'' + RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3)
+			ELSE RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) 
 		END [elapsed_time],
-		RIGHT(''000'' + CAST(([wait_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
+		RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
+		d.[db_name],
+		d.[login_name],
 		d.[program_name],
 		d.[host_name],
-		d.[percent_complete], 
-		d.[open_tran], 
+		{executionDetails}
 		{plan_handle}
+		{extractCost}
 		p.query_plan [batch_plan]
 		--,{statement_plan} -- if i can get this working... 
 	FROM 
@@ -257,6 +262,12 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{memory}', N'd.[granted_mb],');
 	END; 
 
+	IF @ExecutionDetails = 1 BEGIN
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{executionDetails}', N'd.[percent_complete], d.[open_tran], (SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = d.session_id) [thread_count],');
+	  END;
+	ELSE BEGIN
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{executionDetails}', N'');
+	END;
 
 	IF @IncludePlanHandle = 1 BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'd.[plan_handle],');
