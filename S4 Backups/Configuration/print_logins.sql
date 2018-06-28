@@ -26,11 +26,6 @@
 			@ForceMasterAsDefaultDB = 0, 
 			@WarnOnLoginsHomedToOtherDatabases = 1; 
 
-
-
-	SCALABLE: 
-		2+ (for this sproc; + 2+ for wrapper/script_server_logins)
-
 */
 
 USE [admindb];
@@ -74,17 +69,38 @@ AS
 
 	CREATE TABLE #Users (
 		[name] sysname NOT NULL, 
-		[sid] varbinary(85) NOT NULL
+		[sid] varbinary(85) NOT NULL, 
+		[type] char(1) NOT NULL
 	);
 
 	CREATE TABLE #Orphans (
-		name sysname NOT NULL, 
+		[name] sysname NOT NULL, 
 		[sid] varbinary(85) NOT NULL
 	);
 
-	SELECT * 
-	INTO #SqlLogins
-	FROM master.sys.sql_logins;
+	CREATE TABLE #Vagrants ( 
+		[name] sysname NOT NULL, 
+		[sid] varbinary(85) NOT NULL, 
+		[default_database] sysname NOT NULL
+	);
+
+	SELECT 
+		sp.[name], 
+		sp.[sid],
+		sp.[type], 
+		sp.[is_disabled], 
+		sp.[default_database_name],
+		sl.[password_hash], 
+		sl.[is_expiration_checked], 
+		sl.[is_policy_checked], 
+		sp.[default_language_name]
+	INTO 
+		#Logins
+	FROM 
+		sys.[server_principals] sp
+		LEFT OUTER JOIN sys.[sql_logins] sl ON sp.[sid] = sl.[sid]
+	WHERE 
+		sp.[type] NOT IN ('R');
 
 	DECLARE @name sysname;
 	DECLARE @sid varbinary(85); 
@@ -113,12 +129,12 @@ AS
 
 	-- remove ignored logins:
 	DELETE l 
-	FROM [#SqlLogins] l
+	FROM [#Logins] l
 	INNER JOIN @ingnoredLogins i ON l.[name] LIKE i.[login_name];	
 			
 	DECLARE @currentDatabase sysname;
 	DECLARE @command nvarchar(MAX);
-	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT name, [sid] FROM [{0}].sys.database_principals WHERE type = ''S'' AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
+	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 
 	DECLARE @dbNames nvarchar(MAX); 
 	EXEC admindb.dbo.[load_database_names]
@@ -128,11 +144,9 @@ AS
 		@Mode = N'LIST_ACTIVE',
 		@Output = @dbNames OUTPUT;
 
-	SET @TargetDatabases = @dbNames;
-
 	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [result] 
-	FROM admindb.dbo.[split_string](@TargetDatabases, N',');
+	FROM admindb.dbo.[split_string](@dbNames, N',');
 
 	OPEN [db_walker];
 	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
@@ -147,7 +161,7 @@ AS
 		DELETE FROM [#Orphans];
 
 		SET @command = REPLACE(@principalsTemplate, N'{0}', @currentDatabase); 
-		INSERT INTO #Users ([name], [sid])
+		INSERT INTO #Users ([name], [sid], [type])
 		EXEC master.sys.sp_executesql @command;
 
 		-- remove any ignored users: 
@@ -162,7 +176,7 @@ AS
 			u.[sid]
 		FROM 
 			#Users u 
-			INNER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
 		WHERE
 			l.[name] IS NULL OR l.[sid] IS NULL;
 
@@ -187,7 +201,7 @@ AS
 				N'-- NOTE: Login ' + u.[name] + N' is set to use [' + l.[default_database_name] + N'] as its default database instead of [' + @currentDatabase + N'].'
 			FROM 
 				[#Users] u
-				LEFT OUTER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+				LEFT OUTER JOIN [#Logins] l ON u.[sid] = l.[sid]
 			WHERE 
 				u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
 				AND u.[name] NOT IN (SELECT [name] FROM #Orphans)
@@ -198,23 +212,88 @@ AS
 				PRINT @info;
 		END;
 
--- TODO: Implement.... 
--- Process 'logins only' logins (i.e., not mapped to any databases as users): 
---IF LOWER(@currentDatabase) = N'master' BEGIN
---	PRINT ' --- - - - -------  this is the master db... do extra stuff here. ';
+		-- Process 'logins only' logins (i.e., not mapped to any databases as users): 
+		IF LOWER(@currentDatabase) = N'master' BEGIN
 
---END; 
+			CREATE TABLE #SIDs (
+				[sid] varbinary(85) NOT NULL, 
+				[database] sysname NOT NULL
+				PRIMARY KEY CLUSTERED ([sid], [database]) -- WITH (IGNORE_DUP_KEY = ON) -- looks like an EXCEPT might be faster: https://dba.stackexchange.com/a/90003/6100
+			);
+
+			DECLARE @AllDbNames nvarchar(MAX); 
+			EXEC admindb.dbo.[load_database_names]
+				@Input = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Mode = N'LIST_ACTIVE',
+				@Output = @AllDbNames OUTPUT;
+
+			DECLARE @sidTemplate nvarchar(MAX) = N'SELECT [sid], N''{0}'' [database] FROM [{0}].sys.database_principals WHERE [sid] IS NOT NULL;';
+			DECLARE @sql nvarchar(MAX);
+
+			DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
+			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',');
+
+			DECLARE @dbName sysname; 
+
+			OPEN [looper]; 
+			FETCH NEXT FROM [looper] INTO @dbName;
+
+			WHILE @@FETCH_STATUS = 0 BEGIN
+		
+				SET @sql = REPLACE(@sidTemplate, N'{0}', @dbName);
+
+				INSERT INTO [#SIDs] ([sid], [database])
+				EXEC master.sys.[sp_executesql] @sql;
+
+				FETCH NEXT FROM [looper] INTO @dbName;
+			END; 
+
+			CLOSE [looper];
+			DEALLOCATE [looper];
+
+
+			SET @info = N'';
+			
+			SELECT @info = @info + 
+				N'-- Server-Level Login:'
+				+ @crlf + N'IF NOT EXISTS (SELECT NULL FROM master.sys.server_principals WHERE [name] = ''' + l.[name] + N''') BEGIN ' 
+				+ @crlf + @tab + N'CREATE LOGIN [' + l.[name] + N'] ' + CASE WHEN l.[type] = 'U' THEN 'FROM WINDOWS WITH ' ELSE 'WITH ' END
+				+ CASE 
+					WHEN l.[type] = 'S' THEN 
+						@crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
+						+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), l.[sid], 2) + N','
+						+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+						+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','				
+					ELSE ''
+				END 
+				+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
+				+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
+				+ @crlf + N'END;'
+				+ @crlf
+			FROM 
+				[#Logins] l
+			WHERE 
+				l.[sid] NOT IN (SELECT [sid] FROM [#SIDs]);
+
+			IF NULLIF(@info, '') IS NOT NULL BEGIN 
+				PRINT @info + @crlf;
+			END 
+		END; 
 
 		-- Output LOGINS:
 		SET @info = N'';
 
 		SELECT @info = @info +
-			N'IF NOT EXISTS (SELECT NULL FROM master.sys.sql_logins WHERE [name] = ''' + u.[name] + N''') BEGIN ' 
-			+ @crlf + @tab + N'CREATE LOGIN [' + u.[name] + N'] WITH '
-			+ @crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
-			+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), u.[sid], 2) + N','
-			+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
-			+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+			N'IF NOT EXISTS (SELECT NULL FROM master.sys.server_principals WHERE [name] = ''' + l.[name] + N''') BEGIN ' 
+			+ @crlf + @tab + N'CREATE LOGIN [' + l.[name] + N'] ' + CASE WHEN l.[type] = 'U' THEN 'FROM WINDOWS WITH ' ELSE 'WITH ' END
+			+ CASE 
+				WHEN l.[type] = 'S' THEN 
+					@crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
+					+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), l.[sid], 2) + N','
+					+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+					+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','				
+				ELSE ''
+			END 
 			+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
 			+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
 			+ @crlf + N'END;'
@@ -222,7 +301,7 @@ AS
 			+ @crlf
 		FROM 
 			#Users u
-			INNER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
 		WHERE 
 			u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
 			AND u.[name] NOT IN (SELECT name FROM #Orphans);
