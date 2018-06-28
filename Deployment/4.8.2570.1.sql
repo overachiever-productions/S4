@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.8.2557.4 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2557.4.
+		- This script will either install/deploy S4 version 4.8.2570.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2570.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.8.2557.4 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.8.2570.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.8.2557.4';
+DECLARE @CurrentVersion varchar(20) = N'4.8.2570.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -621,7 +621,7 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL  -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -644,8 +644,8 @@ AS
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST', 16, 1);
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL', 16, 1);
 		RETURN -2;
 	END
 
@@ -757,7 +757,7 @@ AS
 		END
     END;
 
-	IF UPPER(@Mode) IN (N'BACKUP') BEGIN;
+	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
@@ -772,11 +772,13 @@ AS
 			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
 		END
 
+		-- Note, snapshots were removed earlier... 
+
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
 		DELETE FROM @targets 
 		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
-
+	
 	-- Exclude any databases specified for exclusion:
 	IF ISNULL(@Exclusions, '') <> '' BEGIN;
 	
@@ -853,7 +855,7 @@ AS
 	SET @Output = N'';
 	SELECT @Output = @Output + [database_name] + ',' FROM @targets ORDER BY entry_id;
 
-	IF ISNULL(@Output,'') != ''
+	IF ISNULL(@Output,'') <> ''
 		SET @Output = LEFT(@Output, LEN(@Output) - 1);
 
 	RETURN 0;
@@ -2242,17 +2244,38 @@ AS
 
 	CREATE TABLE #Users (
 		[name] sysname NOT NULL, 
-		[sid] varbinary(85) NOT NULL
+		[sid] varbinary(85) NOT NULL, 
+		[type] char(1) NOT NULL
 	);
 
 	CREATE TABLE #Orphans (
-		name sysname NOT NULL, 
+		[name] sysname NOT NULL, 
 		[sid] varbinary(85) NOT NULL
 	);
 
-	SELECT * 
-	INTO #SqlLogins
-	FROM master.sys.sql_logins;
+	CREATE TABLE #Vagrants ( 
+		[name] sysname NOT NULL, 
+		[sid] varbinary(85) NOT NULL, 
+		[default_database] sysname NOT NULL
+	);
+
+	SELECT 
+		sp.[name], 
+		sp.[sid],
+		sp.[type], 
+		sp.[is_disabled], 
+		sp.[default_database_name],
+		sl.[password_hash], 
+		sl.[is_expiration_checked], 
+		sl.[is_policy_checked], 
+		sp.[default_language_name]
+	INTO 
+		#Logins
+	FROM 
+		sys.[server_principals] sp
+		LEFT OUTER JOIN sys.[sql_logins] sl ON sp.[sid] = sl.[sid]
+	WHERE 
+		sp.[type] NOT IN ('R');
 
 	DECLARE @name sysname;
 	DECLARE @sid varbinary(85); 
@@ -2281,26 +2304,24 @@ AS
 
 	-- remove ignored logins:
 	DELETE l 
-	FROM [#SqlLogins] l
+	FROM [#Logins] l
 	INNER JOIN @ingnoredLogins i ON l.[name] LIKE i.[login_name];	
 			
 	DECLARE @currentDatabase sysname;
 	DECLARE @command nvarchar(MAX);
-	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT name, [sid] FROM [{0}].sys.database_principals WHERE type = ''S'' AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
+	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 
 	DECLARE @dbNames nvarchar(MAX); 
 	EXEC admindb.dbo.[load_database_names]
 		@Input = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@Priorities = @DatabasePriorities,
-		@Mode = N'LIST',
+		@Mode = N'LIST_ACTIVE',
 		@Output = @dbNames OUTPUT;
-
-	SET @TargetDatabases = @dbNames;
 
 	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [result] 
-	FROM admindb.dbo.[split_string](@TargetDatabases, N',');
+	FROM admindb.dbo.[split_string](@dbNames, N',');
 
 	OPEN [db_walker];
 	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
@@ -2315,7 +2336,7 @@ AS
 		DELETE FROM [#Orphans];
 
 		SET @command = REPLACE(@principalsTemplate, N'{0}', @currentDatabase); 
-		INSERT INTO #Users ([name], [sid])
+		INSERT INTO #Users ([name], [sid], [type])
 		EXEC master.sys.sp_executesql @command;
 
 		-- remove any ignored users: 
@@ -2330,7 +2351,7 @@ AS
 			u.[sid]
 		FROM 
 			#Users u 
-			INNER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
 		WHERE
 			l.[name] IS NULL OR l.[sid] IS NULL;
 
@@ -2355,7 +2376,7 @@ AS
 				N'-- NOTE: Login ' + u.[name] + N' is set to use [' + l.[default_database_name] + N'] as its default database instead of [' + @currentDatabase + N'].'
 			FROM 
 				[#Users] u
-				LEFT OUTER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+				LEFT OUTER JOIN [#Logins] l ON u.[sid] = l.[sid]
 			WHERE 
 				u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
 				AND u.[name] NOT IN (SELECT [name] FROM #Orphans)
@@ -2366,16 +2387,88 @@ AS
 				PRINT @info;
 		END;
 
+		-- Process 'logins only' logins (i.e., not mapped to any databases as users): 
+		IF LOWER(@currentDatabase) = N'master' BEGIN
+
+			CREATE TABLE #SIDs (
+				[sid] varbinary(85) NOT NULL, 
+				[database] sysname NOT NULL
+				PRIMARY KEY CLUSTERED ([sid], [database]) -- WITH (IGNORE_DUP_KEY = ON) -- looks like an EXCEPT might be faster: https://dba.stackexchange.com/a/90003/6100
+			);
+
+			DECLARE @AllDbNames nvarchar(MAX); 
+			EXEC admindb.dbo.[load_database_names]
+				@Input = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Mode = N'LIST_ACTIVE',
+				@Output = @AllDbNames OUTPUT;
+
+			DECLARE @sidTemplate nvarchar(MAX) = N'SELECT [sid], N''{0}'' [database] FROM [{0}].sys.database_principals WHERE [sid] IS NOT NULL;';
+			DECLARE @sql nvarchar(MAX);
+
+			DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
+			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',');
+
+			DECLARE @dbName sysname; 
+
+			OPEN [looper]; 
+			FETCH NEXT FROM [looper] INTO @dbName;
+
+			WHILE @@FETCH_STATUS = 0 BEGIN
+		
+				SET @sql = REPLACE(@sidTemplate, N'{0}', @dbName);
+
+				INSERT INTO [#SIDs] ([sid], [database])
+				EXEC master.sys.[sp_executesql] @sql;
+
+				FETCH NEXT FROM [looper] INTO @dbName;
+			END; 
+
+			CLOSE [looper];
+			DEALLOCATE [looper];
+
+
+			SET @info = N'';
+			
+			SELECT @info = @info + 
+				N'-- Server-Level Login:'
+				+ @crlf + N'IF NOT EXISTS (SELECT NULL FROM master.sys.server_principals WHERE [name] = ''' + l.[name] + N''') BEGIN ' 
+				+ @crlf + @tab + N'CREATE LOGIN [' + l.[name] + N'] ' + CASE WHEN l.[type] = 'U' THEN 'FROM WINDOWS WITH ' ELSE 'WITH ' END
+				+ CASE 
+					WHEN l.[type] = 'S' THEN 
+						@crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
+						+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), l.[sid], 2) + N','
+						+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+						+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','				
+					ELSE ''
+				END 
+				+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
+				+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
+				+ @crlf + N'END;'
+				+ @crlf
+			FROM 
+				[#Logins] l
+			WHERE 
+				l.[sid] NOT IN (SELECT [sid] FROM [#SIDs]);
+
+			IF NULLIF(@info, '') IS NOT NULL BEGIN 
+				PRINT @info + @crlf;
+			END 
+		END; 
+
 		-- Output LOGINS:
 		SET @info = N'';
 
 		SELECT @info = @info +
-			N'IF NOT EXISTS (SELECT NULL FROM master.sys.sql_logins WHERE [name] = ''' + u.[name] + N''') BEGIN ' 
-			+ @crlf + @tab + N'CREATE LOGIN [' + u.[name] + N'] WITH '
-			+ @crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
-			+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), u.[sid], 2) + N','
-			+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
-			+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+			N'IF NOT EXISTS (SELECT NULL FROM master.sys.server_principals WHERE [name] = ''' + l.[name] + N''') BEGIN ' 
+			+ @crlf + @tab + N'CREATE LOGIN [' + l.[name] + N'] ' + CASE WHEN l.[type] = 'U' THEN 'FROM WINDOWS WITH ' ELSE 'WITH ' END
+			+ CASE 
+				WHEN l.[type] = 'S' THEN 
+					@crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
+					+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), l.[sid], 2) + N','
+					+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
+					+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','				
+				ELSE ''
+			END 
 			+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
 			+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
 			+ @crlf + N'END;'
@@ -2383,7 +2476,7 @@ AS
 			+ @crlf
 		FROM 
 			#Users u
-			INNER JOIN [#SqlLogins] l ON u.[sid] = l.[sid]
+			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
 		WHERE 
 			u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
 			AND u.[name] NOT IN (SELECT name FROM #Orphans);
@@ -4636,8 +4729,10 @@ GO
 CREATE PROC dbo.list_processes 
 	@TopNRows								int			=	-1,		-- TOP is only used if @TopNRows > 0. 
 	@OrderBy								sysname		= N'CPU',	-- CPU | DURATION | READS | WRITES | MEMORY
-	@IncludePlanHandle						bit			= 1,		
+	@IncludePlanHandle						bit			= 1,	
+	@ExtractExecutionCost					bit			= 0,	
 	@IncludeIsolationLevel					bit			= 0,
+	@ExecutionDetails						bit			= 1,		
 	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
 	-- vNEXT				---@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
@@ -4745,13 +4840,14 @@ AS
 		[granted_mb] decimal(20,2) NOT NULL,
 		[requested_mb] decimal(20,2) NOT NULL,
 		[ideal_mb] decimal(20,2) NOT NULL,
-		[db_name] sysname NULL,
 		[text] nvarchar(max) NULL,
 		[cpu_time] int NOT NULL,
 		[reads] bigint NOT NULL,
 		[writes] bigint NOT NULL,
 		[elapsed_time] int NOT NULL,
 		[wait_time] int NOT NULL,
+		[db_name] sysname NULL,
+		[login_name] sysname NULL,
 		[program_name] sysname NULL,
 		[host_name] sysname NULL,
 		[percent_complete] real NOT NULL,
@@ -4760,8 +4856,8 @@ AS
 		[plan_handle] varbinary(64) NULL
 	);
 
-	INSERT INTO [#detail] ([row_number], [session_id], [blocked_by], [isolation_level], [status], [last_wait_type], [command], [granted_mb], [requested_mb], [ideal_mb], [db_name],
-		 [cpu_time], [reads], [writes], [elapsed_time], [wait_time], [program_name], [host_name], [percent_complete], [open_tran], [sql_handle], [plan_handle])
+	INSERT INTO [#detail] ([row_number], [session_id], [blocked_by], [isolation_level], [status], [last_wait_type], [command], [granted_mb], [requested_mb], [ideal_mb], 
+		 [cpu_time], [reads], [writes], [elapsed_time], [wait_time], [db_name], [login_name], [program_name], [host_name], [percent_complete], [open_tran], [sql_handle], [plan_handle])
 	SELECT
 		x.[row_number],
 		r.session_id, 
@@ -4779,14 +4875,15 @@ AS
 		r.command, 
 		x.[memory] [granted_mb],
 		ISNULL(CAST((g.requested_memory_kb / 1024.0) as decimal(20,2)),0) AS requested_mb,
-		ISNULL(CAST((g.ideal_memory_kb  / 1024.0) as decimal(20,2)),0) AS ideal_mb,
-		DB_NAME(r.database_id) [db_name],	
+		ISNULL(CAST((g.ideal_memory_kb  / 1024.0) as decimal(20,2)),0) AS ideal_mb,	
 		--t.[text],
 		x.[cpu] [cpu_time],
 		x.reads,
 		x.writes,
 		x.[duration] [elapsed_time],
 		r.wait_time,
+		DB_NAME(r.database_id) [db_name],
+		s.[login_name],
 		s.[program_name],
 		s.[host_name],
 		r.percent_complete,
@@ -4811,22 +4908,23 @@ AS
 		d.[status],
 		d.[last_wait_type],
 		{memory}
-		d.[db_name],
 		t.[text],  -- statement_text?
 		--{batch_text} ??? 
 		d.[cpu_time],
 		d.[reads],
 		d.[writes], 
 		CASE WHEN d.[elapsed_time] < 0 
-			THEN N''-'' + RIGHT(''000'' + CAST(([elapsed_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([elapsed_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([elapsed_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([elapsed_time]) AS sysname), 3)
-			ELSE RIGHT(''000'' + CAST(([elapsed_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([elapsed_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([elapsed_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([elapsed_time]) AS sysname), 3)
+			THEN N''-'' + RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3)
+			ELSE RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) 
 		END [elapsed_time],
-		RIGHT(''000'' + CAST(([wait_time] / (1000 * 360) / 60) AS sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (1000 * 60) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
+		RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
+		d.[db_name],
+		d.[login_name],
 		d.[program_name],
 		d.[host_name],
-		d.[percent_complete], 
-		d.[open_tran], 
+		{executionDetails}
 		{plan_handle}
+		{extractCost}
 		p.query_plan [batch_plan]
 		--,{statement_plan} -- if i can get this working... 
 	FROM 
@@ -4851,6 +4949,12 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{memory}', N'd.[granted_mb],');
 	END; 
 
+	IF @ExecutionDetails = 1 BEGIN
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{executionDetails}', N'd.[percent_complete], d.[open_tran], (SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = d.session_id) [thread_count],');
+	  END;
+	ELSE BEGIN
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{executionDetails}', N'');
+	END;
 
 	IF @IncludePlanHandle = 1 BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'd.[plan_handle],');
@@ -8526,8 +8630,8 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.8.2557.4';
-DECLARE @VersionDescription nvarchar(200) = N'Streamlined Deployment System - Single File, auto build details.';
+DECLARE @CurrentVersion varchar(20) = N'4.8.2570.1';
+DECLARE @VersionDescription nvarchar(200) = N'Optimizations for list_processes + additional capabilities for print_logins - streamlined install.';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
