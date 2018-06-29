@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.8.2570.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2570.1.
+		- This script will either install/deploy S4 version 4.8.2571.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2571.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.8.2570.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.8.2571.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.8.2570.1';
+DECLARE @CurrentVersion varchar(20) = N'4.8.2571.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -4790,7 +4790,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND r.session_id > 50 ');
 		END;	
 	ELSE BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');
 	END;
 
 	IF @ExcludeMirroringWaits = 1 BEGIN
@@ -4924,7 +4924,7 @@ AS
 		d.[host_name],
 		{executionDetails}
 		{plan_handle}
-		{extractCost}
+		--{extractCost}
 		p.query_plan [batch_plan]
 		--,{statement_plan} -- if i can get this working... 
 	FROM 
@@ -4933,7 +4933,6 @@ AS
 		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
 	ORDER BY
 		[row_number];'
-
 
 	IF @IncludeIsolationLevel = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{isolation_level}', N'd.[isolation_level],');
@@ -4962,6 +4961,8 @@ AS
 	ELSE BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'');
 	END; 
+
+--PRINT @projectionSQL;
 
 	-- final output:
 	EXEC sys.[sp_executesql] @projectionSQL;
@@ -8630,7 +8631,7 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.8.2570.1';
+DECLARE @CurrentVersion varchar(20) = N'4.8.2571.1';
 DECLARE @VersionDescription nvarchar(200) = N'Optimizations for list_processes + additional capabilities for print_logins - streamlined install.';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 

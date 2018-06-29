@@ -103,7 +103,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND r.session_id > 50 ');
 		END;	
 	ELSE BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');
 	END;
 
 	IF @ExcludeMirroringWaits = 1 BEGIN
@@ -237,7 +237,7 @@ AS
 		d.[host_name],
 		{executionDetails}
 		{plan_handle}
-		{extractCost}
+		--{extractCost}
 		p.query_plan [batch_plan]
 		--,{statement_plan} -- if i can get this working... 
 	FROM 
@@ -246,7 +246,6 @@ AS
 		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
 	ORDER BY
 		[row_number];'
-
 
 	IF @IncludeIsolationLevel = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{isolation_level}', N'd.[isolation_level],');
@@ -275,6 +274,8 @@ AS
 	ELSE BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'');
 	END; 
+
+--PRINT @projectionSQL;
 
 	-- final output:
 	EXEC sys.[sp_executesql] @projectionSQL;
