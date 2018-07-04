@@ -9,6 +9,10 @@
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
 
+
+-- vNEXT: extract execution cost... fodder: http://www.sqlservercentral.com/articles/Stairway+Series/The+XML+exist()+and+nodes()+Methods/92785/  look at the example on .nodes() .. it returns a table(column) 'alias'... meaning I could simply
+--			just a) grab all currentplan.nodes('/path/to/any/or/all/cost[@attributes]') ... and then .value() those out... and MAX() the 'table' of results to get the most expensive 'cost' defined in a single plan... done.
+
 -- vNEXT: thread count column... (MIGHT make sense to make it optional... might make sense to just ALWAYS include it).
 -- vNEXT: batch vs statement plans/text (i.e., offsets and the likes). 
 -- vNEXT: detailed blocking info... (blocking chains if @DetailedBlockingInfo = 1 (expressed as xml)... 
@@ -16,6 +20,16 @@
 -- vNEXT: exclude service broker tasks (background tasks)... i..e, where Command = BRKR TASK and last_wait_type = 'sleep_task' and elapsed_time < 0 (i.e., huge negative #s) and ... text = NULL... 
 -- other wait types and so on... 
 
+-- vNEXT: @Formatter sysname ... a udf that can be used as an additional column to watch for any specific details a given org might want to grab.. 
+--			give it the sql statement? and... maybe the plan? dunno...   (this'd let me grab the "/* ReportID: xxxx; OrgID: yyyyy */ if needed.. and give other people similar details. 
+--			would'nt be allowed to be a 'filter'... just a formatter.... 
+--				and... maybe the variable's value should be nvarchar(300) or something and look like N'udfNameHere|columnAlias|includedColumns?'  or something like that... 
+
+
+
+-- FODDER: 
+	-- AZURE: https://feedback.azure.com/forums/908035-sql-server/suggestions/34708300-parallel-select-into-from-sys-messages-causes-intr 
+	--			not sure if that applies to non-Azure - but it's something to watch for... 
 
 
 EXEC admindb.dbo.[list_processes]
