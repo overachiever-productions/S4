@@ -240,11 +240,8 @@ AS
 		d.[cpu_time],
 		d.[reads],
 		d.[writes], 
-		CASE WHEN d.[elapsed_time] < 0 
-			THEN N''-'' + RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3)
-			ELSE RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) 
-		END [elapsed_time],
-		RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
+		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
+		dbo.format_timespan(d.[wait_time]) [wait_time],
 		d.[db_name],
 		d.[login_name],
 		d.[program_name],

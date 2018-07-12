@@ -284,7 +284,7 @@ AS
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
 
-    DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}'' WITH {move},{replace} NORECOVERY;'; 
+    DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}'' WITH {move}, NORECOVERY;'; 
     DECLARE @move nvarchar(MAX);
     DECLARE @restoreLogId int;
     DECLARE @sourcePath nvarchar(500);
@@ -420,31 +420,57 @@ AS
             SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
             GOTO NextDatabase;
         END;
+        
+		-- Process attempt to overwrite an existing database: 
+		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
 
-        -- Determine how to respond to an attempt to overwrite an existing database (i.e., is it explicitly confirmed or... should we throw an exception).
-        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
-            
-            -- if this is a 'failure' from a previous execution, drop the DB and move on, otherwise, make sure we are explicitly configured to REPLACE. 
-            IF EXISTS (SELECT NULL FROM @NonDroppedFromPreviousExecution WHERE [Database] = @databaseToRestore AND RestoredAs = @restoredName) BEGIN
-                SET @command = N'DROP DATABASE [' + @restoredName + N'];';
+			-- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
+			IF @AllowReplace = N'REPLACE' BEGIN
+				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
+
+					BEGIN TRY 
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
+
+						IF @PrintOnly = 1 BEGIN
+							PRINT @command;
+						  END;
+						ELSE BEGIN
+							SET @outcome = NULL;
+							EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
+							SET @statusDetail = @outcome;
+						END;
+
+						-- give things just a second to 'die down':
+						WAITFOR DELAY '00:00:02';
+
+					END TRY
+					BEGIN CATCH
+						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+					END CATCH
+
+					IF @statusDetail IS NOT NULL
+						GOTO NextDatabase;
+				END;
+
+				-- Now DROP the target db: 
+				SET @command = N'DROP DATABASE [' + @restoredName + N'];';
                 
 				IF @PrintOnly = 1 BEGIN
 						PRINT N'-- ' + @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
-				  END;
+					END;
 				ELSE BEGIN
 					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
 					SET @statusDetail = @outcome;
 				END;
-                IF @statusDetail IS NOT NULL BEGIN
-                    GOTO NextDatabase;
-                END;
-              END;
-            ELSE BEGIN
-                IF ISNULL(@AllowReplace, '') <> N'REPLACE' BEGIN
-                    SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
-                    GOTO NextDatabase;
-                END;
-            END;
+				IF @statusDetail IS NOT NULL BEGIN
+					GOTO NextDatabase;
+				END;
+
+			  END;
+			ELSE BEGIN
+				SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
+				GOTO NextDatabase;
+			END;
         END;
 
 		-- Check for a FULL backup: 
@@ -523,47 +549,10 @@ AS
 
         SET @move = LEFT(@move, LEN(@move) - 1); -- remove the trailing ", "... 
 
-        -- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
-        IF @AllowReplace = N'REPLACE' BEGIN
-            
-            -- only attempt to set to single-user mode if ONLINE (i.e., if somehow stuck in restoring... don't bother, just replace):
-            IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
-
-                BEGIN TRY 
-                    SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
-
-                    IF @PrintOnly = 1 BEGIN
-                        PRINT @command;
-                      END;
-                    ELSE BEGIN
-                        SET @outcome = NULL;
-                        EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
-                        SET @statusDetail = @outcome;
-                    END;
-
-                    -- give things just a second to 'die down':
-                    WAITFOR DELAY '00:00:02';
-
-                END TRY
-                BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-                END CATCH
-
-                IF @statusDetail IS NOT NULL
-                GOTO NextDatabase;
-            END;
-        END;
-
         -- Set up the Restore Command and Execute:
         SET @command = REPLACE(@fullRestoreTemplate, N'{0}', @restoredName);
         SET @command = REPLACE(@command, N'{1}', @pathToDatabaseBackup);
         SET @command = REPLACE(@command, N'{move}', @move);
-
-        -- Otherwise, address the REPLACE command in our RESTORE @command: 
-        IF @AllowReplace = N'REPLACE'
-            SET @command = REPLACE(@command, N'{replace}', N' REPLACE, ');
-        ELSE 
-            SET @command = REPLACE(@command, N'{replace}',  N'');
 
         BEGIN TRY 
             IF @PrintOnly = 1 BEGIN
@@ -811,80 +800,12 @@ AS
 
         END;
 
-        -- Drop the database if specified and if all SAFE drop precautions apply:
-        IF @DropDatabasesAfterRestore = 1 BEGIN
-            
-            -- Make sure we can/will ONLY restore databases that we've restored in this session. 
-            SELECT @executeDropAllowed = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
 
-            IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
-                SET @executeDropAllowed = 1; 
-            
-            IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
 
-                UPDATE dbo.restore_log
-                SET 
-                    [dropped] = 'ERROR', 
-                    error_details = error_details + @crlf + N'(NOTE: Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.)'
-                WHERE 
-                    restore_test_id = @restoreLogId;
-
-                SET @executeDropAllowed = 1; 
-            END;
-
-            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
-                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
-
-                BEGIN TRY 
-                    IF @PrintOnly = 1 
-                        PRINT @command;
-                    ELSE BEGIN
-                        UPDATE dbo.restore_log 
-                        SET 
-                            [dropped] = N'ATTEMPTED'
-                        WHERE 
-                            restore_test_id = @restoreLogId;
-
-                        EXEC sys.sp_executesql @command;
-
-                        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
-                            SET @statusDetail = N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
-
-                            GOTO NextDatabase;
-                          END;
-                        ELSE -- happy / expected outcome:
-                            UPDATE dbo.restore_log
-                            SET 
-                                dropped = 'DROPPED'
-                            WHERE 
-                                restore_test_id = @restoreLogId;
-                    END;
-
-                END TRY 
-                BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-                    UPDATE dbo.restore_log
-                    SET 
-                        dropped = 'ERROR'
-                    WHERE 
-                        restore_test_id = @restoredName;
-
-                    GOTO NextDatabase;
-                END CATCH
-            END;
-
-          END;
-        ELSE BEGIN
-            UPDATE dbo.restore_log 
-            SET 
-                dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
-            WHERE
-                restore_test_id = @restoreLogId;
-        END;
+-- Primary Restore/Restore-Testing complete - log file lists, and cleanup/prep for next db to process... 
+NextDatabase:
 
 		-- serialize restored file details and push into dbo.restore_log
-		
 		SELECT @fileListXml = (
 			SELECT 
 				ROW_NUMBER() OVER (ORDER BY ID) [@id],
@@ -912,10 +833,78 @@ AS
 				[restore_test_id] = @restoreLogId;
 		END;
 
-        PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+        -- Drop the database if specified and if all SAFE drop precautions apply:
+        IF @DropDatabasesAfterRestore = 1 BEGIN
+            
+            -- Make sure we can/will ONLY restore databases that we've restored in this session. 
+            SELECT @executeDropAllowed = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
 
-        -- If we made this this far, there have been no errors... and we can drop through into processing the next database... 
-NextDatabase:
+            IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
+                SET @executeDropAllowed = 1; 
+            
+            IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
+
+                UPDATE dbo.restore_log
+                SET 
+                    [dropped] = 'ERROR', 
+                    error_details = error_details + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
+                WHERE 
+                    restore_test_id = @restoreLogId;
+
+                SET @executeDropAllowed = 1; 
+            END;
+
+            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
+                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
+
+                BEGIN TRY 
+                    IF @PrintOnly = 1 
+                        PRINT @command;
+                    ELSE BEGIN
+                        UPDATE dbo.restore_log 
+                        SET 
+                            [dropped] = N'ATTEMPTED'
+                        WHERE 
+                            restore_test_id = @restoreLogId;
+
+                        EXEC sys.sp_executesql @command;
+
+                        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
+                            SET @statusDetail = N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
+
+                            SET @failedDropCount = @failedDropCount +1;
+                          END;
+                        ELSE -- happy / expected outcome:
+                            UPDATE dbo.restore_log
+                            SET 
+                                dropped = 'DROPPED'
+                            WHERE 
+                                restore_test_id = @restoreLogId;
+                    END;
+
+                END TRY 
+                BEGIN CATCH
+                    SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+
+                    UPDATE dbo.restore_log
+                    SET 
+                        dropped = 'ERROR', 
+						[error_details] = @statusDetail
+                    WHERE 
+                        restore_test_id = @restoredName;
+
+                    SET @failedDropCount = @failedDropCount +1;
+                END CATCH
+            END;
+
+          END;
+        ELSE BEGIN
+            UPDATE dbo.restore_log 
+            SET 
+                dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
+            WHERE
+                restore_test_id = @restoreLogId;
+        END;
 
         -- Record any status details as needed:
         IF @statusDetail IS NOT NULL BEGIN
@@ -933,7 +922,10 @@ NextDatabase:
             END;
 
             PRINT N'-- Operations for database [' + @restoredName + N'] failed.' + @crlf + @crlf;
-        END;
+          END;
+		ELSE BEGIN 
+			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+		END; 
 
         -- Check-up on total number of 'failed drops':
 		IF @DropDatabasesAfterRestore = 1 BEGIN 
