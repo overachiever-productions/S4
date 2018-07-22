@@ -42,7 +42,7 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL  -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -65,7 +65,7 @@ AS
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL') BEGIN 
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED') BEGIN 
 		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL', 16, 1);
 		RETURN -2;
 	END
@@ -81,6 +81,13 @@ AS
 			RETURN -5;
 		END
 	END
+
+	IF UPPER(@Mode) = N'LIST_RESTORED' BEGIN 
+		IF OBJECT_ID('dbo.restore_log') IS NULL BEGIN
+			RAISERROR('S4 table dbo.restore_log is required to list restored databases.', 16, 1);
+			RETURN -6;
+		END;
+	END;
 
 	IF UPPER(@Input) = N'[READ_FROM_FILESYSTEM]' BEGIN;
 		IF UPPER(@Mode) NOT IN (N'RESTORE', N'REMOVE') BEGIN;
@@ -106,7 +113,7 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') BEGIN;
+    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
 	    INSERT INTO @targets ([database_name])
         SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
 
@@ -117,7 +124,7 @@ AS
 		END
     END; 
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') BEGIN; 
+    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN; 
         IF @BackupType = 'LOG'
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
@@ -153,7 +160,7 @@ AS
 
       END; 
 
-    IF (SELECT COUNT(*) FROM @targets) <= 0 BEGIN;
+    IF (SELECT COUNT(*) FROM @targets) <= 0 AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
 
         DECLARE @SerializedDbs nvarchar(1200);
 		SET @SerializedDbs = N',' + @Input + N',';
@@ -200,6 +207,12 @@ AS
 		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
 	
+	IF UPPER(@Mode) IN (N'LIST_RESTORED') BEGIN
+		-- only show dbs that have been restored (i.e., in dbo.restore_log).
+		INSERT INTO @targets ([database_name])
+		SELECT [database] FROM dbo.[restore_log] GROUP BY [database];
+	END;
+
 	-- Exclude any databases specified for exclusion:
 	IF ISNULL(@Exclusions, '') <> '' BEGIN;
 	

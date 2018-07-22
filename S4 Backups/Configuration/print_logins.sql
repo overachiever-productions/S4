@@ -102,13 +102,6 @@ AS
 	WHERE 
 		sp.[type] NOT IN ('R');
 
-	DECLARE @name sysname;
-	DECLARE @sid varbinary(85); 
-	DECLARE @passwordHash varbinary(256);
-	DECLARE @policyChecked nvarchar(3);
-	DECLARE @expirationChecked nvarchar(3);
-	DECLARE @defaultDb sysname;
-	DECLARE @defaultLang sysname;
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @info nvarchar(MAX);
@@ -250,7 +243,6 @@ AS
 
 			CLOSE [looper];
 			DEALLOCATE [looper];
-
 
 			SET @info = N'';
 			
