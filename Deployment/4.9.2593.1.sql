@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.8.2571.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.8.2571.1.
+		- This script will either install/deploy S4 version 4.9.2593.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2593.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.8.2571.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2593.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.8.2571.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2593.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -621,7 +621,7 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL  -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -644,7 +644,7 @@ AS
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL') BEGIN 
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED') BEGIN 
 		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL', 16, 1);
 		RETURN -2;
 	END
@@ -660,6 +660,13 @@ AS
 			RETURN -5;
 		END
 	END
+
+	IF UPPER(@Mode) = N'LIST_RESTORED' BEGIN 
+		IF OBJECT_ID('dbo.restore_log') IS NULL BEGIN
+			RAISERROR('S4 table dbo.restore_log is required to list restored databases.', 16, 1);
+			RETURN -6;
+		END;
+	END;
 
 	IF UPPER(@Input) = N'[READ_FROM_FILESYSTEM]' BEGIN;
 		IF UPPER(@Mode) NOT IN (N'RESTORE', N'REMOVE') BEGIN;
@@ -685,7 +692,7 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') BEGIN;
+    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
 	    INSERT INTO @targets ([database_name])
         SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
 
@@ -696,7 +703,7 @@ AS
 		END
     END; 
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') BEGIN; 
+    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN; 
         IF @BackupType = 'LOG'
             INSERT INTO @targets ([database_name])
             SELECT name FROM sys.databases 
@@ -732,7 +739,7 @@ AS
 
       END; 
 
-    IF (SELECT COUNT(*) FROM @targets) <= 0 BEGIN;
+    IF (SELECT COUNT(*) FROM @targets) <= 0 AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
 
         DECLARE @SerializedDbs nvarchar(1200);
 		SET @SerializedDbs = N',' + @Input + N',';
@@ -779,6 +786,12 @@ AS
 		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
 	END
 	
+	IF UPPER(@Mode) IN (N'LIST_RESTORED') BEGIN
+		-- only show dbs that have been restored (i.e., in dbo.restore_log).
+		INSERT INTO @targets ([database_name])
+		SELECT [database] FROM dbo.[restore_log] GROUP BY [database];
+	END;
+
 	-- Exclude any databases specified for exclusion:
 	IF ISNULL(@Exclusions, '') <> '' BEGIN;
 	
@@ -2277,13 +2290,6 @@ AS
 	WHERE 
 		sp.[type] NOT IN ('R');
 
-	DECLARE @name sysname;
-	DECLARE @sid varbinary(85); 
-	DECLARE @passwordHash varbinary(256);
-	DECLARE @policyChecked nvarchar(3);
-	DECLARE @expirationChecked nvarchar(3);
-	DECLARE @defaultDb sysname;
-	DECLARE @defaultLang sysname;
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @info nvarchar(MAX);
@@ -2425,7 +2431,6 @@ AS
 
 			CLOSE [looper];
 			DEALLOCATE [looper];
-
 
 			SET @info = N'';
 			
@@ -3667,7 +3672,7 @@ AS
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
 
-    DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}'' WITH {move},{replace} NORECOVERY;'; 
+    DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}'' WITH {move}, NORECOVERY;'; 
     DECLARE @move nvarchar(MAX);
     DECLARE @restoreLogId int;
     DECLARE @sourcePath nvarchar(500);
@@ -3803,31 +3808,57 @@ AS
             SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
             GOTO NextDatabase;
         END;
+        
+		-- Process attempt to overwrite an existing database: 
+		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
 
-        -- Determine how to respond to an attempt to overwrite an existing database (i.e., is it explicitly confirmed or... should we throw an exception).
-        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
-            
-            -- if this is a 'failure' from a previous execution, drop the DB and move on, otherwise, make sure we are explicitly configured to REPLACE. 
-            IF EXISTS (SELECT NULL FROM @NonDroppedFromPreviousExecution WHERE [Database] = @databaseToRestore AND RestoredAs = @restoredName) BEGIN
-                SET @command = N'DROP DATABASE [' + @restoredName + N'];';
+			-- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
+			IF @AllowReplace = N'REPLACE' BEGIN
+				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
+
+					BEGIN TRY 
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
+
+						IF @PrintOnly = 1 BEGIN
+							PRINT @command;
+						  END;
+						ELSE BEGIN
+							SET @outcome = NULL;
+							EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
+							SET @statusDetail = @outcome;
+						END;
+
+						-- give things just a second to 'die down':
+						WAITFOR DELAY '00:00:02';
+
+					END TRY
+					BEGIN CATCH
+						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+					END CATCH
+
+					IF @statusDetail IS NOT NULL
+						GOTO NextDatabase;
+				END;
+
+				-- Now DROP the target db: 
+				SET @command = N'DROP DATABASE [' + @restoredName + N'];';
                 
 				IF @PrintOnly = 1 BEGIN
 						PRINT N'-- ' + @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
-				  END;
+					END;
 				ELSE BEGIN
 					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
 					SET @statusDetail = @outcome;
 				END;
-                IF @statusDetail IS NOT NULL BEGIN
-                    GOTO NextDatabase;
-                END;
-              END;
-            ELSE BEGIN
-                IF ISNULL(@AllowReplace, '') <> N'REPLACE' BEGIN
-                    SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
-                    GOTO NextDatabase;
-                END;
-            END;
+				IF @statusDetail IS NOT NULL BEGIN
+					GOTO NextDatabase;
+				END;
+
+			  END;
+			ELSE BEGIN
+				SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
+				GOTO NextDatabase;
+			END;
         END;
 
 		-- Check for a FULL backup: 
@@ -3906,47 +3937,10 @@ AS
 
         SET @move = LEFT(@move, LEN(@move) - 1); -- remove the trailing ", "... 
 
-        -- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
-        IF @AllowReplace = N'REPLACE' BEGIN
-            
-            -- only attempt to set to single-user mode if ONLINE (i.e., if somehow stuck in restoring... don't bother, just replace):
-            IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
-
-                BEGIN TRY 
-                    SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
-
-                    IF @PrintOnly = 1 BEGIN
-                        PRINT @command;
-                      END;
-                    ELSE BEGIN
-                        SET @outcome = NULL;
-                        EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
-                        SET @statusDetail = @outcome;
-                    END;
-
-                    -- give things just a second to 'die down':
-                    WAITFOR DELAY '00:00:02';
-
-                END TRY
-                BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-                END CATCH
-
-                IF @statusDetail IS NOT NULL
-                GOTO NextDatabase;
-            END;
-        END;
-
         -- Set up the Restore Command and Execute:
         SET @command = REPLACE(@fullRestoreTemplate, N'{0}', @restoredName);
         SET @command = REPLACE(@command, N'{1}', @pathToDatabaseBackup);
         SET @command = REPLACE(@command, N'{move}', @move);
-
-        -- Otherwise, address the REPLACE command in our RESTORE @command: 
-        IF @AllowReplace = N'REPLACE'
-            SET @command = REPLACE(@command, N'{replace}', N' REPLACE, ');
-        ELSE 
-            SET @command = REPLACE(@command, N'{replace}',  N'');
 
         BEGIN TRY 
             IF @PrintOnly = 1 BEGIN
@@ -4194,80 +4188,12 @@ AS
 
         END;
 
-        -- Drop the database if specified and if all SAFE drop precautions apply:
-        IF @DropDatabasesAfterRestore = 1 BEGIN
-            
-            -- Make sure we can/will ONLY restore databases that we've restored in this session. 
-            SELECT @executeDropAllowed = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
 
-            IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
-                SET @executeDropAllowed = 1; 
-            
-            IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
 
-                UPDATE dbo.restore_log
-                SET 
-                    [dropped] = 'ERROR', 
-                    error_details = error_details + @crlf + N'(NOTE: Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.)'
-                WHERE 
-                    restore_test_id = @restoreLogId;
-
-                SET @executeDropAllowed = 1; 
-            END;
-
-            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
-                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
-
-                BEGIN TRY 
-                    IF @PrintOnly = 1 
-                        PRINT @command;
-                    ELSE BEGIN
-                        UPDATE dbo.restore_log 
-                        SET 
-                            [dropped] = N'ATTEMPTED'
-                        WHERE 
-                            restore_test_id = @restoreLogId;
-
-                        EXEC sys.sp_executesql @command;
-
-                        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
-                            SET @statusDetail = N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
-
-                            GOTO NextDatabase;
-                          END;
-                        ELSE -- happy / expected outcome:
-                            UPDATE dbo.restore_log
-                            SET 
-                                dropped = 'DROPPED'
-                            WHERE 
-                                restore_test_id = @restoreLogId;
-                    END;
-
-                END TRY 
-                BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-                    UPDATE dbo.restore_log
-                    SET 
-                        dropped = 'ERROR'
-                    WHERE 
-                        restore_test_id = @restoredName;
-
-                    GOTO NextDatabase;
-                END CATCH
-            END;
-
-          END;
-        ELSE BEGIN
-            UPDATE dbo.restore_log 
-            SET 
-                dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
-            WHERE
-                restore_test_id = @restoreLogId;
-        END;
+-- Primary Restore/Restore-Testing complete - log file lists, and cleanup/prep for next db to process... 
+NextDatabase:
 
 		-- serialize restored file details and push into dbo.restore_log
-		
 		SELECT @fileListXml = (
 			SELECT 
 				ROW_NUMBER() OVER (ORDER BY ID) [@id],
@@ -4295,10 +4221,78 @@ AS
 				[restore_test_id] = @restoreLogId;
 		END;
 
-        PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+        -- Drop the database if specified and if all SAFE drop precautions apply:
+        IF @DropDatabasesAfterRestore = 1 BEGIN
+            
+            -- Make sure we can/will ONLY restore databases that we've restored in this session. 
+            SELECT @executeDropAllowed = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
 
-        -- If we made this this far, there have been no errors... and we can drop through into processing the next database... 
-NextDatabase:
+            IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
+                SET @executeDropAllowed = 1; 
+            
+            IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
+
+                UPDATE dbo.restore_log
+                SET 
+                    [dropped] = 'ERROR', 
+                    error_details = error_details + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
+                WHERE 
+                    restore_test_id = @restoreLogId;
+
+                SET @executeDropAllowed = 1; 
+            END;
+
+            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
+                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
+
+                BEGIN TRY 
+                    IF @PrintOnly = 1 
+                        PRINT @command;
+                    ELSE BEGIN
+                        UPDATE dbo.restore_log 
+                        SET 
+                            [dropped] = N'ATTEMPTED'
+                        WHERE 
+                            restore_test_id = @restoreLogId;
+
+                        EXEC sys.sp_executesql @command;
+
+                        IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
+                            SET @statusDetail = N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
+
+                            SET @failedDropCount = @failedDropCount +1;
+                          END;
+                        ELSE -- happy / expected outcome:
+                            UPDATE dbo.restore_log
+                            SET 
+                                dropped = 'DROPPED'
+                            WHERE 
+                                restore_test_id = @restoreLogId;
+                    END;
+
+                END TRY 
+                BEGIN CATCH
+                    SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+
+                    UPDATE dbo.restore_log
+                    SET 
+                        dropped = 'ERROR', 
+						[error_details] = @statusDetail
+                    WHERE 
+                        restore_test_id = @restoredName;
+
+                    SET @failedDropCount = @failedDropCount +1;
+                END CATCH
+            END;
+
+          END;
+        ELSE BEGIN
+            UPDATE dbo.restore_log 
+            SET 
+                dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
+            WHERE
+                restore_test_id = @restoreLogId;
+        END;
 
         -- Record any status details as needed:
         IF @statusDetail IS NOT NULL BEGIN
@@ -4316,7 +4310,10 @@ NextDatabase:
             END;
 
             PRINT N'-- Operations for database [' + @restoredName + N'] failed.' + @crlf + @crlf;
-        END;
+          END;
+		ELSE BEGIN 
+			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+		END; 
 
         -- Check-up on total number of 'failed drops':
 		IF @DropDatabasesAfterRestore = 1 BEGIN 
@@ -4913,11 +4910,8 @@ AS
 		d.[cpu_time],
 		d.[reads],
 		d.[writes], 
-		CASE WHEN d.[elapsed_time] < 0 
-			THEN N''-'' + RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3)
-			ELSE RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) 
-		END [elapsed_time],
-		RIGHT(''000'' + CAST([wait_time] / 3600000 as sysname), 3) + N'':'' + RIGHT(''00'' + CAST(([wait_time] / (60000) % 60) AS sysname), 2) + N'':'' + RIGHT(''00'' + CAST((([wait_time] / 1000) % 60) AS sysname), 2) + N''.'' + RIGHT(''000'' + CAST(([wait_time]) AS sysname), 3) [wait_time],
+		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
+		dbo.format_timespan(d.[wait_time]) [wait_time],
 		d.[db_name],
 		d.[login_name],
 		d.[program_name],
@@ -8631,8 +8625,8 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.8.2571.1';
-DECLARE @VersionDescription nvarchar(200) = N'Optimizations for list_processes + additional capabilities for print_logins - streamlined install.';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2593.1';
+DECLARE @VersionDescription nvarchar(200) = N'Initial Release of RPO and RTO reports for Restore Testing';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
