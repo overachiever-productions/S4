@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2593.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2593.1.
+		- This script will either install/deploy S4 version 4.9.2605.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2605.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2593.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2605.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2593.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2605.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -5553,11 +5553,11 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET PAGE_VERIFY CHECKSUM; ' + @crlf [issue]
+		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
-		page_verify_option_desc != N'CHECKSUM'
+		page_verify_option_desc <> N'CHECKSUM'
 	ORDER BY 
 		[name];
 
@@ -5566,16 +5566,40 @@ AS
 		INSERT INTO @issues ([database], issue)
 		SELECT 
 			[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name],'[]') + N' TO sa;' + @crlf [issue]
+			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name],'[]') + N' TO sa;' [issue]
 		FROM 
 			sys.databases 
 		WHERE 
-			owner_sid != 0x01;
-
+			owner_sid <> 0x01;
 	END;
 
+	-- AUTO_CLOSE:
+	INSERT INTO @issues ([database], issue)
+	SELECT 
+		[name] [database], 
+		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET AUTO_CLOSE OFF; ' [issue]
+	FROM 
+		sys.databases 
+	WHERE 
+		[is_auto_close_on] = 1
+	ORDER BY 
+		[name];
+
+	-- AUTO_SHRINK:
+	INSERT INTO @issues ([database], issue)
+	SELECT 
+		[name] [database], 
+		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET AUTO_SHRINK OFF; ' [issue]
+	FROM 
+		sys.databases 
+	WHERE 
+		[is_auto_shrink_on] = 1
+	ORDER BY 
+		[name];
+		
 	-----------------------------------------------------------------------------
 	-- add other checks as needed/required per environment:
+
 
 
 
@@ -5589,7 +5613,7 @@ AS
 		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
 
 		SELECT 
-			@emailErrorMessage = @emailErrorMessage + @tab + N'[' + [database] + N']. ' + [issue] + @crlf
+			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database], '[]') + N'. ' + [issue] + @crlf
 		FROM 
 			@issues 
 		ORDER BY 
@@ -8625,8 +8649,8 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.9.2593.1';
-DECLARE @VersionDescription nvarchar(200) = N'Initial Release of RPO and RTO reports for Restore Testing';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2605.1';
+DECLARE @VersionDescription nvarchar(200) = N'Introduction of dbo.list_transactions';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
