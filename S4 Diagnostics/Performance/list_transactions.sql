@@ -2,10 +2,8 @@
 /*
 	
 	vNEXT:
-		-- add transaction_isolation from sys.dm_exec_requests... (which means I'll query that table for everything ... not just IF @IncludeStatements or @IncludePlans... is set to 1
-		-- and add 'status' from ... sys.dm_exec_requests... 
-
-
+		-- add lock_timeout and deadlock_priority from sys.dm_exec_requests... 
+		
 
 
 EXEC dbo.list_transactions 
@@ -74,9 +72,9 @@ AS
 			ELSE ''#Unknown#''
 		END [transaction_type],
 		CASE [dtat].[transaction_state]
-			WHEN 0 THEN ''Initializing...''
+			WHEN 0 THEN ''Initializing''
 			WHEN 1 THEN ''Initialized''
-			WHEN 2 THEN ''Active...''
+			WHEN 2 THEN ''Active''
 			WHEN 3 THEN ''Ended (read-only)''
 			WHEN 4 THEN ''DTC commit started''
 			WHEN 5 THEN ''Awaiting resolution''
@@ -153,11 +151,22 @@ AS
 		session_id int NOT NULL, 
 		statement_source sysname NOT NULL DEFAULT N'REQUEST',
 		statement_handle varbinary(64) NULL, 
-		plan_handle varbinary(64) NULL
+		plan_handle varbinary(64) NULL, 
+		[status] nvarchar(30) NULL, 
+		isolation_level varchar(14) NULL, 
+		blocking_session_id int NULL, 
+		wait_time int NULL, 
+		wait_resource nvarchar(256) NULL, 
+		[wait_type] nvarchar(60) NULL,
+		last_wait_type nvarchar(60) NULL, 
+		cpu_time int NULL, 
+		[statement_start_offset] int NULL, 
+		[statement_end_offset] int NULL
 	);
 
 	CREATE TABLE #statements (
 		session_id int NOT NULL,
+		statement_source sysname NOT NULL DEFAULT N'REQUEST',
 		[statement] nvarchar(MAX) NULL
 	);
 
@@ -166,37 +175,50 @@ AS
 		query_plan xml NULL
 	);
 
-	IF @IncludeStatements = 1 OR @IncludePlans = 1 BEGIN
+	INSERT INTO [#handles] ([session_id], [statement_handle], [plan_handle], [status], [isolation_level], [blocking_session_id], [wait_time], [wait_resource], [wait_type], [last_wait_type], [cpu_time], [statement_start_offset], [statement_end_offset])
+	SELECT 
+		c.[session_id], 
+		r.[sql_handle] [statement_handle], 
+		r.[plan_handle], 
+		r.[status], 
+		CASE r.transaction_isolation_level 
+			WHEN 0 THEN 'Unspecified' 
+	        WHEN 1 THEN 'ReadUncomitted' 
+	        WHEN 2 THEN 'Readcomitted' 
+	        WHEN 3 THEN 'Repeatable' 
+	        WHEN 4 THEN 'Serializable' 
+	        WHEN 5 THEN 'Snapshot' 
+			ELSE NULL
+		END isolation_level,
+		r.[blocking_session_id], 
+		r.[wait_time], 
+		r.[wait_resource], 
+		r.[wait_type],
+		r.[last_wait_type], 
+		r.[cpu_time], 
+		r.[statement_start_offset], 
+		r.[statement_end_offset]
+	FROM 
+		[#core] c 
+		LEFT OUTER JOIN sys.[dm_exec_requests] r WITH(NOLOCK) ON c.[session_id] = r.[session_id];
 
-		INSERT INTO [#handles] ([session_id], [statement_handle], [plan_handle])
-		SELECT 
-			c.[session_id], 
-			r.[sql_handle] [statement_handle], 
-			r.[plan_handle]
-		FROM 
-			[#core] c 
-			LEFT OUTER JOIN sys.[dm_exec_requests] r WITH(NOLOCK) ON c.[session_id] = r.[session_id];
-
-		UPDATE h
-		SET 
-			h.[statement_handle] = CAST(p.[sql_handle] AS varbinary(64)), 
-			h.[statement_source] = N'SESSION'
-		FROM 
-			[#handles] h
-			LEFT OUTER JOIN sys.[sysprocesses] p ON h.[session_id] = p.[spid] -- AND h.[request_handle] IS NULL don't really think i need this pushed-down predicate... but might be worth a stab... 
-		WHERE 
-			h.[statement_handle] IS NULL;
-	END;
+	UPDATE h
+	SET 
+		h.[statement_handle] = CAST(p.[sql_handle] AS varbinary(64)), 
+		h.[statement_source] = N'SESSION'
+	FROM 
+		[#handles] h
+		LEFT OUTER JOIN sys.[sysprocesses] p ON h.[session_id] = p.[spid] -- AND h.[request_handle] IS NULL don't really think i need this pushed-down predicate... but might be worth a stab... 
+	WHERE 
+		h.[statement_handle] IS NULL;
 
 	IF @IncludeStatements = 1 BEGIN
 		
-		INSERT INTO [#statements] ([session_id], [statement])
+		INSERT INTO [#statements] ([session_id], [statement_source], [statement])
 		SELECT 
 			h.[session_id], 
-			CASE 
-				WHEN h.[statement_source] = N'SESSION' THEN N'SESSION::: ' + t.[text]
-				ELSE t.[text]
-			END [statement]
+			h.[statement_source], 
+			t.[text] [statement]
 		FROM 
 			[#handles] h
 			OUTER APPLY sys.[dm_exec_sql_text](h.[statement_handle]) t;
@@ -216,23 +238,57 @@ AS
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
         [c].[session_id],
+		ISNULL([h].blocking_session_id, 0) [blocked_by],
         DB_NAME([c].[database_id]) [database],
         dbo.format_timespan([c].[duration]) [duration],
-		[c].[enlisted_db_count],
-		[c].[tempdb_enlisted],
+		h.[status],
 		{statement}
-        [c].[transaction_type],
-        [c].[transaction_state],
-        [c].[enlist_count] [active_requests],
-        {system}
-        [c].[open_transaction_count],
-        [c].[log_record_count],
-        [c].[log_bytes_used]
+		CAST((''<context>
+			<transaction>
+				<current_state>'' + ISNULL(c.transaction_state,'''') + N''</current_state>
+				<isolation_level>'' + ISNULL(h.isolation_level, '''') + N''</isolation_level>
+				<active_request_count>'' + ISNULL(CAST(c.enlist_count as sysname), ''0'') + N''</active_request_count>
+				<open_transaction_count>'' + ISNULL(CAST(c.open_transaction_count as sysname), ''0'') + N''</open_transaction_count>
+				{dtc}
+				<statement>
+					<query_plan_source>'' + ISNULL(h.statement_source, '''') + N''</query_plan_source>
+					<sql_handle offset_start="'' + CAST(ISNULL(h.[statement_start_offset], 0) as sysname) + N''" offset_end="'' + CAST(ISNULL(h.[statement_end_offset], 0) as sysname) + N''">'' + ISNULL(CONVERT(nvarchar(128), h.[statement_handle], 1), '''') + N''</sql_handle>
+					<plan_handle>'' + ISNULL(CONVERT(nvarchar(128), h.[plan_handle], 1), '''') + N''</plan_handle>
+					{statementXML}
+				</statement>
+				<waits>
+					<wait_time>'' + dbo.format_timespan(h.wait_time) + N''</wait_time>
+					<wait_resource>'' + ISNULL([h].[wait_resource], '''') + N''</wait_resource>
+					<wait_type>'' + ISNULL([h].[wait_type], '''') + N''</wait_type>
+					<last_wait_type>'' + ISNULL([h].[last_wait_type], '''') + N''</last_wait_type>
+				</waits>
+				<databases>
+					<enlisted_db_count>'' + CAST(c.enlisted_db_count AS sysname) + N''</enlisted_db_count>
+					<is_tempdb_enlisted>'' + CAST(c.tempdb_enlisted as char(1)) + N''</is_tempdb_enlisted>
+					<primary_db>'' + ISNULL(DB_NAME([c].[database_id]), '''') + N''</primary_db>
+				</databases>
+			</transaction>
+			<time>
+				<cpu_time>'' + dbo.format_timespan([h].cpu_time) + N''</cpu_time>
+				<duration>'' + dbo.format_timespan([c].[duration]) + N''</duration>
+				<wait_time>'' + dbo.format_timespan([h].wait_time) + N''</wait_time>
+				<time_since_session_last_request_start>'' + dbo.format_timespan(DATEDIFF(MILLISECOND, des.last_request_start_time, GETDATE())) + N''</time_since_session_last_request_start>
+				<last_session_request_start>'' + ISNULL(CONVERT(sysname, des.[last_request_start_time], 121), '''') + N''</last_session_request_start>
+			</time>
+			<connection>
+				<login_name>'' + ISNULL(des.[login_name], '''') + N''</login_name>
+				<program_name>'' + ISNULL(des.[program_name], '''') + N''</program_name>
+				<host_name>'' + ISNULL(des.[host_name], '''') + N''</host_name>
+			</connection>
+		</context>'') as xml) [context],
+		{system}
+		N'''' + ISNULL(CAST(c.log_record_count as sysname), ''0'') + N'' - '' + ISNULL(CAST(c.log_bytes_used as sysname),''0'') + N''''		[log_used (count - bytes)]
 		{plan}
 		{bound}
-		{dtc}
 	FROM 
 		[#core] c 
+		LEFT OUTER JOIN #handles h ON c.session_id = h.session_id
+		LEFT OUTER JOIN sys.dm_exec_sessions des ON c.session_id = des.session_id
 		{statementJOIN}
 		{planJOIN}
 	ORDER BY 
@@ -242,10 +298,12 @@ AS
 	IF @IncludeStatements = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statement}', N'[s].[statement],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementJOIN}', N'LEFT OUTER JOIN #statements s ON c.session_id = s.session_id');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementXML}', N'<text>'' + (SELECT ISNULL([s].[statement], '''') FOR XML PATH('''')) + N''</text>');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statement}', N'');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementJOIN}', N'');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementXML}', N'');
 	END; 
 
 	IF @IncludePlans = 1 BEGIN 
@@ -265,11 +323,12 @@ AS
 	END;
 
 	IF @IncludeDTCDetails = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N', [c].[is_local], [c].[is_enlisted]');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'<dtc_detail is_local="'' + ISNULL(CAST(c.is_local as char(1)), ''0'') + N''" is_enlisted="'' + ISNULL(CAST(c.is_enlisted as char(1)), ''0'') + N''" />');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'');
 	END;
+
 
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{system}', N'');

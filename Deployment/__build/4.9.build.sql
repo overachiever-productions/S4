@@ -462,6 +462,9 @@ GO
 -----------------------------------
 --##INCLUDE: Common\load_default_path.sql
 
+-----------------------------------
+--##INCLUDE: Common\format_timespan.sql
+
 
 ---------------------------------------------------------------------------
 -- Backups:
@@ -502,12 +505,18 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
+-----------------------------------
+--##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
+
 ---------------------------------------------------------------------------
 --- Diagnostics
 ---------------------------------------------------------------------------
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Performance\list_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Performance\list_transactions.sql
 
 ---------------------------------------------------------------------------
 --- Monitoring
