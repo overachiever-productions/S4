@@ -509,14 +509,14 @@ GO
 --##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
 
 ---------------------------------------------------------------------------
---- Diagnostics
+--- Performance
 ---------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Performance\list_processes.sql
+--##INCLUDE: S4 Performance\list_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Performance\list_transactions.sql
+--##INCLUDE: S4 Performance\list_transactions.sql
 
 ---------------------------------------------------------------------------
 --- Monitoring
@@ -530,6 +530,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\process_alerts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\monitor_transaction_durations.sql
 
 ---------------------------------------------------------------------------
 -- Monitoring (HA):
