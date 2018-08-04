@@ -2,14 +2,14 @@
 
 /*
 
-	-- TODO: probably want/need to change this sproc's name... 
-
 	-- TODO: show 'status' of the query - i.e., running, runnable, sleeping, etc..... that info will be CRITICAL in determining what's up... 
 	--			so... list that as the first 'metric'... 
 
 
 */
 
+USE [admindb];
+GO
 
 
 IF OBJECT_ID('dbo.monitor_transaction_durations','P') IS NOT NULL
@@ -20,7 +20,7 @@ CREATE PROC dbo.monitor_transaction_durations
 	@ExcludeSystemProcesses				bit					= 1,				
 	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N'master, msdb'  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
 	@ExcludedCommands					nvarchar(MAX)		= NULL,				-- N'TASK MANAGER, BRKR TASK, etc..'
-	@ExcludedLastWaitTypes				nvarchar(MAX)		= NULL,				-- N'XE_DISPATCHER_WAIT, BROKER_TO_FLUSH, etc..'
+	@ExcludedWaitTypes					nvarchar(MAX)		= NULL,				-- N'XE_DISPATCHER_WAIT, BROKER_TO_FLUSH, etc..'
 	@AlertThreshold						sysname				= N'10m', 
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
@@ -113,6 +113,39 @@ AS
 			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',') ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
 	END;
 
+	-- grab wait types. Note. wait_type = wait-type associated with any CURRENT/active blocks. last_wait_type = last PREVIOUS wait - if there was one. 
+	SELECT 
+		r.[session_id],
+		r.[wait_type],   -- note, this COULD be ISNULL(r.wait_type, r.last_wait_type) but... i'm not sure that makes perfect sense... 
+		r.[command]
+		-- NOTE: add hosts, logins, and any other attributes that MIGHT make sense to filter against/exclude. 
+	INTO 
+		#attributes
+	FROM 
+		[#LongRunningTransactions] x 
+		LEFT OUTER JOIN sys.[dm_exec_requests] r ON x.[session_id] = r.[session_id];
+
+	IF NULLIF(@ExcludedCommands, N'') IS NOT NULL BEGIN 
+		DELETE lrt 
+		FROM 
+			[#LongRunningTransactions] lrt 
+			LEFT OUTER JOIN [#attributes] a ON lrt.[session_id] = a.[session_id]
+		WHERE 
+			UPPER(a.[command]) IN (SELECT UPPER([result]) FROM dbo.[split_string](@ExcludedCommands, N','));
+	END; 
+
+	IF NULLIF(@ExcludedWaitTypes, N'') IS NOT NULL BEGIN 
+		DELETE lrt 
+		FROM 
+			[#LongRunningTransactions] lrt 
+			LEFT OUTER JOIN [#attributes] a ON lrt.[session_id] = a.[session_id]		
+		WHERE 
+			UPPER(a.[wait_type]) IN (SELECT UPPER([result]) FROM dbo.[split_string](@ExcludedWaitTypes, N','));
+	END;
+
+	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
+		RETURN 0;  -- filters removed anything to report on. 
+
 	-- Grab Statements
 	WITH handles AS ( 
 		SELECT 
@@ -131,7 +164,7 @@ AS
 	FROM 
 		handles h
 		OUTER APPLY sys.[dm_exec_sql_text](h.[sql_handle]) t;
-	
+
 	-- Assemble output/report: 
 	DECLARE @line nvarchar(200) = REPLICATE(N'-', 200);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -140,7 +173,7 @@ AS
 
 	SELECT 
 		@messageBody = @messageBody + @line + @crlf
-		+ '- session_id [' + CAST(lrt.[session_id] AS sysname) + N'] has been running in database ' +  QUOTENAME(DB_NAME([dtdt].[database_id]) + N'[]') + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
+		+ '- session_id [' + CAST(lrt.[session_id] AS sysname) + N'] has been running in database ' +  QUOTENAME(DB_NAME([dtdt].[database_id]), N'[]') + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
 		+ @tab + @tab + N'[is_user_transaction: ' + CAST(lrt.[is_user_transaction] AS sysname) + N'],' + @crlf 
 		+ @tab + @tab + N'[open_transaction_count: '+ CAST(lrt.[open_transaction_count] AS sysname) + N'],' + @crlf
@@ -167,21 +200,53 @@ AS
 		) dtdt ON lrt.[transaction_id] = dtdt.[transaction_id]
 		LEFT OUTER JOIN [#Statements] s ON lrt.[session_id] = s.[session_id]
 
+	DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'.' + @crlf
+		+ @tab + N'(Details about how to resolve/address potential problems follow AFTER identified long-running transactions.)' + @crlf 
+		+ @messageBody 
+		+ @crlf 
+		+ @crlf 
+		+ @line + @crlf
+		+ @line + @crlf 
+		+ @tab + N'To resolve:  ' + @crlf
+		+ @tab + @tab + N'First, execute the following statement against ' + @@SERVERNAME + N' to ensure that the long-running transaction is still causing problems: ' + @crlf
+		+ @crlf
+		+ @tab + @tab + @tab + @tab + N'EXEC admindb.dbo.list_transactions;' + @crlf 
+		+ @crlf 
+		+ @tab + @tab + N'If the same session_id is still listed and causing problems, you can attempt to KILL the session in question by running KILL X - where X is the session_id you wish to terminate. (So, if session_id 234 is causing problems, you would execute KILL 234; ' + @crlf 
+		+ @tab + @tab + N'WARNING: KILLing an in-flight/long-running transaction is NOT an immediate operation. It typically takes around 75% - 150% of the time a transaction has taken to ''roll-forward'' in order to ''KILL'' or ROLLBACK a long-running operation. ' + @crlf
+		+ @tab + @tab + @tab + N'Example: suppose it takes 10 minutes for a long-running transaction (like a large UPDATE or DELETE operation) to complete and/or get stuck - or it has been running for ~10 minutes when you attempt to KILL it.' + @crlf
+		+ @tab + @tab + @tab + @tab + N'At this point (i.e., 10 minutes into an active transaction), you should ROUGHLY expect the rollback to take anywhere from 7 - 15 minutes to execute.' + @crlf
+		+ @tab + @tab + @tab + @tab + N'NOTE: If a short/simple transaction (like running an UPDATE against a single row) executes and the gets ''orphaned'' (i.e., it somehow gets stuck and/or there was an EXPLICIT BEGIN TRAN and the operation is waiting on an explicit COMMIT), ' + @crlf
+		+ @tab + @tab + @tab + @tab + @tab + N'Then, in this case the transactional ''overhead'' should have been minimal - meaning that a KILL operation should be very QUICK and almost immediate - because you are only rolling-back a few milliseconds'' or second''s worth of transactional overhead.' + @crlf 
+		+ @tab + @tab + N'Once you KILL a session, the rollback proccess will begin (if there was a transaction in-flight). Keep checking admindb.dbo.list_transactions to see if the session in question is still running - and once it is DONE running blocked processes and other operations SHOULD start to work as normal again.' + @crlf
+		+ @tab + @tab + @tab + N'IF you would like to see ROLLBACK process you can run: KILL ### WITH STATUSONLY; and SQL Server will USUALLY (but not always) provide a relatively accurate picture of how far along the rollback is. ' + @crlf 
+		+ @crlf
+		+ @tab + @tab + N'NOTE: If you are unable to determine the ''root'' blocker and/or are WILLING to effectively take the ENTIRE database ''down'' to fix problems with blocking/time-outs due to long-running transactions, you CAN kick the entire database in question into SINGLE_USER mode thereby forcing all ' + @crlf
+		+ @tab + @tab + @tab + N'in-flight transactions to ROLLBACK - at the expense of (effectively) KILLing ALL connections into the database AND preventing new connections.' + @crlf
+		+ @tab + @tab + @tab + N'As you might suspect, this is effectively a ''nuclear'' option - and can/will result in across-the-board down-time against the database in question. ' + @crlf
+		+ @tab + @tab + @tab + N'WARNING: Knocking a database into SINGLE_USER mode will NOT do ANYTHING to ''speed up'' or decrease ROLLBACK time for any transactions in flight. In fact, because it KILLs ALL transactions in the target database, it can take LONGER in some cases to ''go'' SINGLE_USER mode ' + @crlf
+		+ @tab + @tab + @tab + @tab + N'than finding/KILLing a root-blocker. Likewise, taking a database into SINGLE_USER mode is a semi-advanced operation and should NOT be done lightly.' + @crlf 
+		+ @crlf 
+		+ @tab + @tab + @tab + N'To force a database into SINGLE_USER mode (and kill all connections/transactions), run the following from within the master database: ' + @crlf
+		+ @crlf 
+		+ @tab + @tab + @tab + @tab + N'ALTER DATABSE [targetDBNameHere] SET SINGLE_USER WITH ROLLBACK AFTER 5 SECONDS;' + @crlf 
+		+ @crlf 
+		+ @tab + @tab + @tab + N'The command above will allow any/all connections and transactions currently active in the target database another 5 seconds to complete - while also blocking any NEW connections into the database. After 5 seconds (and you can obvious set this value as you would like), ' + @crlf
+		+ @tab + @tab + @tab + @tab + N'all in-flight transactions will be KILLed and start the ROLLBACK process - and any active connections in the database will also be KILLed and kicked-out of the database in question.' + @crlf
+		+ @tab + @tab + @tab + N'WARNING: Once a database has been put into SINGLE_USER mode it can ONLY be accessed by the session that switched the database into SINGLE_USER mode. As such, if you CLOSE your connection/session - ''control'' of the database ''falls'' to the next session that ' + @crlf
+		+ @tab + @tab + @tab + @tab + N'accesses the database - and all OTHER connections are blocked - which means that IF you close your connection/session, you will have to ACTIVELY fight other processes for connection into the database before you can set it to MULTI_USER again - and clear it for production use.' + @crlf 
+		+ @crlf 
+		+ @tab + @tab + @tab + N'Once a database has been put into SINGLE_USER mode (i.e., after the command has been executed and ALL in-flight transactions have been rolled-back and all connections have been terminated and the state of the database switches to SINGLE_USER mode), any transactional locking and blocking ' + @crlf
+		+ @tab + @tab + @tab + @tab + N'in the target database will be corrected. At which point you can then return the database to active service by switching it back to MULTI_USER mode by executing the following: ' + @crlf 
+		+ @crlf 
+		+ @tab + @tab + @tab + @tab + @tab + N'ALTER DATABASE [targetDatabaseInSINGLE_USERMode] SET MULTI_USER;' + @crlf 
+		+ @crlf 
+		+ @tab + @tab + @tab + @tab + N'Note, of course, that the command above can ONLY be executed (without throwing errors) by the session_id that currently ''owns'' the SINGLE_USER access into the database in question.' + @crlf;
+
 	IF @PrintOnly = 1 BEGIN 
-		PRINT @messageBody;
+		PRINT @message;
 	  END;
 	ELSE BEGIN 
-
-		DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'.' + @crlf
-			+ @tab + N'(Details about how to resolve/address potential problems follow AFTER identified long-running transactions.)' + @crlf 
-			+ @messageBody 
-			+ @crlf 
-			+ @crlf 
-			+ @line + @crlf
-			+ @line + @crlf 
-			+ @tab + N'to ... resolve... look at running KILL(xxx) where xxx = session_id of the query that is long-running. you MAY wish to verify that the query is still running first by means of executing admindb.dbo.list_transactions - and has the same spid, etc. [TODO: make this easier to follow and simple to address/etc.'
-			+ @crlf + @crlf
-			+ @tab + N'if you are unable to find a specific spid to kill and/or want to simply attempt a ''nuclear option'' with a rollback, execute ALTER DATABASE [dbname] SET SINGLE_USER WITH ROLLBACK AFTER 10 SECONDS; NOTE that this will require the long-running tx to rollback - which can take a long time, etc. '
 
 		DECLARE @subject nvarchar(200); 
 		DECLARE @txCount int; 

@@ -251,7 +251,7 @@ AS
 				<open_transaction_count>'' + ISNULL(CAST(c.open_transaction_count as sysname), ''0'') + N''</open_transaction_count>
 				{dtc}
 				<statement>
-					<query_plan_source>'' + ISNULL(h.statement_source, '''') + N''</query_plan_source>
+					<sql_statement_source>'' + ISNULL(h.statement_source, '''') + N''</sql_statement_source>
 					<sql_handle offset_start="'' + CAST(ISNULL(h.[statement_start_offset], 0) as sysname) + N''" offset_end="'' + CAST(ISNULL(h.[statement_end_offset], 0) as sysname) + N''">'' + ISNULL(CONVERT(nvarchar(128), h.[statement_handle], 1), '''') + N''</sql_handle>
 					<plan_handle>'' + ISNULL(CONVERT(nvarchar(128), h.[plan_handle], 1), '''') + N''</plan_handle>
 					{statementXML}

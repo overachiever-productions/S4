@@ -2,6 +2,9 @@
 
 /*
 
+-- TODO: thread count is off/wrong... 
+
+
 
 -- TODO: Parameter Validation.... 
 -- TODO: test change to N'ORDER BY ' + LOWER(@OrderBy) + N' DESC' in @topSQL for IF @topRows > 0... 
@@ -13,10 +16,9 @@
 -- vNEXT: extract execution cost... fodder: http://www.sqlservercentral.com/articles/Stairway+Series/The+XML+exist()+and+nodes()+Methods/92785/  look at the example on .nodes() .. it returns a table(column) 'alias'... meaning I could simply
 --			just a) grab all currentplan.nodes('/path/to/any/or/all/cost[@attributes]') ... and then .value() those out... and MAX() the 'table' of results to get the most expensive 'cost' defined in a single plan... done.
 
--- vNEXT: thread count column... (MIGHT make sense to make it optional... might make sense to just ALWAYS include it).
 -- vNEXT: batch vs statement plans/text (i.e., offsets and the likes). 
 -- vNEXT: detailed blocking info... (blocking chains if @DetailedBlockingInfo = 1 (expressed as xml)... 
--- vNEXT: temddb info (spills, usage, overhead, etc). 
+-- vNEXT: tempdb info (spills, usage, overhead, etc). as an optional parameter (i.e., @includetempdbmetrics)
 -- vNEXT: exclude service broker tasks (background tasks)... i..e, where Command = BRKR TASK and last_wait_type = 'sleep_task' and elapsed_time < 0 (i.e., huge negative #s) and ... text = NULL... 
 -- other wait types and so on... 
 
@@ -57,13 +59,12 @@ CREATE PROC dbo.list_processes
 	@TopNRows								int			=	-1,		-- TOP is only used if @TopNRows > 0. 
 	@OrderBy								sysname		= N'CPU',	-- CPU | DURATION | READS | WRITES | MEMORY
 	@IncludePlanHandle						bit			= 1,	
-	@ExtractExecutionCost					bit			= 0,	
+	--@ExtractExecutionCost					bit			= 0,	
 	@IncludeIsolationLevel					bit			= 0,
-	@ExecutionDetails						bit			= 1,		
 	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
-	-- vNEXT				---@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
+	-- vNEXT				--@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
-	@DetailedMemoryStats					bit			= 0,		-- show grant info... 
+	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
 	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
 	@ExcludeMirroringWaits					bit			= 1,		-- optional 'ignore' wait types/families.
 	@ExcludeNegativeDurations				bit			= 1,		-- exclude service broker and some other system-level operations/etc. 
@@ -180,7 +181,8 @@ AS
 		[percent_complete] real NOT NULL,
 		[open_tran] int NOT NULL,
 		[sql_handle] varbinary(64) NULL,
-		[plan_handle] varbinary(64) NULL
+		[plan_handle] varbinary(64) NULL, 
+		[statement_source] sysname NOT NULL DEFAULT N'REQUEST'
 	);
 
 	INSERT INTO [#detail] ([row_number], [session_id], [blocked_by], [isolation_level], [status], [last_wait_type], [command], [granted_mb], [requested_mb], [ideal_mb], 
@@ -209,7 +211,7 @@ AS
 		x.writes,
 		x.[duration] [elapsed_time],
 		r.wait_time,
-		DB_NAME(r.database_id) [db_name],
+		CASE WHEN r.[database_id] = 0 THEN 'resourcedb' ELSE DB_NAME(r.database_id) END [db_name],
 		s.[login_name],
 		s.[program_name],
 		s.[host_name],
@@ -225,30 +227,51 @@ AS
 	ORDER BY 
 		x.[row_number]; 
 
+	-- populate sql_handles for sessions without current requests: 
+	UPDATE x 
+	SET 
+		x.[sql_handle] = CAST(p.[sql_handle] AS varbinary(64)), 
+		x.[statement_source] = N'SESSION'
+	FROM 
+		[#detail] x 
+		INNER JOIN sys.sysprocesses p ON x.[session_id] = p.[spid]
+	WHERE 
+		x.[sql_handle] IS NULL;
 
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
 		d.[session_id],
 		d.[blocked_by],  -- vNext: this is either blocked_by or blocking_chain - which will be xml.. 
+		d.[db_name],
 		{isolation_level}
 		d.[command], 
-		d.[status],
 		d.[last_wait_type],
-		{memory}
 		t.[text],  -- statement_text?
-		--{batch_text} ??? 
+		--{batch_text} ???
+		d.[status], 
 		d.[cpu_time],
 		d.[reads],
 		d.[writes], 
+		{memory}
 		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
 		dbo.format_timespan(d.[wait_time]) [wait_time],
-		d.[db_name],
-		d.[login_name],
-		d.[program_name],
-		d.[host_name],
-		{executionDetails}
-		{plan_handle}
-		--{extractCost}
+		CAST((''<context>		
+			<connection>
+				<login_name>'' + ISNULL(d.[login_name], '''') + N''</login_name>
+				<program_name>'' + ISNULL(d.[program_name], '''') + N''</program_name>
+				<host_name>'' + ISNULL(d.[host_name], '''') + N''</host_name>
+			</connection>	
+			<statement>
+				<sql_statement_source>'' + ISNULL(d.statement_source, '''') + N''</sql_statement_source>
+				{plan_handle}
+			</statement>
+			<execution>
+				<percent_complete>'' + CAST(d.[percent_complete] as sysname) + N''</percent_complete>
+				<open_transaction_count>'' + CAST(d.[open_tran] as sysname) + N''</open_transaction_count>
+				<thread_count>'' + CAST((SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = d.session_id) as sysname) + N''</thread_count>
+			</execution>	
+		</context>'') as xml) [context],
+		--{extractCost}  -- move into /context/statement/cost
 		p.query_plan [batch_plan]
 		--,{statement_plan} -- if i can get this working... 
 	FROM 
@@ -265,22 +288,15 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{isolation_level}', N'');
 	END;
 
-	IF @DetailedMemoryStats = 1 BEGIN
+	IF @IncudeDetailedMemoryStats = 1 BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{memory}', N'd.[granted_mb], d.[requested_mb], d.[ideal_mb],');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{memory}', N'd.[granted_mb],');
 	END; 
 
-	IF @ExecutionDetails = 1 BEGIN
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{executionDetails}', N'd.[percent_complete], d.[open_tran], (SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = d.session_id) [thread_count],');
-	  END;
-	ELSE BEGIN
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{executionDetails}', N'');
-	END;
-
 	IF @IncludePlanHandle = 1 BEGIN
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'd.[plan_handle],');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'<plan_handle>'' + ISNULL(CONVERT(nvarchar(128), d.[plan_handle], 1), '''') + N''</plan_handle>');
 	  END; 
 	ELSE BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'');
