@@ -24,6 +24,7 @@
 	
 	vNEXT:
 		- Look into whether it would make sense to try and 'fire off' a request to process this 'stuff' via service broker - that'd allow for some buffering/padding of operations/etc. 
+					'Padding' via 'response' management for the Alert would likely be a MUCH simpler prospect... 
 		- Look at adding more info/insight into the failover output messages based on additional details surface by AGs (compared to the limited info we get from mirrored dbs). 
 		- Streamline 'jobs' logic in this sproc with that in dbo.verify_job_states. it's dumb to have 2x implementations of that logic. 
 		-		instead, dbo.verify_job_states should be able to handle all of this - and have an option to 'spit out info' (instead of 'just' print or email)... 
@@ -31,7 +32,7 @@
 
 	SAMPLE EXECUTION:
 		
-		EXEC master.dbo.respond_to_db_failover
+		EXEC admindb.dbo.respond_to_db_failover
 			@PrintOnly = 1; -- for testing 
 
 
@@ -56,7 +57,7 @@ AS
 	IF @PrintOnly = 0
 		WAITFOR DELAY '00:00:03.00'; -- No, really, give things about 3 seconds (just to let db states 'settle in' to synchronizing/synchronized).
 
-	DECLARE @serverName sysname = @@serverName;
+	DECLARE @serverName sysname = @@SERVERNAME;
 	DECLARE @username sysname;
 	DECLARE @report nvarchar(200);
 
@@ -298,7 +299,7 @@ AS
 	DECLARE @dbs nvarchar(4000) = N'';
 	
 	SELECT @dbs = @dbs + N'  DATABASE: ' + [db_name] + @crlf 
-		+ @tab + N'AG_MEMBERSHIP = ' + CASE WHEN [is_ag_member] = 1 THEN [ag_name] ELSE 'DISCONNECTED !!' END + @crlf
+		+ CASE WHEN [sync_type] = N'AVAILABILITY_GROUP' THEN @tab + N'AG_MEMBERSHIP = ' + (CASE WHEN [is_ag_member] = 1 THEN [ag_name] ELSE 'DISCONNECTED !!' END) ELSE '' END + @crlf
 		+ @tab + N'CURRENT_ROLE = ' + [role] + @crlf 
 		+ @tab + N'CURRENT_STATE = ' + CASE WHEN is_suspended = 1 THEN N'SUSPENDED !!' ELSE [state] END + @crlf
 		+ @tab + N'OWNER = ' + ISNULL([owner], N'NULL') + @crlf 
@@ -309,7 +310,7 @@ AS
 	FROM @databases
 	ORDER BY [db_name];
 
-	SET @subject = N'Availability Groups Failover Detected on ' + @serverName;
+	SET @subject = N'Database Failover Detected on ' + @serverName;
 	SET @message = N'Post failover-response details are as follows: ';
 	SET @message = @message + @crlf + @crlf + N'SERVER NAME: ' + @serverName + @crlf;
 	SET @message = @message + @crlf + @dbs;
