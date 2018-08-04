@@ -19,8 +19,6 @@ GO
 CREATE PROC dbo.monitor_transaction_durations	
 	@ExcludeSystemProcesses				bit					= 1,				
 	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N'master, msdb'  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
-	@ExcludedCommands					nvarchar(MAX)		= NULL,				-- N'TASK MANAGER, BRKR TASK, etc..'
-	@ExcludedWaitTypes					nvarchar(MAX)		= NULL,				-- N'XE_DISPATCHER_WAIT, BROKER_TO_FLUSH, etc..'
 	@AlertThreshold						sysname				= N'10m', 
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
@@ -111,36 +109,6 @@ AS
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
 			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',') ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
-	END;
-
-	-- grab wait types. Note. wait_type = wait-type associated with any CURRENT/active blocks. last_wait_type = last PREVIOUS wait - if there was one. 
-	SELECT 
-		r.[session_id],
-		r.[wait_type],   -- note, this COULD be ISNULL(r.wait_type, r.last_wait_type) but... i'm not sure that makes perfect sense... 
-		r.[command]
-		-- NOTE: add hosts, logins, and any other attributes that MIGHT make sense to filter against/exclude. 
-	INTO 
-		#attributes
-	FROM 
-		[#LongRunningTransactions] x 
-		LEFT OUTER JOIN sys.[dm_exec_requests] r ON x.[session_id] = r.[session_id];
-
-	IF NULLIF(@ExcludedCommands, N'') IS NOT NULL BEGIN 
-		DELETE lrt 
-		FROM 
-			[#LongRunningTransactions] lrt 
-			LEFT OUTER JOIN [#attributes] a ON lrt.[session_id] = a.[session_id]
-		WHERE 
-			UPPER(a.[command]) IN (SELECT UPPER([result]) FROM dbo.[split_string](@ExcludedCommands, N','));
-	END; 
-
-	IF NULLIF(@ExcludedWaitTypes, N'') IS NOT NULL BEGIN 
-		DELETE lrt 
-		FROM 
-			[#LongRunningTransactions] lrt 
-			LEFT OUTER JOIN [#attributes] a ON lrt.[session_id] = a.[session_id]		
-		WHERE 
-			UPPER(a.[wait_type]) IN (SELECT UPPER([result]) FROM dbo.[split_string](@ExcludedWaitTypes, N','));
 	END;
 
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
