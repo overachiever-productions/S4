@@ -129,7 +129,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		d.[name] [database],
-		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name], '[]') + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
+		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name]) + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
 	FROM 
 		sys.databases d
 		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
@@ -145,7 +145,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
+		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -158,7 +158,7 @@ AS
 		INSERT INTO @issues ([database], issue)
 		SELECT 
 			[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name],'[]') + N' TO sa;' [issue]
+			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name]) + N' TO sa;' [issue]
 		FROM 
 			sys.databases 
 		WHERE 
@@ -169,7 +169,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET AUTO_CLOSE OFF; ' [issue]
+		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_CLOSE OFF; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -181,7 +181,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET AUTO_SHRINK OFF; ' [issue]
+		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_SHRINK OFF; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -205,7 +205,7 @@ AS
 		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
 
 		SELECT 
-			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database], '[]') + N'. ' + [issue] + @crlf
+			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database]) + N'. ' + [issue] + @crlf
 		FROM 
 			@issues 
 		ORDER BY 

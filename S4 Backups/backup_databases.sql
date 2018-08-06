@@ -439,7 +439,7 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @backupName = @BackupType + N'_' + @currentDatabase + '_backup_' + @timestamp + '_' + @offset + @extension;
 
-		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase, N'[]') + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
+		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
 		{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION} NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
 	

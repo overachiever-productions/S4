@@ -429,7 +429,7 @@ AS
 				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
 					BEGIN TRY 
-						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
 
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
@@ -593,7 +593,7 @@ AS
 			SET @backupName = @fileList;
 			SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
 
-            SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+            SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
 
 			INSERT INTO @restoredFiles ([FileName], [Detected])
 			SELECT @backupName, GETDATE();
@@ -654,7 +654,7 @@ AS
 				INSERT INTO @restoredFiles ([FileName], [Detected])
 				SELECT @backupName, GETDATE();
 
-                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
                 
                 BEGIN TRY 
                     IF @PrintOnly = 1 BEGIN
@@ -711,7 +711,7 @@ AS
 
         -- Recover the database:
 		IF @ExecuteRecovery = 1 BEGIN
-			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' WITH RECOVERY;';
+			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' WITH RECOVERY;';
 
 			BEGIN TRY
 				IF @PrintOnly = 1 BEGIN
@@ -768,7 +768,7 @@ AS
                     EXEC sp_executesql @command; 
 
                     IF EXISTS (SELECT NULL FROM ##DBCC_OUTPUT) BEGIN -- consistency errors: 
-                        SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName, N'[]') + N'. Details: ' + @crlf;
+                        SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName) + N'. Details: ' + @crlf;
                         SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM ##DBCC_OUTPUT ORDER BY RowID;
 
                         UPDATE dbo.restore_log
@@ -855,7 +855,7 @@ NextDatabase:
             END;
 
             IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
-                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
+                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';';
 
                 BEGIN TRY 
                     IF @PrintOnly = 1 
