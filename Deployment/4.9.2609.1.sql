@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2607.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2607.1.
+		- This script will either install/deploy S4 version 4.9.2609.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2609.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2607.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2609.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2607.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2609.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -1885,7 +1885,7 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @backupName = @BackupType + N'_' + @currentDatabase + '_backup_' + @timestamp + '_' + @offset + @extension;
 
-		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase, N'[]') + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
+		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
 		{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION} NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
 	
@@ -3849,7 +3849,7 @@ AS
 				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
 					BEGIN TRY 
-						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName, N'[]') + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
 
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
@@ -4013,7 +4013,7 @@ AS
 			SET @backupName = @fileList;
 			SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
 
-            SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+            SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
 
 			INSERT INTO @restoredFiles ([FileName], [Detected])
 			SELECT @backupName, GETDATE();
@@ -4074,7 +4074,7 @@ AS
 				INSERT INTO @restoredFiles ([FileName], [Detected])
 				SELECT @backupName, GETDATE();
 
-                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName, N'[]') + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
                 
                 BEGIN TRY 
                     IF @PrintOnly = 1 BEGIN
@@ -4131,7 +4131,7 @@ AS
 
         -- Recover the database:
 		IF @ExecuteRecovery = 1 BEGIN
-			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName, N'[]') + N' WITH RECOVERY;';
+			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' WITH RECOVERY;';
 
 			BEGIN TRY
 				IF @PrintOnly = 1 BEGIN
@@ -4188,7 +4188,7 @@ AS
                     EXEC sp_executesql @command; 
 
                     IF EXISTS (SELECT NULL FROM ##DBCC_OUTPUT) BEGIN -- consistency errors: 
-                        SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName, N'[]') + N'. Details: ' + @crlf;
+                        SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName) + N'. Details: ' + @crlf;
                         SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM ##DBCC_OUTPUT ORDER BY RowID;
 
                         UPDATE dbo.restore_log
@@ -4275,7 +4275,7 @@ NextDatabase:
             END;
 
             IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
-                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName, N'[]') + N';';
+                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';';
 
                 BEGIN TRY 
                     IF @PrintOnly = 1 
@@ -5919,7 +5919,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		d.[name] [database],
-		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name], '[]') + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
+		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name]) + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
 	FROM 
 		sys.databases d
 		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
@@ -5935,7 +5935,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
+		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -5948,7 +5948,7 @@ AS
 		INSERT INTO @issues ([database], issue)
 		SELECT 
 			[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name],'[]') + N' TO sa;' [issue]
+			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name]) + N' TO sa;' [issue]
 		FROM 
 			sys.databases 
 		WHERE 
@@ -5959,7 +5959,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET AUTO_CLOSE OFF; ' [issue]
+		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_CLOSE OFF; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -5971,7 +5971,7 @@ AS
 	INSERT INTO @issues ([database], issue)
 	SELECT 
 		[name] [database], 
-		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name],'[]') + N' SET AUTO_SHRINK OFF; ' [issue]
+		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_SHRINK OFF; ' [issue]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -5995,7 +5995,7 @@ AS
 		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
 
 		SELECT 
-			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database], '[]') + N'. ' + [issue] + @crlf
+			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database]) + N'. ' + [issue] + @crlf
 		FROM 
 			@issues 
 		ORDER BY 
@@ -6292,7 +6292,7 @@ AS
 
 	SELECT 
 		@messageBody = @messageBody + @line + @crlf
-		+ '- session_id [' + CAST(lrt.[session_id] AS sysname) + N'] has been running in database ' +  QUOTENAME(DB_NAME([dtdt].[database_id]), N'[]') + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
+		+ '- session_id [' + CAST(lrt.[session_id] AS sysname) + N'] has been running in database ' +  QUOTENAME(DB_NAME([dtdt].[database_id])) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
 		+ @tab + @tab + N'[is_user_transaction: ' + CAST(lrt.[is_user_transaction] AS sysname) + N'],' + @crlf 
 		+ @tab + @tab + N'[open_transaction_count: '+ CAST(lrt.[open_transaction_count] AS sysname) + N'],' + @crlf
@@ -9274,7 +9274,7 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.9.2607.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2609.1';
 DECLARE @VersionDescription nvarchar(200) = N'Improvements to list_processes, respond_to_db_failover, and monitor_transaction_durations';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
