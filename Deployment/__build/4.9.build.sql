@@ -534,33 +534,35 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Monitoring\monitor_transaction_durations.sql
 
+
+
 ---------------------------------------------------------------------------
--- Monitoring (HA):
+-- High-Availability (Setup, Monitoring, and Failover):
 ---------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\is_primary_database.sql
+--##INCLUDE: S4 High Availability\is_primary_database.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\job_synchronization_checks.sql
+--##INCLUDE: S4 High Availability\server_trace_flags.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\respond_to_db_failover.sql
+--##INCLUDE: S4 High Availability\compare_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\server_synchronization_checks.sql
+--##INCLUDE: S4 High Availability\Failover\respond_to_db_failover.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\server_trace_flags.sql
+--##INCLUDE: S4 High Availability\Failover\verify_job_states.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\verify_job_states.sql
+--##INCLUDE: S4 High Availability\Monitoring\job_synchronization_checks.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\compare_jobs.sql
+--##INCLUDE: S4 High Availability\Monitoring\server_synchronization_checks.sql
 
 -----------------------------------
---##INCLUDE: S4 Monitoring\High Availability\data_synchronization_checks.sql
+--##INCLUDE: S4 High Availability\Monitoring\data_synchronization_checks.sql
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
