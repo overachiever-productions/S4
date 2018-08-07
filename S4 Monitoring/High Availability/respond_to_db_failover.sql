@@ -71,7 +71,7 @@ AS
 		[db_name] sysname NOT NULL, 
 		[sync_type] sysname NOT NULL, -- 'Mirrored' or 'AvailabilityGroup'
 		[ag_name] sysname NULL, 
-		[primary_server] sysname NOT NULL, 
+		[primary_server] sysname NULL, 
 		[role] sysname NOT NULL, 
 		[state] sysname NOT NULL, 
 		[is_suspended] bit NULL,

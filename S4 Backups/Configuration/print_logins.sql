@@ -1,5 +1,17 @@
 
 /*
+	BUG:
+		- I'm pulling db names as @Mode = N'ALL_ACTIVE'... that doesn't work if/when a db is offline. 
+			instead, I need to: 
+				a) @Mode = 'ALL' active or not... 
+				b) when i get to the point of processing 'server level only' logins... i need to see if the default db of the login in question points to an offline database. 
+					in many cases it will and I can just 'drop' it out of the bottom of this script as a member of database that is OFFLINE or something. 
+
+
+				A similar approach would be to simply get a list of 'OFFLINE'/SINGLE_USER/WHATEVER dbs... 
+					and... see if the @masterDB for a given login (while processing their print operations) is found in @offlineDBs or something... at which point, it's NOT a 'server level only' login - it's a user bound to an offline db (most likely).
+
+
 	TODO
 		- Implement logic to handle logins NOT mapped to ANY db - as per: https://trello.com/c/dCbst8kZ/46-bug-print-logins (I've got a stub-in for this in the main loop... (line 203-ish)
 
