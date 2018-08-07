@@ -19,7 +19,7 @@
 	--PARAMETERS:
 		<OperatorName, sysname, Alerts>		= name of the email operator to send alerts to... 
 		<MailProfileName, sysname, General>	= name of mail profile...  
-		<DelaySecondsBetweenResponses, int, 4> = number of seconds to wait 'between' responses - so we don't spam/overload inboxes/etc. 
+		<DelaySecondsBetweenResponses, int, 20> = number of seconds to wait 'between' responses - so we don't spam/overload inboxes/etc. 
 		<SQLAgentResponseJob-Automatic, sysname, Automated Databases Failover Response>	= Name of the Job that will respond to a Role Change (i.e., Failover).
 
 */
