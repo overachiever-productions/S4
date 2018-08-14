@@ -141,16 +141,16 @@ AS
 
 	SELECT 
 		@messageBody = @messageBody + @line + @crlf
-		+ '- session_id [' + CAST(lrt.[session_id] AS sysname) + N'] has been running in database ' +  QUOTENAME(DB_NAME([dtdt].[database_id])) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
+		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(ISNULL(DB_NAME([dtdt].[database_id]), '#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
-		+ @tab + @tab + N'[is_user_transaction: ' + CAST(lrt.[is_user_transaction] AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[open_transaction_count: '+ CAST(lrt.[open_transaction_count] AS sysname) + N'],' + @crlf
-		+ @tab + @tab + N'[active_requests: ' + CAST(lrt.[active_requests] AS sysname) + N'], ' + @crlf 
-		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST([dtdt].[tempdb_enlisted] AS sysname) + N'], ' + @crlf 
-		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST([dtdt].[log_record_count] AS sysname) + N') | ( ' + CAST([dtdt].[log_bytes_used] AS sysname) + N') ]' + @crlf
+		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N'],' + @crlf 
+		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N'],' + @crlf
+		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N'], ' + @crlf 
+		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N'], ' + @crlf 
+		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
 		+ @crlf
         + @tab + N'STATEMENT' + @crlf + @crlf
-		+ @tab + @tab + REPLACE(s.[statement], @crlf, @crlf + @tab + @tab)
+		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N'#EMPTY STATEMENT#'), @crlf, @crlf + @tab + @tab)
 	FROM 
 		[#LongRunningTransactions] lrt
 		LEFT OUTER JOIN ( 
@@ -168,9 +168,9 @@ AS
 		) dtdt ON lrt.[transaction_id] = dtdt.[transaction_id]
 		LEFT OUTER JOIN [#Statements] s ON lrt.[session_id] = s.[session_id]
 
-	DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'.' + @crlf
+	DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'].' + @crlf
 		+ @tab + N'(Details about how to resolve/address potential problems follow AFTER identified long-running transactions.)' + @crlf 
-		+ @messageBody 
+		+ ISNULL(@messageBody, N'#NULL in DETAILS#')
 		+ @crlf 
 		+ @crlf 
 		+ @line + @crlf

@@ -854,7 +854,7 @@ NextDatabase:
                 SET @executeDropAllowed = 1; 
             END;
 
-            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
+            IF (@executeDropAllowed = 1) AND EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName) BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
                 SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';';
 
                 BEGIN TRY 
@@ -891,7 +891,7 @@ NextDatabase:
                         dropped = 'ERROR', 
 						[error_details] = @statusDetail
                     WHERE 
-                        restore_test_id = @restoredName;
+                        restore_test_id = @restoreLogId;
 
                     SET @failedDropCount = @failedDropCount +1;
                 END CATCH

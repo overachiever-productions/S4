@@ -65,7 +65,7 @@ AS
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'FULL' BEGIN
 		-- most recent full only: 
-		DELETE FROM @results WHERE id <> (SELECT MAX(id) FROM @results WHERE [output] LIKE 'FULL%');
+		DELETE FROM @results WHERE id <> ISNULL((SELECT MAX(id) FROM @results WHERE [output] LIKE 'FULL%'), -1);
 	END;
 
 	IF UPPER(@Mode) = N'DIFF' BEGIN 
