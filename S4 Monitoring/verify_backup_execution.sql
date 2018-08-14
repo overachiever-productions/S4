@@ -129,7 +129,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForFullBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 
 	-- TODO: If these are somehow in the @Exclusions list... then... don't add them. 
@@ -145,7 +145,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 
 	-- Verify that there are backups to check:
@@ -162,7 +162,7 @@ AS
 	);
 
 	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',');
+	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',') ORDER BY row_id;
 
 	INSERT INTO @jobsToCheck (jobname, jobid)
 	SELECT 

@@ -290,7 +290,7 @@ AS
     ); 
 
 	INSERT INTO @targetDatabases ([database_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN

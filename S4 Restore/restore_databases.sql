@@ -260,7 +260,7 @@ AS
     ); 
 
     INSERT INTO @dbsToRestore ([database_name])
-    SELECT [result] FROM dbo.split_string(@serialized, N',');
+    SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
     IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN
         RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
@@ -640,7 +640,7 @@ AS
 
 			EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 			INSERT INTO @logFilesToRestore ([log_file])
-			SELECT result FROM dbo.[split_string](@fileList, N',');
+			SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
 			
 			-- re-update the counter: 
 			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
@@ -701,7 +701,7 @@ AS
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',');
+					SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
 				END;
 
 				-- increment: 

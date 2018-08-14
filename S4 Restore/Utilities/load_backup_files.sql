@@ -82,7 +82,7 @@ AS
 	IF UPPER(@Mode) = N'LOG' BEGIN
 
 		-- grab everything (i.e., ONLY t-log backups) since the most recently 
-		DELETE FROM @results WHERE id <= (SELECT MAX(id) FROM @results WHERE [output] = @LastAppliedFile);
+		DELETE FROM @results WHERE id <= (SELECT MIN(id) FROM @results WHERE [output] = @LastAppliedFile);
 		DELETE FROM @results WHERE [output] NOT LIKE 'LOG%';
 	END;
 

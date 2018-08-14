@@ -119,18 +119,18 @@ AS
 	DECLARE @info nvarchar(MAX);
 
 	INSERT INTO @ignoredDatabases ([database_name])
-	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',');
+	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',') ORDER BY row_id;
 
 	INSERT INTO @ingnoredLogins ([login_name])
-	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',');
+	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',') ORDER BY row_id;
 
 	IF @ExcludeMSAndServiceLogins = 1 BEGIN
 		INSERT INTO @ingnoredLogins ([login_name])
-		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',');		
+		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',') ORDER BY row_id;		
 	END;
 
 	INSERT INTO @ingoredUsers ([user_name])
-	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',');
+	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',') ORDER BY row_id;
 
 	-- remove ignored logins:
 	DELETE l 
@@ -151,7 +151,7 @@ AS
 
 	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [result] 
-	FROM admindb.dbo.[split_string](@dbNames, N',');
+	FROM admindb.dbo.[split_string](@dbNames, N',') ORDER BY row_id;
 
 	OPEN [db_walker];
 	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
@@ -236,7 +236,7 @@ AS
 			DECLARE @sql nvarchar(MAX);
 
 			DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',');
+			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',') ORDER BY row_id;
 
 			DECLARE @dbName sysname; 
 

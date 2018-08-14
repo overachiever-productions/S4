@@ -21,7 +21,7 @@ IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
 GO
 
 CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20))
-RETURNS @Results TABLE (result nvarchar(200))
+RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 	--WITH SCHEMABINDING 
 AS 
 	BEGIN
@@ -43,7 +43,7 @@ AS
 		)
 
 		INSERT INTO @Results (result)
-		SELECT  RTRIM(LTRIM((SUBSTRING(@serialized, n + 1, CHARINDEX(@delimiter, @serialized, n + 1) - n - 1))))
+		SELECT RTRIM(LTRIM((SUBSTRING(@serialized, n + 1, CHARINDEX(@delimiter, @serialized, n + 1) - n - 1))))
 		FROM tally t
 		WHERE n < LEN(@serialized) 
 			AND SUBSTRING(@serialized, n, 1) = @delimiter

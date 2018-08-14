@@ -102,7 +102,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databasesToCheck ([name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 	DECLARE @excludedComptabilityDatabases table ( 
 		[name] sysname NOT NULL
@@ -110,7 +110,7 @@ AS
 
 	IF @CompatabilityExclusions IS NOT NULL BEGIN 
 		INSERT INTO @excludedComptabilityDatabases ([name])
-		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',');
+		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',') ORDER BY row_id;
 	END; 
 
 	DECLARE @issues table ( 

@@ -235,7 +235,7 @@ AS
     ); 
 
 	INSERT INTO @targetDirectories ([directory_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER By row_id;
 
 	-----------------------------------------------------------------------------
 	-- Account for backups of system databases with the server-name in the path:  
