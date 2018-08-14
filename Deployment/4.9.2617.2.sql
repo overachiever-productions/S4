@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2609.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2609.1.
+		- This script will either install/deploy S4 version 4.9.2617.2 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2617.2.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2609.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2617.2 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2609.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2617.2';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -885,7 +885,7 @@ IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
 GO
 
 CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20))
-RETURNS @Results TABLE (result nvarchar(200))
+RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 	--WITH SCHEMABINDING 
 AS 
 	BEGIN
@@ -907,7 +907,7 @@ AS
 		)
 
 		INSERT INTO @Results (result)
-		SELECT  RTRIM(LTRIM((SUBSTRING(@serialized, n + 1, CHARINDEX(@delimiter, @serialized, n + 1) - n - 1))))
+		SELECT RTRIM(LTRIM((SUBSTRING(@serialized, n + 1, CHARINDEX(@delimiter, @serialized, n + 1) - n - 1))))
 		FROM tally t
 		WHERE n < LEN(@serialized) 
 			AND SUBSTRING(@serialized, n, 1) = @delimiter
@@ -1193,7 +1193,7 @@ AS
     ); 
 
 	INSERT INTO @targetDirectories ([directory_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER By row_id;
 
 	-----------------------------------------------------------------------------
 	-- Account for backups of system databases with the server-name in the path:  
@@ -1736,7 +1736,7 @@ AS
     ); 
 
 	INSERT INTO @targetDatabases ([database_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
@@ -2228,19 +2228,23 @@ NextDatabase:
 	IF @emailErrorMessage IS NOT NULL BEGIN;
 		
 		SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
-		
-		IF @Edition != 'EXPRESS' BEGIN;
-			EXEC msdb..sp_notify_operator
-				@profile_name = @MailProfileName,
-				@name = @OperatorName,
-				@subject = @emailSubject, 
-				@body = @emailErrorMessage;
-		END;
+		SET @emailErrorMessage = @emailErrorMessage + @crlf + @crlf + N'Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
 
-		-- make sure the sproc FAILS at this point (especially if this is a job). 
-		SET @errorMessage = N'One or more operations failed. Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
-		RAISERROR(@errorMessage, 16, 1);
-		RETURN -100;
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @emailSubject;
+			PRINT @emailErrorMessage;
+		  END;
+		ELSE BEGIN 
+
+			IF @Edition <> 'EXPRESS' BEGIN;
+				EXEC msdb..sp_notify_operator
+					@profile_name = @MailProfileName,
+					@name = @OperatorName,
+					@subject = @emailSubject, 
+					@body = @emailErrorMessage;
+			END;
+
+		END;
 	END;
 
 	RETURN 0;
@@ -2327,18 +2331,18 @@ AS
 	DECLARE @info nvarchar(MAX);
 
 	INSERT INTO @ignoredDatabases ([database_name])
-	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',');
+	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',') ORDER BY row_id;
 
 	INSERT INTO @ingnoredLogins ([login_name])
-	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',');
+	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',') ORDER BY row_id;
 
 	IF @ExcludeMSAndServiceLogins = 1 BEGIN
 		INSERT INTO @ingnoredLogins ([login_name])
-		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',');		
+		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',') ORDER BY row_id;		
 	END;
 
 	INSERT INTO @ingoredUsers ([user_name])
-	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',');
+	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',') ORDER BY row_id;
 
 	-- remove ignored logins:
 	DELETE l 
@@ -2359,7 +2363,7 @@ AS
 
 	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [result] 
-	FROM admindb.dbo.[split_string](@dbNames, N',');
+	FROM admindb.dbo.[split_string](@dbNames, N',') ORDER BY row_id;
 
 	OPEN [db_walker];
 	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
@@ -2444,7 +2448,7 @@ AS
 			DECLARE @sql nvarchar(MAX);
 
 			DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',');
+			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',') ORDER BY row_id;
 
 			DECLARE @dbName sysname; 
 
@@ -3680,7 +3684,7 @@ AS
     ); 
 
     INSERT INTO @dbsToRestore ([database_name])
-    SELECT [result] FROM dbo.split_string(@serialized, N',');
+    SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
     IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN
         RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
@@ -4060,7 +4064,7 @@ AS
 
 			EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 			INSERT INTO @logFilesToRestore ([log_file])
-			SELECT result FROM dbo.[split_string](@fileList, N',');
+			SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
 			
 			-- re-update the counter: 
 			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
@@ -4121,7 +4125,7 @@ AS
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',');
+					SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
 				END;
 
 				-- increment: 
@@ -4274,7 +4278,7 @@ NextDatabase:
                 SET @executeDropAllowed = 1; 
             END;
 
-            IF @executeDropAllowed = 1 BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
+            IF (@executeDropAllowed = 1) AND EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName) BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
                 SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';';
 
                 BEGIN TRY 
@@ -4311,7 +4315,7 @@ NextDatabase:
                         dropped = 'ERROR', 
 						[error_details] = @statusDetail
                     WHERE 
-                        restore_test_id = @restoredName;
+                        restore_test_id = @restoreLogId;
 
                     SET @failedDropCount = @failedDropCount +1;
                 END CATCH
@@ -4591,7 +4595,7 @@ AS
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'FULL' BEGIN
 		-- most recent full only: 
-		DELETE FROM @results WHERE id <> (SELECT MAX(id) FROM @results WHERE [output] LIKE 'FULL%');
+		DELETE FROM @results WHERE id <> ISNULL((SELECT MAX(id) FROM @results WHERE [output] LIKE 'FULL%'), -1);
 	END;
 
 	IF UPPER(@Mode) = N'DIFF' BEGIN 
@@ -4608,7 +4612,7 @@ AS
 	IF UPPER(@Mode) = N'LOG' BEGIN
 
 		-- grab everything (i.e., ONLY t-log backups) since the most recently 
-		DELETE FROM @results WHERE id <= (SELECT MAX(id) FROM @results WHERE [output] = @LastAppliedFile);
+		DELETE FROM @results WHERE id <= (SELECT MIN(id) FROM @results WHERE [output] = @LastAppliedFile);
 		DELETE FROM @results WHERE [output] NOT LIKE 'LOG%';
 	END;
 
@@ -5444,7 +5448,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForFullBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 
 	-- TODO: If these are somehow in the @Exclusions list... then... don't add them. 
@@ -5460,7 +5464,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 
 	-- Verify that there are backups to check:
@@ -5477,7 +5481,7 @@ AS
 	);
 
 	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',');
+	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',') ORDER BY row_id;
 
 	INSERT INTO @jobsToCheck (jobname, jobid)
 	SELECT 
@@ -5892,7 +5896,7 @@ AS
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databasesToCheck ([name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
 
 	DECLARE @excludedComptabilityDatabases table ( 
 		[name] sysname NOT NULL
@@ -5900,7 +5904,7 @@ AS
 
 	IF @CompatabilityExclusions IS NOT NULL BEGIN 
 		INSERT INTO @excludedComptabilityDatabases ([name])
-		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',');
+		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',') ORDER BY row_id;
 	END; 
 
 	DECLARE @issues table ( 
@@ -6292,16 +6296,16 @@ AS
 
 	SELECT 
 		@messageBody = @messageBody + @line + @crlf
-		+ '- session_id [' + CAST(lrt.[session_id] AS sysname) + N'] has been running in database ' +  QUOTENAME(DB_NAME([dtdt].[database_id])) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
+		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(ISNULL(DB_NAME([dtdt].[database_id]), '#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
-		+ @tab + @tab + N'[is_user_transaction: ' + CAST(lrt.[is_user_transaction] AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[open_transaction_count: '+ CAST(lrt.[open_transaction_count] AS sysname) + N'],' + @crlf
-		+ @tab + @tab + N'[active_requests: ' + CAST(lrt.[active_requests] AS sysname) + N'], ' + @crlf 
-		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST([dtdt].[tempdb_enlisted] AS sysname) + N'], ' + @crlf 
-		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST([dtdt].[log_record_count] AS sysname) + N') | ( ' + CAST([dtdt].[log_bytes_used] AS sysname) + N') ]' + @crlf
+		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N'],' + @crlf 
+		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N'],' + @crlf
+		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N'], ' + @crlf 
+		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N'], ' + @crlf 
+		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
 		+ @crlf
         + @tab + N'STATEMENT' + @crlf + @crlf
-		+ @tab + @tab + REPLACE(s.[statement], @crlf, @crlf + @tab + @tab)
+		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N'#EMPTY STATEMENT#'), @crlf, @crlf + @tab + @tab)
 	FROM 
 		[#LongRunningTransactions] lrt
 		LEFT OUTER JOIN ( 
@@ -6319,9 +6323,9 @@ AS
 		) dtdt ON lrt.[transaction_id] = dtdt.[transaction_id]
 		LEFT OUTER JOIN [#Statements] s ON lrt.[session_id] = s.[session_id]
 
-	DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'.' + @crlf
+	DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'].' + @crlf
 		+ @tab + N'(Details about how to resolve/address potential problems follow AFTER identified long-running transactions.)' + @crlf 
-		+ @messageBody 
+		+ ISNULL(@messageBody, N'#NULL in DETAILS#')
 		+ @crlf 
 		+ @crlf 
 		+ @line + @crlf
@@ -6402,7 +6406,7 @@ GO
 
 
 ---------------------------------------------------------------------------
--- Monitoring (HA):
+-- High-Availability (Setup, Monitoring, and Failover):
 ---------------------------------------------------------------------------
 
 -----------------------------------
@@ -6446,6 +6450,1015 @@ AS
 		-- if no matches, return 0
 		RETURN 0;
 	END;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.server_trace_flags','U') IS NOT NULL
+	DROP TABLE dbo.server_trace_flags;
+GO
+
+CREATE TABLE dbo.server_trace_flags (
+	[trace_flag] [int] NOT NULL,
+	[status] [bit] NOT NULL,
+	[global] [bit] NOT NULL,
+	[session] [bit] NOT NULL,
+	CONSTRAINT [PK_server_traceflags] PRIMARY KEY CLUSTERED ([trace_flag] ASC)
+) 
+ON [PRIMARY];
+
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.compare_jobs','P') IS NOT NULL
+	DROP PROC dbo.compare_jobs;
+GO
+
+CREATE PROC dbo.compare_jobs 
+	@TargetJobName			sysname = NULL, 
+	@IgnoredJobs			nvarchar(MAX) = NULL,			-- technically, should throw an error if this is specified AND @TargetJobName is ALSO specified, but... instead, will just ignore '@ignored' if a specific job is specified. 
+	@IgnoreEnabledState		bit = 0
+AS
+	SET NOCOUNT ON; 
+
+	DECLARE @localServerName sysname = @@SERVERNAME;
+	DECLARE @remoteServerName sysname; 
+	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
+
+	IF NULLIF(@TargetJobName,N'') IS NOT NULL BEGIN -- the request is for DETAILS about a specific job. 
+
+
+		-- Make sure Job exists on Local and Remote: 
+		CREATE TABLE #LocalJob (
+			job_id uniqueidentifier, 
+			[name] sysname
+		);
+
+		CREATE TABLE #RemoteJob (
+			job_id uniqueidentifier, 
+			[name] sysname
+		);
+
+		INSERT INTO #LocalJob (job_id, [name])
+		SELECT 
+			sj.job_id, 
+			sj.[name]
+		FROM 
+			msdb.dbo.sysjobs sj
+		WHERE
+			sj.[name] = @TargetJobName;
+
+		INSERT INTO #RemoteJob (job_id, [name])
+		EXEC master.sys.sp_executesql N'SELECT 
+			sj.job_id, 
+			sj.[name]
+		FROM 
+			PARTNER.msdb.dbo.sysjobs sj
+		WHERE
+			sj.[name] = @TargetJobName;', N'@TargetJobName sysname', @TargetJobName = @TargetJobName;
+
+		IF NOT EXISTS (SELECT NULL FROM #LocalJob lj INNER JOIN #RemoteJob rj ON rj.[name] = lj.name) BEGIN
+			RAISERROR('Job specified by @TargetJobName does NOT exist on BOTH servers.', 16, 1);
+			RETURN -2;
+		END
+
+
+		DECLARE @localJobId uniqueidentifier;
+		DECLARE @remoteJobId uniqueidentifier;
+
+		SELECT @localJobId = job_id FROM #LocalJob WHERE [name] = @TargetJobName;
+		SELECT @remoteJobId = job_id FROM #RemoteJob WHERE [name] = @TargetJobName;
+
+		DECLARE @remoteJob table (
+			[server] sysname NULL,
+			[name] sysname NOT NULL,
+			[enabled] tinyint NOT NULL,
+			[description] nvarchar(512) NULL,
+			[start_step_id] int NOT NULL,
+			[owner_sid] varbinary(85) NOT NULL,
+			[notify_level_email] int NOT NULL,
+			[operator_name] sysname NOT NULL,
+			[category_name] sysname NOT NULL,
+			[job_step_count] int NOT NULL
+		);
+
+		INSERT INTO @remoteJob ([server], [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+		EXECUTE master.sys.sp_executesql N'SELECT 
+			@remoteServerName [server],
+			sj.[name], 
+			sj.[enabled], 
+			sj.[description], 
+			sj.start_step_id,
+			sj.owner_sid, 
+			sj.notify_level_email, 
+			ISNULL(so.name, ''local'') operator_name,
+			ISNULL(sc.name, ''local'') [category_name],
+			ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+		FROM 
+			PARTNER.msdb.dbo.sysjobs sj
+			LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+			LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+		WHERE 
+			sj.job_id = @remoteJobId;', N'@remoteServerName sysname, @remoteJobID uniqueidentifier', @remoteServerName = @remoteServerName, @remoteJobId = @remoteJobId;
+
+
+		-- Output top-level job details:
+		WITH jobs AS ( 
+			SELECT 
+				@localServerName [server],
+				sj.[name], 
+				sj.[enabled], 
+				sj.[description], 
+				sj.start_step_id,
+				sj.owner_sid, 
+				sj.notify_level_email, 
+				ISNULL(so.[name], 'local') operator_name,
+				ISNULL(sc.[name], 'local') [category_name],
+				ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+			FROM 
+				msdb.dbo.sysjobs sj
+				LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+				LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+			WHERE 
+				sj.job_id = @localJobId
+
+			UNION 
+
+			SELECT 
+				[server],
+                [name],
+                [enabled],
+                [description],
+                start_step_id,
+                owner_sid,
+                notify_level_email,
+                operator_name,
+                category_name,
+                job_step_count
+			FROM 
+				@remoteJob
+		)
+
+		SELECT 
+			'JOB' [type], 
+			[server],
+			[name],
+			[enabled],
+			[description],
+			start_step_id,
+			owner_sid,
+			notify_level_email,
+			operator_name,
+			category_name,
+			job_step_count
+		FROM 
+			jobs 
+		ORDER BY 
+			[name], [server];
+
+
+		DECLARE @remoteJobSteps table (
+			[step_id] int NOT NULL,
+			[server] sysname NULL,
+			[step_name] sysname NOT NULL,
+			[subsystem] nvarchar(40) NOT NULL,
+			[command] nvarchar(max) NULL,
+			[on_success_action] tinyint NOT NULL,
+			[on_fail_action] tinyint NOT NULL,
+			[database_name] sysname NULL
+		);
+
+		INSERT INTO @remoteJobSteps ([step_id], [server], [step_name], [subsystem], [command], [on_success_action], [on_fail_action], [database_name])
+		EXEC master.sys.sp_executesql N'SELECT 
+			step_id, 
+			@remoteServerName [server],
+			step_name, 
+			subsystem, 
+			command, 
+			on_success_action, 
+			on_fail_action, 
+			[database_name]
+		FROM 
+			PARTNER.msdb.dbo.sysjobsteps r
+		WHERE 
+			r.job_id = @remoteJobId;', N'@remoteServerName sysname, @remoteJobID uniqueidentifier', @remoteServerName = @remoteServerName, @remoteJobId = @remoteJobId;
+
+		-- Job Steps: 
+		WITH steps AS ( 
+			SELECT 
+				step_id, 
+				@localServerName [server],
+				step_name, 
+				subsystem, 
+				command, 
+				on_success_action, 
+				on_fail_action, 
+				[database_name]
+			FROM 
+				msdb.dbo.sysjobsteps l
+			WHERE 
+				l.job_id = @localJobId
+
+			UNION 
+
+			SELECT 
+				[step_id], 
+				[server], 
+				[step_name], 
+				[subsystem], 
+				[command], 
+				[on_success_action], 
+				[on_fail_action], 
+				[database_name]
+			FROM 
+				@remoteJobSteps
+		)
+
+		SELECT 
+			'JOB-STEP' [type],
+			step_id, 
+			[server],
+			step_name, 
+			subsystem, 
+			command, 
+			on_success_action, 
+			on_fail_action, 
+			[database_name]			
+		FROM 
+			steps
+		ORDER BY 
+			step_id, [server];
+
+
+		DECLARE @remoteJobSchedules table (
+			[server] sysname NULL,
+			[name] sysname NOT NULL,
+			[enabled] int NOT NULL,
+			[freq_type] int NOT NULL,
+			[freq_interval] int NOT NULL,
+			[freq_subday_type] int NOT NULL,
+			[freq_subday_interval] int NOT NULL,
+			[freq_relative_interval] int NOT NULL,
+			[freq_recurrence_factor] int NOT NULL,
+			[active_start_date] int NOT NULL,
+			[active_end_date] int NOT NULL,
+			[active_start_time] int NOT NULL,
+			[active_end_time] int NOT NULL
+		);
+
+		INSERT INTO @remoteJobSchedules ([server], [name], [enabled], [freq_type], [freq_interval], [freq_subday_type], [freq_subday_interval], [freq_relative_interval], [freq_recurrence_factor], [active_start_date], [active_end_date], [active_start_time], [active_end_time])
+		EXEC master.sys.sp_executesql N'SELECT 
+			@remoteServerName [server],
+			ss.name,
+			ss.[enabled], 
+			ss.freq_type, 
+			ss.freq_interval, 
+			ss.freq_subday_type, 
+			ss.freq_subday_interval, 
+			ss.freq_relative_interval, 
+			ss.freq_recurrence_factor, 
+			ss.active_start_date, 
+			ss.active_end_date,
+			ss.active_start_time,
+			ss.active_end_time
+		FROM 
+			PARTNER.msdb.dbo.sysjobschedules sjs
+			INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
+		WHERE 
+			sjs.job_id = @remoteJobId;', N'@remoteServerName sysname, @remoteJobID uniqueidentifier', @remoteServerName = @remoteServerName, @remoteJobId = @remoteJobId;	
+
+		WITH schedules AS (
+
+			SELECT 
+				@localServerName [server],
+				ss.[name],
+				ss.[enabled], 
+				ss.freq_type, 
+				ss.freq_interval, 
+				ss.freq_subday_type, 
+				ss.freq_subday_interval, 
+				ss.freq_relative_interval, 
+				ss.freq_recurrence_factor, 
+				ss.active_start_date, 
+				ss.active_end_date, 
+				ss.active_start_time,
+				ss.active_end_time
+			FROM 
+				msdb.dbo.sysjobschedules sjs
+				INNER JOIN msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
+			WHERE 
+				sjs.job_id = @localJobId
+
+			UNION
+
+			SELECT 
+				[server],
+                [name],
+                [enabled],
+                [freq_type],
+                [freq_interval],
+                [freq_subday_type],
+                [freq_subday_interval],
+                [freq_relative_interval],
+                [freq_recurrence_factor],
+                [active_start_date],
+                [active_end_date],
+                [active_start_time],
+                [active_end_time]
+			FROM 
+				@remoteJobSchedules
+		)
+
+		SELECT 
+			'SCHEDULE' [type],
+			[name],
+			[server],
+			[enabled], 
+			freq_type, 
+			freq_interval, 
+			freq_subday_type, 
+			freq_subday_interval, 
+			freq_relative_interval, 
+			freq_recurrence_factor, 
+			active_start_date, 
+			active_end_date, 
+			active_start_time,
+			active_end_time
+		FROM 
+			schedules
+		ORDER BY 
+			[name], [server];
+
+		-- bail, we're done. 
+		RETURN 0;
+
+	END;
+
+	  -- If we're still here, we're looking at high-level details for all jobs (except those listed in @IgnoredJobs). 
+
+	CREATE TABLE #IgnoredJobs (
+		[name] nvarchar(200) NOT NULL
+	);
+
+	INSERT INTO #IgnoredJobs ([name])
+	SELECT [result] [name] FROM admindb.dbo.split_string(@IgnoredJobs, N',');
+
+	CREATE TABLE #LocalJobs (
+		job_id uniqueidentifier, 
+		[name] sysname, 
+		[enabled] tinyint, 
+		[description] nvarchar(512), 
+		start_step_id int, 
+		owner_sid varbinary(85),
+		notify_level_email int, 
+		operator_name sysname,
+		category_name sysname,
+		job_step_count int
+	);
+
+	CREATE TABLE #RemoteJobs (
+		job_id uniqueidentifier, 
+		[name] sysname, 
+		[enabled] tinyint, 
+		[description] nvarchar(512), 
+		start_step_id int, 
+		owner_sid varbinary(85),
+		notify_level_email int, 
+		operator_name sysname,
+		category_name sysname,
+		job_step_count int
+	);
+
+	-- Load Details: 
+	INSERT INTO #LocalJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+	SELECT 
+		sj.job_id, 
+		sj.name, 
+		sj.[enabled], 
+		sj.[description], 
+		sj.start_step_id,
+		sj.owner_sid, 
+		sj.notify_level_email, 
+		ISNULL(so.name, 'local') operator_name,
+		ISNULL(sc.name, 'local') [category_name],
+		ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+	FROM 
+		msdb.dbo.sysjobs sj
+		LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
+	WHERE
+		sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
+
+	INSERT INTO #RemoteJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
+	EXEC master.sys.sp_executesql N'SELECT 
+		sj.job_id, 
+		sj.name, 
+		sj.[enabled], 
+		sj.[description], 
+		sj.start_step_id,
+		sj.owner_sid, 
+		sj.notify_level_email, 
+		ISNULL(so.name, ''local'') operator_name,
+		ISNULL(sc.name, ''local'') [category_name],
+		ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
+	FROM 
+		PARTNER.msdb.dbo.sysjobs sj
+		LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
+		LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id;';
+
+	DELETE FROM [#RemoteJobs] WHERE [name] IN (SELECT [name] FROM [#IgnoredJobs]);
+
+	SELECT 
+		N'ONLY ON ' + @LocalServerName [difference], * 
+	FROM 
+		#LocalJobs 
+	WHERE
+		[name] NOT IN (SELECT name FROM #RemoteJobs)
+		AND [name] NOT IN (SELECT name FROM #IgnoredJobs)
+
+	UNION SELECT 
+		N'ONLY ON ' + @RemoteServerName [difference], *
+	FROM 
+		#RemoteJobs
+	WHERE 
+		[name] NOT IN (SELECT name FROM #LocalJobs)
+		AND [name] NOT IN (SELECT name FROM #IgnoredJobs);
+
+
+	WITH names AS ( 
+		SELECT
+			lj.[name]
+		FROM 
+			#LocalJobs lj
+			INNER JOIN #RemoteJobs rj ON rj.[name] = lj.[name]
+		WHERE
+			(@IgnoreEnabledState = 0 AND (lj.[enabled] != rj.[enabled]))
+			OR lj.start_step_id != rj.start_step_id
+			OR lj.owner_sid != rj.owner_sid
+			OR lj.notify_level_email != rj.notify_level_email
+			OR lj.operator_name != rj.operator_name
+			OR lj.job_step_count != rj.job_step_count
+			OR lj.category_name != rj.category_name
+	), 
+	core AS ( 
+		SELECT 
+			@LocalServerName [server],
+            lj.[name],
+            lj.[enabled],
+            lj.[description],
+            lj.start_step_id,
+            lj.owner_sid,
+            lj.notify_level_email,
+            lj.operator_name,
+            lj.category_name,
+            lj.job_step_count
+		FROM 
+			#LocalJobs lj 
+		WHERE 
+			lj.[name] IN (SELECT [name] FROM names)
+
+		UNION SELECT 
+			@RemoteServerName [server],
+            rj.[name],
+            rj.[enabled],
+            rj.[description],
+            rj.start_step_id,
+            rj.owner_sid,
+            rj.notify_level_email,
+            rj.operator_name,
+            rj.category_name,
+            rj.job_step_count
+		FROM 
+			#RemoteJobs rj 
+		WHERE 
+			rj.[name] IN (SELECT [name] FROM names)
+	)
+
+	SELECT 
+		[core].[server],
+        [core].[name],
+        [core].[enabled],
+        [core].[description],
+        [core].[start_step_id],
+        [core].[owner_sid],
+        [core].[notify_level_email],
+        [core].[operator_name],
+        [core].[category_name],
+        [core].[job_step_count] 
+	FROM
+		core 
+	ORDER BY 
+		[name], [server];
+
+	RETURN 0;
+GO
+
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.respond_to_db_failover','P') IS NOT NULL
+	DROP PROC dbo.respond_to_db_failover;
+GO
+
+CREATE PROC dbo.respond_to_db_failover 
+	@MailProfileName			sysname = N'General',
+	@OperatorName				sysname = N'Alerts', 
+	@PrintOnly					bit		= 0					-- for testing (i.e., to validate things work as expected)
+AS
+	SET NOCOUNT ON;
+
+	IF @PrintOnly = 0
+		WAITFOR DELAY '00:00:03.00'; -- No, really, give things about 3 seconds (just to let db states 'settle in' to synchronizing/synchronized).
+
+	DECLARE @serverName sysname = @@SERVERNAME;
+	DECLARE @username sysname;
+	DECLARE @report nvarchar(200);
+
+	DECLARE @orphans table (
+		UserName sysname,
+		UserSID varbinary(85)
+	);
+
+	-- Start by querying current/event-ing server for list of databases and states:
+	DECLARE @databases table (
+		[db_name] sysname NOT NULL, 
+		[sync_type] sysname NOT NULL, -- 'Mirrored' or 'AvailabilityGroup'
+		[ag_name] sysname NULL, 
+		[primary_server] sysname NULL, 
+		[role] sysname NOT NULL, 
+		[state] sysname NOT NULL, 
+		[is_suspended] bit NULL,
+		[is_ag_member] bit NULL,
+		[owner] sysname NULL,   -- interestingly enough, this CAN be NULL in some strange cases... 
+		[jobs_status] nvarchar(max) NULL,  -- whether we were able to turn jobs off or not and what they're set to (enabled/disabled)
+		[users_status] nvarchar(max) NULL, 
+		[other_status] nvarchar(max) NULL
+	);
+
+	-- account for Mirrored databases:
+	INSERT INTO @databases ([db_name], [sync_type], [role], [state], [owner])
+	SELECT 
+		d.[name] [db_name],
+		N'MIRRORED' [sync_type],
+		dm.mirroring_role_desc [role], 
+		dm.mirroring_state_desc [state], 
+		sp.[name] [owner]
+	FROM sys.database_mirroring dm
+	INNER JOIN sys.databases d ON dm.database_id = d.database_id
+	LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
+	WHERE 
+		dm.mirroring_guid IS NOT NULL
+	ORDER BY 
+		d.[name];
+
+	-- account for AG databases:
+	INSERT INTO @databases ([db_name], [sync_type], [ag_name], [primary_server], [role], [state], [is_suspended], [is_ag_member], [owner])
+	SELECT
+		dbcs.[database_name] [db_name],
+		N'AVAILABILITY_GROUP' [sync_type],
+		ag.[name] [ag_name],
+		ISNULL(agstates.primary_replica, '') [primary_server],
+		ISNULL(arstates.role_desc,'UNKNOWN') [role],
+		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
+		ISNULL(dbrs.is_suspended, 0) [is_suspended],
+		ISNULL(dbcs.is_database_joined, 0) [is_ag_member], 
+		x.[owner]
+	FROM
+		master.sys.availability_groups AS ag
+		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
+		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
+		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
+		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
+		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name
+	ORDER BY
+		AG.name ASC,
+		dbcs.database_name;
+
+	-- process:
+	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[db_name], 
+		[role],
+		[state]
+	FROM 
+		@databases
+	ORDER BY 
+		[db_name];
+
+	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
+	DECLARE @enabledOrDisabled bit; 
+	DECLARE @jobsStatus nvarchar(max);
+	DECLARE @usersStatus nvarchar(max);
+	DECLARE @otherStatus nvarchar(max);
+
+	DECLARE @ownerChangeCommand nvarchar(max);
+
+	OPEN processor;
+	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN
+		
+		IF @currentState IN ('SYNCHRONIZED','SYNCHRONIZING') BEGIN 
+			IF @currentRole IN (N'PRIMARY', N'PRINCIPAL') BEGIN 
+				-----------------------------------------------------------------------------------------------
+				-- specify jobs status:
+				SET @enabledOrDisabled = 1;
+
+				-----------------------------------------------------------------------------------------------
+				-- set database owner to 'sa' if it's not owned currently by 'sa':
+				IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE name = @currentDatabase AND owner_sid = 0x01) BEGIN 
+					SET @ownerChangeCommand = N'ALTER AUTHORIZATION ON DATABASE::[' + @currentDatabase + N'] TO sa;';
+
+					IF @PrintOnly = 1
+						PRINT @ownerChangeCommand;
+					ELSE 
+						EXEC sp_executesql @ownerChangeCommand;
+				END
+
+				-----------------------------------------------------------------------------------------------
+				-- attempt to fix any orphaned users: 
+				DELETE FROM @orphans;
+				SET @report = N'[' + @currentDatabase + N'].dbo.sp_change_users_login ''Report''';
+
+				INSERT INTO @orphans
+				EXEC(@report);
+
+				DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR
+				SELECT UserName FROM @orphans;
+
+				OPEN fixer;
+				FETCH NEXT FROM fixer INTO @username;
+
+				WHILE @@FETCH_STATUS = 0 BEGIN
+
+					BEGIN TRY 
+						IF @PrintOnly = 1 
+							PRINT 'Processing Orphans for Principal Database ' + @currentDatabase
+						ELSE
+							EXEC sp_change_users_login @Action = 'Update_One', @UserNamePattern = @username, @LoginName = @username;  -- note: this only attempts to repair bindings in situations where the Login name is identical to the User name
+					END TRY 
+					BEGIN CATCH 
+						-- swallow... 
+					END CATCH
+
+					FETCH NEXT FROM fixer INTO @username;
+				END
+
+				CLOSE fixer;
+				DEALLOCATE fixer;
+
+				----------------------------------
+				-- Report on any logins that couldn't be corrected:
+				DELETE FROM @orphans;
+
+				INSERT INTO @orphans
+				EXEC(@report);
+
+				IF (SELECT COUNT(*) FROM @orphans) > 0 BEGIN 
+					SET @usersStatus = N'Orphaned Users Detected (attempted repair did NOT correct) : ';
+					SELECT @usersStatus = @usersStatus + UserName + ', ' FROM @orphans;
+
+					SET @usersStatus = LEFT(@usersStatus, LEN(@usersStatus) - 1); -- trim trailing , 
+					END
+				ELSE 
+					SET @usersStatus = N'No Orphaned Users Detected';					
+
+			  END 
+			ELSE BEGIN -- we're NOT the PRINCIPAL instance:
+				SELECT 
+					@enabledOrDisabled = 0,  -- make sure all jobs are disabled
+					@usersStatus = N'', -- nothing will show up...  
+					@otherStatus = N''; -- ditto
+			  END
+
+		  END
+		ELSE BEGIN -- db isn't in SYNCHRONIZED/SYNCHRONIZING state... 
+			-- can't do anything because of current db state. So, disable all jobs for db in question, and 'report' on outcome. 
+			SELECT 
+				@enabledOrDisabled = 0, -- preemptively disable
+				@usersStatus = N'Unable to process - due to database state',
+				@otherStatus = N'Database in non synchronized/synchronizing state';
+		END
+
+		-----------------------------------------------------------------------------------------------
+		-- Process Jobs (i.e. toggle them on or off based on whatever value was set above):
+		BEGIN TRY 
+			DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
+			SELECT 
+				sj.job_id, sj.name
+			FROM 
+				msdb.dbo.sysjobs sj
+				INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
+			WHERE 
+				LOWER(sc.name) = LOWER(@currentDatabase);
+
+			DECLARE @jobid uniqueidentifier; 
+			DECLARE @jobname sysname;
+
+			OPEN toggler; 
+			FETCH NEXT FROM toggler INTO @jobid, @jobname;
+
+			WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+				IF @PrintOnly = 1 BEGIN 
+					PRINT 'EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
+				  END
+				ELSE BEGIN
+					EXEC msdb.dbo.sp_update_job
+						@job_id = @jobid, 
+						@enabled = @enabledOrDisabled;
+				END
+
+				FETCH NEXT FROM toggler INTO @jobid, @jobname;
+			END 
+
+			CLOSE toggler;
+			DEALLOCATE toggler;
+
+			IF @enabledOrDisabled = 1
+				SET @jobsStatus = N'Jobs set to ENABLED';
+			ELSE 
+				SET @jobsStatus = N'Jobs set to DISABLED';
+
+		END TRY 
+		BEGIN CATCH 
+
+			SELECT @jobsStatus = N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN ' ENABLED ' ELSE ' DISABLED ' END + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE();
+		END CATCH
+
+		-----------------------------------------------------------------------------------------------
+		-- Update the status for this job. 
+		UPDATE @databases 
+		SET 
+			[jobs_status] = @jobsStatus,
+			[users_status] = @usersStatus,
+			[other_status] = @otherStatus
+		WHERE 
+			[db_name] = @currentDatabase;
+
+		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+	END
+
+	CLOSE processor;
+	DEALLOCATE processor;
+	
+	-----------------------------------------------------------------------------------------------
+	-- final report/summary. 
+	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab nchar(1) = CHAR(9);
+	DECLARE @message nvarchar(MAX) = N'';
+	DECLARE @subject nvarchar(400) = N'';
+	DECLARE @dbs nvarchar(4000) = N'';
+	
+	SELECT @dbs = @dbs + N'  DATABASE: ' + [db_name] + @crlf 
+		+ CASE WHEN [sync_type] = N'AVAILABILITY_GROUP' THEN @tab + N'AG_MEMBERSHIP = ' + (CASE WHEN [is_ag_member] = 1 THEN [ag_name] ELSE 'DISCONNECTED !!' END) ELSE '' END + @crlf
+		+ @tab + N'CURRENT_ROLE = ' + [role] + @crlf 
+		+ @tab + N'CURRENT_STATE = ' + CASE WHEN is_suspended = 1 THEN N'SUSPENDED !!' ELSE [state] END + @crlf
+		+ @tab + N'OWNER = ' + ISNULL([owner], N'NULL') + @crlf 
+		+ @tab + N'JOBS_STATUS = ' + jobs_status + @crlf 
+		+ @tab + CASE WHEN NULLIF(users_status, '') IS NULL THEN N'' ELSE N'USERS_STATUS = ' + users_status END
+		+ CASE WHEN NULLIF(other_status,'') IS NULL THEN N'' ELSE @crlf + @tab + N'OTHER_STATUS = ' + other_status END + @crlf 
+		+ @crlf
+	FROM @databases
+	ORDER BY [db_name];
+
+	SET @subject = N'Database Failover Detected on ' + @serverName;
+	SET @message = N'Post failover-response details are as follows: ';
+	SET @message = @message + @crlf + @crlf + N'SERVER NAME: ' + @serverName + @crlf;
+	SET @message = @message + @crlf + @dbs;
+
+	IF @PrintOnly = 1 BEGIN 
+		-- just Print out details:
+		PRINT 'SUBJECT: ' + @subject;
+		PRINT 'BODY: ' + @crlf + @message;
+
+		END
+	ELSE BEGIN
+		-- send a message:
+		EXEC msdb..sp_notify_operator 
+			@profile_name = @MailProfileName, 
+			@name = @OperatorName, 
+			@subject = @subject,
+			@body = @message;
+	END;	
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.verify_job_states','P') IS NOT NULL
+	DROP PROC dbo.verify_job_states;
+GO
+
+CREATE PROC dbo.verify_job_states 
+	@SendChangeNotifications	bit = 1,
+	@MailProfileName			sysname = N'General',
+	@OperatorName				sysname	= N'Alerts', 
+	@EmailSubjectPrefix			sysname = N'[SQL Agent Jobs-State Updates]',
+	@PrintOnly					bit	= 0
+AS 
+	SET NOCOUNT ON;
+
+	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
+		-- Operator Checks:
+		IF ISNULL(@OperatorName, '') IS NULL BEGIN
+			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+			RETURN -4;
+		 END;
+		ELSE BEGIN
+			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+				RAISERROR('Invalid Operator Name Specified.', 16, 1);
+				RETURN -4;
+			END;
+		END;
+
+		-- Profile Checks:
+		DECLARE @DatabaseMailProfile nvarchar(255);
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+		IF @DatabaseMailProfile != @MailProfileName BEGIN
+			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+			RETURN -5;
+		END; 
+	END;
+
+	DECLARE @errorMessage nvarchar(MAX) = N'';
+	DECLARE @jobsStatus nvarchar(MAX) = N'';
+
+	-- Start by querying for list of mirrored then AG'd database to process:
+	DECLARE @targetDatabases table (
+		[db_name] sysname NOT NULL, 
+		[role] sysname NOT NULL, 
+		[state] sysname NOT NULL, 
+		[owner] sysname NULL
+	);
+
+	INSERT INTO @targetDatabases ([db_name], [role], [state], [owner])
+	SELECT 
+		d.[name] [db_name],
+		dm.mirroring_role_desc [role], 
+		dm.mirroring_state_desc [state], 
+		sp.[name] [owner]
+	FROM 
+		sys.database_mirroring dm
+		INNER JOIN sys.databases d ON dm.database_id = d.database_id
+		LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
+	WHERE 
+		dm.mirroring_guid IS NOT NULL;
+
+	INSERT INTO @targetDatabases ([db_name], [role], [state], [owner])
+	SELECT 
+		dbcs.[database_name] [db_name],
+		ISNULL(arstates.role_desc,'UNKNOWN') [role],
+		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
+		x.[owner]
+	FROM 
+		master.sys.availability_groups AS ag
+		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
+		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON ar.replica_id = arstates.replica_id AND arstates.is_local = 1
+		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
+		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
+		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name;
+
+	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
+	DECLARE @enabledOrDisabled bit; 
+	DECLARE @countOfJobsToModify int;
+
+	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab nchar(1) = CHAR(9);
+
+	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[db_name], 
+		[role],
+		[state]
+	FROM 
+		@targetDatabases
+	ORDER BY 
+		[db_name];
+
+	OPEN processor;
+	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN;
+
+		SET @enabledOrDisabled = 0; -- default to disabled. 
+
+		-- if the db is synchronized/synchronizing AND PRIMARY, then enable jobs:
+		IF (@currentRole IN (N'PRINCIPAL',N'PRIMARY')) AND (@currentState IN ('SYNCHRONIZED','SYNCHRONIZING')) BEGIN
+			SET @enabledOrDisabled = 1;
+		END;
+
+		-- determine if there are any jobs OUT of sync with their expected settings:
+		SELECT @countOfJobsToModify = ISNULL((
+				SELECT COUNT(*) FROM msdb.dbo.sysjobs sj INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id WHERE LOWER(sc.name) = LOWER(@currentDatabase) AND sj.enabled != @enabledOrDisabled 
+			), 0);
+
+		IF @countOfJobsToModify > 0 BEGIN;
+
+			BEGIN TRY 
+				DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
+				SELECT 
+					sj.job_id, sj.name
+				FROM 
+					msdb.dbo.sysjobs sj
+					INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
+				WHERE 
+					LOWER(sc.name) = LOWER(@currentDatabase)
+					AND sj.[enabled] <> @enabledOrDisabled;
+
+				DECLARE @jobid uniqueidentifier; 
+				DECLARE @jobname sysname;
+
+				OPEN toggler; 
+				FETCH NEXT FROM toggler INTO @jobid, @jobname;
+
+				WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+					IF @PrintOnly = 1 BEGIN 
+						PRINT '-- EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
+					  END
+					ELSE BEGIN
+						EXEC msdb.dbo.sp_update_job
+							@job_id = @jobid, 
+							@enabled = @enabledOrDisabled;
+					END
+
+					SET @jobsStatus = @jobsStatus + @tab + N'- [' + ISNULL(@jobname, N'#ERROR#') + N'] to ' + CASE WHEN @enabledOrDisabled = 1 THEN N'ENABLED' ELSE N'DISABLED' END + N'.' + @crlf;
+
+					FETCH NEXT FROM toggler INTO @jobid, @jobname;
+				END 
+
+				CLOSE toggler;
+				DEALLOCATE toggler;
+
+			END TRY 
+			BEGIN CATCH 
+				SELECT @errorMessage = @errorMessage + N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN N' ENABLED ' ELSE N' DISABLED ' END + N'. [ Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE() + N']';
+			END CATCH
+		
+			-- cleanup cursor if it didn't get closed:
+			IF (SELECT CURSOR_STATUS('local','toggler')) > -1 BEGIN;
+				CLOSE toggler;
+				DEALLOCATE toggler;
+			END
+		END
+
+		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
+	END
+
+	CLOSE processor;
+	DEALLOCATE processor;
+
+	IF (SELECT CURSOR_STATUS('local','processor')) > -1 BEGIN;
+		CLOSE processor;
+		DEALLOCATE processor;
+	END
+
+	IF (@jobsStatus <> N'') AND (@SendChangeNotifications = 1) BEGIN;
+
+		DECLARE @serverName sysname;
+		SELECT @serverName = @@SERVERNAME; 
+
+		SET @jobsStatus = N'The following changes were made to SQL Server Agent Jobs on ' + @serverName + ':' + @crlf + @jobsStatus;
+
+		IF @errorMessage <> N'' 
+			SET @jobsStatus = @jobsStatus + @crlf + @crlf + N'The following Error Details were also encountered: ' + @crlf + @tab + @errorMessage;
+
+		DECLARE @emailSubject nvarchar(2000) = @EmailSubjectPrefix + N' Change Report for ' + @serverName;
+
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @emailSubject;
+			PRINT @jobsStatus;
+
+		  END
+		ELSE BEGIN 
+			EXEC msdb.dbo.sp_notify_operator 
+				@profile_name = @MailProfileName,
+				@name = @OperatorName, 
+				@subject = @emailSubject, 
+				@body = @jobsStatus;
+		END
+	END
+
+	RETURN 0;
+
 GO
 
 
@@ -7131,301 +8144,6 @@ FROM
 	RETURN 0;
 GO
 
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.respond_to_db_failover','P') IS NOT NULL
-	DROP PROC dbo.respond_to_db_failover;
-GO
-
-CREATE PROC dbo.respond_to_db_failover 
-	@MailProfileName			sysname = N'General',
-	@OperatorName				sysname = N'Alerts', 
-	@PrintOnly					bit		= 0					-- for testing (i.e., to validate things work as expected)
-AS
-	SET NOCOUNT ON;
-
-	IF @PrintOnly = 0
-		WAITFOR DELAY '00:00:03.00'; -- No, really, give things about 3 seconds (just to let db states 'settle in' to synchronizing/synchronized).
-
-	DECLARE @serverName sysname = @@SERVERNAME;
-	DECLARE @username sysname;
-	DECLARE @report nvarchar(200);
-
-	DECLARE @orphans table (
-		UserName sysname,
-		UserSID varbinary(85)
-	);
-
-	-- Start by querying current/event-ing server for list of databases and states:
-	DECLARE @databases table (
-		[db_name] sysname NOT NULL, 
-		[sync_type] sysname NOT NULL, -- 'Mirrored' or 'AvailabilityGroup'
-		[ag_name] sysname NULL, 
-		[primary_server] sysname NOT NULL, 
-		[role] sysname NOT NULL, 
-		[state] sysname NOT NULL, 
-		[is_suspended] bit NULL,
-		[is_ag_member] bit NULL,
-		[owner] sysname NULL,   -- interestingly enough, this CAN be NULL in some strange cases... 
-		[jobs_status] nvarchar(max) NULL,  -- whether we were able to turn jobs off or not and what they're set to (enabled/disabled)
-		[users_status] nvarchar(max) NULL, 
-		[other_status] nvarchar(max) NULL
-	);
-
-	-- account for Mirrored databases:
-	INSERT INTO @databases ([db_name], [sync_type], [role], [state], [owner])
-	SELECT 
-		d.[name] [db_name],
-		N'MIRRORED' [sync_type],
-		dm.mirroring_role_desc [role], 
-		dm.mirroring_state_desc [state], 
-		sp.[name] [owner]
-	FROM sys.database_mirroring dm
-	INNER JOIN sys.databases d ON dm.database_id = d.database_id
-	LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
-	WHERE 
-		dm.mirroring_guid IS NOT NULL
-	ORDER BY 
-		d.[name];
-
-	-- account for AG databases:
-	INSERT INTO @databases ([db_name], [sync_type], [ag_name], [primary_server], [role], [state], [is_suspended], [is_ag_member], [owner])
-	SELECT
-		dbcs.[database_name] [db_name],
-		N'AVAILABILITY_GROUP' [sync_type],
-		ag.[name] [ag_name],
-		ISNULL(agstates.primary_replica, '') [primary_server],
-		ISNULL(arstates.role_desc,'UNKNOWN') [role],
-		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
-		ISNULL(dbrs.is_suspended, 0) [is_suspended],
-		ISNULL(dbcs.is_database_joined, 0) [is_ag_member], 
-		x.[owner]
-	FROM
-		master.sys.availability_groups AS ag
-		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
-		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
-		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
-		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
-		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
-		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name
-	ORDER BY
-		AG.name ASC,
-		dbcs.database_name;
-
-	-- process:
-	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
-	SELECT 
-		[db_name], 
-		[role],
-		[state]
-	FROM 
-		@databases
-	ORDER BY 
-		[db_name];
-
-	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
-	DECLARE @enabledOrDisabled bit; 
-	DECLARE @jobsStatus nvarchar(max);
-	DECLARE @usersStatus nvarchar(max);
-	DECLARE @otherStatus nvarchar(max);
-
-	DECLARE @ownerChangeCommand nvarchar(max);
-
-	OPEN processor;
-	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
-
-	WHILE @@FETCH_STATUS = 0 BEGIN
-		
-		IF @currentState IN ('SYNCHRONIZED','SYNCHRONIZING') BEGIN 
-			IF @currentRole IN (N'PRIMARY', N'PRINCIPAL') BEGIN 
-				-----------------------------------------------------------------------------------------------
-				-- specify jobs status:
-				SET @enabledOrDisabled = 1;
-
-				-----------------------------------------------------------------------------------------------
-				-- set database owner to 'sa' if it's not owned currently by 'sa':
-				IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE name = @currentDatabase AND owner_sid = 0x01) BEGIN 
-					SET @ownerChangeCommand = N'ALTER AUTHORIZATION ON DATABASE::[' + @currentDatabase + N'] TO sa;';
-
-					IF @PrintOnly = 1
-						PRINT @ownerChangeCommand;
-					ELSE 
-						EXEC sp_executesql @ownerChangeCommand;
-				END
-
-				-----------------------------------------------------------------------------------------------
-				-- attempt to fix any orphaned users: 
-				DELETE FROM @orphans;
-				SET @report = N'[' + @currentDatabase + N'].dbo.sp_change_users_login ''Report''';
-
-				INSERT INTO @orphans
-				EXEC(@report);
-
-				DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR
-				SELECT UserName FROM @orphans;
-
-				OPEN fixer;
-				FETCH NEXT FROM fixer INTO @username;
-
-				WHILE @@FETCH_STATUS = 0 BEGIN
-
-					BEGIN TRY 
-						IF @PrintOnly = 1 
-							PRINT 'Processing Orphans for Principal Database ' + @currentDatabase
-						ELSE
-							EXEC sp_change_users_login @Action = 'Update_One', @UserNamePattern = @username, @LoginName = @username;  -- note: this only attempts to repair bindings in situations where the Login name is identical to the User name
-					END TRY 
-					BEGIN CATCH 
-						-- swallow... 
-					END CATCH
-
-					FETCH NEXT FROM fixer INTO @username;
-				END
-
-				CLOSE fixer;
-				DEALLOCATE fixer;
-
-				----------------------------------
-				-- Report on any logins that couldn't be corrected:
-				DELETE FROM @orphans;
-
-				INSERT INTO @orphans
-				EXEC(@report);
-
-				IF (SELECT COUNT(*) FROM @orphans) > 0 BEGIN 
-					SET @usersStatus = N'Orphaned Users Detected (attempted repair did NOT correct) : ';
-					SELECT @usersStatus = @usersStatus + UserName + ', ' FROM @orphans;
-
-					SET @usersStatus = LEFT(@usersStatus, LEN(@usersStatus) - 1); -- trim trailing , 
-					END
-				ELSE 
-					SET @usersStatus = N'No Orphaned Users Detected';					
-
-			  END 
-			ELSE BEGIN -- we're NOT the PRINCIPAL instance:
-				SELECT 
-					@enabledOrDisabled = 0,  -- make sure all jobs are disabled
-					@usersStatus = N'', -- nothing will show up...  
-					@otherStatus = N''; -- ditto
-			  END
-
-		  END
-		ELSE BEGIN -- db isn't in SYNCHRONIZED/SYNCHRONIZING state... 
-			-- can't do anything because of current db state. So, disable all jobs for db in question, and 'report' on outcome. 
-			SELECT 
-				@enabledOrDisabled = 0, -- preemptively disable
-				@usersStatus = N'Unable to process - due to database state',
-				@otherStatus = N'Database in non synchronized/synchronizing state';
-		END
-
-		-----------------------------------------------------------------------------------------------
-		-- Process Jobs (i.e. toggle them on or off based on whatever value was set above):
-		BEGIN TRY 
-			DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT 
-				sj.job_id, sj.name
-			FROM 
-				msdb.dbo.sysjobs sj
-				INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
-			WHERE 
-				LOWER(sc.name) = LOWER(@currentDatabase);
-
-			DECLARE @jobid uniqueidentifier; 
-			DECLARE @jobname sysname;
-
-			OPEN toggler; 
-			FETCH NEXT FROM toggler INTO @jobid, @jobname;
-
-			WHILE @@FETCH_STATUS = 0 BEGIN 
-		
-				IF @PrintOnly = 1 BEGIN 
-					PRINT 'EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
-				  END
-				ELSE BEGIN
-					EXEC msdb.dbo.sp_update_job
-						@job_id = @jobid, 
-						@enabled = @enabledOrDisabled;
-				END
-
-				FETCH NEXT FROM toggler INTO @jobid, @jobname;
-			END 
-
-			CLOSE toggler;
-			DEALLOCATE toggler;
-
-			IF @enabledOrDisabled = 1
-				SET @jobsStatus = N'Jobs set to ENABLED';
-			ELSE 
-				SET @jobsStatus = N'Jobs set to DISABLED';
-
-		END TRY 
-		BEGIN CATCH 
-
-			SELECT @jobsStatus = N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN ' ENABLED ' ELSE ' DISABLED ' END + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE();
-		END CATCH
-
-		-----------------------------------------------------------------------------------------------
-		-- Update the status for this job. 
-		UPDATE @databases 
-		SET 
-			[jobs_status] = @jobsStatus,
-			[users_status] = @usersStatus,
-			[other_status] = @otherStatus
-		WHERE 
-			[db_name] = @currentDatabase;
-
-		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
-	END
-
-	CLOSE processor;
-	DEALLOCATE processor;
-	
-	-----------------------------------------------------------------------------------------------
-	-- final report/summary. 
-	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
-	DECLARE @tab nchar(1) = CHAR(9);
-	DECLARE @message nvarchar(MAX) = N'';
-	DECLARE @subject nvarchar(400) = N'';
-	DECLARE @dbs nvarchar(4000) = N'';
-	
-	SELECT @dbs = @dbs + N'  DATABASE: ' + [db_name] + @crlf 
-		+ CASE WHEN [sync_type] = N'AVAILABILITY_GROUP' THEN @tab + N'AG_MEMBERSHIP = ' + (CASE WHEN [is_ag_member] = 1 THEN [ag_name] ELSE 'DISCONNECTED !!' END) ELSE '' END + @crlf
-		+ @tab + N'CURRENT_ROLE = ' + [role] + @crlf 
-		+ @tab + N'CURRENT_STATE = ' + CASE WHEN is_suspended = 1 THEN N'SUSPENDED !!' ELSE [state] END + @crlf
-		+ @tab + N'OWNER = ' + ISNULL([owner], N'NULL') + @crlf 
-		+ @tab + N'JOBS_STATUS = ' + jobs_status + @crlf 
-		+ @tab + CASE WHEN NULLIF(users_status, '') IS NULL THEN N'' ELSE N'USERS_STATUS = ' + users_status END
-		+ CASE WHEN NULLIF(other_status,'') IS NULL THEN N'' ELSE @crlf + @tab + N'OTHER_STATUS = ' + other_status END + @crlf 
-		+ @crlf
-	FROM @databases
-	ORDER BY [db_name];
-
-	SET @subject = N'Database Failover Detected on ' + @serverName;
-	SET @message = N'Post failover-response details are as follows: ';
-	SET @message = @message + @crlf + @crlf + N'SERVER NAME: ' + @serverName + @crlf;
-	SET @message = @message + @crlf + @dbs;
-
-	IF @PrintOnly = 1 BEGIN 
-		-- just Print out details:
-		PRINT 'SUBJECT: ' + @subject;
-		PRINT 'BODY: ' + @crlf + @message;
-
-		END
-	ELSE BEGIN
-		-- send a message:
-		EXEC msdb..sp_notify_operator 
-			@profile_name = @MailProfileName, 
-			@name = @OperatorName, 
-			@subject = @subject,
-			@body = @message;
-	END;	
-
-	RETURN 0;
-GO
 
 
 -----------------------------------
@@ -8192,720 +8910,6 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.server_trace_flags','U') IS NOT NULL
-	DROP TABLE dbo.server_trace_flags;
-GO
-
-CREATE TABLE dbo.server_trace_flags (
-	[trace_flag] [int] NOT NULL,
-	[status] [bit] NOT NULL,
-	[global] [bit] NOT NULL,
-	[session] [bit] NOT NULL,
-	CONSTRAINT [PK_server_traceflags] PRIMARY KEY CLUSTERED ([trace_flag] ASC)
-) 
-ON [PRIMARY];
-
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.verify_job_states','P') IS NOT NULL
-	DROP PROC dbo.verify_job_states;
-GO
-
-CREATE PROC dbo.verify_job_states 
-	@SendChangeNotifications	bit = 1,
-	@MailProfileName			sysname = N'General',
-	@OperatorName				sysname	= N'Alerts', 
-	@EmailSubjectPrefix			sysname = N'[SQL Agent Jobs-State Updates]',
-	@PrintOnly					bit	= 0
-AS 
-	SET NOCOUNT ON;
-
-	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
-		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN
-			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
-			RETURN -4;
-		 END;
-		ELSE BEGIN
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-				RAISERROR('Invalid Operator Name Specified.', 16, 1);
-				RETURN -4;
-			END;
-		END;
-
-		-- Profile Checks:
-		DECLARE @DatabaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
- 
-		IF @DatabaseMailProfile != @MailProfileName BEGIN
-			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
-			RETURN -5;
-		END; 
-	END;
-
-	DECLARE @errorMessage nvarchar(MAX) = N'';
-	DECLARE @jobsStatus nvarchar(MAX) = N'';
-
-	-- Start by querying for list of mirrored then AG'd database to process:
-	DECLARE @targetDatabases table (
-		[db_name] sysname NOT NULL, 
-		[role] sysname NOT NULL, 
-		[state] sysname NOT NULL, 
-		[owner] sysname NULL
-	);
-
-	INSERT INTO @targetDatabases ([db_name], [role], [state], [owner])
-	SELECT 
-		d.[name] [db_name],
-		dm.mirroring_role_desc [role], 
-		dm.mirroring_state_desc [state], 
-		sp.[name] [owner]
-	FROM 
-		sys.database_mirroring dm
-		INNER JOIN sys.databases d ON dm.database_id = d.database_id
-		LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
-	WHERE 
-		dm.mirroring_guid IS NOT NULL;
-
-	INSERT INTO @targetDatabases ([db_name], [role], [state], [owner])
-	SELECT 
-		dbcs.[database_name] [db_name],
-		ISNULL(arstates.role_desc,'UNKNOWN') [role],
-		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
-		x.[owner]
-	FROM 
-		master.sys.availability_groups AS ag
-		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
-		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
-		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON ar.replica_id = arstates.replica_id AND arstates.is_local = 1
-		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
-		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
-		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name;
-
-	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
-	DECLARE @enabledOrDisabled bit; 
-	DECLARE @countOfJobsToModify int;
-
-	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
-	DECLARE @tab nchar(1) = CHAR(9);
-
-	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
-	SELECT 
-		[db_name], 
-		[role],
-		[state]
-	FROM 
-		@targetDatabases
-	ORDER BY 
-		[db_name];
-
-	OPEN processor;
-	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
-
-	WHILE @@FETCH_STATUS = 0 BEGIN;
-
-		SET @enabledOrDisabled = 0; -- default to disabled. 
-
-		-- if the db is synchronized/synchronizing AND PRIMARY, then enable jobs:
-		IF (@currentRole IN (N'PRINCIPAL',N'PRIMARY')) AND (@currentState IN ('SYNCHRONIZED','SYNCHRONIZING')) BEGIN
-			SET @enabledOrDisabled = 1;
-		END;
-
-		-- determine if there are any jobs OUT of sync with their expected settings:
-		SELECT @countOfJobsToModify = ISNULL((
-				SELECT COUNT(*) FROM msdb.dbo.sysjobs sj INNER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id WHERE LOWER(sc.name) = LOWER(@currentDatabase) AND sj.enabled != @enabledOrDisabled 
-			), 0);
-
-		IF @countOfJobsToModify > 0 BEGIN;
-
-			BEGIN TRY 
-				DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
-				SELECT 
-					sj.job_id, sj.name
-				FROM 
-					msdb.dbo.sysjobs sj
-					INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
-				WHERE 
-					LOWER(sc.name) = LOWER(@currentDatabase)
-					AND sj.[enabled] <> @enabledOrDisabled;
-
-				DECLARE @jobid uniqueidentifier; 
-				DECLARE @jobname sysname;
-
-				OPEN toggler; 
-				FETCH NEXT FROM toggler INTO @jobid, @jobname;
-
-				WHILE @@FETCH_STATUS = 0 BEGIN 
-		
-					IF @PrintOnly = 1 BEGIN 
-						PRINT '-- EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
-					  END
-					ELSE BEGIN
-						EXEC msdb.dbo.sp_update_job
-							@job_id = @jobid, 
-							@enabled = @enabledOrDisabled;
-					END
-
-					SET @jobsStatus = @jobsStatus + @tab + N'- [' + ISNULL(@jobname, N'#ERROR#') + N'] to ' + CASE WHEN @enabledOrDisabled = 1 THEN N'ENABLED' ELSE N'DISABLED' END + N'.' + @crlf;
-
-					FETCH NEXT FROM toggler INTO @jobid, @jobname;
-				END 
-
-				CLOSE toggler;
-				DEALLOCATE toggler;
-
-			END TRY 
-			BEGIN CATCH 
-				SELECT @errorMessage = @errorMessage + N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN N' ENABLED ' ELSE N' DISABLED ' END + N'. [ Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE() + N']';
-			END CATCH
-		
-			-- cleanup cursor if it didn't get closed:
-			IF (SELECT CURSOR_STATUS('local','toggler')) > -1 BEGIN;
-				CLOSE toggler;
-				DEALLOCATE toggler;
-			END
-		END
-
-		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
-	END
-
-	CLOSE processor;
-	DEALLOCATE processor;
-
-	IF (SELECT CURSOR_STATUS('local','processor')) > -1 BEGIN;
-		CLOSE processor;
-		DEALLOCATE processor;
-	END
-
-	IF (@jobsStatus <> N'') AND (@SendChangeNotifications = 1) BEGIN;
-
-		DECLARE @serverName sysname;
-		SELECT @serverName = @@SERVERNAME; 
-
-		SET @jobsStatus = N'The following changes were made to SQL Server Agent Jobs on ' + @serverName + ':' + @crlf + @jobsStatus;
-
-		IF @errorMessage <> N'' 
-			SET @jobsStatus = @jobsStatus + @crlf + @crlf + N'The following Error Details were also encountered: ' + @crlf + @tab + @errorMessage;
-
-		DECLARE @emailSubject nvarchar(2000) = @EmailSubjectPrefix + N' Change Report for ' + @serverName;
-
-		IF @PrintOnly = 1 BEGIN 
-			PRINT @emailSubject;
-			PRINT @jobsStatus;
-
-		  END
-		ELSE BEGIN 
-			EXEC msdb.dbo.sp_notify_operator 
-				@profile_name = @MailProfileName,
-				@name = @OperatorName, 
-				@subject = @emailSubject, 
-				@body = @jobsStatus;
-		END
-	END
-
-	RETURN 0;
-
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.compare_jobs','P') IS NOT NULL
-	DROP PROC dbo.compare_jobs;
-GO
-
-CREATE PROC dbo.compare_jobs 
-	@TargetJobName			sysname = NULL, 
-	@IgnoredJobs			nvarchar(MAX) = NULL,			-- technically, should throw an error if this is specified AND @TargetJobName is ALSO specified, but... instead, will just ignore '@ignored' if a specific job is specified. 
-	@IgnoreEnabledState		bit = 0
-AS
-	SET NOCOUNT ON; 
-
-	DECLARE @localServerName sysname = @@SERVERNAME;
-	DECLARE @remoteServerName sysname; 
-	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
-
-	IF NULLIF(@TargetJobName,N'') IS NOT NULL BEGIN -- the request is for DETAILS about a specific job. 
-
-
-		-- Make sure Job exists on Local and Remote: 
-		CREATE TABLE #LocalJob (
-			job_id uniqueidentifier, 
-			[name] sysname
-		);
-
-		CREATE TABLE #RemoteJob (
-			job_id uniqueidentifier, 
-			[name] sysname
-		);
-
-		INSERT INTO #LocalJob (job_id, [name])
-		SELECT 
-			sj.job_id, 
-			sj.[name]
-		FROM 
-			msdb.dbo.sysjobs sj
-		WHERE
-			sj.[name] = @TargetJobName;
-
-		INSERT INTO #RemoteJob (job_id, [name])
-		EXEC master.sys.sp_executesql N'SELECT 
-			sj.job_id, 
-			sj.[name]
-		FROM 
-			PARTNER.msdb.dbo.sysjobs sj
-		WHERE
-			sj.[name] = @TargetJobName;', N'@TargetJobName sysname', @TargetJobName = @TargetJobName;
-
-		IF NOT EXISTS (SELECT NULL FROM #LocalJob lj INNER JOIN #RemoteJob rj ON rj.[name] = lj.name) BEGIN
-			RAISERROR('Job specified by @TargetJobName does NOT exist on BOTH servers.', 16, 1);
-			RETURN -2;
-		END
-
-
-		DECLARE @localJobId uniqueidentifier;
-		DECLARE @remoteJobId uniqueidentifier;
-
-		SELECT @localJobId = job_id FROM #LocalJob WHERE [name] = @TargetJobName;
-		SELECT @remoteJobId = job_id FROM #RemoteJob WHERE [name] = @TargetJobName;
-
-		DECLARE @remoteJob table (
-			[server] sysname NULL,
-			[name] sysname NOT NULL,
-			[enabled] tinyint NOT NULL,
-			[description] nvarchar(512) NULL,
-			[start_step_id] int NOT NULL,
-			[owner_sid] varbinary(85) NOT NULL,
-			[notify_level_email] int NOT NULL,
-			[operator_name] sysname NOT NULL,
-			[category_name] sysname NOT NULL,
-			[job_step_count] int NOT NULL
-		);
-
-		INSERT INTO @remoteJob ([server], [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
-		EXECUTE master.sys.sp_executesql N'SELECT 
-			@remoteServerName [server],
-			sj.[name], 
-			sj.[enabled], 
-			sj.[description], 
-			sj.start_step_id,
-			sj.owner_sid, 
-			sj.notify_level_email, 
-			ISNULL(so.name, ''local'') operator_name,
-			ISNULL(sc.name, ''local'') [category_name],
-			ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
-		FROM 
-			PARTNER.msdb.dbo.sysjobs sj
-			LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-			LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
-		WHERE 
-			sj.job_id = @remoteJobId;', N'@remoteServerName sysname, @remoteJobID uniqueidentifier', @remoteServerName = @remoteServerName, @remoteJobId = @remoteJobId;
-
-
-		-- Output top-level job details:
-		WITH jobs AS ( 
-			SELECT 
-				@localServerName [server],
-				sj.[name], 
-				sj.[enabled], 
-				sj.[description], 
-				sj.start_step_id,
-				sj.owner_sid, 
-				sj.notify_level_email, 
-				ISNULL(so.[name], 'local') operator_name,
-				ISNULL(sc.[name], 'local') [category_name],
-				ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
-			FROM 
-				msdb.dbo.sysjobs sj
-				LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-				LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
-			WHERE 
-				sj.job_id = @localJobId
-
-			UNION 
-
-			SELECT 
-				[server],
-                [name],
-                [enabled],
-                [description],
-                start_step_id,
-                owner_sid,
-                notify_level_email,
-                operator_name,
-                category_name,
-                job_step_count
-			FROM 
-				@remoteJob
-		)
-
-		SELECT 
-			'JOB' [type], 
-			[server],
-			[name],
-			[enabled],
-			[description],
-			start_step_id,
-			owner_sid,
-			notify_level_email,
-			operator_name,
-			category_name,
-			job_step_count
-		FROM 
-			jobs 
-		ORDER BY 
-			[name], [server];
-
-
-		DECLARE @remoteJobSteps table (
-			[step_id] int NOT NULL,
-			[server] sysname NULL,
-			[step_name] sysname NOT NULL,
-			[subsystem] nvarchar(40) NOT NULL,
-			[command] nvarchar(max) NULL,
-			[on_success_action] tinyint NOT NULL,
-			[on_fail_action] tinyint NOT NULL,
-			[database_name] sysname NULL
-		);
-
-		INSERT INTO @remoteJobSteps ([step_id], [server], [step_name], [subsystem], [command], [on_success_action], [on_fail_action], [database_name])
-		EXEC master.sys.sp_executesql N'SELECT 
-			step_id, 
-			@remoteServerName [server],
-			step_name, 
-			subsystem, 
-			command, 
-			on_success_action, 
-			on_fail_action, 
-			[database_name]
-		FROM 
-			PARTNER.msdb.dbo.sysjobsteps r
-		WHERE 
-			r.job_id = @remoteJobId;', N'@remoteServerName sysname, @remoteJobID uniqueidentifier', @remoteServerName = @remoteServerName, @remoteJobId = @remoteJobId;
-
-		-- Job Steps: 
-		WITH steps AS ( 
-			SELECT 
-				step_id, 
-				@localServerName [server],
-				step_name, 
-				subsystem, 
-				command, 
-				on_success_action, 
-				on_fail_action, 
-				[database_name]
-			FROM 
-				msdb.dbo.sysjobsteps l
-			WHERE 
-				l.job_id = @localJobId
-
-			UNION 
-
-			SELECT 
-				[step_id], 
-				[server], 
-				[step_name], 
-				[subsystem], 
-				[command], 
-				[on_success_action], 
-				[on_fail_action], 
-				[database_name]
-			FROM 
-				@remoteJobSteps
-		)
-
-		SELECT 
-			'JOB-STEP' [type],
-			step_id, 
-			[server],
-			step_name, 
-			subsystem, 
-			command, 
-			on_success_action, 
-			on_fail_action, 
-			[database_name]			
-		FROM 
-			steps
-		ORDER BY 
-			step_id, [server];
-
-
-		DECLARE @remoteJobSchedules table (
-			[server] sysname NULL,
-			[name] sysname NOT NULL,
-			[enabled] int NOT NULL,
-			[freq_type] int NOT NULL,
-			[freq_interval] int NOT NULL,
-			[freq_subday_type] int NOT NULL,
-			[freq_subday_interval] int NOT NULL,
-			[freq_relative_interval] int NOT NULL,
-			[freq_recurrence_factor] int NOT NULL,
-			[active_start_date] int NOT NULL,
-			[active_end_date] int NOT NULL,
-			[active_start_time] int NOT NULL,
-			[active_end_time] int NOT NULL
-		);
-
-		INSERT INTO @remoteJobSchedules ([server], [name], [enabled], [freq_type], [freq_interval], [freq_subday_type], [freq_subday_interval], [freq_relative_interval], [freq_recurrence_factor], [active_start_date], [active_end_date], [active_start_time], [active_end_time])
-		EXEC master.sys.sp_executesql N'SELECT 
-			@remoteServerName [server],
-			ss.name,
-			ss.[enabled], 
-			ss.freq_type, 
-			ss.freq_interval, 
-			ss.freq_subday_type, 
-			ss.freq_subday_interval, 
-			ss.freq_relative_interval, 
-			ss.freq_recurrence_factor, 
-			ss.active_start_date, 
-			ss.active_end_date,
-			ss.active_start_time,
-			ss.active_end_time
-		FROM 
-			PARTNER.msdb.dbo.sysjobschedules sjs
-			INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
-		WHERE 
-			sjs.job_id = @remoteJobId;', N'@remoteServerName sysname, @remoteJobID uniqueidentifier', @remoteServerName = @remoteServerName, @remoteJobId = @remoteJobId;	
-
-		WITH schedules AS (
-
-			SELECT 
-				@localServerName [server],
-				ss.[name],
-				ss.[enabled], 
-				ss.freq_type, 
-				ss.freq_interval, 
-				ss.freq_subday_type, 
-				ss.freq_subday_interval, 
-				ss.freq_relative_interval, 
-				ss.freq_recurrence_factor, 
-				ss.active_start_date, 
-				ss.active_end_date, 
-				ss.active_start_time,
-				ss.active_end_time
-			FROM 
-				msdb.dbo.sysjobschedules sjs
-				INNER JOIN msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
-			WHERE 
-				sjs.job_id = @localJobId
-
-			UNION
-
-			SELECT 
-				[server],
-                [name],
-                [enabled],
-                [freq_type],
-                [freq_interval],
-                [freq_subday_type],
-                [freq_subday_interval],
-                [freq_relative_interval],
-                [freq_recurrence_factor],
-                [active_start_date],
-                [active_end_date],
-                [active_start_time],
-                [active_end_time]
-			FROM 
-				@remoteJobSchedules
-		)
-
-		SELECT 
-			'SCHEDULE' [type],
-			[name],
-			[server],
-			[enabled], 
-			freq_type, 
-			freq_interval, 
-			freq_subday_type, 
-			freq_subday_interval, 
-			freq_relative_interval, 
-			freq_recurrence_factor, 
-			active_start_date, 
-			active_end_date, 
-			active_start_time,
-			active_end_time
-		FROM 
-			schedules
-		ORDER BY 
-			[name], [server];
-
-		-- bail, we're done. 
-		RETURN 0;
-
-	END;
-
-	  -- If we're still here, we're looking at high-level details for all jobs (except those listed in @IgnoredJobs). 
-
-	CREATE TABLE #IgnoredJobs (
-		[name] nvarchar(200) NOT NULL
-	);
-
-	INSERT INTO #IgnoredJobs ([name])
-	SELECT [result] [name] FROM admindb.dbo.split_string(@IgnoredJobs, N',');
-
-	CREATE TABLE #LocalJobs (
-		job_id uniqueidentifier, 
-		[name] sysname, 
-		[enabled] tinyint, 
-		[description] nvarchar(512), 
-		start_step_id int, 
-		owner_sid varbinary(85),
-		notify_level_email int, 
-		operator_name sysname,
-		category_name sysname,
-		job_step_count int
-	);
-
-	CREATE TABLE #RemoteJobs (
-		job_id uniqueidentifier, 
-		[name] sysname, 
-		[enabled] tinyint, 
-		[description] nvarchar(512), 
-		start_step_id int, 
-		owner_sid varbinary(85),
-		notify_level_email int, 
-		operator_name sysname,
-		category_name sysname,
-		job_step_count int
-	);
-
-	-- Load Details: 
-	INSERT INTO #LocalJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
-	SELECT 
-		sj.job_id, 
-		sj.name, 
-		sj.[enabled], 
-		sj.[description], 
-		sj.start_step_id,
-		sj.owner_sid, 
-		sj.notify_level_email, 
-		ISNULL(so.name, 'local') operator_name,
-		ISNULL(sc.name, 'local') [category_name],
-		ISNULL((SELECT COUNT(*) FROM msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
-	FROM 
-		msdb.dbo.sysjobs sj
-		LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
-	WHERE
-		sj.name NOT IN (SELECT name FROM #IgnoredJobs); 
-
-	INSERT INTO #RemoteJobs (job_id, name, [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
-	EXEC master.sys.sp_executesql N'SELECT 
-		sj.job_id, 
-		sj.name, 
-		sj.[enabled], 
-		sj.[description], 
-		sj.start_step_id,
-		sj.owner_sid, 
-		sj.notify_level_email, 
-		ISNULL(so.name, ''local'') operator_name,
-		ISNULL(sc.name, ''local'') [category_name],
-		ISNULL((SELECT COUNT(*) FROM PARTNER.msdb.dbo.sysjobsteps ss WHERE ss.job_id = sj.job_id),0) [job_step_count]
-	FROM 
-		PARTNER.msdb.dbo.sysjobs sj
-		LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id;';
-
-	DELETE FROM [#RemoteJobs] WHERE [name] IN (SELECT [name] FROM [#IgnoredJobs]);
-
-	SELECT 
-		N'ONLY ON ' + @LocalServerName [difference], * 
-	FROM 
-		#LocalJobs 
-	WHERE
-		[name] NOT IN (SELECT name FROM #RemoteJobs)
-		AND [name] NOT IN (SELECT name FROM #IgnoredJobs)
-
-	UNION SELECT 
-		N'ONLY ON ' + @RemoteServerName [difference], *
-	FROM 
-		#RemoteJobs
-	WHERE 
-		[name] NOT IN (SELECT name FROM #LocalJobs)
-		AND [name] NOT IN (SELECT name FROM #IgnoredJobs);
-
-
-	WITH names AS ( 
-		SELECT
-			lj.[name]
-		FROM 
-			#LocalJobs lj
-			INNER JOIN #RemoteJobs rj ON rj.[name] = lj.[name]
-		WHERE
-			(@IgnoreEnabledState = 0 AND (lj.[enabled] != rj.[enabled]))
-			OR lj.start_step_id != rj.start_step_id
-			OR lj.owner_sid != rj.owner_sid
-			OR lj.notify_level_email != rj.notify_level_email
-			OR lj.operator_name != rj.operator_name
-			OR lj.job_step_count != rj.job_step_count
-			OR lj.category_name != rj.category_name
-	), 
-	core AS ( 
-		SELECT 
-			@LocalServerName [server],
-            lj.[name],
-            lj.[enabled],
-            lj.[description],
-            lj.start_step_id,
-            lj.owner_sid,
-            lj.notify_level_email,
-            lj.operator_name,
-            lj.category_name,
-            lj.job_step_count
-		FROM 
-			#LocalJobs lj 
-		WHERE 
-			lj.[name] IN (SELECT [name] FROM names)
-
-		UNION SELECT 
-			@RemoteServerName [server],
-            rj.[name],
-            rj.[enabled],
-            rj.[description],
-            rj.start_step_id,
-            rj.owner_sid,
-            rj.notify_level_email,
-            rj.operator_name,
-            rj.category_name,
-            rj.job_step_count
-		FROM 
-			#RemoteJobs rj 
-		WHERE 
-			rj.[name] IN (SELECT [name] FROM names)
-	)
-
-	SELECT 
-		[core].[server],
-        [core].[name],
-        [core].[enabled],
-        [core].[description],
-        [core].[start_step_id],
-        [core].[owner_sid],
-        [core].[notify_level_email],
-        [core].[operator_name],
-        [core].[category_name],
-        [core].[job_step_count] 
-	FROM
-		core 
-	ORDER BY 
-		[name], [server];
-
-	RETURN 0;
-GO
-
-
-
------------------------------------
-USE [admindb];
-GO
-
 IF OBJECT_ID('dbo.data_synchronization_checks','P') IS NOT NULL
 	DROP PROC dbo.data_synchronization_checks;
 GO
@@ -9274,8 +9278,8 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.9.2609.1';
-DECLARE @VersionDescription nvarchar(200) = N'Improvements to list_processes, respond_to_db_failover, and monitor_transaction_durations';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2617.2';
+DECLARE @VersionDescription nvarchar(200) = N'Bug fixes for LSN overlap during restore + additional bug fixes and optimizations';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
