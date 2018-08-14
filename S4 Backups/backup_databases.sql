@@ -23,7 +23,7 @@
 --						PRETTY sure I've got code that accounts for this scenario - just want to make sure I don't 'overwrite' that code/logic in making this routine more robust.
 
 
--- ALSO see the vNEXT notes down blow... in terms of 'retry' logic and DECOUPLING copy operations from backup operations. that stuff all needs to be tackle at the same time. 
+-- ALSO see the vNEXT notes down blow... in terms of 'retry' logic and DECOUPLING copy operations from backup operations. that stuff all needs to be tackled at the same time. 
 
 
 
@@ -782,19 +782,23 @@ NextDatabase:
 	IF @emailErrorMessage IS NOT NULL BEGIN;
 		
 		SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
-		
-		IF @Edition != 'EXPRESS' BEGIN;
-			EXEC msdb..sp_notify_operator
-				@profile_name = @MailProfileName,
-				@name = @OperatorName,
-				@subject = @emailSubject, 
-				@body = @emailErrorMessage;
-		END;
+		SET @emailErrorMessage = @emailErrorMessage + @crlf + @crlf + N'Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
 
-		-- make sure the sproc FAILS at this point (especially if this is a job). 
-		SET @errorMessage = N'One or more operations failed. Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
-		RAISERROR(@errorMessage, 16, 1);
-		RETURN -100;
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @emailSubject;
+			PRINT @emailErrorMessage;
+		  END;
+		ELSE BEGIN 
+
+			IF @Edition <> 'EXPRESS' BEGIN;
+				EXEC msdb..sp_notify_operator
+					@profile_name = @MailProfileName,
+					@name = @OperatorName,
+					@subject = @emailSubject, 
+					@body = @emailErrorMessage;
+			END;
+
+		END;
 	END;
 
 	RETURN 0;
