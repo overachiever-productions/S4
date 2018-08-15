@@ -3,6 +3,7 @@
 
 /*
 	DEPENDENCIES:
+		- Requires dbo.get_time_vector - for time calculation logic/etc. 
 		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
 		- Requires dbo.check_paths - sproc to verify that paths are valid. 
 		- Requires dbo.load_database_names - sproc that centralizes handling of which dbs/folders to process.
@@ -89,6 +90,11 @@ AS
 		RETURN -1;
 	END;
 
+	IF OBJECT_ID('dbo.get_time_vector', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
 	DECLARE @Edition sysname;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -156,50 +162,38 @@ AS
 
 	SET @Retention = LTRIM(RTRIM(@Retention));
 	DECLARE @retentionType char(1);
+	DECLARE @retentionCutoffTime datetime; 
 	DECLARE @retentionValue int;
 
-	SET @retentionType = LOWER(RIGHT(@Retention,1));
+	IF LOWER(@retentionType) = N'b' BEGIN 
 
-	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
-	IF @retentionType NOT IN ('m','h','d','w','b') BEGIN 
-		RAISERROR('Invalid @Retention value specified. @Retention must take the format of #L - where # is a positive integer, and L is a SINGLE letter [m | h | d | w | b] for minutes, hours, days, weeks, or backups (i.e., a specific number of most recent backups to retain).', 16, 1);
-		RETURN -10000;	
-	END 
+		SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+	  END;
+	ELSE BEGIN 
+		DECLARE @returnValue int; 
+		DECLARE @vectorError nvarchar(MAX);
+		
+		EXEC @returnValue = dbo.get_time_vector 
+			@Retention = @Retention, 
+			@ParameterName = N'@Retention',
+			@AllowedIntervals = N'm, h, d, w', 
+			@Mode = N'SUBTRACT', 
+			@Output = @retentionCutoffTime OUTPUT, 
+			@Error = @vectorError OUTPUT;
 
-	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
-	IF NOT EXISTS (SELECT 1 WHERE LEFT(@Retention, LEN(@Retention) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
-		RAISERROR('Invalid @Retention specified defined (more than one non-integer value found in @Retention value). Please specify an integer and then either [ m | h | d | w | b ] for minutes, hours, days, weeks, or backups (specific number of most recent backups) to retain.', 16, 1);
-		RETURN -10001;
-	END
-	
-	SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+
+		IF @returnValue <> 0 BEGIN
+			RAISERROR(@vectorError, 16, 1); 
+			RETURN @returnValue;
+		END;
+	END;
 
 	IF @PrintOnly = 1 BEGIN
 		IF @retentionType = 'b'
 			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
 		ELSE 
-			PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+			PRINT 'Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
 	END;
-
-	DECLARE @retentionCutoffTime datetime = NULL; 
-	IF @retentionType != 'b' BEGIN
-		IF @retentionType = 'm'
-			SET @retentionCutoffTime = DATEADD(MINUTE, 0 - @retentionValue, GETDATE());
-
-		IF @retentionType = 'h'
-			SET @retentionCutoffTime = DATEADD(HOUR, 0 - @retentionValue, GETDATE());
-
-		IF @retentionType = 'd'
-			SET @retentionCutoffTime = DATEADD(DAY, 0 - @retentionValue, GETDATE());
-
-		IF @retentionType = 'w'
-			SET @retentionCutoffTime = DATEADD(WEEK, 0 - @retentionValue, GETDATE());
-		
-		IF @RetentionCutoffTime >= GETDATE() BEGIN; 
-			 RAISERROR('Invalid @Retention specification. Specified value is in the future.', 16, 1);
-			 RETURN -10;
-		END;		
-	END
 
 	-- normalize paths: 
 	IF(RIGHT(@TargetDirectory, 1) = '\')

@@ -30,47 +30,23 @@ AS
 	-- {copyright}
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
-	DECLARE @durationType char(1);
-	DECLARE @durationValue int;
-
-	SET @durationType = LOWER(RIGHT(@AlertThreshold,1));
-
-	-- Only approved values are allowed: (s[econd], m[inutes], h[ours], d[ays], w[eeks]). 
-	IF @durationType NOT IN ('s','m','h','d','w') BEGIN 
-		RAISERROR('Invalid @Retention value specified. @Retention must take the format of #L - where # is a positive integer, and L is a SINGLE letter [m | h | d | w | b] for minutes, hours, days, weeks, or backups (i.e., a specific number of most recent backups to retain).', 16, 1);
-		RETURN -10000;	
-	END 
-
-	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
-	IF NOT EXISTS (SELECT 1 WHERE LEFT(@AlertThreshold, LEN(@AlertThreshold) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
-		RAISERROR('Invalid @Retention specified defined (more than one non-integer value found in @Retention value). Please specify an integer and then either [ m | h | d | w | b ] for minutes, hours, days, weeks, or backups (specific number of most recent backups) to retain.', 16, 1);
-		RETURN -10001;
-	END
+	DECLARE @transactionCutoffTime datetime; 
+	DECLARE @vectorError nvarchar(MAX); 
+	DECLARE @returnValue int; 
 	
-	SET @durationValue = CAST(LEFT(@AlertThreshold, LEN(@AlertThreshold) -1) AS int);
+	EXEC @returnValue = dbo.get_time_vector 
+		@Retention = @AlertThreshold, 
+		@ParameterName = N'@AlertThreshold',
+		@AllowedIntervals = N's, m, h, d', 
+		@Mode = N'SUBTRACT', 
+		@Output = @transactionCutoffTime OUTPUT, 
+		@Error = @vectorError OUTPUT;
 
-	DECLARE @transactionCutoffTime datetime = NULL; 
+	IF @returnValue <> 0 BEGIN
+		RAISERROR(@vectorError, 16, 1); 
+		RETURN @returnValue;
+	END;
 
-	IF @durationType = 's'
-		SET @transactionCutoffTime = DATEADD(SECOND, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'm'
-		SET @transactionCutoffTime = DATEADD(MINUTE, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'h'
-		SET @transactionCutoffTime = DATEADD(HOUR, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'd'
-		SET @transactionCutoffTime = DATEADD(DAY, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'w'
-		SET @transactionCutoffTime = DATEADD(WEEK, 0 - @durationValue, GETDATE());
-		
-	IF @transactionCutoffTime >= GETDATE() BEGIN; 
-			RAISERROR('Invalid @AlertThreshold specification. Specified value is in the future.', 16, 1);
-			RETURN -10;
-	END;		
-	
 	SELECT 
 		[dtat].[transaction_id],
         [dtat].[transaction_begin_time], 
