@@ -174,13 +174,12 @@ AS
 		DECLARE @vectorError nvarchar(MAX);
 		
 		EXEC @returnValue = dbo.get_time_vector 
-			@Retention = @Retention, 
+			@Vector = @Retention, 
 			@ParameterName = N'@Retention',
 			@AllowedIntervals = N'm, h, d, w', 
 			@Mode = N'SUBTRACT', 
 			@Output = @retentionCutoffTime OUTPUT, 
 			@Error = @vectorError OUTPUT;
-
 
 		IF @returnValue <> 0 BEGIN
 			RAISERROR(@vectorError, 16, 1); 
