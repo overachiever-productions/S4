@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2617.2 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2617.2.
+		- This script will either install/deploy S4 version 4.9.2618.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2618.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2617.2 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2618.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2617.2';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2618.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -999,6 +999,105 @@ AS
 GO
 
 
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
+	DROP PROC dbo.get_time_vector;
+GO
+
+CREATE PROC dbo.get_time_vector 
+	@Vector					nvarchar(10)	= NULL, 
+	@ParameterName			sysname			= NULL, 
+	@AllowedIntervals		sysname			= N's,m,h,d,w,q,y',		-- s[econds], m[inutes], h[ours], d[ays], w[eeks], q[uarters], y[ears]
+	@Mode					sysname			= N'SUBTRACT',			-- ADD | SUBTRACT
+	@Output					datetime		= NULL		OUT, 
+	@Error					nvarchar(MAX)	= NULL		OUT
+AS 
+	SET NOCOUNT ON; 
+
+	-- cleanup:
+	SET @Vector = LTRIM(RTRIM(@Vector));
+	SET @ParameterName = REPLACE(LTRIM(RTRIM((@ParameterName))), N'@', N'');
+
+	DECLARE @vectorType nchar(1) = LOWER(RIGHT(@Vector, 1));
+
+	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
+	IF @vectorType NOT IN (SELECT [result] FROM dbo.split_string(@AllowedIntervals, N',')) BEGIN 
+		SET @Error = N'Invalid @' + @ParameterName + N' value specified. @' + @ParameterName + N' must take the format of #x - where # is an integer, and x is a SINGLE letter which signifies s[econds], m[inutes], d[ays], w[eeks], q[uarters], y[ears]. Allowed Values Currently Available: [' + @AllowedIntervals + N'].';
+		RETURN -10000;	
+	END 
+
+	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
+	IF NOT EXISTS (SELECT 1 WHERE LEFT(@Vector, LEN(@Vector) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
+		SET @Error = N'Invalid @' + @ParameterName + N' value specified (more than one non-integer value present). @' + @ParameterName + N' must take the format of #x - where # is an integer, and x is a SINGLE letter which signifies s[econds], m[inutes], d[ays], w[eeks], q[uarters], y[ears]. Allowed Values Currently Available: [' + @AllowedIntervals + N'].';
+		RETURN -10001;
+	END
+	
+	DECLARE @vectorValue int = CAST(LEFT(@Vector, LEN(@Vector) -1) AS int);
+
+	IF @Mode = N'SUBTRACT' BEGIN
+		IF @vectorType = 's'
+			SET @Output = DATEADD(SECOND, 0 - @vectorValue, GETDATE());
+		
+		IF @vectorType = 'm'
+			SET @Output = DATEADD(MINUTE, 0 - @vectorValue, GETDATE());
+
+		IF @vectorType = 'h'
+			SET @Output = DATEADD(HOUR, 0 - @vectorValue, GETDATE());
+
+		IF @vectorType = 'd'
+			SET @Output = DATEADD(DAY, 0 - @vectorValue, GETDATE());
+
+		IF @vectorType = 'w'
+			SET @Output = DATEADD(WEEK, 0 - @vectorValue, GETDATE());
+
+		IF @vectorType = 'q'
+			SET @Output = DATEADD(QUARTER, 0 - @vectorValue, GETDATE());
+
+		IF @vectorType = 'y'
+			SET @Output = DATEADD(YEAR, 0 - @vectorValue, GETDATE());
+		
+		IF @Output >= GETDATE() BEGIN; 
+				SET @Error = N'Invalid @' + @ParameterName + N' specification. Specified value is in the future.';
+				RETURN -10002;
+		END;		
+	  END;
+	ELSE BEGIN
+
+		IF @vectorType = 's'
+			SET @Output = DATEADD(SECOND, @vectorValue, GETDATE());
+		
+		IF @vectorType = 'm'
+			SET @Output = DATEADD(MINUTE, @vectorValue, GETDATE());
+
+		IF @vectorType = 'h'
+			SET @Output = DATEADD(HOUR, @vectorValue, GETDATE());
+
+		IF @vectorType = 'd'
+			SET @Output = DATEADD(DAY, @vectorValue, GETDATE());
+
+		IF @vectorType = 'w'
+			SET @Output = DATEADD(WEEK, @vectorValue, GETDATE());
+
+		IF @vectorType = 'q'
+			SET @Output = DATEADD(QUARTER, @vectorValue, GETDATE());
+
+		IF @vectorType = 'y'
+			SET @Output = DATEADD(YEAR, @vectorValue, GETDATE());
+
+		IF @Output <= GETDATE() BEGIN; 
+				SET @Error = N'Invalid @' + @ParameterName + N' specification. Specified value is in the past.';
+				RETURN -10003;
+		END;	
+
+	END;
+
+	RETURN 0;
+GO
+
+
 
 ---------------------------------------------------------------------------
 -- Backups:
@@ -1044,6 +1143,11 @@ AS
 
 	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN;
 		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
+	IF OBJECT_ID('dbo.get_time_vector', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -1114,50 +1218,37 @@ AS
 
 	SET @Retention = LTRIM(RTRIM(@Retention));
 	DECLARE @retentionType char(1);
+	DECLARE @retentionCutoffTime datetime; 
 	DECLARE @retentionValue int;
 
-	SET @retentionType = LOWER(RIGHT(@Retention,1));
+	IF LOWER(@retentionType) = N'b' BEGIN 
 
-	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
-	IF @retentionType NOT IN ('m','h','d','w','b') BEGIN 
-		RAISERROR('Invalid @Retention value specified. @Retention must take the format of #L - where # is a positive integer, and L is a SINGLE letter [m | h | d | w | b] for minutes, hours, days, weeks, or backups (i.e., a specific number of most recent backups to retain).', 16, 1);
-		RETURN -10000;	
-	END 
+		SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+	  END;
+	ELSE BEGIN 
+		DECLARE @returnValue int; 
+		DECLARE @vectorError nvarchar(MAX);
+		
+		EXEC @returnValue = dbo.get_time_vector 
+			@Vector = @Retention, 
+			@ParameterName = N'@Retention',
+			@AllowedIntervals = N'm, h, d, w', 
+			@Mode = N'SUBTRACT', 
+			@Output = @retentionCutoffTime OUTPUT, 
+			@Error = @vectorError OUTPUT;
 
-	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
-	IF NOT EXISTS (SELECT 1 WHERE LEFT(@Retention, LEN(@Retention) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
-		RAISERROR('Invalid @Retention specified defined (more than one non-integer value found in @Retention value). Please specify an integer and then either [ m | h | d | w | b ] for minutes, hours, days, weeks, or backups (specific number of most recent backups) to retain.', 16, 1);
-		RETURN -10001;
-	END
-	
-	SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+		IF @returnValue <> 0 BEGIN
+			RAISERROR(@vectorError, 16, 1); 
+			RETURN @returnValue;
+		END;
+	END;
 
 	IF @PrintOnly = 1 BEGIN
 		IF @retentionType = 'b'
 			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
 		ELSE 
-			PRINT 'Retention specification is to remove backups more than ' + CAST(@retentionValue AS sysname) + CASE @retentionType WHEN 'm' THEN ' minutes ' WHEN 'h' THEN ' hour(s) ' WHEN 'd' THEN ' day(s) ' ELSE ' week(s) ' END + 'old.';
+			PRINT 'Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
 	END;
-
-	DECLARE @retentionCutoffTime datetime = NULL; 
-	IF @retentionType != 'b' BEGIN
-		IF @retentionType = 'm'
-			SET @retentionCutoffTime = DATEADD(MINUTE, 0 - @retentionValue, GETDATE());
-
-		IF @retentionType = 'h'
-			SET @retentionCutoffTime = DATEADD(HOUR, 0 - @retentionValue, GETDATE());
-
-		IF @retentionType = 'd'
-			SET @retentionCutoffTime = DATEADD(DAY, 0 - @retentionValue, GETDATE());
-
-		IF @retentionType = 'w'
-			SET @retentionCutoffTime = DATEADD(WEEK, 0 - @retentionValue, GETDATE());
-		
-		IF @RetentionCutoffTime >= GETDATE() BEGIN; 
-			 RAISERROR('Invalid @Retention specification. Specified value is in the future.', 16, 1);
-			 RETURN -10;
-		END;		
-	END
 
 	-- normalize paths: 
 	IF(RIGHT(@TargetDirectory, 1) = '\')
@@ -1816,7 +1907,7 @@ AS
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
 		DECLARE @synchronized table ([database_name] sysname NOT NULL);
 		INSERT INTO @synchronized ([database_name])
-		SELECT [name] FROM sys.databases WHERE UPPER(state_desc) != N'ONLINE';  -- mirrored dbs that have failed over and are now 'restoring'... 
+		SELECT [name] FROM sys.databases WHERE UPPER(state_desc) <> N'ONLINE';  -- mirrored dbs that have failed over and are now 'restoring'... 
 
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
 		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
@@ -3507,6 +3598,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
+	@RpoWarningThreshold			nvarchar(10)	= N'24h',			-- Only evaluated if non-NULL. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
     @OperatorName					sysname			= N'Alerts',
@@ -3547,6 +3639,11 @@ AS
 
     IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
         RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
+    IF OBJECT_ID('dbo.get_time_vector','P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -3624,6 +3721,28 @@ AS
         RETURN -22;
     END;
 
+	DECLARE @rpoCutoff datetime; 
+	DECLARE @vectorReturn int; 
+	DECLARE @vectorError nvarchar(MAX);
+	DECLARE @vector int;  -- 'global'
+
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		EXEC @vectorReturn = dbo.get_time_vector
+			@Vector = @RpoWarningThreshold, 
+			@ParameterName = N'@RpoWarningThreshold',
+			@AllowedIntervals = N'm, h, d', 
+			@Mode = N'SUBTRACT', 
+			@Output = @rpoCutoff OUTPUT, 
+			@Error = @vectorError OUTPUT;
+
+		IF @vectorReturn <> 0 BEGIN
+			RAISERROR(@vectorError, 16, 1); 
+			RETURN @vectorReturn;
+		END;
+
+		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
+	END;
+	
     -- 'Global' Variables:
     DECLARE @isValid bit;
     DECLARE @earlyTermination nvarchar(MAX) = N'';
@@ -4384,12 +4503,76 @@ FINALIZE:
         DEALLOCATE logger;
     END;
 
+	-- Process RPO Warnings: 
+	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		
+		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector));
+		DECLARE @rpoMessage nvarchar(MAX) = N'';
+
+		SELECT 
+			[database], 
+			[restored_files],
+			[restore_end]
+		INTO #subset
+		FROM 
+			dbo.[restore_log] 
+		WHERE 
+			[execution_id] = @executionID
+		ORDER BY
+			[restore_test_id];
+
+		WITH core AS ( 
+			SELECT 
+				s.[database], 
+				s.restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [most_recent_backup],
+				s.[restore_end]
+			FROM 
+				#subset s
+		), 
+		calculated AS (
+			SELECT 
+				[c].[database], 
+				[c].[most_recent_backup], 
+				[c].[restore_end], 
+				DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end]) [vector], 
+				dbo.[format_timespan](DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) vector_duration
+			FROM 
+				core c
+		) 
+
+		SELECT 
+			@rpoMessage = @rpoMessage 
+			+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+			+ @crlf + @tab + N'- recovery_point_objective  : ' + @rpo 
+			+ @crlf + @tab + N'- actual_recovery_point     : ' + dbo.[format_timespan]([x].vector)
+			+ @crlf + @tab + N'- recovery_point_exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
+			+ @crlf
+			+ @crlf + @tab + N'   - most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+			+ @crlf + @tab + N'   - restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+		FROM 
+			[calculated] x
+		WHERE 
+			x.[vector] > @vector;
+
+		IF LEN(@rpoMessage) > 2
+			SET @rpoWarnings = N'WARNINGS: ' 
+				+ @crlf + @rpoMessage + @crlf + @crlf;
+	END;
+
     -- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
     IF (NULLIF(@earlyTermination,'') IS NOT NULL) OR (EXISTS (SELECT NULL FROM dbo.restore_log WHERE execution_id = @executionID AND error_details IS NOT NULL)) BEGIN
 
-        SET @emailErrorMessage = N'The following Errors were encountered: ' + @crlf;
+        SET @emailErrorMessage = N'ERRORS: ' + @crlf;
 
-        SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Source Database: [' + [database] + N']. Attempted to Restore As: [' + restored_as + N']. Error: ' + error_details + @crlf + @crlf
+        SELECT 
+			@emailErrorMessage = @emailErrorMessage 
+			+ @crlf + N'   ERROR: problem with database ' + QUOTENAME([database]) + N'.' 
+			+ @crlf + @tab + N'- source_database:' + QUOTENAME([database])
+			+ @crlf + @tab + N'- restored_as: ' + QUOTENAME([restored_as]) + CASE WHEN [restore_succeeded] = 1 THEN N'' ELSE ' (attempted - but failed) ' END 
+			+ @crlf
+			+ @crlf + @tab + N'   - error_detail: ' + [error_details] 
+			+ @crlf + @crlf
         FROM 
             dbo.restore_log
         WHERE 
@@ -4404,7 +4587,9 @@ FINALIZE:
         END;
     END;
     
-    IF @emailErrorMessage IS NOT NULL BEGIN
+    IF @emailErrorMessage IS NOT NULL OR @rpoWarnings IS NOT NULL BEGIN
+
+		SET @emailErrorMessage = ISNULL(@rpoWarnings, '') + ISNULL(@emailErrorMessage, '');
 
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
@@ -6185,47 +6370,23 @@ AS
 	-- {copyright}
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
-	DECLARE @durationType char(1);
-	DECLARE @durationValue int;
-
-	SET @durationType = LOWER(RIGHT(@AlertThreshold,1));
-
-	-- Only approved values are allowed: (s[econd], m[inutes], h[ours], d[ays], w[eeks]). 
-	IF @durationType NOT IN ('s','m','h','d','w') BEGIN 
-		RAISERROR('Invalid @Retention value specified. @Retention must take the format of #L - where # is a positive integer, and L is a SINGLE letter [m | h | d | w | b] for minutes, hours, days, weeks, or backups (i.e., a specific number of most recent backups to retain).', 16, 1);
-		RETURN -10000;	
-	END 
-
-	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
-	IF NOT EXISTS (SELECT 1 WHERE LEFT(@AlertThreshold, LEN(@AlertThreshold) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
-		RAISERROR('Invalid @Retention specified defined (more than one non-integer value found in @Retention value). Please specify an integer and then either [ m | h | d | w | b ] for minutes, hours, days, weeks, or backups (specific number of most recent backups) to retain.', 16, 1);
-		RETURN -10001;
-	END
+	DECLARE @transactionCutoffTime datetime; 
+	DECLARE @vectorError nvarchar(MAX); 
+	DECLARE @returnValue int; 
 	
-	SET @durationValue = CAST(LEFT(@AlertThreshold, LEN(@AlertThreshold) -1) AS int);
+	EXEC @returnValue = dbo.get_time_vector 
+		@Vector = @AlertThreshold, 
+		@ParameterName = N'@AlertThreshold',
+		@AllowedIntervals = N's, m, h, d', 
+		@Mode = N'SUBTRACT', 
+		@Output = @transactionCutoffTime OUTPUT, 
+		@Error = @vectorError OUTPUT;
 
-	DECLARE @transactionCutoffTime datetime = NULL; 
+	IF @returnValue <> 0 BEGIN
+		RAISERROR(@vectorError, 16, 1); 
+		RETURN @returnValue;
+	END;
 
-	IF @durationType = 's'
-		SET @transactionCutoffTime = DATEADD(SECOND, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'm'
-		SET @transactionCutoffTime = DATEADD(MINUTE, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'h'
-		SET @transactionCutoffTime = DATEADD(HOUR, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'd'
-		SET @transactionCutoffTime = DATEADD(DAY, 0 - @durationValue, GETDATE());
-
-	IF @durationType = 'w'
-		SET @transactionCutoffTime = DATEADD(WEEK, 0 - @durationValue, GETDATE());
-		
-	IF @transactionCutoffTime >= GETDATE() BEGIN; 
-			RAISERROR('Invalid @AlertThreshold specification. Specified value is in the future.', 16, 1);
-			RETURN -10;
-	END;		
-	
 	SELECT 
 		[dtat].[transaction_id],
         [dtat].[transaction_begin_time], 
@@ -6254,7 +6415,7 @@ AS
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
 			des.[is_user_process] = 0
-			OR des.[session_id] < 50;		
+			OR des.[session_id] < 50;
 	END;
 
 	IF NULLIF(@ExcludedDatabases, N'') IS NOT NULL BEGIN 
@@ -6296,7 +6457,7 @@ AS
 
 	SELECT 
 		@messageBody = @messageBody + @line + @crlf
-		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(ISNULL(DB_NAME([dtdt].[database_id]), '#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
+		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(COALESCE(DB_NAME([dtdt].[database_id]), DB_NAME(sx.[database_id]),'#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
 		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N'],' + @crlf 
 		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N'],' + @crlf
@@ -6304,10 +6465,16 @@ AS
 		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N'], ' + @crlf 
 		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
 		+ @crlf
+		+ @tab + N'CONTEXT: ' + @crlf
+		+ @tab + @tab + N'[login_name]: ' + CAST(ISNULL(sx.[login_name], N'#NULL#') AS sysname) + N'],' + @crlf 
+		+ @tab + @tab + N'[program_name]: ' + CAST(ISNULL(sx.[program_name], N'#NULL#') AS sysname) + N'],' + @crlf 
+		+ @tab + @tab + N'[host_name]: ' + CAST(ISNULL(sx.[host_name], N'#NULL#') AS sysname) + N'],' + @crlf 
+		+ @crlf
         + @tab + N'STATEMENT' + @crlf + @crlf
 		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N'#EMPTY STATEMENT#'), @crlf, @crlf + @tab + @tab)
 	FROM 
 		[#LongRunningTransactions] lrt
+		LEFT OUTER JOIN sys.[dm_exec_sessions] sx ON lrt.[session_id] = sx.[session_id]
 		LEFT OUTER JOIN ( 
 			SELECT 
 				x.transaction_id,
@@ -9278,8 +9445,8 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.9.2617.2';
-DECLARE @VersionDescription nvarchar(200) = N'Bug fixes for LSN overlap during restore + additional bug fixes and optimizations';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2618.1';
+DECLARE @VersionDescription nvarchar(200) = N'Introduction of RPO Warnings during execution of restore tests';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
