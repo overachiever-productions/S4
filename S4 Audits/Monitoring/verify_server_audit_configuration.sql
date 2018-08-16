@@ -1,11 +1,12 @@
 
 /*
 
-
+	exec dbo.verify_audit_configuration
+		@Target = N'',   -- NULL | 'SERVER' | 'db_name'  - if NULL/SERVER... then assume server in scope... 
 
 
 	Sample Execution/Example:
-		EXEC verify_server_audit_configuration 'Server Audit', -34135575811, @printOnly = 1;
+		EXEC verify_server_audit_configuration 'Server Audit2', -34135575811, @printOnly = 1;
 
 */
 
@@ -38,6 +39,7 @@ AS
 	IF @auditID IS NULL BEGIN 
 		SELECT @errorMessage = N'WARNING: Server Audit [' + @AuditName + N'] does not currently exist on [' + @@SERVERNAME + N'].';
 		INSERT INTO @errors([error]) VALUES (@errorMessage);
+		GOTO ALERTS;
 	END;
 
 	IF @isEnabled = 0 BEGIN 
@@ -45,7 +47,7 @@ AS
 		INSERT INTO @errors([error]) VALUES (@errorMessage);
 	END;
 
-	-- if there's a checksum, verify that they match. 
+	-- if there's a checksum, verify that they match: 
 	IF @OptionalAuditHash IS NOT NULL BEGIN
 		DECLARE @auditSignature bigint = 0;
 
@@ -57,6 +59,7 @@ AS
 		END
 	END;
 
+ALERTS:
 	IF EXISTS (SELECT NULL FROM	@errors) BEGIN 
 		DECLARE @subject nvarchar(MAX) = @EmailSubjectPrefix + N' - Synchronization Problems Detected';
 		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -73,7 +76,7 @@ AS
 			PRINT N'BODY: ' + @errorMessage;
 		  END
 		ELSE BEGIN 
-			EXEC msdb..sp_notify_operator 
+			EXEC msdb.dbo.sp_notify_operator 
 				@profile_name = @MailProfileName, 
 				@name = @OperatorName, 
 				@subject = @Subject, 
