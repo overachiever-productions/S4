@@ -21,8 +21,8 @@ SELECT @ReturnValue [ReturnValue], @OutputDate [date], @Error [Error];
 
 */
 
-
-
+USE [admindb];
+GO
 
 IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
 	DROP PROC dbo.get_time_vector;

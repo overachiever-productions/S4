@@ -83,7 +83,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(10)	= N'24h',		
+	@RpoWarningThreshold			nvarchar(10)	= N'24h',			-- Only evaluated if non-NULL. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
     @OperatorName					sysname			= N'Alerts',
@@ -124,6 +124,11 @@ AS
 
     IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
         RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
+    IF OBJECT_ID('dbo.get_time_vector','P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -201,6 +206,28 @@ AS
         RETURN -22;
     END;
 
+	DECLARE @rpoCutoff datetime; 
+	DECLARE @vectorReturn int; 
+	DECLARE @vectorError nvarchar(MAX);
+	DECLARE @vector int;  -- 'global'
+
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		EXEC @vectorReturn = dbo.get_time_vector
+			@Vector = @RpoWarningThreshold, 
+			@ParameterName = N'@RpoWarningThreshold',
+			@AllowedIntervals = N'm, h, d', 
+			@Mode = N'SUBTRACT', 
+			@Output = @rpoCutoff OUTPUT, 
+			@Error = @vectorError OUTPUT;
+
+		IF @vectorReturn <> 0 BEGIN
+			RAISERROR(@vectorError, 16, 1); 
+			RETURN @vectorReturn;
+		END;
+
+		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
+	END;
+	
     -- 'Global' Variables:
     DECLARE @isValid bit;
     DECLARE @earlyTermination nvarchar(MAX) = N'';
@@ -961,12 +988,76 @@ FINALIZE:
         DEALLOCATE logger;
     END;
 
+	-- Process RPO Warnings: 
+	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		
+		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector));
+		DECLARE @rpoMessage nvarchar(MAX) = N'';
+
+		SELECT 
+			[database], 
+			[restored_files],
+			[restore_end]
+		INTO #subset
+		FROM 
+			dbo.[restore_log] 
+		WHERE 
+			[execution_id] = @executionID
+		ORDER BY
+			[restore_test_id];
+
+		WITH core AS ( 
+			SELECT 
+				s.[database], 
+				s.restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [most_recent_backup],
+				s.[restore_end]
+			FROM 
+				#subset s
+		), 
+		calculated AS (
+			SELECT 
+				[c].[database], 
+				[c].[most_recent_backup], 
+				[c].[restore_end], 
+				DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end]) [vector], 
+				dbo.[format_timespan](DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) vector_duration
+			FROM 
+				core c
+		) 
+
+		SELECT 
+			@rpoMessage = @rpoMessage 
+			+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+			+ @crlf + @tab + N'- recovery_point_objective  : ' + @rpo 
+			+ @crlf + @tab + N'- actual_recovery_point     : ' + dbo.[format_timespan]([x].vector)
+			+ @crlf + @tab + N'- recovery_point_exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
+			+ @crlf
+			+ @crlf + @tab + N'   - most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+			+ @crlf + @tab + N'   - restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+		FROM 
+			[calculated] x
+		WHERE 
+			x.[vector] > @vector;
+
+		IF LEN(@rpoMessage) > 2
+			SET @rpoWarnings = N'WARNINGS: ' 
+				+ @crlf + @rpoMessage + @crlf + @crlf;
+	END;
+
     -- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
     IF (NULLIF(@earlyTermination,'') IS NOT NULL) OR (EXISTS (SELECT NULL FROM dbo.restore_log WHERE execution_id = @executionID AND error_details IS NOT NULL)) BEGIN
 
-        SET @emailErrorMessage = N'The following Errors were encountered: ' + @crlf;
+        SET @emailErrorMessage = N'ERRORS: ' + @crlf;
 
-        SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Source Database: [' + [database] + N']. Attempted to Restore As: [' + restored_as + N']. Error: ' + error_details + @crlf + @crlf
+        SELECT 
+			@emailErrorMessage = @emailErrorMessage 
+			+ @crlf + N'   ERROR: problem with database ' + QUOTENAME([database]) + N'.' 
+			+ @crlf + @tab + N'- source_database:' + QUOTENAME([database])
+			+ @crlf + @tab + N'- restored_as: ' + QUOTENAME([restored_as]) + CASE WHEN [restore_succeeded] = 1 THEN N'' ELSE ' (attempted - but failed) ' END 
+			+ @crlf
+			+ @crlf + @tab + N'   - error_detail: ' + [error_details] 
+			+ @crlf + @crlf
         FROM 
             dbo.restore_log
         WHERE 
@@ -981,7 +1072,9 @@ FINALIZE:
         END;
     END;
     
-    IF @emailErrorMessage IS NOT NULL BEGIN
+    IF @emailErrorMessage IS NOT NULL OR @rpoWarnings IS NOT NULL BEGIN
+
+		SET @emailErrorMessage = ISNULL(@rpoWarnings, '') + ISNULL(@emailErrorMessage, '');
 
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
