@@ -52,12 +52,15 @@ AS
 		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits];
 	ELSE 
 		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits];
+
 	INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
 
+	-- hash storage details (if file log storage is used):
 	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = 'FL') BEGIN
 		SELECT @hash = CHECKSUM(max_file_size, max_files, reserve_disk_space, log_file_path) FROM sys.[server_file_audits] WHERE [audit_id] = @auditID;  -- note, log_file_name will always be different because of the GUIDs. 
 		INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
 	END
+
 
 	SET @hash = 0;
 	SELECT 
@@ -85,7 +88,6 @@ AS
 		sas.[audit_guid] = @auditGUID
 	ORDER BY 
 		[sasd].[audit_action_id];
-		
 
 	DECLARE @auditActionID char(4), @class tinyint, @majorId int, @minorInt int, @principal int, @result nvarchar(60), @isGroup bit; 
 
