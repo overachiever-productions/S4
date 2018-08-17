@@ -3,6 +3,8 @@
 /*
 	TODO: 
 		- Implement logic for LIST_ALL mode - which will also include snapshots, offline dbs, and 'synchronizing' dbs... (i.e., all/everything).
+		- The VERIFY mode is never really used. Pretty sure I call/leverage it from a few of the sprocs that depend upon this pig - but there is no explicit 'path' through the code that accounts for any speciaization. 
+									hmmm. maybe that might be what verify means though - i.e., verify = 'drop through all of the default logic'?
 
 	DEPENDENCIES:
 		
@@ -176,23 +178,27 @@ AS
 			IF @BackupType = 'LOG' BEGIN
 				DELETE FROM @targets 
 				WHERE [database_name] NOT IN (
-					SELECT name FROM sys.databases WHERE recovery_model_desc = 'FULL'
+					SELECT [name] FROM sys.databases WHERE recovery_model_desc = 'FULL'
 				);
 			  END;
 			ELSE 
 				DELETE FROM @targets
-				WHERE [database_name] NOT IN (SELECT name FROM sys.databases);
+				WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases);
 		END
     END;
 
 	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
+		
+		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID
+		DELETE FROM @targets 
+		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE state_desc = N'ONLINE' AND source_database_id IS NULL);
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
 		);
 
 		INSERT INTO @synchronized ([database_name])
-		SELECT [name] FROM	sys.databases WHERE state_desc != 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+		SELECT [name] FROM sys.databases WHERE state_desc <> 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
 
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
 		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
