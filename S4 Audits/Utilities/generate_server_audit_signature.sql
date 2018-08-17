@@ -34,7 +34,7 @@ AS
 	DECLARE @errorMessage nvarchar(MAX);
 
 	DECLARE @hashes table ( 
-		hash bigint NOT NULL
+		[hash] bigint NOT NULL
 	);
 
 	DECLARE @hash int = 0;
@@ -43,15 +43,15 @@ AS
 
 	SELECT @auditID = audit_id, @auditGUID = [audit_guid] FROM sys.[server_audits] WHERE [name] = @AuditName;
 	IF @auditID IS NULL BEGIN 
-		SET @errorMessage = N'Specified Server Audit [' + @AuditName + N'] does NOT exist. Please check input and try again.';
+		SET @errorMessage = N'Specified Server Audit Name: [' + @AuditName + N'] does NOT exist. Please check your input and try again.';
 		RAISERROR(@errorMessage, 16, 1);
 		RETURN -1;
 	END;
 
 	IF @IncludeAuditGUIDInHash = 1
-		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits];
+		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
 	ELSE 
-		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits];
+		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
 
 	INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
 

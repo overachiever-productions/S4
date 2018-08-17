@@ -123,6 +123,8 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------
 -- DB Audit Specification for msdb (i.e., Jobs Monitoring):
 
+-- NOTE: Use of [public] oviously means we want these activities trapped for any/ALL users (since every login is a part of [public]).
+
 USE [msdb];
 GO
 
