@@ -93,19 +93,21 @@ AS
 	ELSE	
 		SELECT @hash = CHECKSUM(@AuditName, @specificationID, @createDate, @modifyDate, @isEnabled);
 
-	SET @hash = 0;
 	DECLARE @hashes table ( 
-		[hash] bigint NOT NULL
-	);
-
-	SELECT 
-		@hash = @hash + CHECKSUM([name], [is_state_enabled])
-	FROM 
-		sys.[server_audit_specifications] 
-	WHERE 
-		[audit_guid] = @auditGuid;
-
+			[hash] bigint NOT NULL
+		);
 	INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
+	
+	SET @hash = 0;
+
+	--SELECT 
+	--	@hash = @hash + CHECKSUM([name], [is_state_enabled])
+	--FROM 
+	--	sys.[server_audit_specifications] 
+	--WHERE 
+	--	[audit_guid] = @auditGuid;
+
+	--INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
 
 	DECLARE details CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
