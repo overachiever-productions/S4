@@ -1,5 +1,9 @@
 
 /*
+	TODO:
+		- Assert/Check dependencies prior to execution of core logic.
+
+
 	NOTE:
 		- Can be used for server-level OR datbase-level specifications. 
 			To target server-level specifications, set @Target = NULL or @Target = N'[SYSTEM]'. 
@@ -46,6 +50,9 @@
 
 
 */
+
+USE [admindb];
+GO
 
 IF OBJECT_ID('dbo.generate_specification_signature','P') IS NOT NULL
 	DROP PROC dbo.generate_specification_signature;
@@ -194,7 +201,9 @@ AS
 	WHILE @@FETCH_STATUS = 0 BEGIN 
 
 		SELECT @hash = CHECKSUM(@auditActionID, @class, @majorId, @minorInt, @principal, @result, @isGroup)
-		INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
+		
+		INSERT INTO @hashes ([hash]) 
+		VALUES (CAST(@hash AS bigint));
 
 		FETCH NEXT FROM [details] INTO @auditActionID, @class, @majorId, @minorInt, @principal, @result, @isGroup;
 	END;	

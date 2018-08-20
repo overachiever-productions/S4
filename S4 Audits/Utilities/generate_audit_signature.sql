@@ -1,8 +1,14 @@
 
 /*
 
+	TODO:
+		- Assert/Check dependencies prior to execution of core logic.
 
-	SAMPLE EXECUTION
+	vNEXT: 
+		- POSSIBLY look at an @IncludePredicates parameter and when it's 0 (vs default of 1)... exclude [predicate] from the signature... 
+
+
+	SAMPLE EXECUTION:
 
 				EXEC dbo.generate_audit_signature 
 					@AuditName = N'Server Audit';
@@ -19,6 +25,8 @@
 
 */
 
+USE [admindb];
+GO
 
 IF OBJECT_ID('dbo.generate_audit_signature','P') IS NOT NULL
 	DROP PROC dbo.generate_audit_signature;
@@ -50,10 +58,17 @@ AS
 		RETURN -1;
 	END;
 
+	DECLARE @hashes table ( 
+			[hash] bigint NOT NULL
+	);
+
 	IF @IncludeGuidInHash = 1
 		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
 	ELSE 
 		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
+
+	INSERT INTO @hashes ([hash])
+	VALUES (@hash);
 
 	-- hash storage details (if file log storage is used):
 	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = 'FL') BEGIN
@@ -63,12 +78,15 @@ AS
 			sys.[server_file_audits] 
 		WHERE 
 			[audit_id] = @auditID;  -- note, log_file_name will always be different because of the GUIDs. 
+
+		INSERT INTO @hashes ([hash])
+		VALUES (@hash);
 	END
 
 	IF @AuditSignature IS NULL
-		SELECT @hash [audit_signature]; 
+		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
 	ELSE	
-		SELECT @AuditSignature = @hash;
+		SELECT @AuditSignature = SUM(hash) FROM @hashes;
 
 	RETURN 0;
 GO

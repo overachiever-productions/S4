@@ -62,6 +62,23 @@ GO
 ALTER SERVER AUDIT [<audit_name, sysname, Server Audit>] WITH (STATE = ON);
 GO
 
+---------------------------------------------------------------------
+-- OPTIONAL: remove SQLTELEMETRY operations from the audit. 
+
+USE [master];
+GO
+
+ALTER SERVER AUDIT [<audit_name, sysname, Server Audit>] WITH (STATE = OFF);
+GO
+
+ALTER SERVER AUDIT [<audit_name, sysname, Server Audit>] WHERE server_principal_name <> 'NT SERVICE\SQLTELEMETRY';
+GO
+
+ALTER SERVER AUDIT [<audit_name, sysname, Server Audit>] WITH (STATE = ON);
+GO
+
+
+
 ------------------------------------------------------------------------------------------------------------------------------------
 -- Server Audit Specification: 
 
