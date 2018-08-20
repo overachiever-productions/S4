@@ -258,8 +258,9 @@ AS
 		d.[status], 
 		d.[cpu_time],
 		d.[reads],
-		d.[writes], 
+		d.[writes],
 		{memory}
+		ISNULL(d.[program_name], '''') [program_name],
 		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
 		dbo.format_timespan(d.[wait_time]) [wait_time],
 		CAST((''<context>		
@@ -269,7 +270,7 @@ AS
 				<host_name>'' + ISNULL(d.[host_name], '''') + N''</host_name>
 			</connection>	
 			<statement>
-				<sql_statement_source>'' + ISNULL(d.statement_source, '''') + N''</sql_statement_source>
+				<sql_statement_source>'' + (SELECT ISNULL(d.statement_source, '''') FOR XML PATH('''')) + N''</sql_statement_source>
 				{plan_handle}
 			</statement>
 			<execution>
