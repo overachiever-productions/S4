@@ -52,10 +52,10 @@ IF OBJECT_ID('dbo.generate_specification_signature','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.generate_specification_signature 
-	@Target						sysname				= N'[SYSTEM]',			-- NULL | [SYSTEM] | specific_db_name (NULL and [SYSTEM] are defaults/synonyms and will represent a server-level specification, whereas a db_name will specify that this is a database specification).
-	@SpecificationName			sysname,
-	@IncludeAuditGUIDInHash		bit					= 1,
-	@SpecificationSignature		bigint				= NULL OUTPUT
+	@Target										sysname				= N'[SYSTEM]',			-- NULL | [SYSTEM] | specific_db_name (NULL and [SYSTEM] are defaults/synonyms and will represent a server-level specification, whereas a db_name will specify that this is a database specification).
+	@SpecificationName							sysname,
+	@IncludeParentAuditIdInSignature			bit					= 1,
+	@SpecificationSignature						bigint				= NULL OUTPUT
 AS
 	SET NOCOUNT ON; 
 	
@@ -160,7 +160,7 @@ AS
 	END;		
 
 	-- generate/store a hash of the specification details:
-	IF @IncludeAuditGUIDInHash = 1 
+	IF @IncludeParentAuditIdInSignature = 1 
 		SELECT @hash = CHECKSUM(@SpecificationName, @auditGUID, @specificationID, @createDate, @modifyDate, @isEnabled);
 	ELSE	
 		SELECT @hash = CHECKSUM(@SpecificationName, @specificationID, @createDate, @modifyDate, @isEnabled);
