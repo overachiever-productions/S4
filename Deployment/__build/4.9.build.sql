@@ -565,6 +565,27 @@ GO
 -----------------------------------
 --##INCLUDE: S4 High Availability\Monitoring\data_synchronization_checks.sql
 
+
+
+---------------------------------------------------------------------------
+-- Auditing:
+---------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Audits\Utilities\generate_audit_signature.sql
+
+-----------------------------------
+--##INCLUDE: S4 Audits\Utilities\generate_specification_signature.sql
+
+-----------------------------------
+--##INCLUDE: S4 Audits\Utilities\generate_audit_signature.sql
+
+-----------------------------------
+--##INCLUDE: S4 Audits\Monitoring\verify_audit_configuration.sql
+-----------------------------------
+--##INCLUDE: S4 Audits\Monitoring\verify_specification_configuration.sql
+
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------

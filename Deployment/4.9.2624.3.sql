@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2618.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2618.1.
+		- This script will either install/deploy S4 version 4.9.2624.3 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2624.3.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2618.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2624.3 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2618.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2624.3';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -755,23 +755,27 @@ AS
 			IF @BackupType = 'LOG' BEGIN
 				DELETE FROM @targets 
 				WHERE [database_name] NOT IN (
-					SELECT name FROM sys.databases WHERE recovery_model_desc = 'FULL'
+					SELECT [name] FROM sys.databases WHERE recovery_model_desc = 'FULL'
 				);
 			  END;
 			ELSE 
 				DELETE FROM @targets
-				WHERE [database_name] NOT IN (SELECT name FROM sys.databases);
+				WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases);
 		END
     END;
 
 	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
+		
+		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID
+		DELETE FROM @targets 
+		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE state_desc = N'ONLINE' AND source_database_id IS NULL);
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
 		);
 
 		INSERT INTO @synchronized ([database_name])
-		SELECT [name] FROM	sys.databases WHERE state_desc != 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+		SELECT [name] FROM sys.databases WHERE state_desc <> 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
 
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
 		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
@@ -5143,8 +5147,9 @@ AS
 		d.[status], 
 		d.[cpu_time],
 		d.[reads],
-		d.[writes], 
+		d.[writes],
 		{memory}
+		ISNULL(d.[program_name], '''') [program_name],
 		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
 		dbo.format_timespan(d.[wait_time]) [wait_time],
 		CAST((''<context>		
@@ -5154,7 +5159,7 @@ AS
 				<host_name>'' + ISNULL(d.[host_name], '''') + N''</host_name>
 			</connection>	
 			<statement>
-				<sql_statement_source>'' + ISNULL(d.statement_source, '''') + N''</sql_statement_source>
+				<sql_statement_source>'' + (SELECT ISNULL(d.statement_source, '''') FOR XML PATH('''')) + N''</sql_statement_source>
 				{plan_handle}
 			</statement>
 			<execution>
@@ -6408,6 +6413,7 @@ AS
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
 		RETURN 0;  -- nothing to report on... 
 
+
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		DELETE lrt 
 		FROM 
@@ -6415,7 +6421,8 @@ AS
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
 			des.[is_user_process] = 0
-			OR des.[session_id] < 50;
+			OR des.[session_id] < 50
+			OR des.[database_id] IS NULL;  -- also, delete any operations where the db_id is NULL
 	END;
 
 	IF NULLIF(@ExcludedDatabases, N'') IS NOT NULL BEGIN 
@@ -6459,16 +6466,16 @@ AS
 		@messageBody = @messageBody + @line + @crlf
 		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(COALESCE(DB_NAME([dtdt].[database_id]), DB_NAME(sx.[database_id]),'#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
-		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N'],' + @crlf
-		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N'], ' + @crlf 
-		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N'], ' + @crlf 
+		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N']' + @crlf
+		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N']' + @crlf 
 		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
 		+ @crlf
 		+ @tab + N'CONTEXT: ' + @crlf
-		+ @tab + @tab + N'[login_name]: ' + CAST(ISNULL(sx.[login_name], N'#NULL#') AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[program_name]: ' + CAST(ISNULL(sx.[program_name], N'#NULL#') AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[host_name]: ' + CAST(ISNULL(sx.[host_name], N'#NULL#') AS sysname) + N'],' + @crlf 
+		+ @tab + @tab + N'[login_name]: ' + CAST(ISNULL(sx.[login_name], N'#NULL#') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[program_name]: ' + CAST(ISNULL(sx.[program_name], N'#NULL#') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[host_name]: ' + CAST(ISNULL(sx.[host_name], N'#NULL#') AS sysname) + N']' + @crlf 
 		+ @crlf
         + @tab + N'STATEMENT' + @crlf + @crlf
 		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N'#EMPTY STATEMENT#'), @crlf, @crlf + @tab + @tab)
@@ -9441,12 +9448,330 @@ GO
 
 
 
+
+
+---------------------------------------------------------------------------
+-- Auditing:
+---------------------------------------------------------------------------
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.generate_audit_signature','P') IS NOT NULL
+	DROP PROC dbo.generate_audit_signature;
+GO
+
+CREATE PROC dbo.generate_audit_signature 
+	@AuditName					sysname, 
+	@IncludeGuidInHash			bit			= 1, 
+	@AuditSignature				bigint		= NULL OUTPUT
+AS
+	SET NOCOUNT ON; 
+
+	-- {copyright}
+
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @hash int = 0;
+	DECLARE @auditID int; 
+
+	SELECT 
+		@auditID = audit_id
+	FROM 
+		sys.[server_audits] 
+	WHERE 
+		[name] = @AuditName;
+
+	IF @auditID IS NULL BEGIN 
+		SET @errorMessage = N'Specified Server Audit Name: [' + @AuditName + N'] does NOT exist. Please check your input and try again.';
+		RAISERROR(@errorMessage, 16, 1);
+		RETURN -1;
+	END;
+
+	DECLARE @hashes table ( 
+			[hash] bigint NOT NULL
+	);
+
+	IF @IncludeGuidInHash = 1
+		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
+	ELSE 
+		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
+
+	INSERT INTO @hashes ([hash])
+	VALUES (@hash);
+
+	-- hash storage details (if file log storage is used):
+	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = 'FL') BEGIN
+		SELECT 
+			@hash = CHECKSUM(max_file_size, max_files, reserve_disk_space, log_file_path) 
+		FROM 
+			sys.[server_file_audits] 
+		WHERE 
+			[audit_id] = @auditID;  -- note, log_file_name will always be different because of the GUIDs. 
+
+		INSERT INTO @hashes ([hash])
+		VALUES (@hash);
+	END
+
+	IF @AuditSignature IS NULL
+		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
+	ELSE	
+		SELECT @AuditSignature = SUM(hash) FROM @hashes;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.generate_specification_signature','P') IS NOT NULL
+	DROP PROC dbo.generate_specification_signature;
+GO
+
+CREATE PROC dbo.generate_specification_signature 
+	@Target										sysname				= N'SERVER',			-- SERVER | 'db_name' - SERVER is default and represents a server-level specification, whereas a db_name will specify that this is a database specification).
+	@SpecificationName							sysname,
+	@IncludeParentAuditIdInSignature			bit					= 1,
+	@SpecificationSignature						bigint				= NULL OUTPUT
+AS
+	SET NOCOUNT ON; 
+	
+	-- {copyright}
+	
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @specificationScope sysname;
+
+	 IF NULLIF(@Target, N'') IS NULL OR @Target = N'SERVER'
+		SET @specificationScope = N'SERVER';
+	ELSE 
+		SET @specificationScope = N'DATABASE';
+
+	CREATE TABLE #specificationDetails (
+		audit_action_id varchar(10) NOT NULL, 
+		class int NOT NULL, 
+		major_id int NOT NULL, 
+		minor_id int NOT NULL, 
+		audited_principal_id int NOT NULL, 
+		audited_result nvarchar(60) NOT NULL, 
+		is_group bit NOT NULL 
+	);
+
+	DECLARE @hash int = 0;
+	DECLARE @hashes table ( 
+			[hash] bigint NOT NULL
+	);
+
+	DECLARE @specificationID int; 
+	DECLARE @auditGUID uniqueidentifier;
+	DECLARE @createDate datetime;
+	DECLARE @modifyDate datetime;
+	DECLARE @isEnabled bit;
+
+	DECLARE @sql nvarchar(max) = N'
+		SELECT 
+			@specificationID = [{1}_specification_id], 
+			@auditGUID = [audit_guid], 
+			@createDate = [create_date],
+			@modifyDate = [modify_date],
+			@isEnabled = [is_state_enabled] 
+		FROM 
+			[{0}].sys.[{1}_audit_specifications] 
+		WHERE 
+			[name] = @SpecificationName;';
+
+	DECLARE @specificationSql nvarchar(MAX) = N'
+		SELECT 
+			[audit_action_id], 
+			[class], 
+			[major_id],
+			[minor_id], 
+			[audited_principal_id], 
+			[audited_result], 
+			[is_group]
+		FROM
+			[{0}].sys.[{1}_audit_specification_details]  
+		WHERE 
+			 [{1}_specification_id] = @specificationID
+		ORDER BY 
+			[major_id];'; 
+
+	IF @specificationScope = N'SERVER' BEGIN
+
+		SET @sql = REPLACE(@sql, N'{0}', N'master');
+		SET @sql = REPLACE(@sql, N'{1}', N'server');
+		SET @specificationSql = REPLACE(@specificationSql, N'{0}', N'master');
+		SET @specificationSql = REPLACE(@specificationSql, N'{1}', N'server');		
+
+	  END
+	ELSE BEGIN 
+
+		-- Make sure the target database exists:
+		DECLARE @targetOutput nvarchar(max);
+
+		EXEC dbo.load_database_names
+			@Input = @Target,
+			@Mode = N'LIST_ACTIVE',
+			@Output = @targetOutput OUTPUT;
+
+		IF LEN(ISNULL(@targetOutput,'')) < 1 BEGIN
+			SET @errorMessage = N'Specified @Target database [' + @Target + N'] does not exist. Please check your input and try again.';
+			RAISERROR(@errorMessage, 16, 1);
+			RETURN -1;
+		END;
+
+		SET @sql = REPLACE(@sql, N'{0}', @Target);
+		SET @sql = REPLACE(@sql, N'{1}', N'database');
+		SET @specificationSql = REPLACE(@specificationSql, N'{0}', @Target);
+		SET @specificationSql = REPLACE(@specificationSql, N'{1}', N'database');
+	END; 
+
+	EXEC sys.sp_executesql 
+		@stmt = @sql, 
+		@params = N'@SpecificationName sysname, @specificationID int OUTPUT, @auditGuid uniqueidentifier OUTPUT, @isEnabled bit OUTPUT, @createDate datetime OUTPUT, @modifyDate datetime OUTPUT', 
+		@SpecificationName = @SpecificationName, @specificationID = @specificationID OUTPUT, @auditGUID = @auditGUID OUTPUT, @isEnabled = @isEnabled OUTPUT, @createDate = @createDate OUTPUT, @modifyDate = @modifyDate OUTPUT;
+
+	IF @specificationID IS NULL BEGIN
+		SET @errorMessage = N'Specified '+ CASE WHEN @specificationScope = N'SERVER' THEN N'Server' ELSE N'Database' END + N' Audit Specification Name: [' + @SpecificationName + N'] does NOT exist. Please check your input and try again.';
+		RAISERROR(@errorMessage, 16, 1);
+		RETURN -2;		
+	END;		
+
+	-- generate/store a hash of the specification details:
+	IF @IncludeParentAuditIdInSignature = 1 
+		SELECT @hash = CHECKSUM(@SpecificationName, @auditGUID, @specificationID, @createDate, @modifyDate, @isEnabled);
+	ELSE	
+		SELECT @hash = CHECKSUM(@SpecificationName, @specificationID, @createDate, @modifyDate, @isEnabled);
+
+	INSERT INTO @hashes ([hash]) VALUES (CAST(@hash AS bigint));
+
+	INSERT INTO [#specificationDetails] ([audit_action_id], [class], [major_id], [minor_id], [audited_principal_id], [audited_result], [is_group])
+	EXEC sys.[sp_executesql] 
+		@stmt = @specificationSql, 
+		@params = N'@specificationID int', 
+		@specificationID = @specificationID;
+
+	DECLARE @auditActionID char(4), @class tinyint, @majorId int, @minorInt int, @principal int, @result nvarchar(60), @isGroup bit; 
+	DECLARE details CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[audit_action_id], 
+		[class], 
+		[major_id],
+		[minor_id], 
+		[audited_principal_id], 
+		[audited_result], 
+		[is_group]
+	FROM
+		[#specificationDetails]
+	ORDER BY 
+		[audit_action_id];
+
+	OPEN [details]; 
+	FETCH NEXT FROM [details] INTO @auditActionID, @class, @majorId, @minorInt, @principal, @result, @isGroup;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN 
+
+		SELECT @hash = CHECKSUM(@auditActionID, @class, @majorId, @minorInt, @principal, @result, @isGroup)
+		
+		INSERT INTO @hashes ([hash]) 
+		VALUES (CAST(@hash AS bigint));
+
+		FETCH NEXT FROM [details] INTO @auditActionID, @class, @majorId, @minorInt, @principal, @result, @isGroup;
+	END;	
+
+	CLOSE [details];
+	DEALLOCATE [details];
+
+	IF @SpecificationSignature IS NULL
+		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
+	ELSE	
+		SELECT @SpecificationSignature = SUM(hash) FROM @hashes;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.generate_audit_signature','P') IS NOT NULL
+	DROP PROC dbo.generate_audit_signature;
+GO
+
+CREATE PROC dbo.generate_audit_signature 
+	@AuditName					sysname, 
+	@IncludeGuidInHash			bit			= 1, 
+	@AuditSignature				bigint		= NULL OUTPUT
+AS
+	SET NOCOUNT ON; 
+
+	-- {copyright}
+
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @hash int = 0;
+	DECLARE @auditID int; 
+
+	SELECT 
+		@auditID = audit_id
+	FROM 
+		sys.[server_audits] 
+	WHERE 
+		[name] = @AuditName;
+
+	IF @auditID IS NULL BEGIN 
+		SET @errorMessage = N'Specified Server Audit Name: [' + @AuditName + N'] does NOT exist. Please check your input and try again.';
+		RAISERROR(@errorMessage, 16, 1);
+		RETURN -1;
+	END;
+
+	DECLARE @hashes table ( 
+			[hash] bigint NOT NULL
+	);
+
+	IF @IncludeGuidInHash = 1
+		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
+	ELSE 
+		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
+
+	INSERT INTO @hashes ([hash])
+	VALUES (@hash);
+
+	-- hash storage details (if file log storage is used):
+	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = 'FL') BEGIN
+		SELECT 
+			@hash = CHECKSUM(max_file_size, max_files, reserve_disk_space, log_file_path) 
+		FROM 
+			sys.[server_file_audits] 
+		WHERE 
+			[audit_id] = @auditID;  -- note, log_file_name will always be different because of the GUIDs. 
+
+		INSERT INTO @hashes ([hash])
+		VALUES (@hash);
+	END
+
+	IF @AuditSignature IS NULL
+		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
+	ELSE	
+		SELECT @AuditSignature = SUM(hash) FROM @hashes;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+
+-----------------------------------
+
+
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.9.2618.1';
-DECLARE @VersionDescription nvarchar(200) = N'Introduction of RPO Warnings during execution of restore tests';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2624.3';
+DECLARE @VersionDescription nvarchar(200) = N'Improvements/Bug-Fixes. Introduction of Audit Signature Monitoring features';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
