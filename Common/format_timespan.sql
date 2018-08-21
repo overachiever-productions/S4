@@ -18,7 +18,9 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
+	-- {copyright}
 	BEGIN
+
 		DECLARE @output sysname;
 
 		IF @Milliseconds IS NULL OR @Milliseconds = 0	

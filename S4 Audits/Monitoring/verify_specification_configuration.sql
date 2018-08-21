@@ -1,5 +1,13 @@
 
+/*
 
+
+
+
+*/
+
+USE [admindb];
+GO
 
 IF OBJECT_ID('dbo.verify_specification_configuration','P') IS NOT NULL
 	DROP PROC dbo.verify_specification_configuration;

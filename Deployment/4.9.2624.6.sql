@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2624.3 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2624.3.
+		- This script will either install/deploy S4 version 4.9.2624.6 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2624.6.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2624.3 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2624.6 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2624.3';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2624.6';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -438,9 +438,9 @@ GO
 USE [admindb];
 GO
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Common Code:
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -454,6 +454,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -936,7 +937,10 @@ GO
 CREATE FUNCTION dbo.load_default_path(@PathType sysname) 
 RETURNS nvarchar(4000)
 AS
-BEGIN 
+BEGIN
+ 
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
 	DECLARE @output sysname;
 
 	IF UPPER(@PathType) = N'BACKUPS'
@@ -983,7 +987,9 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 	BEGIN
+
 		DECLARE @output sysname;
 
 		IF @Milliseconds IS NULL OR @Milliseconds = 0	
@@ -1020,6 +1026,8 @@ CREATE PROC dbo.get_time_vector
 	@Error					nvarchar(MAX)	= NULL		OUT
 AS 
 	SET NOCOUNT ON; 
+
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	-- cleanup:
 	SET @Vector = LTRIM(RTRIM(@Vector));
@@ -1103,9 +1111,9 @@ GO
 
 
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Backups:
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -3577,9 +3585,9 @@ GO
 
 
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -4938,9 +4946,9 @@ GO
 -----------------------------------
 
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Performance
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -5541,9 +5549,9 @@ AS
 GO
 
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Monitoring
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -6372,7 +6380,7 @@ CREATE PROC dbo.monitor_transaction_durations
 AS
 	SET NOCOUNT ON;
 
-	-- {copyright}
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
@@ -6579,9 +6587,9 @@ GO
 
 
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -9450,9 +9458,9 @@ GO
 
 
 
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Auditing:
----------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
@@ -9469,7 +9477,7 @@ CREATE PROC dbo.generate_audit_signature
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright}
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -9538,7 +9546,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- {copyright}
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -9696,82 +9704,285 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.generate_audit_signature','P') IS NOT NULL
-	DROP PROC dbo.generate_audit_signature;
+
+IF OBJECT_ID('dbo.verify_audit_configuration','P') IS NOT NULL
+	DROP PROC dbo.verify_audit_configuration;
 GO
 
-CREATE PROC dbo.generate_audit_signature 
-	@AuditName					sysname, 
-	@IncludeGuidInHash			bit			= 1, 
-	@AuditSignature				bigint		= NULL OUTPUT
-AS
+CREATE PROC dbo.verify_audit_configuration 
+	@AuditName							sysname, 
+	@OptionalAuditSignature				bigint				= NULL, 
+	@IncludeAuditIdInSignature			bit					= 1,
+	@ExpectedEnabledState				sysname				= N'ON',   -- ON | OFF
+	@EmailSubjectPrefix					nvarchar(50)		= N'[Audit Configuration] ',
+	@MailProfileName					sysname				= N'General',	
+	@OperatorName						sysname				= N'Alerts',	
+	@PrintOnly							bit					= 0	
+AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright}
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
+	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
+		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
+		RETURN -1;
+	END;
 
 	DECLARE @errorMessage nvarchar(MAX);
-	DECLARE @hash int = 0;
+
+	DECLARE @errors table (
+		error_id int IDENTITY(1,1) NOT NULL, 
+		error nvarchar(MAX) NOT NULL
+	);
+
+	-- make sure audit exists and and verify is_enabled status:
 	DECLARE @auditID int; 
+	DECLARE @isEnabled bit;
 
 	SELECT 
-		@auditID = audit_id
+		@auditID = audit_id, 
+		@isEnabled = is_state_enabled 
 	FROM 
 		sys.[server_audits] 
 	WHERE 
 		[name] = @AuditName;
-
+	
 	IF @auditID IS NULL BEGIN 
-		SET @errorMessage = N'Specified Server Audit Name: [' + @AuditName + N'] does NOT exist. Please check your input and try again.';
-		RAISERROR(@errorMessage, 16, 1);
-		RETURN -1;
+		SELECT @errorMessage = N'WARNING: Server Audit [' + @AuditName + N'] does not currently exist on [' + @@SERVERNAME + N'].';
+		INSERT INTO @errors([error]) VALUES (@errorMessage);
+		GOTO ALERTS;
 	END;
 
-	DECLARE @hashes table ( 
-			[hash] bigint NOT NULL
-	);
+	-- check on enabled state: 
+	IF UPPER(@ExpectedEnabledState) = N'ON' BEGIN 
+		IF @isEnabled <> 1 BEGIN
+			SELECT @errorMessage = N'WARNING: Server Audit [' + @AuditName + N'] expected is_enabled state was: ''ON'', but current value was ' + CAST(@isEnabled AS sysname) + N'.';
+			INSERT INTO @errors([error]) VALUES (@errorMessage);
+		END;
+	  END; 
+	ELSE BEGIN 
+		IF @isEnabled <> 0 BEGIN 
+			SELECT @errorMessage = N'WARNING: Server Audit [' + @AuditName + N'] expected is_enabled state was: ''OFF'', but current value was ' + CAST(@isEnabled AS sysname) + N'.';
+			INSERT INTO @errors([error]) VALUES (@errorMessage);
+		END;
+	END; 
 
-	IF @IncludeGuidInHash = 1
-		SELECT @hash = CHECKSUM([name], [audit_guid], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
-	ELSE 
-		SELECT @hash = CHECKSUM([name], [type], [on_failure], [is_state_enabled], [queue_delay], [predicate]) FROM sys.[server_audits] WHERE [name] = @AuditName;
+	-- If we have a checksum, verify that as well: 
+	IF @OptionalAuditSignature IS NOT NULL BEGIN 
+		DECLARE @currentSignature bigint = 0;
+		DECLARE @returnValue int; 
 
-	INSERT INTO @hashes ([hash])
-	VALUES (@hash);
+		EXEC @returnValue = dbo.generate_audit_signature
+			@AuditName = @AuditName, 
+			@IncludeGuidInHash = @IncludeAuditIdInSignature,
+			@AuditSignature = @currentSignature OUTPUT;
 
-	-- hash storage details (if file log storage is used):
-	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = 'FL') BEGIN
-		SELECT 
-			@hash = CHECKSUM(max_file_size, max_files, reserve_disk_space, log_file_path) 
-		FROM 
-			sys.[server_file_audits] 
-		WHERE 
-			[audit_id] = @auditID;  -- note, log_file_name will always be different because of the GUIDs. 
+		IF @returnValue <> 0 BEGIN 
+				SELECT @errorMessage = N'ERROR: Problem generating audit signature for [' + @AuditName + N'] on ' + @@SERVERNAME + N'.';
+				INSERT INTO @errors([error]) VALUES (@errorMessage);			
+		  END;
+		ELSE BEGIN
+			IF @OptionalAuditSignature <> @currentSignature BEGIN
+				SELECT @errorMessage = N'WARNING: Expected signature for Audit [' + @AuditName + N'] (with a value of ' + CAST(@OptionalAuditSignature AS sysname) + N') did NOT match currently generated signature (with value of ' + CAST(@currentSignature AS sysname) + N').';
+				INSERT INTO @errors([error]) VALUES (@errorMessage);	
+			END;
+		END;
+	END;
 
-		INSERT INTO @hashes ([hash])
-		VALUES (@hash);
-	END
+ALERTS:
+	IF EXISTS (SELECT NULL FROM	@errors) BEGIN 
+		DECLARE @subject nvarchar(MAX) = @EmailSubjectPrefix + N' - Synchronization Problems Detected';
+		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+		DECLARE @tab nchar(1) = NCHAR(9);
 
-	IF @AuditSignature IS NULL
-		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
-	ELSE	
-		SELECT @AuditSignature = SUM(hash) FROM @hashes;
+		SET @errorMessage = N'The following conditions were detected: ' + @crlf;
+
+		SELECT @errorMessage = @errorMessage + @tab + N'- ' + error + @crlf
+		FROM @errors
+		ORDER BY error_id;
+
+		IF @PrintOnly = 1 BEGIN
+			PRINT N'SUBJECT: ' + @subject;
+			PRINT N'BODY: ' + @errorMessage;
+		  END
+		ELSE BEGIN 
+			EXEC msdb.dbo.sp_notify_operator 
+				@profile_name = @MailProfileName, 
+				@name = @OperatorName, 
+				@subject = @Subject, 
+				@body = @errorMessage;	
+		END;
+	END;
 
 	RETURN 0;
 GO
 
 
 -----------------------------------
+USE [admindb];
+GO
 
------------------------------------
+IF OBJECT_ID('dbo.verify_specification_configuration','P') IS NOT NULL
+	DROP PROC dbo.verify_specification_configuration;
+GO
 
+CREATE PROC dbo.verify_specification_configuration 
+	@Target									sysname				= N'SERVER',		--SERVER | 'db_name' - SERVER represents a server-level specification whereas a specific dbname represents a db-level specification.
+	@SpecificationName						sysname, 
+	@ExpectedEnabledState					sysname				= N'ON',   -- ON | OFF
+	@OptionalSpecificationSignature			bigint				= NULL, 
+	@IncludeParentAuditIdInSignature		bit					= 1,		-- i.e., defines setting of @IncludeParentAuditIdInSignature when original signature was signed. 
+	@EmailSubjectPrefix						nvarchar(50)		= N'[Audit Configuration] ',
+	@MailProfileName						sysname				= N'General',	
+	@OperatorName							sysname				= N'Alerts',	
+	@PrintOnly								bit					= 0	
+AS	
+	SET NOCOUNT ON; 
+
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
+	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
+		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
+		RETURN -1;
+	END;
+
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @errors table (
+		error_id int IDENTITY(1,1) NOT NULL, 
+		error nvarchar(MAX) NOT NULL
+	);
+
+	DECLARE @specificationScope sysname;
+
+	 IF NULLIF(@Target, N'') IS NULL OR @Target = N'SERVER'
+		SET @specificationScope = N'SERVER';
+	ELSE 
+		SET @specificationScope = N'DATABASE';
+
+	DECLARE @sql nvarchar(max) = N'
+		SELECT 
+			@specificationID = [{1}_specification_id], 
+			@auditGUID = [audit_guid], 
+			@isEnabled = [is_state_enabled] 
+		FROM 
+			[{0}].sys.[{1}_audit_specifications] 
+		WHERE 
+			[name] = @SpecificationName;';
+
+	-- make sure specification (and target db - if db-level spec) exist and grab is_enabled status: 
+	IF @specificationScope = N'SERVER' BEGIN	
+		SET @sql = REPLACE(@sql, N'{0}', N'master');
+		SET @sql = REPLACE(@sql, N'{1}', N'server');
+	  END;
+	ELSE BEGIN 
+		
+		-- Make sure the target database exists:
+		DECLARE @targetOutput nvarchar(max);
+
+		EXEC dbo.load_database_names
+			@Input = @Target,
+			@Mode = N'LIST_ACTIVE',
+			@Output = @targetOutput OUTPUT;
+
+		IF LEN(ISNULL(@targetOutput,'')) < 1 BEGIN
+			SET @errorMessage = N'ERROR: Specified @Target database [' + @Target + N'] does not exist. Please check your input and try again.';
+			INSERT INTO @errors([error]) VALUES (@errorMessage);
+			GOTO ALERTS;
+		END;
+
+		SET @sql = REPLACE(@sql, N'{0}', @Target);
+		SET @sql = REPLACE(@sql, N'{1}', N'database');
+	END;
+
+	DECLARE @specificationID int; 
+	DECLARE @isEnabled bit; 
+	DECLARE @auditGUID uniqueidentifier;
+
+	-- fetch details: 
+	EXEC sys.[sp_executesql]
+		@stmt = @sql, 
+		@params = N'@specificationID int OUTPUT, @isEnabled bit OUTPUT, @auditGUID uniqueidentifier OUTPUT', 
+		@specificationID = @specificationID OUTPUT, @isEnabled = @isEnabled OUTPUT, @auditGUID = @auditGUID OUTPUT;
+
+	-- verify spec exists: 
+	IF @auditGUID IS NULL BEGIN
+		SET @errorMessage = N'WARNING: Specified @SpecificationName [' + @SpecificationName + N'] does not exist in @Target database [' + @Target + N'].';
+		INSERT INTO @errors([error]) VALUES (@errorMessage);
+		GOTO ALERTS;
+	END;
+
+	-- check on/off state:
+	IF UPPER(@ExpectedEnabledState) = N'ON' BEGIN 
+		IF @isEnabled <> 1 BEGIN
+			SELECT @errorMessage = N'WARNING: Specification [' + @SpecificationName + N'] expected is_enabled state was: ''ON'', but current value was ' + CAST(@isEnabled AS sysname) + N'.';
+			INSERT INTO @errors([error]) VALUES (@errorMessage);
+		END;
+	  END; 
+	ELSE BEGIN 
+		IF @isEnabled <> 0 BEGIN 
+			SELECT @errorMessage = N'WARNING: Specification [' + @SpecificationName + N'] expected is_enabled state was: ''OFF'', but current value was ' + CAST(@isEnabled AS sysname) + N'.';
+			INSERT INTO @errors([error]) VALUES (@errorMessage);
+		END;
+	END; 
+
+	-- verify signature: 
+	IF @OptionalSpecificationSignature IS NOT NULL BEGIN 
+		DECLARE @currentSignature bigint = 0;
+		DECLARE @returnValue int; 
+
+		EXEC @returnValue = dbo.generate_specification_signature
+			@Target = @Target, 
+			@SpecificationName = @SpecificationName, 
+			@IncludeParentAuditIdInSignature = @IncludeParentAuditIdInSignature,
+			@SpecificationSignature = @currentSignature OUTPUT;
+
+		IF @returnValue <> 0 BEGIN 
+				SELECT @errorMessage = N'ERROR: Problem generating specification signature for [' + @SpecificationName + N'] on ' + @@SERVERNAME + N'.';
+				INSERT INTO @errors([error]) VALUES (@errorMessage);			
+		  END;
+		ELSE BEGIN
+			IF @OptionalSpecificationSignature <> @currentSignature BEGIN
+				SELECT @errorMessage = N'WARNING: Expected signature for Specification [' + @SpecificationName + N'] (with a value of ' + CAST(@OptionalSpecificationSignature AS sysname) + N') did NOT match currently generated signature (with value of ' + CAST(@currentSignature AS sysname) + N').';
+				INSERT INTO @errors([error]) VALUES (@errorMessage);	
+			END;
+		END;
+	END;
+
+ALERTS:
+
+	IF EXISTS (SELECT NULL FROM	@errors) BEGIN 
+		DECLARE @subject nvarchar(MAX) = @EmailSubjectPrefix + N' - Synchronization Problems Detected';
+		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+		DECLARE @tab nchar(1) = NCHAR(9);
+
+		SET @errorMessage = N'The following conditions were detected: ' + @crlf;
+
+		SELECT @errorMessage = @errorMessage + @tab + N'- ' + error + @crlf
+		FROM @errors
+		ORDER BY error_id;
+
+		IF @PrintOnly = 1 BEGIN
+			PRINT N'SUBJECT: ' + @subject;
+			PRINT N'BODY: ' + @errorMessage;
+		  END
+		ELSE BEGIN 
+			EXEC msdb.dbo.sp_notify_operator 
+				@profile_name = @MailProfileName, 
+				@name = @OperatorName, 
+				@subject = @Subject, 
+				@body = @errorMessage;	
+		END;
+	END;
+
+	RETURN 0;
+GO	
 
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful. 
+-- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- TODO grab a ##{{S4VersionSummary}} as a value for @description and use that if there are already v4 deployments (or hell... maybe just use that and pre-pend 'initial install' if this is an initial install?)
-DECLARE @CurrentVersion varchar(20) = N'4.9.2624.3';
-DECLARE @VersionDescription nvarchar(200) = N'Improvements/Bug-Fixes. Introduction of Audit Signature Monitoring features';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2624.6';
+DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes and Improvements. Introduction of Audit Signature Checks';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)

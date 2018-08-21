@@ -32,7 +32,10 @@ GO
 CREATE FUNCTION dbo.load_default_path(@PathType sysname) 
 RETURNS nvarchar(4000)
 AS
-BEGIN 
+BEGIN
+ 
+	-- {copyright}
+
 	DECLARE @output sysname;
 
 	IF UPPER(@PathType) = N'BACKUPS'

@@ -38,6 +38,8 @@ CREATE PROC dbo.get_time_vector
 AS 
 	SET NOCOUNT ON; 
 
+	-- {copyright}
+
 	-- cleanup:
 	SET @Vector = LTRIM(RTRIM(@Vector));
 	SET @ParameterName = REPLACE(LTRIM(RTRIM((@ParameterName))), N'@', N'');

@@ -28,6 +28,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
+	-- {copyright}
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
