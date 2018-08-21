@@ -11,6 +11,9 @@
 
 */
 
+USE [admindb];
+GO
+
 
 IF OBJECT_ID('dbo.verify_audit_configuration','P') IS NOT NULL
 	DROP PROC dbo.verify_audit_configuration;
