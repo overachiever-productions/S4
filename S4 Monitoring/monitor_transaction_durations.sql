@@ -68,6 +68,7 @@ AS
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
 		RETURN 0;  -- nothing to report on... 
 
+
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		DELETE lrt 
 		FROM 
@@ -75,7 +76,8 @@ AS
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
 			des.[is_user_process] = 0
-			OR des.[session_id] < 50;
+			OR des.[session_id] < 50
+			OR des.[database_id] IS NULL;  -- also, delete any operations where the db_id is NULL
 	END;
 
 	IF NULLIF(@ExcludedDatabases, N'') IS NOT NULL BEGIN 
@@ -119,16 +121,16 @@ AS
 		@messageBody = @messageBody + @line + @crlf
 		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(COALESCE(DB_NAME([dtdt].[database_id]), DB_NAME(sx.[database_id]),'#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
 		+ @tab + N'METRICS: ' + @crlf
-		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N'],' + @crlf
-		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N'], ' + @crlf 
-		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N'], ' + @crlf 
+		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N']' + @crlf
+		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N']' + @crlf 
 		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
 		+ @crlf
 		+ @tab + N'CONTEXT: ' + @crlf
-		+ @tab + @tab + N'[login_name]: ' + CAST(ISNULL(sx.[login_name], N'#NULL#') AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[program_name]: ' + CAST(ISNULL(sx.[program_name], N'#NULL#') AS sysname) + N'],' + @crlf 
-		+ @tab + @tab + N'[host_name]: ' + CAST(ISNULL(sx.[host_name], N'#NULL#') AS sysname) + N'],' + @crlf 
+		+ @tab + @tab + N'[login_name]: ' + CAST(ISNULL(sx.[login_name], N'#NULL#') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[program_name]: ' + CAST(ISNULL(sx.[program_name], N'#NULL#') AS sysname) + N']' + @crlf 
+		+ @tab + @tab + N'[host_name]: ' + CAST(ISNULL(sx.[host_name], N'#NULL#') AS sysname) + N']' + @crlf 
 		+ @crlf
         + @tab + N'STATEMENT' + @crlf + @crlf
 		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N'#EMPTY STATEMENT#'), @crlf, @crlf + @tab + @tab)
