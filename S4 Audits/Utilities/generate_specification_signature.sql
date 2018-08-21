@@ -59,7 +59,7 @@ IF OBJECT_ID('dbo.generate_specification_signature','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.generate_specification_signature 
-	@Target										sysname				= N'[SYSTEM]',			-- NULL | [SYSTEM] | specific_db_name (NULL and [SYSTEM] are defaults/synonyms and will represent a server-level specification, whereas a db_name will specify that this is a database specification).
+	@Target										sysname				= N'SERVER',			-- SERVER | 'db_name' - SERVER is default and represents a server-level specification, whereas a db_name will specify that this is a database specification).
 	@SpecificationName							sysname,
 	@IncludeParentAuditIdInSignature			bit					= 1,
 	@SpecificationSignature						bigint				= NULL OUTPUT
@@ -71,7 +71,7 @@ AS
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
 
-	 IF NULLIF(@Target, N'') IS NULL OR @Target = N'[SYSTEM]'
+	 IF NULLIF(@Target, N'') IS NULL OR @Target = N'SERVER'
 		SET @specificationScope = N'SERVER';
 	ELSE 
 		SET @specificationScope = N'DATABASE';

@@ -6,7 +6,7 @@ IF OBJECT_ID('dbo.verify_specification_configuration','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_specification_configuration 
-	@Target									sysname				= N'[SYSTEM]',		-- NULL | [SYSTEM] | 'db_name'...   (NULL and [SYSTEM] represent server-level scope.
+	@Target									sysname				= N'SERVER',		--SERVER | 'db_name' - SERVER represents a server-level specification whereas a specific dbname represents a db-level specification.
 	@SpecificationName						sysname, 
 	@ExpectedEnabledState					sysname				= N'ON',   -- ON | OFF
 	@OptionalSpecificationSignature			bigint				= NULL, 
@@ -33,7 +33,7 @@ AS
 
 	DECLARE @specificationScope sysname;
 
-	 IF NULLIF(@Target, N'') IS NULL OR @Target = N'[SYSTEM]'
+	 IF NULLIF(@Target, N'') IS NULL OR @Target = N'SERVER'
 		SET @specificationScope = N'SERVER';
 	ELSE 
 		SET @specificationScope = N'DATABASE';
