@@ -1,4 +1,8 @@
 /*
+
+	TODO: 
+		sys.os_sys_info.physical_memory_kb doesn't exist on 2008R2 or before...
+
 	NOTE: 
 		- Not really intended to be called directly. Should typically be called by dbo.script_server_configurations. 
 		- For the 'v1' version of this script, we'll just be DOCUMENTING details - not configuring them as optional/executable scripts. 

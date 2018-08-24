@@ -4,6 +4,9 @@
 	TODO:
 		- Assert/Check dependencies prior to execution of core logic.
 
+	TODO:
+		- Predicates weren't available with 2008R2 instances ... nor was it possible to add a max_files detail to the audit's definition (well, see it via dmv). 
+
 	vNEXT: 
 		- POSSIBLY look at an @IncludePredicates parameter and when it's 0 (vs default of 1)... exclude [predicate] from the signature... 
 

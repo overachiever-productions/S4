@@ -5,6 +5,9 @@
 	-- TODO: show 'status' of the query - i.e., running, runnable, sleeping, etc..... that info will be CRITICAL in determining what's up... 
 	--			so... list that as the first 'metric'... 
 
+	-- TODO: 
+		sys.[dm_tran_active_transactions].open_transaction_count was added POST 2008R2... (not sure when... but it causes this code to fail on 2008R2 deployments). 
+
 
 */
 
