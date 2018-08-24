@@ -165,7 +165,9 @@ AS
 	DECLARE @retentionCutoffTime datetime; 
 	DECLARE @retentionValue int;
 
-	IF LOWER(@retentionType) = N'b' BEGIN 
+	SET @retentionType = RIGHT(@Retention, 1);
+
+	IF LOWER(ISNULL(@retentionType, N'x')) = N'b' BEGIN 
 
 		SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
 	  END;
