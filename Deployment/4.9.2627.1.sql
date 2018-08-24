@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2624.6 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2624.6.
+		- This script will either install/deploy S4 version 4.9.2627.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2627.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2624.6 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2627.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2624.6';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2627.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -622,8 +622,8 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
-	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
+	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP | NON_RECOVERED
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
 AS
@@ -641,12 +641,12 @@ AS
 	END
 
 	IF ISNULL(@Mode, N'') = N'' BEGIN;
-		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY', 16, 1);
+		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED ', 16, 1);
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL', 16, 1);
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED', N'NON_RECOVERED') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED', 16, 1);
 		RETURN -2;
 	END
 
@@ -765,11 +765,12 @@ AS
 		END
     END;
 
+	-- remove AG'd and Mirrored databases:
 	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
 		
-		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID
+		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID)
 		DELETE FROM @targets 
-		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE state_desc = N'ONLINE' AND source_database_id IS NULL);
+		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NULL);
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
@@ -781,7 +782,7 @@ AS
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
 		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
 			INSERT INTO @synchronized ([database_name])
-			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
 		END
 
 		-- Note, snapshots were removed earlier... 
@@ -795,6 +796,15 @@ AS
 		-- only show dbs that have been restored (i.e., in dbo.restore_log).
 		INSERT INTO @targets ([database_name])
 		SELECT [database] FROM dbo.[restore_log] GROUP BY [database];
+	END;
+
+	IF UPPER(@Mode) IN (N'NON_RECOVERED') BEGIN
+	
+		-- remove dbs not in RECOVERY or STANDBY mode:
+		DELETE FROM @targets
+		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1 OR [state_desc] = N'RESTORING');
+
+		-- TODO: remove any AG'd and Mirrored DBs first:
 	END;
 
 	-- Exclude any databases specified for exclusion:
@@ -1020,7 +1030,7 @@ GO
 CREATE PROC dbo.get_time_vector 
 	@Vector					nvarchar(10)	= NULL, 
 	@ParameterName			sysname			= NULL, 
-	@AllowedIntervals		sysname			= N's,m,h,d,w,q,y',		-- s[econds], m[inutes], h[ours], d[ays], w[eeks], q[uarters], y[ears]
+	@AllowedIntervals		sysname			= N's,m,h,d,w,q,y',		-- s[econds], m[inutes], h[ours], d[ays], w[eeks], q[uarters], y[ears]  (NOTE: the concept of b[ackups] applies to backups only and is handled in dbo.remove_backup_files. Only time values are handled here.)
 	@Mode					sysname			= N'SUBTRACT',			-- ADD | SUBTRACT
 	@Output					datetime		= NULL		OUT, 
 	@Error					nvarchar(MAX)	= NULL		OUT
@@ -1233,7 +1243,9 @@ AS
 	DECLARE @retentionCutoffTime datetime; 
 	DECLARE @retentionValue int;
 
-	IF LOWER(@retentionType) = N'b' BEGIN 
+	SET @retentionType = RIGHT(@Retention, 1);
+
+	IF LOWER(ISNULL(@retentionType, N'x')) = N'b' BEGIN 
 
 		SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
 	  END;
@@ -3620,7 +3632,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-    -- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+    -- {copyright}
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -3716,7 +3728,7 @@ AS
     END;
 
     IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN
-        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dba_RestoreDatabases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
+        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dbo.restore_databases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
         RETURN -10;
     END;
 
@@ -3729,7 +3741,7 @@ AS
     END;
 
     IF (NULLIF(@RestoredDbNamePattern,'')) IS NULL BEGIN
-        RAISERROR('@RestoredDbNamePattern can NOT be NULL or empty. It MAY also contain the place-holder token ''{0}'' to represent the name of the original database (e.g., ''{0}_test'' would become ''dbname_test'' when restoring a database named ''dbname'').', 16, 1);
+        RAISERROR('@RestoredDbNamePattern can NOT be NULL or empty. Use the place-holder token ''{0}'' to represent the name of the original database (e.g., ''{0}_test'' would become ''dbname_test'' when restoring a database named ''dbname - whereas ''{0}'' would simply be restored as the name of the db to restore per database).', 16, 1);
         RETURN -22;
     END;
 
@@ -3824,17 +3836,7 @@ AS
 
     IF @PrintOnly = 1 BEGIN;
         PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
-    END
-
-    DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
-    SELECT 
-        [database_name]
-    FROM 
-        @dbsToRestore
-    WHERE
-        LEN([database_name]) > 0
-    ORDER BY 
-        entry_id;
+    END;
 
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
@@ -3945,6 +3947,16 @@ AS
 	IF (SELECT admindb.dbo.get_engine_version()) >= 13.0 BEGIN
         ALTER TABLE #FileList ADD SnapshotURL nvarchar(360) NULL;
     END;
+
+    DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
+    SELECT 
+        [database_name]
+    FROM 
+        @dbsToRestore
+    WHERE
+        LEN([database_name]) > 0
+    ORDER BY 
+        entry_id;
 
     DECLARE @command nvarchar(2000);
 
@@ -4835,17 +4847,25 @@ IF OBJECT_ID('dbo.load_header_details','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_header_details 
-	@BackupPath			nvarchar(800), 
-	@BackupDate			datetime		OUTPUT, 
-	@BackupSize			bigint			OUTPUT, 
-	@Compressed			bit				OUTPUT, 
-	@Encrypted			bit				OUTPUT
+	@BackupPath					nvarchar(800), 
+	@SourceVersion				decimal(4,2)	= NULL,
+	@BackupDate					datetime		OUTPUT, 
+	@BackupSize					bigint			OUTPUT, 
+	@Compressed					bit				OUTPUT, 
+	@Encrypted					bit				OUTPUT
 
 AS
 	SET NOCOUNT ON; 
 
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
 	-- TODO: 
 	--		make sure file/path exists... 
+
+	DECLARE @executingServerVersion decimal(4,2);
+	SELECT @executingServerVersion = (SELECT admindb.dbo.get_engine_version());
+
+	IF NULLIF(@SourceVersion, 0) IS NULL SET @SourceVersion = @executingServerVersion;
 
 	CREATE TABLE #header (
 		BackupName nvarchar(128) NULL, -- backups generated by S4 ALWAYS have this value populated - but it's NOT required by SQL Server (obviously).
@@ -4879,7 +4899,7 @@ AS
 		MachineName nvarchar(128) NOT NULL, 
 		Flags int NOT NULL, 
 		BindingID uniqueidentifier NOT NULL, 
-		RecoveryForkID uniqueidentifier, 
+		RecoveryForkID uniqueidentifier NULL, 
 		Collation nvarchar(128) NOT NULL, 
 		FamilyGUID uniqueidentifier NOT NULL, 
 		HasBulkLoggedData bit NOT NULL, 
@@ -4898,18 +4918,16 @@ AS
 		DifferntialBaseLSN numeric(25,0) NULL, 
 		DifferentialBaseGUID uniqueidentifier NULL, 
 		BackupTypeDescription nvarchar(60) NOT NULL, 
-		BackupSetGUIUD uniqueidentifier NULL, 
-		CompressedBackupSize bigint NOT NULL
+		BackupSetGUID uniqueidentifier NULL, 
+		CompressedBackupSize bigint NOT NULL  -- 2008 / 2008 R2  (10.0  / 10.5)
 	);
 
-	IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN
-		-- columna added to 2012 and above:
+	IF @SourceVersion >= 11.0 BEGIN -- columns added to 2012 and above:
 		ALTER TABLE [#header]
-			ADD Containment tinyint NOT NULL;
+			ADD Containment tinyint NOT NULL; -- 2012 (11.0)
 	END; 
 
-	IF (SELECT admindb.dbo.get_engine_version()) >= 12.0 BEGIN
-		-- columns added to 2014 and above:
+	IF @SourceVersion >= 13.0 BEGIN  -- columns added to 2016 and above:
 		ALTER TABLE [#header]
 			ADD 
 				KeyAlgorithm nvarchar(32) NULL, 
@@ -4925,12 +4943,21 @@ AS
 	INSERT INTO [#header] 
 	EXEC sp_executesql @command;
 
+	DECLARE @encryptionValue bit = 0;
+	IF @SourceVersion >= 13.0 BEGIN
+
+		EXEC sys.[sp_executesql]
+			@stmt = N'SELECT @encryptionValue = CASE WHEN EncryptorThumbprint IS NOT NULL THEN 1 ELSE 0 END FROM [#header];', 
+			@params = N'@encryptionValue bit OUTPUT',
+			@encryptionValue = @encryptionValue OUTPUT; 
+	END;
+
 	-- Return Output Details: 
 	SELECT 
 		@BackupDate = [BackupFinishDate], 
 		@BackupSize = CAST((ISNULL([CompressedBackupSize], [BackupSize])) AS bigint), 
 		@Compressed = [Compressed], 
-		@Encrypted = CASE WHEN EncryptorThumbprint IS NOT NULL THEN 1 ELSE 0 END
+		@Encrypted =ISNULL(@encryptionValue, 0)
 	FROM 
 		[#header];
 
@@ -6372,7 +6399,9 @@ GO
 CREATE PROC dbo.monitor_transaction_durations	
 	@ExcludeSystemProcesses				bit					= 1,				
 	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N'master, msdb'  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
-	@AlertThreshold						sysname				= N'10m', 
+	@ExcludedLoginNames					nvarchar(MAX)		= NULL, 
+	@ExcludedProgramNames				nvarchar(MAX)		= NULL,
+	@AlertThreshold						sysname				= N'10m',			-- defines how long a transaction has to be running before it's 'raised' as a potential problem.
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
 	@EmailSubjectPrefix					nvarchar(50)		= N'[ALERT:] ', 
@@ -6463,6 +6492,39 @@ AS
 	FROM 
 		handles h
 		OUTER APPLY sys.[dm_exec_sql_text](h.[sql_handle]) t;
+
+	CREATE TABLE #ExcludedSessions (
+		session_id int NOT NULL
+	);
+
+	-- Process additional exclusions if present: 
+	IF ISNULL(@ExcludedLoginNames, N'') IS NOT NULL BEGIN 
+
+		INSERT INTO [#ExcludedSessions] ([session_id])
+		SELECT 
+			s.[session_id]
+		FROM 
+			dbo.[split_string](@ExcludedLoginNames, N',') x 
+			INNER JOIN sys.[dm_exec_sessions] s ON s.[login_name] LIKE x.[result];
+	END;
+
+	IF ISNULL(@ExcludedProgramNames, N'') IS NOT NULL BEGIN 
+		INSERT INTO [#ExcludedSessions] ([session_id])
+		SELECT 
+			s.[session_id]
+		FROM 
+			dbo.[split_string](@ExcludedProgramNames, N',') x 
+			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
+	END;
+
+	DELETE lrt 
+	FROM 
+		[#LongRunningTransactions] lrt 
+	INNER JOIN 
+		[#ExcludedSessions] x ON lrt.[session_id] = x.[session_id];
+
+	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
+		RETURN 0;  -- nothing to report on... 
 
 	-- Assemble output/report: 
 	DECLARE @line nvarchar(200) = REPLICATE(N'-', 200);
@@ -9981,8 +10043,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'4.9.2624.6';
-DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes and Improvements. Introduction of Audit Signature Checks';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2627.1';
+DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes + Audit streamlining and improvements';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)

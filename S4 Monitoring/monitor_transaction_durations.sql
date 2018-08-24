@@ -19,7 +19,9 @@ GO
 CREATE PROC dbo.monitor_transaction_durations	
 	@ExcludeSystemProcesses				bit					= 1,				
 	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N'master, msdb'  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
-	@AlertThreshold						sysname				= N'10m', 
+	@ExcludedLoginNames					nvarchar(MAX)		= NULL, 
+	@ExcludedProgramNames				nvarchar(MAX)		= NULL,
+	@AlertThreshold						sysname				= N'10m',			-- defines how long a transaction has to be running before it's 'raised' as a potential problem.
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
 	@EmailSubjectPrefix					nvarchar(50)		= N'[ALERT:] ', 
@@ -110,6 +112,39 @@ AS
 	FROM 
 		handles h
 		OUTER APPLY sys.[dm_exec_sql_text](h.[sql_handle]) t;
+
+	CREATE TABLE #ExcludedSessions (
+		session_id int NOT NULL
+	);
+
+	-- Process additional exclusions if present: 
+	IF ISNULL(@ExcludedLoginNames, N'') IS NOT NULL BEGIN 
+
+		INSERT INTO [#ExcludedSessions] ([session_id])
+		SELECT 
+			s.[session_id]
+		FROM 
+			dbo.[split_string](@ExcludedLoginNames, N',') x 
+			INNER JOIN sys.[dm_exec_sessions] s ON s.[login_name] LIKE x.[result];
+	END;
+
+	IF ISNULL(@ExcludedProgramNames, N'') IS NOT NULL BEGIN 
+		INSERT INTO [#ExcludedSessions] ([session_id])
+		SELECT 
+			s.[session_id]
+		FROM 
+			dbo.[split_string](@ExcludedProgramNames, N',') x 
+			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
+	END;
+
+	DELETE lrt 
+	FROM 
+		[#LongRunningTransactions] lrt 
+	INNER JOIN 
+		[#ExcludedSessions] x ON lrt.[session_id] = x.[session_id];
+
+	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
+		RETURN 0;  -- nothing to report on... 
 
 	-- Assemble output/report: 
 	DECLARE @line nvarchar(200) = REPLICATE(N'-', 200);
