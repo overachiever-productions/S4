@@ -93,7 +93,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-    -- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+    -- {copyright}
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -189,7 +189,7 @@ AS
     END;
 
     IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN
-        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dba_RestoreDatabases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
+        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dbo.restore_databases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
         RETURN -10;
     END;
 
@@ -202,7 +202,7 @@ AS
     END;
 
     IF (NULLIF(@RestoredDbNamePattern,'')) IS NULL BEGIN
-        RAISERROR('@RestoredDbNamePattern can NOT be NULL or empty. It MAY also contain the place-holder token ''{0}'' to represent the name of the original database (e.g., ''{0}_test'' would become ''dbname_test'' when restoring a database named ''dbname'').', 16, 1);
+        RAISERROR('@RestoredDbNamePattern can NOT be NULL or empty. Use the place-holder token ''{0}'' to represent the name of the original database (e.g., ''{0}_test'' would become ''dbname_test'' when restoring a database named ''dbname - whereas ''{0}'' would simply be restored as the name of the db to restore per database).', 16, 1);
         RETURN -22;
     END;
 
@@ -297,17 +297,7 @@ AS
 
     IF @PrintOnly = 1 BEGIN;
         PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
-    END
-
-    DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
-    SELECT 
-        [database_name]
-    FROM 
-        @dbsToRestore
-    WHERE
-        LEN([database_name]) > 0
-    ORDER BY 
-        entry_id;
+    END;
 
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
@@ -418,6 +408,16 @@ AS
 	IF (SELECT admindb.dbo.get_engine_version()) >= 13.0 BEGIN
         ALTER TABLE #FileList ADD SnapshotURL nvarchar(360) NULL;
     END;
+
+    DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
+    SELECT 
+        [database_name]
+    FROM 
+        @dbsToRestore
+    WHERE
+        LEN([database_name]) > 0
+    ORDER BY 
+        entry_id;
 
     DECLARE @command nvarchar(2000);
 
