@@ -31,7 +31,7 @@ GO
 CREATE PROC dbo.get_time_vector 
 	@Vector					nvarchar(10)	= NULL, 
 	@ParameterName			sysname			= NULL, 
-	@AllowedIntervals		sysname			= N's,m,h,d,w,q,y',		-- s[econds], m[inutes], h[ours], d[ays], w[eeks], q[uarters], y[ears]
+	@AllowedIntervals		sysname			= N's,m,h,d,w,q,y',		-- s[econds], m[inutes], h[ours], d[ays], w[eeks], q[uarters], y[ears]  (NOTE: the concept of b[ackups] applies to backups only and is handled in dbo.remove_backup_files. Only time values are handled here.)
 	@Mode					sysname			= N'SUBTRACT',			-- ADD | SUBTRACT
 	@Output					datetime		= NULL		OUT, 
 	@Error					nvarchar(MAX)	= NULL		OUT
