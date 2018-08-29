@@ -44,8 +44,8 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
-	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
+	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP | NON_RECOVERED
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
 AS
@@ -63,12 +63,12 @@ AS
 	END
 
 	IF ISNULL(@Mode, N'') = N'' BEGIN;
-		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY', 16, 1);
+		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED ', 16, 1);
 		RETURN -2;
 	END
 	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL', 16, 1);
+	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED', N'NON_RECOVERED') BEGIN 
+		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED', 16, 1);
 		RETURN -2;
 	END
 
@@ -187,11 +187,12 @@ AS
 		END
     END;
 
+	-- remove AG'd and Mirrored databases:
 	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
 		
-		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID
+		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID)
 		DELETE FROM @targets 
-		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE state_desc = N'ONLINE' AND source_database_id IS NULL);
+		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NULL);
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
@@ -203,7 +204,7 @@ AS
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
 		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
 			INSERT INTO @synchronized ([database_name])
-			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
+			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
 		END
 
 		-- Note, snapshots were removed earlier... 
@@ -217,6 +218,15 @@ AS
 		-- only show dbs that have been restored (i.e., in dbo.restore_log).
 		INSERT INTO @targets ([database_name])
 		SELECT [database] FROM dbo.[restore_log] GROUP BY [database];
+	END;
+
+	IF UPPER(@Mode) IN (N'NON_RECOVERED') BEGIN
+	
+		-- remove dbs not in RECOVERY or STANDBY mode:
+		DELETE FROM @targets
+		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1 OR [state_desc] = N'RESTORING');
+
+		-- TODO: remove any AG'd and Mirrored DBs first:
 	END;
 
 	-- Exclude any databases specified for exclusion:

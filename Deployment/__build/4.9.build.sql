@@ -155,21 +155,23 @@ END;
 IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 
 	CREATE TABLE dbo.restore_log  (
-		restore_test_id int IDENTITY(1,1) NOT NULL,
+		restore_id int IDENTITY(1,1) NOT NULL,
 		execution_id uniqueidentifier NOT NULL,
-		test_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
+		operation_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
+		operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),  -- v.4.9.2630
 		[database] sysname NOT NULL, 
 		restored_as sysname NOT NULL, 
 		restore_start datetime NOT NULL, 
 		restore_end datetime NULL, 
 		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
 		restored_files xml NULL, -- added v4.7.0.16942
+		[recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),   -- v.4.9.2630
 		consistency_start datetime NULL, 
 		consistency_end datetime NULL, 
 		consistency_succeeded bit NULL, 
 		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
 		error_details nvarchar(MAX) NULL, 
-		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id)
+		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_id)
 	);
 
 END;
@@ -304,12 +306,80 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
 			
 		ALTER TABLE dbo.restore_log ADD CONSTRAINT
-			PK_restore_log PRIMARY KEY CLUSTERED 
-			(
-			restore_test_id
-			) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
+			PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id) ON [PRIMARY];
 			
 	COMMIT;
+END;
+GO
+
+-- 4.9.2630 +
+IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery') BEGIN 
+
+	BEGIN TRANSACTION;
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_test_date;
+
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_restore_succeeded;
+			
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_dropped;
+
+		CREATE TABLE dbo.Tmp_restore_log
+			(
+			restore_id int NOT NULL IDENTITY (1, 1),
+			execution_id uniqueidentifier NOT NULL,
+			operation_date date NOT NULL,
+			operation_type varchar(20) NOT NULL, 
+			[database] sysname NOT NULL,
+			restored_as sysname NOT NULL,
+			restore_start datetime NOT NULL,
+			restore_end datetime NULL,
+			restore_succeeded bit NOT NULL,
+			restored_files xml NULL,
+			[recovery] varchar(10) NOT NULL, 
+			consistency_start datetime NULL,
+			consistency_end datetime NULL,
+			consistency_succeeded bit NULL,
+			dropped varchar(20) NOT NULL,
+			error_details nvarchar(MAX) NULL
+			)  ON [PRIMARY];
+
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_test_date DEFAULT (getdate()) FOR operation_date;
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
+		
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_operation_type DEFAULT ('RESTORE-TEST') FOR [operation_type];
+
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_recovery DEFAULT ('RECOVERED') FOR [recovery];
+
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
+
+		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
+			
+				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+				SELECT restore_test_id [restore_id], execution_id, test_date [operation_date], [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
+			
+		DROP TABLE dbo.restore_log;
+			
+		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
+
+		ALTER TABLE dbo.restore_log ADD CONSTRAINT
+			PK_restore_log PRIMARY KEY CLUSTERED (restore_id) ON [PRIMARY];
+
+		UPDATE dbo.[restore_log] 
+		SET 
+			dropped = 'LEFT-ONLINE'
+		WHERE 
+			[dropped] = 'LEFT ONLINE';
+	COMMIT; 
 END;
 GO
 

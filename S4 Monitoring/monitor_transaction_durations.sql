@@ -24,6 +24,7 @@ CREATE PROC dbo.monitor_transaction_durations
 	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N'master, msdb'  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
 	@ExcludedLoginNames					nvarchar(MAX)		= NULL, 
 	@ExcludedProgramNames				nvarchar(MAX)		= NULL,
+	@ExcludedSQLAgentJobNames			nvarchar(MAX)		= NULL,
 	@AlertThreshold						sysname				= N'10m',			-- defines how long a transaction has to be running before it's 'raised' as a potential problem.
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
@@ -139,6 +140,26 @@ AS
 			dbo.[split_string](@ExcludedProgramNames, N',') x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
 	END;
+
+	IF ISNULL(@ExcludedSQLAgentJobNames, N'') IS NOT NULL BEGIN 
+		DECLARE @jobIds table ( 
+			job_id nvarchar(200) 
+		); 
+
+		INSERT INTO @jobIds ([job_id])
+		SELECT 
+			N'%' + CONVERT(nvarchar(200), (CONVERT(varbinary(200), j.job_id , 1)), 1) + N'%' job_id
+		FROM 
+			msdb.dbo.sysjobs j
+			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',') x ON j.[name] LIKE x.[result];
+
+		INSERT INTO [#ExcludedSessions] ([session_id])
+		SELECT 
+			s.session_id 
+		FROM 
+			sys.[dm_exec_sessions] s 
+			INNER JOIN @jobIds x ON s.[program_name] LIKE x.[job_id];
+	END; 
 
 	DELETE lrt 
 	FROM 

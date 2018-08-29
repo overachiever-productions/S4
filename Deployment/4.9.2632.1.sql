@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2627.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2627.1.
+		- This script will either install/deploy S4 version 4.9.2632.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2632.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2627.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2632.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2627.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2632.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -153,21 +153,23 @@ END;
 IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 
 	CREATE TABLE dbo.restore_log  (
-		restore_test_id int IDENTITY(1,1) NOT NULL,
+		restore_id int IDENTITY(1,1) NOT NULL,
 		execution_id uniqueidentifier NOT NULL,
-		test_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
+		operation_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
+		operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),  -- v.4.9.2630
 		[database] sysname NOT NULL, 
 		restored_as sysname NOT NULL, 
 		restore_start datetime NOT NULL, 
 		restore_end datetime NULL, 
 		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
 		restored_files xml NULL, -- added v4.7.0.16942
+		[recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),   -- v.4.9.2630
 		consistency_start datetime NULL, 
 		consistency_end datetime NULL, 
 		consistency_succeeded bit NULL, 
 		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
 		error_details nvarchar(MAX) NULL, 
-		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id)
+		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_id)
 	);
 
 END;
@@ -302,12 +304,80 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
 			
 		ALTER TABLE dbo.restore_log ADD CONSTRAINT
-			PK_restore_log PRIMARY KEY CLUSTERED 
-			(
-			restore_test_id
-			) WITH( STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY];
+			PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id) ON [PRIMARY];
 			
 	COMMIT;
+END;
+GO
+
+-- 4.9.2630 +
+IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery') BEGIN 
+
+	BEGIN TRANSACTION;
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_test_date;
+
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_restore_succeeded;
+			
+		ALTER TABLE dbo.restore_log
+			DROP CONSTRAINT DF_restore_log_dropped;
+
+		CREATE TABLE dbo.Tmp_restore_log
+			(
+			restore_id int NOT NULL IDENTITY (1, 1),
+			execution_id uniqueidentifier NOT NULL,
+			operation_date date NOT NULL,
+			operation_type varchar(20) NOT NULL, 
+			[database] sysname NOT NULL,
+			restored_as sysname NOT NULL,
+			restore_start datetime NOT NULL,
+			restore_end datetime NULL,
+			restore_succeeded bit NOT NULL,
+			restored_files xml NULL,
+			[recovery] varchar(10) NOT NULL, 
+			consistency_start datetime NULL,
+			consistency_end datetime NULL,
+			consistency_succeeded bit NULL,
+			dropped varchar(20) NOT NULL,
+			error_details nvarchar(MAX) NULL
+			)  ON [PRIMARY];
+
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_test_date DEFAULT (getdate()) FOR operation_date;
+			
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
+		
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_operation_type DEFAULT ('RESTORE-TEST') FOR [operation_type];
+
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_recovery DEFAULT ('RECOVERED') FOR [recovery];
+
+		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
+			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
+
+		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
+			
+				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+				SELECT restore_test_id [restore_id], execution_id, test_date [operation_date], [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
+			
+		DROP TABLE dbo.restore_log;
+			
+		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
+
+		ALTER TABLE dbo.restore_log ADD CONSTRAINT
+			PK_restore_log PRIMARY KEY CLUSTERED (restore_id) ON [PRIMARY];
+
+		UPDATE dbo.[restore_log] 
+		SET 
+			dropped = 'LEFT-ONLINE'
+		WHERE 
+			[dropped] = 'LEFT ONLINE';
+	COMMIT; 
 END;
 GO
 
@@ -3791,6 +3861,10 @@ AS
         SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
     END;
 
+	-- normalize paths: 
+	IF(RIGHT(@BackupsRootPath, 1) = '\')
+		SET @BackupsRootPath = LEFT(@BackupsRootPath, LEN(@BackupsRootPath) - 1);
+
     -- Verify Paths: 
     EXEC dbo.check_paths @BackupsRootPath, @isValid OUTPUT;
     IF @isValid = 0 BEGIN
@@ -3878,7 +3952,7 @@ AS
     );
 
     DECLARE @LatestBatch uniqueidentifier;
-    SELECT @LatestBatch = (SELECT TOP(1) execution_id FROM dbo.restore_log ORDER BY restore_test_id DESC);
+    SELECT @LatestBatch = (SELECT TOP(1) execution_id FROM dbo.restore_log ORDER BY restore_id DESC);
 
     INSERT INTO @NonDroppedFromPreviousExecution ([Database], RestoredAs)
     SELECT [database], [restored_as]
@@ -4237,12 +4311,6 @@ AS
                 BEGIN CATCH
                     SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 
-                    -- this has to be closed/deallocated - or we'll run into it on the 'next' database/pass.
-                    IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN;
-                        CLOSE logger;
-                        DEALLOCATE logger;
-                    END;
-                    
                 END CATCH
 
 				-- Update MetaData: 
@@ -4268,7 +4336,8 @@ AS
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
+					SELECT result FROM dbo.[split_string](@fileList, N',') WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					ORDER BY row_id;
 				END;
 
 				-- increment: 
@@ -4276,7 +4345,7 @@ AS
 			END;
         END;
 
-        -- Recover the database:
+        -- Recover the database if instructed: 
 		IF @ExecuteRecovery = 1 BEGIN
 			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' WITH RECOVERY;';
 
@@ -4293,6 +4362,13 @@ AS
 			END TRY	
 			BEGIN CATCH
 				SELECT @statusDetail = N'Unexpected Exception while attempting to RECOVER database [' + @restoredName + N'. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				
+				UPDATE dbo.[restore_log]
+				SET 
+					[recovery] = 'FAILED'
+				WHERE 
+					restore_id = @restoreLogId;
+
 			END CATCH
 
 			IF @statusDetail IS NOT NULL BEGIN
@@ -4304,11 +4380,12 @@ AS
         IF @PrintOnly = 0 BEGIN
             UPDATE dbo.restore_log 
             SET 
-                restore_succeeded = 1, 
+                restore_succeeded = 1,
+				[recovery] = CASE WHEN @ExecuteRecovery = 0 THEN 'NORECOVERY' ELSE 'RECOVERED' END, 
                 restore_end = GETDATE(), 
                 error_details = NULL
             WHERE 
-                restore_test_id = @restoreLogId;
+                restore_id = @restoreLogId;
         END;
 
         -- Run consistency checks if specified:
@@ -4323,7 +4400,7 @@ AS
                     consistency_succeeded = 0, 
                     error_details = '#UNKNOWN ERROR CHECKING CONSISTENCY#'
                 WHERE
-                    restore_test_id = @restoreLogId;
+                    restore_id = @restoreLogId;
             END;
 
             BEGIN TRY 
@@ -4344,7 +4421,7 @@ AS
                             consistency_succeeded = 0,
                             error_details = @statusDetail
                         WHERE 
-                            restore_test_id = @restoreLogId;
+                            restore_id = @restoreLogId;
 
                       END;
                     ELSE BEGIN -- there were NO errors:
@@ -4354,7 +4431,7 @@ AS
                             consistency_succeeded = 1, 
                             error_details = NULL
                         WHERE 
-                            restore_test_id = @restoreLogId;
+                            restore_id = @restoreLogId;
 
                     END;
                 END;
@@ -4371,6 +4448,25 @@ AS
 
 -- Primary Restore/Restore-Testing complete - log file lists, and cleanup/prep for next db to process... 
 NextDatabase:
+
+        -- Record any error details as needed:
+        IF @statusDetail IS NOT NULL BEGIN
+
+            IF @PrintOnly = 1 BEGIN
+                PRINT N'ERROR: ' + @statusDetail;
+              END;
+            ELSE BEGIN
+                UPDATE dbo.restore_log
+                SET 
+                    error_details = @statusDetail
+                WHERE 
+                    restore_id = @restoreLogId;
+            END;
+
+          END;
+		ELSE BEGIN 
+			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+		END; 
 
 		-- serialize restored file details and push into dbo.restore_log
 		SELECT @fileListXml = (
@@ -4395,9 +4491,9 @@ NextDatabase:
 		ELSE BEGIN
 			UPDATE dbo.[restore_log] 
 			SET 
-				restored_files = @fileListXml
+				restored_files = @fileListXml  -- may be null in some cases (i.e., no FULL backup found or db backups not found/etc.) but... meh. 
 			WHERE 
-				[restore_test_id] = @restoreLogId;
+				[restore_id] = @restoreLogId;
 		END;
 
         -- Drop the database if specified and if all SAFE drop precautions apply:
@@ -4414,9 +4510,9 @@ NextDatabase:
                 UPDATE dbo.restore_log
                 SET 
                     [dropped] = 'ERROR', 
-                    error_details = error_details + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
+                    error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
                 WHERE 
-                    restore_test_id = @restoreLogId;
+                    restore_id = @restoreLogId;
 
                 SET @executeDropAllowed = 1; 
             END;
@@ -4432,7 +4528,7 @@ NextDatabase:
                         SET 
                             [dropped] = N'ATTEMPTED'
                         WHERE 
-                            restore_test_id = @restoreLogId;
+                            restore_id = @restoreLogId;
 
                         EXEC sys.sp_executesql @command;
 
@@ -4446,7 +4542,7 @@ NextDatabase:
                             SET 
                                 dropped = 'DROPPED'
                             WHERE 
-                                restore_test_id = @restoreLogId;
+                                restore_id = @restoreLogId;
                     END;
 
                 END TRY 
@@ -4456,9 +4552,9 @@ NextDatabase:
                     UPDATE dbo.restore_log
                     SET 
                         dropped = 'ERROR', 
-						[error_details] = @statusDetail
+						[error_details] = ISNULL(error_details, N'') + @statusDetail
                     WHERE 
-                        restore_test_id = @restoreLogId;
+                        restore_id = @restoreLogId;
 
                     SET @failedDropCount = @failedDropCount +1;
                 END CATCH
@@ -4470,29 +4566,8 @@ NextDatabase:
             SET 
                 dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
             WHERE
-                restore_test_id = @restoreLogId;
+                restore_id = @restoreLogId;
         END;
-
-        -- Record any status details as needed:
-        IF @statusDetail IS NOT NULL BEGIN
-
-            IF @PrintOnly = 1 BEGIN
-                PRINT N'ERROR: ' + @statusDetail;
-              END;
-            ELSE BEGIN
-                UPDATE dbo.restore_log
-                SET 
-                    restore_end = GETDATE(),
-                    error_details = @statusDetail
-                WHERE 
-                    restore_test_id = @restoreLogId;
-            END;
-
-            PRINT N'-- Operations for database [' + @restoredName + N'] failed.' + @crlf + @crlf;
-          END;
-		ELSE BEGIN 
-			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
-		END; 
 
         -- Check-up on total number of 'failed drops':
 		IF @DropDatabasesAfterRestore = 1 BEGIN 
@@ -4544,7 +4619,7 @@ FINALIZE:
 		WHERE 
 			[execution_id] = @executionID
 		ORDER BY
-			[restore_test_id];
+			[restore_id];
 
 		WITH core AS ( 
 			SELECT 
@@ -4603,7 +4678,7 @@ FINALIZE:
             execution_id = @executionID
             AND error_details IS NOT NULL
         ORDER BY 
-            restore_test_id;
+            restore_id;
 
         -- notify too that we stopped execution due to early termination:
         IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN
@@ -5046,7 +5121,7 @@ AS
 	END; 
 		
 	IF @ExcludeSystemProcesses = 1 BEGIN 
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND r.session_id > 50 ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.session_id > 50 OR r.database_id = 0) ');
 		END;	
 	ELSE BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');
@@ -6401,6 +6476,7 @@ CREATE PROC dbo.monitor_transaction_durations
 	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N'master, msdb'  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
 	@ExcludedLoginNames					nvarchar(MAX)		= NULL, 
 	@ExcludedProgramNames				nvarchar(MAX)		= NULL,
+	@ExcludedSQLAgentJobNames			nvarchar(MAX)		= NULL,
 	@AlertThreshold						sysname				= N'10m',			-- defines how long a transaction has to be running before it's 'raised' as a potential problem.
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
@@ -6516,6 +6592,26 @@ AS
 			dbo.[split_string](@ExcludedProgramNames, N',') x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
 	END;
+
+	IF ISNULL(@ExcludedSQLAgentJobNames, N'') IS NOT NULL BEGIN 
+		DECLARE @jobIds table ( 
+			job_id nvarchar(200) 
+		); 
+
+		INSERT INTO @jobIds ([job_id])
+		SELECT 
+			N'%' + CONVERT(nvarchar(200), (CONVERT(varbinary(200), j.job_id , 1)), 1) + N'%' job_id
+		FROM 
+			msdb.dbo.sysjobs j
+			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',') x ON j.[name] LIKE x.[result];
+
+		INSERT INTO [#ExcludedSessions] ([session_id])
+		SELECT 
+			s.session_id 
+		FROM 
+			sys.[dm_exec_sessions] s 
+			INNER JOIN @jobIds x ON s.[program_name] LIKE x.[job_id];
+	END; 
 
 	DELETE lrt 
 	FROM 
@@ -10043,8 +10139,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'4.9.2627.1';
-DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes + Audit streamlining and improvements';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2632.1';
+DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes (backups and restore). Pre 5.0 mods and 'tweaks'';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)

@@ -121,7 +121,7 @@ AS
 	END; 
 		
 	IF @ExcludeSystemProcesses = 1 BEGIN 
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND r.session_id > 50 ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.session_id > 50 OR r.database_id = 0) ');
 		END;	
 	ELSE BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');

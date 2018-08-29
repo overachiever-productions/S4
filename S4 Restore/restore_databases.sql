@@ -252,6 +252,10 @@ AS
         SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
     END;
 
+	-- normalize paths: 
+	IF(RIGHT(@BackupsRootPath, 1) = '\')
+		SET @BackupsRootPath = LEFT(@BackupsRootPath, LEN(@BackupsRootPath) - 1);
+
     -- Verify Paths: 
     EXEC dbo.check_paths @BackupsRootPath, @isValid OUTPUT;
     IF @isValid = 0 BEGIN
@@ -339,7 +343,7 @@ AS
     );
 
     DECLARE @LatestBatch uniqueidentifier;
-    SELECT @LatestBatch = (SELECT TOP(1) execution_id FROM dbo.restore_log ORDER BY restore_test_id DESC);
+    SELECT @LatestBatch = (SELECT TOP(1) execution_id FROM dbo.restore_log ORDER BY restore_id DESC);
 
     INSERT INTO @NonDroppedFromPreviousExecution ([Database], RestoredAs)
     SELECT [database], [restored_as]
@@ -698,12 +702,6 @@ AS
                 BEGIN CATCH
                     SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 
-                    -- this has to be closed/deallocated - or we'll run into it on the 'next' database/pass.
-                    IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN;
-                        CLOSE logger;
-                        DEALLOCATE logger;
-                    END;
-                    
                 END CATCH
 
 				-- Update MetaData: 
@@ -729,7 +727,8 @@ AS
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
+					SELECT result FROM dbo.[split_string](@fileList, N',') WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					ORDER BY row_id;
 				END;
 
 				-- increment: 
@@ -737,7 +736,7 @@ AS
 			END;
         END;
 
-        -- Recover the database:
+        -- Recover the database if instructed: 
 		IF @ExecuteRecovery = 1 BEGIN
 			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' WITH RECOVERY;';
 
@@ -754,6 +753,13 @@ AS
 			END TRY	
 			BEGIN CATCH
 				SELECT @statusDetail = N'Unexpected Exception while attempting to RECOVER database [' + @restoredName + N'. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				
+				UPDATE dbo.[restore_log]
+				SET 
+					[recovery] = 'FAILED'
+				WHERE 
+					restore_id = @restoreLogId;
+
 			END CATCH
 
 			IF @statusDetail IS NOT NULL BEGIN
@@ -765,11 +771,12 @@ AS
         IF @PrintOnly = 0 BEGIN
             UPDATE dbo.restore_log 
             SET 
-                restore_succeeded = 1, 
+                restore_succeeded = 1,
+				[recovery] = CASE WHEN @ExecuteRecovery = 0 THEN 'NORECOVERY' ELSE 'RECOVERED' END, 
                 restore_end = GETDATE(), 
                 error_details = NULL
             WHERE 
-                restore_test_id = @restoreLogId;
+                restore_id = @restoreLogId;
         END;
 
         -- Run consistency checks if specified:
@@ -784,7 +791,7 @@ AS
                     consistency_succeeded = 0, 
                     error_details = '#UNKNOWN ERROR CHECKING CONSISTENCY#'
                 WHERE
-                    restore_test_id = @restoreLogId;
+                    restore_id = @restoreLogId;
             END;
 
             BEGIN TRY 
@@ -805,7 +812,7 @@ AS
                             consistency_succeeded = 0,
                             error_details = @statusDetail
                         WHERE 
-                            restore_test_id = @restoreLogId;
+                            restore_id = @restoreLogId;
 
                       END;
                     ELSE BEGIN -- there were NO errors:
@@ -815,7 +822,7 @@ AS
                             consistency_succeeded = 1, 
                             error_details = NULL
                         WHERE 
-                            restore_test_id = @restoreLogId;
+                            restore_id = @restoreLogId;
 
                     END;
                 END;
@@ -832,6 +839,25 @@ AS
 
 -- Primary Restore/Restore-Testing complete - log file lists, and cleanup/prep for next db to process... 
 NextDatabase:
+
+        -- Record any error details as needed:
+        IF @statusDetail IS NOT NULL BEGIN
+
+            IF @PrintOnly = 1 BEGIN
+                PRINT N'ERROR: ' + @statusDetail;
+              END;
+            ELSE BEGIN
+                UPDATE dbo.restore_log
+                SET 
+                    error_details = @statusDetail
+                WHERE 
+                    restore_id = @restoreLogId;
+            END;
+
+          END;
+		ELSE BEGIN 
+			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+		END; 
 
 		-- serialize restored file details and push into dbo.restore_log
 		SELECT @fileListXml = (
@@ -856,9 +882,9 @@ NextDatabase:
 		ELSE BEGIN
 			UPDATE dbo.[restore_log] 
 			SET 
-				restored_files = @fileListXml
+				restored_files = @fileListXml  -- may be null in some cases (i.e., no FULL backup found or db backups not found/etc.) but... meh. 
 			WHERE 
-				[restore_test_id] = @restoreLogId;
+				[restore_id] = @restoreLogId;
 		END;
 
         -- Drop the database if specified and if all SAFE drop precautions apply:
@@ -875,9 +901,9 @@ NextDatabase:
                 UPDATE dbo.restore_log
                 SET 
                     [dropped] = 'ERROR', 
-                    error_details = error_details + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
+                    error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
                 WHERE 
-                    restore_test_id = @restoreLogId;
+                    restore_id = @restoreLogId;
 
                 SET @executeDropAllowed = 1; 
             END;
@@ -893,7 +919,7 @@ NextDatabase:
                         SET 
                             [dropped] = N'ATTEMPTED'
                         WHERE 
-                            restore_test_id = @restoreLogId;
+                            restore_id = @restoreLogId;
 
                         EXEC sys.sp_executesql @command;
 
@@ -907,7 +933,7 @@ NextDatabase:
                             SET 
                                 dropped = 'DROPPED'
                             WHERE 
-                                restore_test_id = @restoreLogId;
+                                restore_id = @restoreLogId;
                     END;
 
                 END TRY 
@@ -917,9 +943,9 @@ NextDatabase:
                     UPDATE dbo.restore_log
                     SET 
                         dropped = 'ERROR', 
-						[error_details] = @statusDetail
+						[error_details] = ISNULL(error_details, N'') + @statusDetail
                     WHERE 
-                        restore_test_id = @restoreLogId;
+                        restore_id = @restoreLogId;
 
                     SET @failedDropCount = @failedDropCount +1;
                 END CATCH
@@ -931,29 +957,8 @@ NextDatabase:
             SET 
                 dropped = 'LEFT ONLINE' -- same as 'NOT DROPPED' but shows explicit intention.
             WHERE
-                restore_test_id = @restoreLogId;
+                restore_id = @restoreLogId;
         END;
-
-        -- Record any status details as needed:
-        IF @statusDetail IS NOT NULL BEGIN
-
-            IF @PrintOnly = 1 BEGIN
-                PRINT N'ERROR: ' + @statusDetail;
-              END;
-            ELSE BEGIN
-                UPDATE dbo.restore_log
-                SET 
-                    restore_end = GETDATE(),
-                    error_details = @statusDetail
-                WHERE 
-                    restore_test_id = @restoreLogId;
-            END;
-
-            PRINT N'-- Operations for database [' + @restoredName + N'] failed.' + @crlf + @crlf;
-          END;
-		ELSE BEGIN 
-			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
-		END; 
 
         -- Check-up on total number of 'failed drops':
 		IF @DropDatabasesAfterRestore = 1 BEGIN 
@@ -1005,7 +1010,7 @@ FINALIZE:
 		WHERE 
 			[execution_id] = @executionID
 		ORDER BY
-			[restore_test_id];
+			[restore_id];
 
 		WITH core AS ( 
 			SELECT 
@@ -1064,7 +1069,7 @@ FINALIZE:
             execution_id = @executionID
             AND error_details IS NOT NULL
         ORDER BY 
-            restore_test_id;
+            restore_id;
 
         -- notify too that we stopped execution due to early termination:
         IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN
