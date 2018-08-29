@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2632.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2632.1.
+		- This script will either install/deploy S4 version 4.9.2632.2 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2632.2.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2632.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2632.2 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2632.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2632.2';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -396,6 +396,7 @@ IF @currentVersion < 4.7 BEGIN
 	DECLARE @hoursDiff int; 
 	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
 
+	DECLARE @command nvarchar(MAX) = N'
 	UPDATE dbo.[restore_log]
 	SET 
 		[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
@@ -404,6 +405,9 @@ IF @currentVersion < 4.7 BEGIN
 		[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end])
 	WHERE 
 		[restore_test_id] > 0;
+	';
+
+	EXEC sp_executesql @command;
 
 	PRINT 'Updated dbo.restore_log.... (UTC shift)';
 END;
@@ -4793,8 +4797,8 @@ AS
 		SET @restored = 1; -- success (the db wasn't there at the start of this sproc, and now it is (and it's online). 
 	ELSE BEGIN 
 		-- then we need to grab the latest error: 
-		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_test_id = (
-			SELECT MAX(restore_test_id) FROM dbo.restore_log WHERE test_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
+		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_id = (
+			SELECT MAX(restore_id) FROM dbo.restore_log WHERE operation_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
 
 		IF @errorMessage IS NULL -- hmmm weird:
 			SET @errorMessage = N'Unknown error with restore operation - execution did NOT complete as expected. Please Check Email for additional details/insights.';
@@ -10139,8 +10143,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'4.9.2632.1';
-DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes (backups and restore). Pre 5.0 mods and 'tweaks'';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2632.2';
+DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes. Pre-v5 schema changes and mods for log shipping and other improvements';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
