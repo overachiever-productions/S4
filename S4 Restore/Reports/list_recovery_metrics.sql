@@ -61,32 +61,32 @@ AS
 
 	IF UPPER(@Scope) = N'LATEST'
 		INSERT INTO [#executionIDs] ([execution_id])
-		SELECT TOP(1) [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC;
+		SELECT TOP(1) [execution_id] FROM dbo.[restore_log] ORDER BY [restore_id] DESC;
 
 	IF UPPER(@Scope) = N'DAY'
 		INSERT INTO [#executionIDs] ([execution_id])
-		SELECT [execution_id] FROM dbo.[restore_log] WHERE [test_date] >= CAST(GETDATE() AS [date]) GROUP BY [execution_id];
+		SELECT [execution_id] FROM dbo.[restore_log] WHERE [operation_date] >= CAST(GETDATE() AS [date]) GROUP BY [execution_id];
 	
 	IF UPPER(@Scope) = N'WEEK'
 		INSERT INTO [#executionIDs] ([execution_id])
-		SELECT [execution_id] FROM dbo.[restore_log] WHERE [test_date] >= CAST(DATEADD(WEEK, -1, GETDATE()) AS [date]) GROUP BY [execution_id];	
+		SELECT [execution_id] FROM dbo.[restore_log] WHERE [operation_date] >= CAST(DATEADD(WEEK, -1, GETDATE()) AS [date]) GROUP BY [execution_id];	
 
 	IF UPPER(@Scope) = N'MONTH'
 		INSERT INTO [#executionIDs] ([execution_id])
-		SELECT [execution_id] FROM dbo.[restore_log] WHERE [test_date] >= CAST(DATEADD(MONTH, -1, GETDATE()) AS [date]) GROUP BY [execution_id];	
+		SELECT [execution_id] FROM dbo.[restore_log] WHERE [operation_date] >= CAST(DATEADD(MONTH, -1, GETDATE()) AS [date]) GROUP BY [execution_id];	
 
 	IF UPPER(@Scope) = N'QUARTER'
 		INSERT INTO [#executionIDs] ([execution_id])
-		SELECT [execution_id] FROM dbo.[restore_log] WHERE [test_date] >= CAST(DATEADD(QUARTER, -1, GETDATE()) AS [date]) GROUP BY [execution_id];	
+		SELECT [execution_id] FROM dbo.[restore_log] WHERE [operation_date] >= CAST(DATEADD(QUARTER, -1, GETDATE()) AS [date]) GROUP BY [execution_id];	
 	
 
 	-----------------------------------------------------------------------------
 	-- Extract core/key details into a temp table (to prevent excessive CPU iteration later on via sub-queries/operations/presentation-types). 
 	SELECT 
-		l.[restore_test_id], 
+		l.[restore_id], 
 		l.[execution_id], 
 		ROW_NUMBER() OVER (ORDER BY l.[restore_test_id]) [row_number],
-		l.[test_date],
+		l.[operation_date],
 		l.[database], 
 		l.[restored_as], 
 		l.[restore_succeeded], 

@@ -95,8 +95,8 @@ AS
 		SET @restored = 1; -- success (the db wasn't there at the start of this sproc, and now it is (and it's online). 
 	ELSE BEGIN 
 		-- then we need to grab the latest error: 
-		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_test_id = (
-			SELECT MAX(restore_test_id) FROM dbo.restore_log WHERE test_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
+		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_id = (
+			SELECT MAX(restore_id) FROM dbo.restore_log WHERE operation_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
 
 		IF @errorMessage IS NULL -- hmmm weird:
 			SET @errorMessage = N'Unknown error with restore operation - execution did NOT complete as expected. Please Check Email for additional details/insights.';

@@ -398,6 +398,7 @@ IF @currentVersion < 4.7 BEGIN
 	DECLARE @hoursDiff int; 
 	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
 
+	DECLARE @command nvarchar(MAX) = N'
 	UPDATE dbo.[restore_log]
 	SET 
 		[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
@@ -406,6 +407,9 @@ IF @currentVersion < 4.7 BEGIN
 		[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end])
 	WHERE 
 		[restore_test_id] > 0;
+	';
+
+	EXEC sp_executesql @command;
 
 	PRINT 'Updated dbo.restore_log.... (UTC shift)';
 END;
