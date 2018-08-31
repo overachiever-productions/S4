@@ -606,6 +606,9 @@ GO
 --##INCLUDE: S4 Monitoring\verify_database_configurations.sql
 
 -----------------------------------
+--##INCLUDE: S4 Monitoring\verify_drivespace.sql
+
+-----------------------------------
 --##INCLUDE: S4 Monitoring\process_alerts.sql
 
 -----------------------------------

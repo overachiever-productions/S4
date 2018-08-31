@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2632.2 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2632.2.
+		- This script will either install/deploy S4 version 4.9.2633.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2633.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2632.2 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2633.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2632.2';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2633.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -6336,6 +6336,115 @@ GO
 USE [admindb];
 GO
 
+
+
+IF OBJECT_ID('dbo.verify_drivespace','P') IS NOT NULL
+	DROP PROC dbo.verify_drivespace;
+GO
+
+CREATE PROC dbo.verify_drivespace 
+	@WarnWhenFreeGBsGoBelow				decimal(12,1)		= 12.0,				-- 
+	@HalveThresholdAgainstCDrive		bit					= 0,				-- In RARE cases where some (piddly) dbs are on the C:\ drive, and there's not much space on the C:\ drive overall, it can make sense to treat the C:\ drive's available space as .5x what we'd see on a 'normal' drive.
+	@OperatorName						sysname				= N'Alerts',
+	@MailProfileName					sysname				= N'General',
+	@EmailSubjectPrefix					nvarchar(50)		= N'[DriveSpace Checks] ', 
+	@PrintOnly							bit					= 0
+AS
+	SET NOCOUNT ON;
+
+	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+
+	-----------------------------------------------------------------------------
+	-- Validate Inputs: 
+
+	-- Operator Checks:
+	IF ISNULL(@OperatorName, '') IS NULL BEGIN
+		RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
+		RETURN -4;
+		END;
+	ELSE BEGIN
+		IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
+			RAISERROR('Invalild Operator Name Specified.', 16, 1);
+			RETURN -4;
+		END;
+	END;
+
+	-- Profile Checks:
+	DECLARE @DatabaseMailProfile nvarchar(255);
+	EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+ 
+	IF @DatabaseMailProfile != @MailProfileName BEGIN
+		RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
+		RETURN -5;
+	END;
+
+	DECLARE @core table (
+		drive sysname NOT NULL, 
+		available_gbs decimal(14,2) NOT NULL
+	);
+
+	INSERT INTO @core (drive, available_gbs)
+	SELECT DISTINCT
+		s.volume_mount_point [Drive],
+		CAST(s.available_bytes / 1073741824 as decimal(12,2)) [AvailableMBs]
+	FROM 
+		sys.master_files f
+		CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.[file_id]) s;
+
+	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
+	DECLARE @tab char(1) = CHAR(9);
+	DECLARE @message nvarchar(MAX) = N'';
+
+	-- Start with the C:\ drive if it's present (i.e., has dbs on it - which is a 'worst practice'):
+	SELECT 
+		@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS nvarchar(20)) +  N' GB free (vs. threshold of ' + CAST((CASE WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 ELSE @WarnWhenFreeGBsGoBelow END) AS nvarchar(20)) + N' GB) '  + @crlf
+	FROM 
+		@core
+	WHERE 
+		UPPER(drive) = N'C:\' AND 
+		CASE 
+			WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 
+			ELSE @WarnWhenFreeGBsGoBelow
+		END > available_gbs;
+
+	-- Now process all other drives: 
+	SELECT 
+		@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS nvarchar(20)) +  N' GB free (vs. threshold of ' + CAST(@WarnWhenFreeGBsGoBelow AS nvarchar(20)) + N' GB) '  + @crlf
+	FROM 
+		@core
+	WHERE 
+		UPPER(drive) <> N'C:\'
+		AND @WarnWhenFreeGBsGoBelow > available_gbs;
+
+	IF LEN(@message) > 3 BEGIN 
+
+		DECLARE @subject nvarchar(200) = ISNULL(@EmailSubjectPrefix, N'') + N'Low Disk Notification';
+
+		SET @message = N'The following disks on ' + QUOTENAME(@@SERVERNAME) + ' have dropped below specified thresholds for Free Space (GBs) Specified: ' + @crlf + @crlf + @message;
+
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @subject;
+			PRINT @message;
+		  END;
+		ELSE BEGIN 
+
+			EXEC msdb..sp_notify_operator
+				@profile_name = @MailProfileName,
+				@name = @OperatorName, -- operator name
+				@subject = @subject, 
+				@body = @message;			
+		END; 
+	END; 
+
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.process_alerts','P') IS NOT NULL
 	DROP PROC dbo.process_alerts;
 GO
@@ -10143,8 +10252,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'4.9.2632.2';
-DECLARE @VersionDescription nvarchar(200) = N'Bug Fixes. Pre-v5 schema changes and mods for log shipping and other improvements';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2633.1';
+DECLARE @VersionDescription nvarchar(200) = N'Incremental fixes and updates. Introduction of dbo.verify_drivespace';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
