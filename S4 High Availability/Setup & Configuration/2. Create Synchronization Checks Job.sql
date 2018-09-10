@@ -72,18 +72,18 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Run Sync
 	    @subsystem=N'TSQL', 
 		@command=N'-- check on server-level details/objects:
 EXEC admindb.dbo.server_synchronization_checks 
-	@MailProfileName = N''<MailProfileName, sysname, General>'',
-	@OperatorName = N''<OperatorName, sysname, Alerts>'',
-	@IgnoredMasterDbObjects = N''<IgnoredMasterDbObjects, nvarchar(400),>'', 
-	@IgnoredAlerts = N''<IgnoredAlerts,sysname,>'', 
-	@IgnoredLogins = N''<IgnoredLogins,nvarchar(400),>'',
-	@IgnoredLinkedServers = N''<IgnoredJobs,nvarchar(max),>'';
+    @MailProfileName = N''<MailProfileName, sysname, General>'',
+    @OperatorName = N''<OperatorName, sysname, Alerts>'',
+    @IgnoredMasterDbObjects = N''<IgnoredMasterDbObjects, nvarchar(400),>'', 
+    @IgnoredAlerts = N''<IgnoredAlerts,sysname,>'', 
+    @IgnoredLogins = N''<IgnoredLogins,nvarchar(400),>'',
+    @IgnoredLinkedServers = N''<IgnoredJobs,nvarchar(max),>'';
 
 -- Check on Jobs (Server-Level and for Mirrored DBs):
 EXEC admindb.dbo.job_synchronization_checks
-	@MailProfileName = N''<MailProfileName, sysname, General>'', 
-	@OperatorName = N''<OperatorName, sysname, Alerts>'', 
-	@IgnoredJobs = ''<IgnoredJobs,nvarchar(max),>'';', 
+    @MailProfileName = N''<MailProfileName, sysname, General>'', 
+    @OperatorName = N''<OperatorName, sysname, Alerts>'', 
+    @IgnoredJobs = ''<IgnoredJobs,nvarchar(max),>'';', 
 		@database_name=N'admindb', 
 		@flags=0
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback

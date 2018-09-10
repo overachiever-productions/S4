@@ -19,6 +19,15 @@
 		<TargetServerName, sysname, SQLA> = Name of the server that will be aliased as 'PARTNER'. 
 
 
+	DEPENDENCIES:
+
+-- todo, document:
+			- need to document dependencies - which are that ... can't be using LOCAL machine accounts - has to be network service at a bare minimum
+			but... better is ... domain account (least priv) or ... an NTLM account (same login/pwd on both servers).
+
+			- likewise that service account needs to have a login - which needs to be sysadmin on both boxes. 
+
+
 */
 
 

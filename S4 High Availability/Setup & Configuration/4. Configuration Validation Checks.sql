@@ -106,7 +106,7 @@ FROM
 WHERE 
 	o.name IS NULL;
 
--- warn if there aren't any job steps with dba_ServerSynchronizationChecks or dba_JobSynchronizationChecks referenced.
+-- warn if there aren't any job steps with server_synchronization_checks or job_synchronization_checks referenced.
 IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%server_synchronization_checks%') BEGIN 
 	INSERT INTO #Errors (SectionID, Severity, ErrorText)
 	SELECT 2, N'WARNING', N'A SQL Server Agent Job that calls [server_synchronization_checks] was not found.';
@@ -192,7 +192,7 @@ END
 DELETE FROM @ObjectNames;
 INSERT INTO @ObjectNames (name)
 VALUES 
-(N'dba_Mirroring_HealthCheck');
+(N'data_synchronization_checks');
 
 INSERT INTO #Errors (SectionID, Severity, ErrorText)
 SELECT 
@@ -201,7 +201,7 @@ SELECT
 	N'Object [' + x.name + N'] was not found in the master database.'
 FROM 
 	@ObjectNames x
-	LEFT OUTER JOIN master.dbo.sysobjects o ON o.name = x.name
+	LEFT OUTER JOIN admindb.sys.sysobjects o ON o.name = x.name
 WHERE 
 	o.name IS NULL;
 
@@ -213,9 +213,9 @@ IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobs WHERE name = 'Database Mirrorin
 END 
 
 -- Make sure there's a health-check job:
-IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%dba_Mirroring_HealthCheck%') BEGIN 
+IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%data_synchronization_checks%') BEGIN 
 	INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	SELECT 4, N'WARNING', N'A SQL Server Agent Job that calls [dba_Mirroring_HealthCheck] (to run health checks) was not found.';
+	SELECT 4, N'WARNING', N'A SQL Server Agent Job that calls [data_synchronization_checks] (to run health checks) was not found.';
 END 
 
 

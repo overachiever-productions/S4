@@ -1,6 +1,20 @@
 
 /*
 
+	TODO:
+		- This is actually MISSING a key bit of functionality - if this db is going to be a COPY... then ... 
+			the logical file-names of the files need to change... 
+				er... well, maybe they don't.... 
+					but... that should be an OPTION - i.e., @RenameLogicalFileNames - when 0 don't... just let them 'inherit'... when 1, then a) grab the logical file names and IDs from the SOURCE db BEFORE we start doing any processing and b) apply those AFTER the new db has been restored but before the backup kicks off.... 
+
+			AND... arguably, push this option down into dbo.restore_databases cuz... that's where it really needs to be... 
+
+
+		-  ALSO... 
+				@PrintOnly - need that as a standard across most all sprocs (except 'print' sprocs of course).
+
+
+
 	NOTES:
 		- This is really just a 'wrapper' around dbo.restore_databases and dbo.backup_databases such that it allows quick/easy duplication of a single
 			database (to be used for production) such that a) it 'copies' the db from backups from an existing database and b) kicks off an immediate FULL backup upon db creation. 
