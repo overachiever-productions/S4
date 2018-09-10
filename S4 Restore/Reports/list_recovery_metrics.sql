@@ -16,6 +16,9 @@
 
 */
 
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.list_recovery_metrics','P') IS NOT NULL
 	DROP PROC dbo.list_recovery_metrics;
 GO
@@ -85,7 +88,7 @@ AS
 	SELECT 
 		l.[restore_id], 
 		l.[execution_id], 
-		ROW_NUMBER() OVER (ORDER BY l.[restore_test_id]) [row_number],
+		ROW_NUMBER() OVER (ORDER BY l.[restore_id]) [row_number],
 		l.[operation_date],
 		l.[database], 
 		l.[restored_as], 
@@ -145,9 +148,9 @@ AS
 	IF UPPER(@Mode) IN (N'SLA', N'RPO', N'RTO') BEGIN 
 
 		SELECT 
-			[restore_test_id], 
+			[restore_id], 
 			[execution_id],
-			COUNT(restore_test_id) OVER (PARTITION BY [execution_id]) [tested_count],
+			COUNT(restore_id) OVER (PARTITION BY [execution_id]) [tested_count],
 			[database], 
 			[restored_as],
 			DATEDIFF(MILLISECOND, [latest_backup], [restore_end]) [rpo_gap], 
@@ -163,16 +166,16 @@ AS
 	IF UPPER(@Mode) = N'SUMMARY' BEGIN
 	
 		SELECT 
-			f.test_date, 
+			f.[operation_date], 
 			f.[database] + N' -> ' + f.[restored_as] [operation],
 			f.[restore_succeeded], 
 			f.[consistency_succeeded] [check_succeeded],
 			f.[restored_file_count],
 			f.[diff_restored], 
 			dbo.format_timespan(f.[restore_duration]) [restore_duration],
-			dbo.format_timespan(SUM(f.[restore_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_test_id])) [cummulative_restore],
+			dbo.format_timespan(SUM(f.[restore_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_restore],
 			dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
-			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_test_id])) [cummulative_check], 
+			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
 			dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) [rpo_gap], 
 			ISNULL(f.[error_details], N'') [error_details]
 		FROM 
@@ -193,7 +196,7 @@ AS
 				SELECT 
 					f.execution_id, 
 					MAX(f.[row_number]) [rank_id],
-					MIN(f.[test_date]) [test_date],
+					MIN(f.[operation_date]) [test_date],
 					COUNT(f.[database]) [tested_db_count],
 					SUM(CAST(f.[restore_succeeded] AS int)) [restore_succeeded_count],
 					SUM(CAST(f.[consistency_succeeded] AS int)) [check_succeeded_count], 
@@ -235,7 +238,7 @@ AS
 				SELECT 
 					f.execution_id, 
 					MAX(f.[row_number]) [rank_id],
-					MIN(f.[test_date]) [test_date],
+					MIN(f.[operation_date]) [test_date],
 					COUNT(f.[database]) [tested_db_count],
 					SUM(CAST(f.[restore_succeeded] AS int)) [restore_succeeded_count],
 					SUM(CAST(f.[consistency_succeeded] AS int)) [check_succeeded_count], 
