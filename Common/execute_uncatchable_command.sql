@@ -14,19 +14,19 @@
 		password: simple
 
 	EXECUTION SAMPLES:
-			DECLARE @result varchar(2000);
-			EXEC execute_uncatchable_command 'BACKUP DATABASE Testing2 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
-			SELECT @result;
+			DECLARE @Result varchar(2000);
+			EXEC execute_uncatchable_command 'BACKUP DATABASE Testing2 TO DISK=''NUL''', 'BACKUP', @Result = @Result OUTPUT;
+			SELECT @Result;
 			GO
 
-			DECLARE @result varchar(2000);
-			EXEC execute_uncatchable_command 'BACKUP DATABASE Testing77 TO DISK=''NUL''', 'BACKUP', @result = @result OUTPUT;
-			SELECT @result;
+			DECLARE @Result varchar(2000);
+			EXEC execute_uncatchable_command 'BACKUP DATABASE Testing77 TO DISK=''NUL''', 'BACKUP', @Result = @Result OUTPUT;
+			SELECT @Result;
 			GO
 
-			DECLARE @result varchar(2000);
-			EXEC execute_uncatchable_command 'EXECUTE master.dbo.xp_create_subdir N''D:\SQLBackups\Testing1'';', 'CREATEDIR', @result = @result OUTPUT;
-			SELECT @result;
+			DECLARE @Result varchar(2000);
+			EXEC execute_uncatchable_command 'EXECUTE master.dbo.xp_create_subdir N''D:\SQLBackups\Testing1'';', 'CREATEDIR', @Result = @Result OUTPUT;
+			SELECT @Result;
 			GO
 
 
@@ -41,17 +41,17 @@ IF OBJECT_ID('dbo.execute_uncatchable_command','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.execute_uncatchable_command
-	@statement				varchar(4000), 
-	@filterType				varchar(20), 
-	@result					varchar(4000)			OUTPUT	
+	@Statement				varchar(4000), 
+	@FilterType				varchar(20), 
+	@Result					varchar(4000)			OUTPUT	
 AS
 	SET NOCOUNT ON;
 
 	-- {copyright}
 
-	IF @filterType NOT IN ('BACKUP','RESTORE','CREATEDIR','ALTER','DROP','DELETEFILE') BEGIN;
-		RAISERROR('Configuration Problem: Non-Supported @filterType value specified.', 16, 1);
-		SET @result = 'Configuration Problem with dba_ExecuteAndFilterNonCatchableCommand.';
+	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
+		RAISERROR('Configuration Error: Invalide @FilterType specified.', 16, 1);
+		SET @Result = 'Configuration Problem with dbo.execute_uncatchable_command.';
 		RETURN -1;
 	END 
 
@@ -88,7 +88,11 @@ AS
 	('Command(s) completed successfully.', 'DROP'),
 
 	-- DELETEFILE:
-	('Command(s) completed successfully.','DELETEFILE')
+	('Command(s) completed successfully.','DELETEFILE'),
+
+	-- UN-STANDBY (i.e., pop a db out of STANDBY and into NORECOVERY... 
+	('Processed % pages for database %', 'UN-STANDBY'),
+	('Command(s) completed successfully.', N'UN-STANDBY')
 
 	-- add other filters here as needed... 
 	;
@@ -101,7 +105,7 @@ AS
 	);
 
 	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
-	DECLARE @command varchar(2000) = 'sqlcmd {0} -q "' + REPLACE(@statement, @crlf, ' ') + '"';
+	DECLARE @command varchar(2000) = 'sqlcmd {0} -q "' + REPLACE(@Statement, @crlf, ' ') + '"';
 
 	-- Account for named instances:
 	DECLARE @serverName sysname = '';
@@ -118,12 +122,12 @@ AS
 	DELETE r
 	FROM 
 		#Results r 
-		INNER JOIN @filters x ON x.filter_type = @filterType AND r.RESULT LIKE x.filter_text;
+		INNER JOIN @filters x ON x.filter_type = @FilterType AND r.RESULT LIKE x.filter_text;
 
 	IF EXISTS (SELECT NULL FROM #Results WHERE result IS NOT NULL) BEGIN;
-		SET @result = '';
-		SELECT @result = @result + result + @delimiter FROM #Results WHERE result IS NOT NULL ORDER BY result_id;
-		SET @result = LEFT(@result, LEN(@result) - LEN(@delimiter));
+		SET @Result = '';
+		SELECT @Result = @Result + result + @delimiter FROM #Results WHERE result IS NOT NULL ORDER BY result_id;
+		SET @Result = LEFT(@Result, LEN(@Result) - LEN(@delimiter));
 	END
 
 	RETURN 0;

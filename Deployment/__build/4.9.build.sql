@@ -409,7 +409,10 @@ IF @currentVersion < 4.7 BEGIN
 		[restore_test_id] > 0;
 	';
 
-	EXEC sp_executesql @command;
+	EXEC sp_executesql 
+		@stmt = @command, 
+		@params = N'@hoursDiff int', 
+		@hoursDiff = @hoursDiff;
 
 	PRINT 'Updated dbo.restore_log.... (UTC shift)';
 END;

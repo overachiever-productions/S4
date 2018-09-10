@@ -44,7 +44,7 @@ CREATE PROC dbo.load_database_names
 	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED -- list_active shows only online and non-mirrored. list_all shows all db-names - including snapshots... 
+	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED 
 	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP | NON_RECOVERED
 	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
 	@Output				nvarchar(MAX)	OUTPUT
@@ -226,7 +226,28 @@ AS
 		DELETE FROM @targets
 		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1 OR [state_desc] = N'RESTORING');
 
-		-- TODO: remove any AG'd and Mirrored DBs first:
+		
+		-- now delete any dbs that are in RESTORING state becauses they're MIRRORED or in an AG:
+		DELETE FROM @targets 
+		WHERE [database_name] IN (
+			SELECT 
+				d.[name] [database_name]
+			FROM 
+				sys.database_mirroring dm
+				INNER JOIN sys.databases d ON dm.database_id = d.database_id
+			WHERE 
+				dm.mirroring_guid IS NOT NULL
+
+		UNION
+
+			SELECT
+				dbcs.[database_name]
+			FROM
+				master.sys.availability_groups AS ag
+				INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+				INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
+				INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
+		);
 	END;
 
 	-- Exclude any databases specified for exclusion:

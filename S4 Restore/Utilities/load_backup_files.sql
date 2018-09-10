@@ -44,20 +44,29 @@ GO
 CREATE PROC dbo.load_backup_files 
 	@DatabaseToRestore			sysname,
 	@SourcePath					nvarchar(400), 
-	@Mode						sysname,				-- FULL | DIFF | LOG  
+	@Mode						sysname,				-- FULL | DIFF | LOG 
 	@LastAppliedFile			nvarchar(400)			= NULL,	
 	@Output						nvarchar(MAX)			OUTPUT
 AS
 	SET NOCOUNT ON; 
 
-	DECLARE @results table ([id] int IDENTITY(1,1), [output] varchar(500));
+	-- {copyright}
+
+	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
+		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
+		SET @Output = NULL;
+		RETURN -1;
+	END 
+
+	DECLARE @results table ([id] int IDENTITY(1,1) NOT NULL, [output] varchar(500));
 
 	DECLARE @command varchar(2000);
 	SET @command = 'dir "' + @SourcePath + '\" /B /A-D /OD';
 
 	--PRINT @command
 	INSERT INTO @results ([output])
-	EXEC xp_cmdshell @command;
+	EXEC xp_cmdshell 
+		@stmt = @command;
 
 	-- High-level Cleanup: 
 	DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
@@ -80,12 +89,10 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
-
-		-- grab everything (i.e., ONLY t-log backups) since the most recently 
+		
 		DELETE FROM @results WHERE id <= (SELECT MIN(id) FROM @results WHERE [output] = @LastAppliedFile);
 		DELETE FROM @results WHERE [output] NOT LIKE 'LOG%';
 	END;
-
 
 	SET @Output = N'';
 	SELECT @Output = @Output + [output] + N',' FROM @results ORDER BY [id];
