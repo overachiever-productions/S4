@@ -162,7 +162,7 @@ AS
         DECLARE @DatabaseMailProfile nvarchar(255)
         EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
  
-        IF @DatabaseMailProfile != @MailProfileName BEGIN
+        IF @DatabaseMailProfile <> @MailProfileName BEGIN
             RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
             RETURN -2;
         END; 
@@ -435,7 +435,7 @@ AS
         DELETE FROM @restoredFiles;
 		
 		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
-        IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern != '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
+        IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern <> '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
             SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
         IF @PrintOnly = 0 BEGIN
@@ -1001,6 +1001,7 @@ FINALIZE:
 		DECLARE @rpoMessage nvarchar(MAX) = N'';
 
 		SELECT 
+			IDENTITY(int, 1, 1) [id],
 			[database], 
 			[restored_files],
 			[restore_end]
@@ -1012,16 +1013,31 @@ FINALIZE:
 		ORDER BY
 			[restore_id];
 
+
+
+
 		WITH core AS ( 
 			SELECT 
+				s.[id],
 				s.[database], 
 				s.restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [most_recent_backup],
 				s.[restore_end]
 			FROM 
 				#subset s
 		), 
-		calculated AS (
+		overflow_stale AS ( 
 			SELECT 
+				[c].[id],
+				[c].[database], 
+				[c].[most_recent_backup], 
+				[c].[restore_end], 
+				DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old]
+			FROM 
+				core c
+		),
+		stale AS (
+			SELECT 
+				[c].[id],
 				[c].[database], 
 				[c].[most_recent_backup], 
 				[c].[restore_end], 
@@ -1029,7 +1045,29 @@ FINALIZE:
 				dbo.[format_timespan](DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) vector_duration
 			FROM 
 				core c
+			WHERE 
+				[c].[id] NOT IN (SELECT [id] FROM [overflow_stale] WHERE [days_old] > 20) -- 25 is the cut-off... but still.. 
 		) 
+
+
+	SELECT 
+		[s].[database], 
+		[s].[most_recent_backup], 
+		[s].[restore_end], 
+		[s].[vector], 
+		[s].[vector_duration], 
+		(SELECT [os].[days_old] FROM [overflow_stale] os WHERE [s].[id] = [os].[id]) [days_old]
+	INTO 
+		#stale
+	FROM 
+		stale s;
+
+
+		-- TODO: format/set @rpoMessage = to info on any dbs > x days old...
+		-- and then. do if/else/whatever stuff to append any of the stale info below... so we get the 'union' of stale and overflow-stale - with overflow-stale listed first.. 
+		--		and, might as well order overflow stale by days_old DESC. 
+		-- also... I'm going to have to project calculated into a #temp table... cuz i can't read from overflow_stale in one op... then 'calculated' in another...  
+
 
 		SELECT 
 			@rpoMessage = @rpoMessage 
@@ -1041,7 +1079,7 @@ FINALIZE:
 			+ @crlf + @tab + N'   - most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 			+ @crlf + @tab + N'   - restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
 		FROM 
-			[calculated] x
+			[stale] x
 		WHERE 
 			x.[vector] > @vector;
 
