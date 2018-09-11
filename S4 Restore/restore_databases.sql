@@ -1001,7 +1001,6 @@ FINALIZE:
 		DECLARE @rpoMessage nvarchar(MAX) = N'';
 
 		SELECT 
-			IDENTITY(int, 1, 1) [id],
 			[database], 
 			[restored_files],
 			[restore_end]
@@ -1013,79 +1012,51 @@ FINALIZE:
 		ORDER BY
 			[restore_id];
 
-
-
-
 		WITH core AS ( 
 			SELECT 
-				s.[id],
 				s.[database], 
 				s.restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [most_recent_backup],
 				s.[restore_end]
 			FROM 
 				#subset s
-		), 
-		overflow_stale AS ( 
-			SELECT 
-				[c].[id],
-				[c].[database], 
-				[c].[most_recent_backup], 
-				[c].[restore_end], 
-				DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old]
-			FROM 
-				core c
-		),
-		stale AS (
-			SELECT 
-				[c].[id],
-				[c].[database], 
-				[c].[most_recent_backup], 
-				[c].[restore_end], 
-				DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end]) [vector], 
-				dbo.[format_timespan](DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) vector_duration
-			FROM 
-				core c
-			WHERE 
-				[c].[id] NOT IN (SELECT [id] FROM [overflow_stale] WHERE [days_old] > 20) -- 25 is the cut-off... but still.. 
-		) 
+		)
 
-
-	SELECT 
-		[s].[database], 
-		[s].[most_recent_backup], 
-		[s].[restore_end], 
-		[s].[vector], 
-		[s].[vector_duration], 
-		(SELECT [os].[days_old] FROM [overflow_stale] os WHERE [s].[id] = [os].[id]) [days_old]
-	INTO 
-		#stale
-	FROM 
-		stale s;
-
-
-		-- TODO: format/set @rpoMessage = to info on any dbs > x days old...
-		-- and then. do if/else/whatever stuff to append any of the stale info below... so we get the 'union' of stale and overflow-stale - with overflow-stale listed first.. 
-		--		and, might as well order overflow stale by days_old DESC. 
-		-- also... I'm going to have to project calculated into a #temp table... cuz i can't read from overflow_stale in one op... then 'calculated' in another...  
-
+		SELECT 
+			IDENTITY(int, 1, 1) [id],
+			c.[database], 
+			c.[most_recent_backup], 
+			c.[restore_end], 
+			DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old], 
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
+		INTO 
+			#stale 
+		FROM 
+			[core] c;
 
 		SELECT 
 			@rpoMessage = @rpoMessage 
 			+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
-			+ @crlf + @tab + N'- recovery_point_objective  : ' + @rpo 
-			+ @crlf + @tab + N'- actual_recovery_point     : ' + dbo.[format_timespan]([x].vector)
-			+ @crlf + @tab + N'- recovery_point_exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
-			+ @crlf
-			+ @crlf + @tab + N'   - most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
-			+ @crlf + @tab + N'   - restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+			+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold --  @rpo
+			+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+			+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+			+  CASE WHEN [x].[vector] = -1 THEN 
+					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
+				ELSE 
+					+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
+					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
+				END + @crlf
 		FROM 
-			[stale] x
+			[#stale] x
 		WHERE 
-			x.[vector] > @vector;
+			(x.[vector] > @vector) OR [x].[days_old] > 20 
+		ORDER BY 
+			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
+			[x].[vector];
 
 		IF LEN(@rpoMessage) > 2
 			SET @rpoWarnings = N'WARNINGS: ' 
 				+ @crlf + @rpoMessage + @crlf + @crlf;
+
 	END;
 
     -- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
