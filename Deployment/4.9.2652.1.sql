@@ -8,7 +8,7 @@
 			password: simple
 
 	NOTES:
-		- This script will either install/deploy S4 version 4.9.2644.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2644.1.
+		- This script will either install/deploy S4 version 4.9.2652.1 or upgrade a PREVIOUSLY deployed version of S4 to 4.9.2652.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -22,7 +22,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 4.9.2644.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 4.9.2652.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -101,7 +101,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'4.9.2644.1';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2652.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -2113,7 +2113,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{type}', N'LOG');
 
-		IF @Edition IN (N'EXPRESS',N'WEB')
+		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) <= 10.5 AND @Edition NOT IN ('ENTERPRISE'))
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'');
 		ELSE 
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'COMPRESSION, ');
@@ -3803,7 +3803,7 @@ AS
         DECLARE @DatabaseMailProfile nvarchar(255)
         EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
  
-        IF @DatabaseMailProfile != @MailProfileName BEGIN
+        IF @DatabaseMailProfile <> @MailProfileName BEGIN
             RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
             RETURN -2;
         END; 
@@ -4076,7 +4076,7 @@ AS
         DELETE FROM @restoredFiles;
 		
 		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
-        IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern != '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
+        IF (@restoredName = @databaseToRestore) AND (@RestoredDbNamePattern <> '{0}') -- then there wasn't a {0} token - so set @restoredName to @RestoredDbNamePattern
             SET @restoredName = @RestoredDbNamePattern;  -- which seems odd, but if they specified @RestoredDbNamePattern = 'Production2', then that's THE name they want...
 
         IF @PrintOnly = 0 BEGIN
@@ -4660,35 +4660,44 @@ FINALIZE:
 				s.[restore_end]
 			FROM 
 				#subset s
-		), 
-		calculated AS (
-			SELECT 
-				[c].[database], 
-				[c].[most_recent_backup], 
-				[c].[restore_end], 
-				DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end]) [vector], 
-				dbo.[format_timespan](DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) vector_duration
-			FROM 
-				core c
-		) 
+		)
+
+		SELECT 
+			IDENTITY(int, 1, 1) [id],
+			c.[database], 
+			c.[most_recent_backup], 
+			c.[restore_end], 
+			DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old], 
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
+		INTO 
+			#stale 
+		FROM 
+			[core] c;
 
 		SELECT 
 			@rpoMessage = @rpoMessage 
 			+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
-			+ @crlf + @tab + N'- recovery_point_objective  : ' + @rpo 
-			+ @crlf + @tab + N'- actual_recovery_point     : ' + dbo.[format_timespan]([x].vector)
-			+ @crlf + @tab + N'- recovery_point_exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
-			+ @crlf
-			+ @crlf + @tab + N'   - most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
-			+ @crlf + @tab + N'   - restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+			+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold --  @rpo
+			+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+			+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+			+  CASE WHEN [x].[vector] = -1 THEN 
+					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
+				ELSE 
+					+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
+					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
+				END + @crlf
 		FROM 
-			[calculated] x
+			[#stale] x
 		WHERE 
-			x.[vector] > @vector;
+			(x.[vector] > @vector) OR [x].[days_old] > 20 
+		ORDER BY 
+			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
+			[x].[vector];
 
 		IF LEN(@rpoMessage) > 2
 			SET @rpoWarnings = N'WARNINGS: ' 
 				+ @crlf + @rpoMessage + @crlf + @crlf;
+
 	END;
 
     -- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
@@ -10748,8 +10757,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'4.9.2644.1';
-DECLARE @VersionDescription nvarchar(200) = N'Introduction of dbo.apply_logs. Other bug-fixes';
+DECLARE @CurrentVersion varchar(20) = N'4.9.2652.1';
+DECLARE @VersionDescription nvarchar(200) = N'Bug Fix for compression on SQL Server 2008 instances';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
