@@ -450,7 +450,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{type}', N'LOG');
 
-		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) <= 10.5)
+		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) <= 10.5 AND @Edition NOT IN ('ENTERPRISE'))
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'');
 		ELSE 
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'COMPRESSION, ');
