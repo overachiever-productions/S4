@@ -25,6 +25,7 @@ CREATE PROC dbo.monitor_transaction_durations
 	@ExcludedLoginNames					nvarchar(MAX)		= NULL, 
 	@ExcludedProgramNames				nvarchar(MAX)		= NULL,
 	@ExcludedSQLAgentJobNames			nvarchar(MAX)		= NULL,
+	@AlertOnlyWhenBlocking				bit					= 0,				-- if there's a long-running TX, but it's not blocking... and this is set to 1, then no alert is raised. 
 	@AlertThreshold						sysname				= N'10m',			-- defines how long a transaction has to be running before it's 'raised' as a potential problem.
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
@@ -167,6 +168,49 @@ AS
 	INNER JOIN 
 		[#ExcludedSessions] x ON lrt.[session_id] = x.[session_id];
 
+
+	IF @AlertOnlyWhenBlocking = 1 BEGIN
+		DECLARE @iteration int = 0;
+
+		DECLARE @sessions_that_are_blocking table ( 
+			session_id int NOT NULL 
+		);
+
+CheckForBlocking:
+		
+		-- NOTE: ARGUABLY, this should be using sys.dm_exec_requests... only, there's a HUGE problem with that 'table' - it only shows in-flight requests that are blocked... (so if something is blocked and NOT in a RUNNING state... it won't show up). 
+
+		SELECT 
+			lrt.session_id 
+		FROM 
+			[#LongRunningTransactions] lrt 
+			--INNER JOIN sys.[dm_exec_requests] r ON lrt.[session_id] = r.[blocking_session_id]
+			INNER JOIN sys.[sysprocesses] p ON lrt.[session_id] = p.[blocked]
+		WHERE 
+			lrt.[session_id] NOT IN (SELECT session_id FROM @sessions_that_are_blocking);
+
+		-- short-circuit if we've confirmed that ALL long-running-transactions are blocking:
+		IF NOT EXISTS (SELECT NULL FROM [#LongRunningTransactions] t1 LEFT OUTER JOIN @sessions_that_are_blocking t2 ON t1.[session_id] = t2.[session_id] WHERE t2.[session_id] IS NULL) BEGIN 
+			GOTO BlockingCheckComplete;
+		END;
+
+		WAITFOR DELAY '00:00:02.000';
+	
+		SET @iteration = @iteration + 1; 
+
+		IF @iteration < 10
+			GOTO CheckForBlocking;
+		
+BlockingCheckComplete:
+		
+		-- remove any long-running transactions that were NOT showing as blocking... 
+		DELETE lrt
+		FROM 
+			[#LongRunningTransactions] lrt 
+		WHERE [lrt].[session_id] NOT IN (SELECT [session_id] FROM @sessions_that_are_blocking);
+
+	END;
+
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
 		RETURN 0;  -- nothing to report on... 
 
@@ -182,6 +226,7 @@ AS
 		+ @tab + N'METRICS: ' + @crlf
 		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N']' + @crlf 
 		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N']' + @crlf
+		+ @tab + @tab + N'[blocked_session_count: ' + CAST(ISNULL((SELECT COUNT(*) FROM sys.[sysprocesses] p WHERE lrt.session_id = p.blocked), 0) AS sysname) + N']' + @crlf  
 		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N']' + @crlf 
 		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N']' + @crlf 
 		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
