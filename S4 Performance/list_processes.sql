@@ -81,6 +81,8 @@ CREATE PROC dbo.list_processes
 AS 
 	SET NOCOUNT ON; 
 
+	-- {copyright}
+
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
 		[session_id] smallint NOT NULL,
@@ -120,6 +122,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
 	END; 
 		
+--TODO: sys.dm_exec_sessions.is_user_process (and sys.dm_exec_sessions.open_transaction_count - which isn't available in all versions (it's like 2012 or so))... would work for filtering here too.
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.session_id > 50) AND (r.database_id <> 0) ');
 		END;	

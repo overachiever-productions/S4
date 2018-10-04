@@ -127,6 +127,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + @orderByOrdinal + N' DESC');
 	END; 
 
+--TODO: sys.dm_exec_sessions.is_user_process (and sys.dm_exec_sessions.open_transaction_count - which isn't available in all versions (it's like 2012 or so))... would work for filtering here too.
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND dtst.session_id > 50 AND [dtst].[is_user_transaction] = 1 ');
 		END;	
