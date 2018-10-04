@@ -64,20 +64,21 @@ GO
 CREATE PROC dbo.list_processes 
 	@TopNRows								int			=	-1,		-- TOP is only used if @TopNRows > 0. 
 	@OrderBy								sysname		= N'CPU',	-- CPU | DURATION | READS | WRITES | MEMORY
-	@IncludePlanHandle						bit			= 1,	
-	--@ExtractExecutionCost					bit			= 0,	
-	@IncludeIsolationLevel					bit			= 0,
-	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
-	-- vNEXT				--@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
-	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
-	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
-	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
 	@ExcludeMirroringWaits					bit			= 1,		-- optional 'ignore' wait types/families.
 	@ExcludeNegativeDurations				bit			= 1,		-- exclude service broker and some other system-level operations/etc. 
 	-- vNEXT				--@ExcludeSOmeOtherSetOfWaitTypes		bit			= 1			-- ditto... 
 	@ExcludeFTSDaemonProcesses				bit			= 1,
 	@ExcludeSystemProcesses					bit			= 1,			-- spids < 50... 
-	@ExcludeSelf							bit			= 1
+	@ExcludeSelf							bit			= 1,	
+	@IncludePlanHandle						bit			= 1,	
+	@IncludeIsolationLevel					bit			= 0,
+	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
+	-- vNEXT				--@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
+	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
+	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
+	@IncludeExtendedDetails					bit			= 1
+	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
+	-- VNEXT				--@ExtractExecutionCost					bit			= 0,	
 AS 
 	SET NOCOUNT ON; 
 
@@ -122,30 +123,30 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
 	END; 
 		
---TODO: sys.dm_exec_sessions.is_user_process (and sys.dm_exec_sessions.open_transaction_count - which isn't available in all versions (it's like 2012 or so))... would work for filtering here too.
+
 	IF @ExcludeSystemProcesses = 1 BEGIN 
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.session_id > 50) AND (r.database_id <> 0) ');
-		END;	
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.[session_id] > 50) AND (r.[database_id] <> 0) AND (r.[session_id] NOT IN (SELECT [session_id] FROM sys.[dm_exec_sessions] WHERE [is_user_process] = 0)) ');
+	  END;	
 	ELSE BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');
 	END;
 
 	IF @ExcludeMirroringWaits = 1 BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeMirroringWaits}', N',''DBMIRRORING_CMD'',''DBMIRROR_EVENTS_QUEUE'', ''DBMIRROR_WORKER_QUEUE''');
-		END;
+	  END;
 	ELSE BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeMirroringWaits}', N'');
 	END;
 
 	IF @ExcludeSelf = 1 BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'AND r.session_id <> @@SPID');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'AND r.[session_id] <> @@SPID');
 	  END;
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'');
 	END; 
 
 	IF @ExcludeNegativeDurations = 1 BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeNegative}', N'AND r.total_elapsed_time > 0 ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeNegative}', N'AND r.[total_elapsed_time] > 0 ');
 	  END;
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeNegative}', N'');
@@ -153,7 +154,7 @@ AS
 
 	IF @ExcludeFTSDaemonProcesses = 1 BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N', ''FT_COMPROWSET_RWLOCK'', ''FT_IFTS_RWLOCK'', ''FT_IFTS_SCHEDULER_IDLE_WAIT'', ''FT_IFTSHC_MUTEX'', ''FT_IFTSISM_MUTEX'', ''FT_MASTER_MERGE'', ''FULLTEXT GATHERER'' ');
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'AND r.command NOT LIKE ''FT%'' ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'AND r.[command] NOT LIKE ''FT%'' ');
 	  END;
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N'');
@@ -229,12 +230,12 @@ AS
 		r.[sql_handle],
 		r.plan_handle
 	FROM 
-		sys.dm_exec_requests r
-		INNER JOIN [#ranked] x ON r.[session_id] = x.[session_id]
+		[#ranked] x
+		INNER JOIN sys.dm_exec_requests r ON x.[session_id] = r.[session_id]
 		INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
-		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
-	ORDER BY 
-		x.[row_number]; 
+		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id;
+	--ORDER BY 
+	--	x.[row_number]; 
 
 	-- populate sql_handles for sessions without current requests: 
 	UPDATE x 
@@ -265,25 +266,14 @@ AS
 		ISNULL(d.[program_name], '''') [program_name],
 		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
 		dbo.format_timespan(d.[wait_time]) [wait_time],
-		CAST((''<context>		
-			<connection>
-				<login_name>'' + ISNULL(d.[login_name], '''') + N''</login_name>
-				<program_name>'' + ISNULL(d.[program_name], '''') + N''</program_name>
-				<host_name>'' + ISNULL(d.[host_name], '''') + N''</host_name>
-			</connection>	
-			<statement>
-				<sql_statement_source>'' + (SELECT ISNULL(d.statement_source, '''') FOR XML PATH('''')) + N''</sql_statement_source>
-				{plan_handle}
-			</statement>
-			<execution>
-				<percent_complete>'' + CAST(d.[percent_complete] as sysname) + N''</percent_complete>
-				<open_transaction_count>'' + CAST(d.[open_tran] as sysname) + N''</open_transaction_count>
-				<thread_count>'' + CAST((SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = d.session_id) as sysname) + N''</thread_count>
-			</execution>	
-		</context>'') as xml) [context],
+		d.[login_name],
+		d.[program_name],
+		d.[host_name],
+		{plan_handle}
+		{extended_details}
 		--{extractCost}  -- move into /context/statement/cost
-		p.query_plan [batch_plan]
 		--,{statement_plan} -- if i can get this working... 
+		p.query_plan [batch_plan]
 	FROM 
 		[#detail] d
 		OUTER APPLY sys.dm_exec_sql_text(d.sql_handle) t
@@ -306,11 +296,19 @@ AS
 	END; 
 
 	IF @IncludePlanHandle = 1 BEGIN
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'<plan_handle>'' + ISNULL(CONVERT(nvarchar(128), d.[plan_handle], 1), '''') + N''</plan_handle>');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'd.[statement_source], d.[plan_handle], ');
 	  END; 
 	ELSE BEGIN
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan_handle}', N'');
 	END; 
+
+	IF @IncludeExtendedDetails = 1 BEGIN
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'd.[percent_complete], d.[open_tran], (SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = d.session_id) [thread_count], ')
+	  END;
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'');
+	END; 
+
 
 --PRINT @projectionSQL;
 
