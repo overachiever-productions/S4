@@ -586,6 +586,9 @@ GO
 --##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Utilities\apply_logs.sql
+
+-----------------------------------
 --##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
