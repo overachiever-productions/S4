@@ -5,6 +5,13 @@
 		-- add lock_timeout and deadlock_priority from sys.dm_exec_requests... 
 		
 
+	NEED to Document that is_user_transaction isn't the same as is_user_connection/session
+		instead, this column (is_user_tx) tells us WHO or WHAT initiated the tx - user or ... system (implicit)
+
+		at which point... maybe I just specify [transaction_type] of implicit | explicit
+
+
+
 
 EXEC dbo.list_transactions 
 	@TopNRows = -1, 
@@ -36,7 +43,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright}
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -128,14 +135,14 @@ AS
 	END; 
 
 	IF @ExcludeSystemProcesses = 1 BEGIN 
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND dtst.session_id > 50 AND [dtst].[is_user_transaction] = 1 ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND dtst.[session_id] > 50 AND [dtst].[is_user_transaction] = 1 AND (dtst.[session_id] NOT IN (SELECT session_id FROM sys.[dm_exec_sessions] WHERE [is_user_process] = 0))  ');
 		END;	
 	ELSE BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');
 	END;
 
 	IF @ExcludeSelf = 1 BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'AND dtst.session_id <> @@SPID');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'AND dtst.[session_id] <> @@SPID');
 	  END;
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'');
@@ -243,6 +250,9 @@ AS
         dbo.format_timespan([c].[duration]) [duration],
 		h.[status],
 		{statement}
+		des.[login_name],
+		des.[program_name], 
+		des.[host_name],
 		CAST((''<context>
 			<transaction>
 				<current_state>'' + ISNULL(c.transaction_state,'''') + N''</current_state>
@@ -275,13 +285,8 @@ AS
 				<time_since_session_last_request_start>'' + dbo.format_timespan(DATEDIFF(MILLISECOND, des.last_request_start_time, GETDATE())) + N''</time_since_session_last_request_start>
 				<last_session_request_start>'' + ISNULL(CONVERT(sysname, des.[last_request_start_time], 121), '''') + N''</last_session_request_start>
 			</time>
-			<connection>
-				<login_name>'' + ISNULL(des.[login_name], '''') + N''</login_name>
-				<program_name>'' + ISNULL(des.[program_name], '''') + N''</program_name>
-				<host_name>'' + ISNULL(des.[host_name], '''') + N''</host_name>
-			</connection>
 		</context>'') as xml) [context],
-		{system}
+		CASE WHEN [c].[is_user_transaction] = 1 THEN ''EXPLICIT'' ELSE ''IMPLICIT'' END [transaction_type], 
 		N'''' + ISNULL(CAST(c.log_record_count as sysname), ''0'') + N'' - '' + ISNULL(CAST(c.log_bytes_used as sysname),''0'') + N''''		[log_used (count - bytes)]
 		{plan}
 		{bound}
@@ -328,16 +333,6 @@ AS
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'');
 	END;
-
-
-	IF @ExcludeSystemProcesses = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{system}', N'');
-	  END;
-	ELSE BEGIN -- include system processes (and show diff between system and user)
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{system}', N'[c].[is_user_transaction],');
-	END; 
-
-
 
 --PRINT @projectionSQL;
 
