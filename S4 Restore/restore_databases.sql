@@ -898,6 +898,7 @@ NextDatabase:
             
             IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
 
+				--MKC: BUG S4-11 - see the alternate 'option' for processing this below. But, given the potential for RISK (i.e., to dropping a real db), 'erroring out' here seems like the best and safest solution.
                 UPDATE dbo.restore_log
                 SET 
                     [dropped] = 'ERROR', 
@@ -905,7 +906,20 @@ NextDatabase:
                 WHERE 
                     restore_id = @restoreLogId;
 
-                SET @executeDropAllowed = 1; 
+				--MKC: Bug S4-11 - the flow below MIGHT work... but I don't BELIEVE that the logic for SET @executeDropAllowed = 1 is fully thought out... so, until I assess that further, this whole block of code will be ignored. 
+				--IF @restoredName <> @databaseToRestore BEGIN
+				--	SET @executeDropAllowed = 1;  -- @AllowReplace and @DropDatabasesAfterRestore can NOT both be set to true. So, if the restoredDB.name <> backupSourceDB.name then... we can drop this database
+				--  END;
+				--ELSE BEGIN 
+				--	-- otherwise, we can't... this could be a legit/production db so we can't drop it. So flag it as a problem: 
+				--	UPDATE dbo.restore_log
+				--	SET 
+				--		[dropped] = 'ERROR', 
+				--		error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
+				--	WHERE 
+				--		restore_id = @restoreLogId;
+				END;
+
             END;
 
             IF (@executeDropAllowed = 1) AND EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName) BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
