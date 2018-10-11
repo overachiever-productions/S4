@@ -21,7 +21,7 @@
 
 
 
-USE admindb;
+USE [admindb];
 GO
 
 
@@ -61,7 +61,46 @@ BEGIN
 		N'Software\Microsoft\MSSQLServer\MSSQLServer',  
 		@valueName,
 		@output OUTPUT, 
-		'no_output'
+		'no_output';
+
+
+	-- account for older versions and/or values not being set for data/log paths: 
+	IF @output IS NULL BEGIN 
+		IF @PathType = 'DATA' BEGIN 
+			EXEC master..xp_instance_regread
+				N'HKEY_LOCAL_MACHINE',  
+				N'Software\Microsoft\MSSQLServer\MSSQLServer\Parameters',  
+				N'SqlArg0',  -- try grabbing service startup parameters instead: 
+				@output OUTPUT, 
+				'no_output';			
+
+			IF @output IS NOT NULL BEGIN 
+				SET @output = SUBSTRING(@output, 3, 255)
+				SET @output = SUBSTRING(@output, 1, LEN(@output) - CHARINDEX('\', REVERSE(@output)))
+			  END;
+			ELSE BEGIN
+				SELECT @output = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(400)); -- likely won't provide any data if we didn't get it previoulsy... 
+			END;
+		END;
+		
+
+		IF @PathType = 'LOG' BEGIN 
+			EXEC master..xp_instance_regread
+				N'HKEY_LOCAL_MACHINE',  
+				N'Software\Microsoft\MSSQLServer\MSSQLServer\Parameters',  
+				N'SqlArg0',  -- try grabbing service startup parameters instead: 
+				@output OUTPUT, 
+				'no_output';			
+
+			IF @output IS NOT NULL BEGIN 
+				SET @output = SUBSTRING(@output, 3, 255)
+				SET @output = SUBSTRING(@output, 1, LEN(@output) - CHARINDEX('\', REVERSE(@output)))
+			  END;
+			ELSE BEGIN
+				SELECT @output = CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(400)); -- likely won't provide any data if we didn't get it previoulsy... 
+			END;
+		END;
+	END;
 
 	RETURN @output;
 END;

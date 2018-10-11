@@ -33,13 +33,6 @@
             https://connect.microsoft.com/SQLServer/feedback/details/746979/try-catch-construct-catches-last-error-only
             This sproc gets around that limitation via the logic defined in dbo.dba_ExecuteAndFilterNonCatchableCommand;
 
-
-    CODE, LICENSE, DOCS:
-        https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-        username: s4
-        password: simple
-
-
     TODO:
         - Look at implementing MINIMAL 'retry' logic - as per dba_BackupDatabases. Or... maybe don't... 
 
@@ -142,6 +135,20 @@ AS
         RETURN -1;
     END;
 
+	-----------------------------------------------------------------------------
+    -- Set Defaults:
+    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+        SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
+    END;
+
+    IF UPPER(@RestoredRootDataPath) = N'[DEFAULT]' BEGIN
+        SELECT @RestoredRootDataPath = dbo.load_default_path('DATA');
+    END;
+
+    IF UPPER(@RestoredRootLogPath) = N'[DEFAULT]' BEGIN
+        SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
+    END;
+
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
     IF @PrintOnly = 0 BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
@@ -238,19 +245,6 @@ AS
     DECLARE @executionID uniqueidentifier = NEWID();
     DECLARE @executeDropAllowed bit;
     DECLARE @failedDropCount int = 0;
-
-    -- Allow for default paths:
-    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
-        SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
-    END;
-
-    IF UPPER(@RestoredRootDataPath) = N'[DEFAULT]' BEGIN
-        SELECT @RestoredRootDataPath = dbo.load_default_path('DATA');
-    END;
-
-    IF UPPER(@RestoredRootLogPath) = N'[DEFAULT]' BEGIN
-        SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
-    END;
 
 	-- normalize paths: 
 	IF(RIGHT(@BackupsRootPath, 1) = '\')
@@ -918,7 +912,7 @@ NextDatabase:
 				--		error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
 				--	WHERE 
 				--		restore_id = @restoreLogId;
-				END;
+				--END;
 
             END;
 
