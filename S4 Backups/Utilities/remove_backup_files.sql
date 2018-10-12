@@ -239,7 +239,6 @@ AS
 		-- simply add additional/'duplicate-ish' directories to check for anything that's a system database:
 		DECLARE @serverName sysname = N'\' + REPLACE(@@SERVERNAME, N'\', N'_'); -- account for named instances. 
 
-
 		-- and, note that IF we hand off the name of an invalid directory (i.e., say admindb backups are NOT being treated as system - so that D:\SQLBackups\admindb\SERVERNAME\ was invalid, then xp_dirtree (which is what's used to query for files) will simply return 'empty' results and NOT throw errors.
 		INSERT INTO @targetDirectories (directory_name)
 		SELECT 

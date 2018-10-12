@@ -51,8 +51,6 @@ CREATE PROC dbo.load_database_names
 AS
 	SET NOCOUNT ON; 
 
-	DECLARE @includeAdminDBAsSystemDatabase bit = 1; -- by default, tread admindb as a system database (i.e., exclude it from [USER] and include it in [SYSTEM];
-
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
@@ -119,8 +117,9 @@ AS
 	    INSERT INTO @targets ([database_name])
         SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
 
+		-- treat the admindb as a [SYSTEM] db if it exists: 
 		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') BEGIN
-			IF @includeAdminDBAsSystemDatabase = 1 
+			IF (SELECT dbo.is_system_database('admindb')) = 1 
 				INSERT INTO @targets ([database_name])
 				VALUES ('admindb');
 		END
@@ -141,7 +140,8 @@ AS
 				AND source_database_id IS NULL -- exclude database snapshots
             ORDER BY name;
 
-		IF @includeAdminDBAsSystemDatabase = 1 
+		-- exclude admindb if it's treated as a [SYSTEM] database (vs a [USER] database):
+		IF (SELECT dbo.is_system_database('admindb')) = 1 
 			DELETE FROM @targets WHERE [database_name] = 'admindb';
 		
     END; 
