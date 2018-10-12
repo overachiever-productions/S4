@@ -91,7 +91,7 @@ AS
 	('Command(s) completed successfully.','DELETEFILE'),
 
 	-- UN-STANDBY (i.e., pop a db out of STANDBY and into NORECOVERY... 
-	('Processed % pages for database %', 'UN-STANDBY'),
+	('RESTORE DATABASE successfully processed % pages in % seconds%', 'UN-STANDBY'),
 	('Command(s) completed successfully.', N'UN-STANDBY')
 
 	-- add other filters here as needed... 

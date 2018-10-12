@@ -269,12 +269,6 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Determine which databases to backup:
-	DECLARE @executingSystemDbBackups bit = 0;
-
-	IF UPPER(@DatabasesToBackup) = '[SYSTEM]' BEGIN
-		SET @executingSystemDbBackups = 1;
-	END; 
-
 	DECLARE @serialized nvarchar(MAX);
 	EXEC dbo.load_database_names
 	    @Input = @DatabasesToBackup,
@@ -384,7 +378,7 @@ AS
 		END; 
 
 		-- specify and verify path info:
-		IF @executingSystemDbBackups = 1 AND @AddServerNameToSystemBackupPath = 1
+		IF ((SELECT dbo.[is_system_database](@currentDatabase)) = 1) AND @AddServerNameToSystemBackupPath = 1
 			SET @serverName = N'\' + REPLACE(@@SERVERNAME, N'\', N'_'); -- account for named instances. 
 		ELSE 
 			SET @serverName = N'';

@@ -327,6 +327,7 @@ AS
 			IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @targetDbName AND [is_in_standby] = 1) BEGIN
 
 				SET @command = N'ALTER DATABASE ' + QUOTENAME(@targetDbName) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; 
+GO
 RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 
 				IF @PrintOnly = 1 BEGIN 

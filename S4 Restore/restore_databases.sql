@@ -33,13 +33,6 @@
             https://connect.microsoft.com/SQLServer/feedback/details/746979/try-catch-construct-catches-last-error-only
             This sproc gets around that limitation via the logic defined in dbo.dba_ExecuteAndFilterNonCatchableCommand;
 
-
-    CODE, LICENSE, DOCS:
-        https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-        username: s4
-        password: simple
-
-
     TODO:
         - Look at implementing MINIMAL 'retry' logic - as per dba_BackupDatabases. Or... maybe don't... 
 
@@ -142,6 +135,20 @@ AS
         RETURN -1;
     END;
 
+	-----------------------------------------------------------------------------
+    -- Set Defaults:
+    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+        SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
+    END;
+
+    IF UPPER(@RestoredRootDataPath) = N'[DEFAULT]' BEGIN
+        SELECT @RestoredRootDataPath = dbo.load_default_path('DATA');
+    END;
+
+    IF UPPER(@RestoredRootLogPath) = N'[DEFAULT]' BEGIN
+        SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
+    END;
+
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
     IF @PrintOnly = 0 BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
@@ -178,12 +185,12 @@ AS
         RETURN -6;
     END;
 
-    IF NULLIF(@AllowReplace, '') IS NOT NULL AND UPPER(@AllowReplace) <> N'REPLACE' BEGIN
+    IF NULLIF(@AllowReplace, N'') IS NOT NULL AND UPPER(@AllowReplace) <> N'REPLACE' BEGIN
         RAISERROR('The @AllowReplace switch must be set to NULL or the exact term N''REPLACE''.', 16, 1);
         RETURN -4;
     END;
 
-    IF @AllowReplace IS NOT NULL AND @DropDatabasesAfterRestore = 1 BEGIN
+    IF NULLIF(@AllowReplace, N'') IS NOT NULL AND @DropDatabasesAfterRestore = 1 BEGIN
         RAISERROR('Databases cannot be explicitly REPLACED and DROPPED after being replaced. If you wish DBs to be restored (on a different server for testing) with SAME names as PROD, simply leave suffix empty (but not NULL) and leave @AllowReplace NULL.', 16, 1);
         RETURN -6;
     END;
@@ -238,19 +245,6 @@ AS
     DECLARE @executionID uniqueidentifier = NEWID();
     DECLARE @executeDropAllowed bit;
     DECLARE @failedDropCount int = 0;
-
-    -- Allow for default paths:
-    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
-        SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
-    END;
-
-    IF UPPER(@RestoredRootDataPath) = N'[DEFAULT]' BEGIN
-        SELECT @RestoredRootDataPath = dbo.load_default_path('DATA');
-    END;
-
-    IF UPPER(@RestoredRootLogPath) = N'[DEFAULT]' BEGIN
-        SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
-    END;
 
 	-- normalize paths: 
 	IF(RIGHT(@BackupsRootPath, 1) = '\')
@@ -898,6 +892,7 @@ NextDatabase:
             
             IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
 
+				--MKC: BUG S4-11 - see the alternate 'option' for processing this below. But, given the potential for RISK (i.e., to dropping a real db), 'erroring out' here seems like the best and safest solution.
                 UPDATE dbo.restore_log
                 SET 
                     [dropped] = 'ERROR', 
@@ -905,7 +900,20 @@ NextDatabase:
                 WHERE 
                     restore_id = @restoreLogId;
 
-                SET @executeDropAllowed = 1; 
+				--MKC: Bug S4-11 - the flow below MIGHT work... but I don't BELIEVE that the logic for SET @executeDropAllowed = 1 is fully thought out... so, until I assess that further, this whole block of code will be ignored. 
+				--IF @restoredName <> @databaseToRestore BEGIN
+				--	SET @executeDropAllowed = 1;  -- @AllowReplace and @DropDatabasesAfterRestore can NOT both be set to true. So, if the restoredDB.name <> backupSourceDB.name then... we can drop this database
+				--  END;
+				--ELSE BEGIN 
+				--	-- otherwise, we can't... this could be a legit/production db so we can't drop it. So flag it as a problem: 
+				--	UPDATE dbo.restore_log
+				--	SET 
+				--		[dropped] = 'ERROR', 
+				--		error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
+				--	WHERE 
+				--		restore_id = @restoreLogId;
+				--END;
+
             END;
 
             IF (@executeDropAllowed = 1) AND EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName) BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:

@@ -101,7 +101,7 @@ AS
 		END [restore_duration], 
 		l.[consistency_succeeded], 
 		CASE
-			WHEN ISNULL(l.[consistency_succeeded], 0) = 1 THEN DATEDIFF(MILLISECOND, l.[consistency_start], [consistency_end])
+			WHEN ISNULL(l.[consistency_succeeded], 0) = 1 THEN DATEDIFF(MILLISECOND, l.[consistency_start], l.[consistency_end])
 			ELSE 0
 		END [consistency_check_duration], 				
 		l.[restored_files], 
@@ -153,6 +153,8 @@ AS
 			COUNT(restore_id) OVER (PARTITION BY [execution_id]) [tested_count],
 			[database], 
 			[restored_as],
+			--DATEDIFF(DAY, [latest_backup], [restore_end]) [rpo_gap_days], 
+			--DATEDIFF(DAY, [restore_start], [restore_end]) [rto_gap_days],
 			DATEDIFF(MILLISECOND, [latest_backup], [restore_end]) [rpo_gap], 
 			DATEDIFF(MILLISECOND, [restore_start], [restore_end]) [rto_gap]
 		INTO 
@@ -176,7 +178,10 @@ AS
 			dbo.format_timespan(SUM(f.[restore_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_restore],
 			dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
 			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
-			dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) [rpo_gap], 
+			CASE 
+				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N' days' 
+				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
+			END [rpo_gap], 
 			ISNULL(f.[error_details], N'') [error_details]
 		FROM 
 			#facts f
