@@ -8051,7 +8051,11 @@ CREATE TABLE dbo.server_trace_flags (
 	CONSTRAINT [PK_server_traceflags] PRIMARY KEY CLUSTERED ([trace_flag] ASC)
 ) 
 ON [PRIMARY];
+GO 
 
+-- and populate:
+INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
+EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
 GO
 
 
@@ -11376,7 +11380,6 @@ ALERTS:
 
 	RETURN 0;
 GO	
-
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
