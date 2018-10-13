@@ -417,7 +417,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 5. Cleanup and pre-v4 objects (i.e., in master db)... 
+-- 5. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
@@ -507,6 +507,34 @@ IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
 END;
 GO
 
+-------------------------------------------------------------
+-- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.server_synchronization_checks', 'P') IS NOT NULL BEGIN
+	
+	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%server_synchronization_checks%')
+		PRINT 'WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.server_synchronization_checks were found. Please update to call dbo.verify_server_synchronization instead.';
+
+	DROP PROC dbo.server_synchronization_checks;
+END;
+
+IF OBJECT_ID('dbo.job_synchronization_checks', 'P') IS NOT NULL BEGIN
+	
+	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%job_synchronization_checks%')
+		PRINT 'WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.job_synchronization_checks were found. Please update to call dbo.verify_job_synchronization instead.';
+		
+	DROP PROC dbo.job_synchronization_checks;
+END;
+
+IF OBJECT_ID('dbo.data_synchronization_checks', 'P') IS NOT NULL BEGIN
+	
+	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%data_synchronization_checks%')
+		PRINT 'WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.data_synchronization_checks were found. Please update to call dbo.verify_data_synchronization instead.';
+
+	DROP PROC dbo.data_synchronization_checks;
+END;
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 6. Deploy new/updated code.
@@ -651,13 +679,13 @@ GO
 --##INCLUDE: S4 High Availability\Failover\verify_job_states.sql
 
 -----------------------------------
---##INCLUDE: S4 High Availability\Monitoring\job_synchronization_checks.sql
+--##INCLUDE: S4 High Availability\Monitoring\verify_job_synchronization.sql
 
 -----------------------------------
---##INCLUDE: S4 High Availability\Monitoring\server_synchronization_checks.sql
+--##INCLUDE: S4 High Availability\Monitoring\verify_server_synchronization.sql
 
 -----------------------------------
---##INCLUDE: S4 High Availability\Monitoring\data_synchronization_checks.sql
+--##INCLUDE: S4 High Availability\Monitoring\verify_data_synchronization.sql
 
 
 

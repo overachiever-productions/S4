@@ -97,11 +97,11 @@ USE [admindb];
 GO
 
 
-IF OBJECT_ID('dbo.job_synchronization_checks','P') IS NOT NULL
-	DROP PROC dbo.job_synchronization_checks
+IF OBJECT_ID('dbo.verify_job_synchronization','P') IS NOT NULL
+	DROP PROC dbo.verify_job_synchronization;
 GO
 
-CREATE PROC [dbo].[job_synchronization_checks]
+CREATE PROC [dbo].[verify_job_synchronization]
 	@IgnoredJobs			nvarchar(MAX)		= '',
 	@MailProfileName		sysname				= N'General',	
 	@OperatorName			sysname				= N'Alerts',	

@@ -92,8 +92,8 @@ INSERT INTO @ObjectNames (name)
 VALUES 
 (N'server_trace_flags'),
 (N'is_primary_database'),
-(N'server_synchronization_checks'),
-(N'job_synchronization_checks');
+(N'verify_server_synchronization'),
+(N'verify_job_synchronization');
 
 INSERT INTO #Errors (SectionID, Severity, ErrorText)
 SELECT 
@@ -192,7 +192,7 @@ END
 DELETE FROM @ObjectNames;
 INSERT INTO @ObjectNames (name)
 VALUES 
-(N'data_synchronization_checks');
+(N'verify_data_synchronization');
 
 INSERT INTO #Errors (SectionID, Severity, ErrorText)
 SELECT 
@@ -205,12 +205,14 @@ FROM
 WHERE 
 	o.name IS NULL;
 
-
--- Make sure the 'stock' MS job "Database Mirroring Monitor Job" is present. 
-IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobs WHERE name = 'Database Mirroring Monitor Job') BEGIN 
-	INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	SELECT 4, N'ERROR', N'The SQL Server Agent (initially provided by Microsoft) entitled ''Database Mirroring Monitor Job'' is not present. Please recreate.';
-END 
+IF EXISTS(SELECT * FROM sys.[database_mirroring] WHERE [mirroring_guid] IS NOT NULL) BEGIN
+	-- If Mirrored dbs are present:
+	-- Make sure the 'stock' MS job "Database Mirroring Monitor Job" is present. 
+	IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobs WHERE name = 'Database Mirroring Monitor Job') BEGIN 
+		INSERT INTO #Errors (SectionID, Severity, ErrorText)
+		SELECT 4, N'ERROR', N'The SQL Server Agent (initially provided by Microsoft) entitled ''Database Mirroring Monitor Job'' is not present. Please recreate.';
+	END;
+END; 
 
 -- Make sure there's a health-check job:
 IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%data_synchronization_checks%') BEGIN 
