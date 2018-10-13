@@ -51,11 +51,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.server_synchronization_checks','P') IS NOT NULL
-	DROP PROC dbo.server_synchronization_checks;
+IF OBJECT_ID('dbo.verify_server_synchronization','P') IS NOT NULL
+	DROP PROC dbo.verify_server_synchronization;
 GO
 
-CREATE PROC dbo.server_synchronization_checks 
+CREATE PROC dbo.verify_server_synchronization 
 	@IgnoreMirroredDatabaseOwnership	bit		= 0,					-- check by default. 
 	@IgnoredMasterDbObjects				nvarchar(4000) = NULL,
 	@IgnoredLogins						nvarchar(4000) = NULL,

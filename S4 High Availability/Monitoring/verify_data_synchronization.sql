@@ -39,11 +39,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.data_synchronization_checks','P') IS NOT NULL
-	DROP PROC dbo.data_synchronization_checks;
+IF OBJECT_ID('dbo.verify_data_synchronization','P') IS NOT NULL
+	DROP PROC dbo.verify_data_synchronization;
 GO
 
-CREATE PROC dbo.data_synchronization_checks 
+CREATE PROC dbo.verify_data_synchronization 
 	@IgnoredDatabases						nvarchar(MAX)		= NULL,
 	@SyncCheckSpanMinutes					int					= 10,  --MKC: might rename this @ExecutionFrequencyMinutes or... soemthing... 
 	@TransactionDelayThresholdMS			int					= 8600,
