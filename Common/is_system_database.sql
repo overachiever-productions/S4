@@ -2,17 +2,7 @@
 
 /*
 
-	TODO:
-		- Still not sure about the name of this FN... 
-			is ... is a verb (i.e., to be)... but still... 
-
-			other options could/would be: 
-					dbo.report_status(@dbname...) 
-					dbo.treat_as_system(@dbname...)
-					etc... 						
-
-		- Need to put whether or not to treat admindb as a [SYSTEM] database in to a settings table... 
-			that way, it doesn't get 'overwritten' per each code update... 
+			
 
 */
 
@@ -35,9 +25,16 @@ AS
 		IF UPPER(@DatabaseName) = N'TEMPDB'  -- not sure WHY this would ever be interrogated, but... it IS a system database.
 			SET @output = 1;
 		
-		-- by default, the [admindb] is treated as a system database: 
-		IF UPPER(@DatabaseName) = N'ADMINDB'
+		-- by default, the [admindb] is treated as a system database (but this can be overwritten as a setting in dbo.settings).
+		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN
 			SET @output = 1;
+
+			DECLARE @override sysname; 
+			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'admindb_is_system_db';
+
+			IF @override = N'0'	-- only overwrite if a) the setting is there/defined AND the setting's value = 0 (i.e., false).
+				SET @output = 0;
+		END;
 
 		RETURN @output;
 	END; 

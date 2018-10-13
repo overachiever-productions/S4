@@ -6,7 +6,7 @@
 		- '[ALLOW # in (span)]' ... where we could specifiy something like 2 in 2m or whatever... and if it goes > than that... we raise an alert. (this'll take state management of some sorts and... logic around when to alert and when alerts have been sent).
 
 
-
+		
 
 */
 
@@ -22,7 +22,7 @@ IF OBJECT_ID('dbo.alert_responses','U') IS NULL BEGIN
 		is_s4_response bit NOT NULL CONSTRAINT DF_alert_responses_s4_response DEFAULT (0),
 		is_enabled bit NOT NULL CONSTRAINT DF_alert_responses_is_enabled DEFAULT (1),
 		notes nvarchar(1000) NULL, 
-		CONSTRAINT PK_alert_responses_alert_id PRIMARY KEY NONCLUSTERED ([alert_id])
+		CONSTRAINT PK_alert_responses PRIMARY KEY NONCLUSTERED ([alert_id])
 	);
 
 	CREATE CLUSTERED INDEX CLIX_alert_responses_by_message_id ON dbo.[alert_responses] ([message_id]);
