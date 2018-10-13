@@ -1,8 +1,9 @@
 
 /*
-	PURPOSE:
-		[Severity 17+ = good alerts. but sometimes... noise. this allows filtered removal of 'noise' alerts... so that ... admins/etc. don't become innured/complacent about alerts]
-
+	PURPOSES:
+		- Severity 17+ alerts are great - only, sometimes, there's 'noise' in the sense that SOME errors don't really need to be addressed at all. 
+		- vNEXT: Or, while some Severity 17+ errors can/should be ignored if/when there's a single error (within a long duration of time) - whereas multiple/successive (or a 'burst' of errors) should NOT be ignored. 
+		- vNEXT: Some alerts/error types should have some sort processing/operation tackled. (Granted, Alerts allow this 'out of the box' - but also require explicit wire-up of jobs to tackle - which isn't always the best option. 
 
 	OVERVIEW:
 		[Sadly, there's no SIMPLE way to do this... instead, we have to a) set up a job that'll take raw alert 'input', run it through a sproc, and let THAT define whether or not to 'forward' the alert or simply 'swallow'/ignore it]... 
@@ -14,6 +15,8 @@
 		A. SQL Server Agent > Properties > Alert System > [x] - Replace tokens for all job responses to alerts.
 		B. Configured/Defined Alerts (SQL Server Agent > Alerts). 
 
+	DEPENDENCIES:
+		- dbo.alert_responses (table)
 
 	DEPLOYMENT:
 		1. Match Pre-Requisites. 
@@ -38,16 +41,20 @@
 
 
 	SAMPLE EXECUTION EXAMPLE: 
-		(NOTE: This tests the sproc, not the job/etc. )
+		(NOTE: This tests the sproc, not the JOB.)
 
-		DECLARE @ErrorNumber int, @Severity int;
-		SET @ErrorNumber = 100001
-		SET @Severity = 19;
 
+		-- fake error - that'll get sent/forwarded: 
 		EXEC admindb.dbo.process_alerts
-			@ErrorNumber = @ErrorNumber, 
-			@Severity = @Severity,
-			@Message = N'fake message here.... ';
+			@ErrorNumber = 100001, 
+			@Severity = 19,
+			@Message = N'Totally fake error number and message detected.';
+
+		-- example of an ignored (by S4 default) 
+		EXEC admindb.dbo.process_alerts
+			@ErrorNumber = 17806, 
+			@Severity = 20,
+			@Message = N'SSPI handshake failed with error code 0x88976, state 14 while establishing a connection with integrated security; the connection has been closed.';		
 
 
 */
@@ -69,25 +76,30 @@ CREATE PROC dbo.process_alerts
 AS 
 	SET NOCOUNT ON; 
 
-	DECLARE @ignoredErrorNumbers TABLE ( 
-		[error_number] int NOT NULL
-	);
+	DECLARE @response nvarchar(2000); 
 
-	INSERT INTO @ignoredErrorNumbers ([error_number])
-	VALUES
-	(7886) -- A read operation on a large object failed while sending data to the client. Example of a common-ish error you MAY wish to ignore, etc.  
-	,(17806) -- SSPI handshake failure
-	,(18056) -- The client was unable to reuse a session with SPID ###, which had been reset for connection pooling. The failure ID is 8. 
-	--,(otherIdHere)
-	--,(etc)
-	;
+	SELECT @response = response FROM dbo.alert_responses 
+	WHERE 
+		message_id = @ErrorNumber
+		AND is_enabled = 1;
 
-	IF EXISTS (SELECT NULL FROM @ignoredErrorNumbers WHERE [error_number] = @ErrorNumber)
-		RETURN 0; -- this is an ignored alert - we're done.
+	IF NULLIF(@response, N'') IS NOT NULL BEGIN 
 
-	DECLARE @body nvarchar(MAX); 
-	
-	SET @body = N'DATE/TIME: {0}
+		IF UPPER(@response) = N'[IGNORE]' BEGIN 
+			
+			-- this is an explicitly ignored alert. print the error details (which'll go into the SQL Server Agent Job log), then bail/return: 
+			PRINT '[IGNORED] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
+			RETURN 0;
+		END;
+
+		-- vNEXT:
+			-- add additional processing options here. 
+	END;
+
+	------------------------------------
+	-- If we're still here, then there were now 'special instructions' for this specific error/alert(so send an email with details): 
+
+	DECLARE @body nvarchar(MAX) = N'DATE/TIME: {0}
 
 DESCRIPTION: {1}
 
