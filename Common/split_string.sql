@@ -1,14 +1,15 @@
 
 /*
 
+	TODO: 
 
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple	
-	
-	SCALABLE:
-		1+
+-- 2x bugs with split_string: 
+SELECT * FROM dbo.[split_string](N'one', N'e');
+
+SELECT * FROM dbo.[split_string](N'one', N'twelve');
+
+
+
 */
 
 
@@ -22,32 +23,32 @@ GO
 
 CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20))
 RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
-	--WITH SCHEMABINDING 
+	--WITH SCHEMABINDING
 AS 
 	BEGIN
 
 	-- {copyright}
 	
-	IF NULLIF(@serialized,'') IS NOT NULL BEGIN
+	IF NULLIF(@serialized,'') IS NOT NULL AND NULLIF(@delimiter, N'') IS NOT NULL BEGIN
 
-		DECLARE @MaxLength int;
-		SET @MaxLength = LEN(@serialized) + 1000;
+		DECLARE @MaxLength int = LEN(@serialized) + LEN(@delimiter);
 
-		SET @serialized = @delimiter + @serialized + @delimiter;
-
-		WITH tally AS ( 
+		WITH tally (n) AS ( 
 			SELECT TOP (@MaxLength) 
 				ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
 			FROM sys.all_objects o1 
 			CROSS JOIN sys.all_objects o2
 		)
 
-		INSERT INTO @Results (result)
-		SELECT RTRIM(LTRIM((SUBSTRING(@serialized, n + 1, CHARINDEX(@delimiter, @serialized, n + 1) - n - 1))))
-		FROM tally t
-		WHERE n < LEN(@serialized) 
-			AND SUBSTRING(@serialized, n, 1) = @delimiter
-		ORDER BY t.n;
+		INSERT INTO @Results ([result])
+		SELECT 
+			SUBSTRING(@serialized, n, CHARINDEX(@delimiter, @serialized + @delimiter, n) - n)
+		FROM 
+			tally 
+		WHERE 
+			SUBSTRING(@delimiter + @serialized, n, LEN(@delimiter)) = @delimiter
+		ORDER BY 
+			 n;
 	END;
 
 	RETURN;

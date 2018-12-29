@@ -3,14 +3,13 @@
 	
 	vNEXT:
 		-- add lock_timeout and deadlock_priority from sys.dm_exec_requests... 
+		-- extrapolate waits on any blocking threads.... 
 		
 
 	NEED to Document that is_user_transaction isn't the same as is_user_connection/session
 		instead, this column (is_user_tx) tells us WHO or WHAT initiated the tx - user or ... system (implicit)
 
 		at which point... maybe I just specify [transaction_type] of implicit | explicit
-
-
 
 
 EXEC dbo.list_transactions 
@@ -34,12 +33,15 @@ GO
 CREATE PROC dbo.list_transactions 
 	@TopNRows						int			= -1, 
 	@OrderBy						sysname		= N'DURATION',  -- DURATION | LOG_COUNT | LOG_SIZE   
-	@IncludeStatements				bit			= 0, 
-	@IncludePlans					bit			= 0, 
 	@ExcludeSystemProcesses			bit			= 0, 
 	@ExcludeSelf					bit			= 1, 
+	@IncludeContext					bit			= 1,	
+	@IncludeStatements				bit			= 0, 
+	@IncludePlans					bit			= 0, 
 	@IncludeBoundSessions			bit			= 0, -- seriously, i bet .00x% of transactions would ever even use this - IF that ... 
-	@IncludeDTCDetails				bit			= 0
+	@IncludeDTCDetails				bit			= 0, 
+	@IncludeLockedResources			bit			= 1, 
+	@IncludeVersionStoreDetails		bit			= 0
 AS
 	SET NOCOUNT ON;
 
@@ -48,6 +50,7 @@ AS
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
 		[session_id] int NOT NULL,
+		[transaction_id] int NULL,
 		[database_id] int NULL,
 		[duration] int NULL,
 		[enlisted_db_count] int NULL, 
@@ -67,6 +70,7 @@ AS
 	DECLARE @topSQL nvarchar(MAX) = N'
 	SELECT {TOP}
 		[dtst].[session_id],
+		[dtat].[transaction_id],
 		[dtdt].[database_id],
 		DATEDIFF(MILLISECOND, [dtdt].[begin_time], GETDATE()) [duration],
 		[dtdt].[enlisted_db_count], 
@@ -99,8 +103,8 @@ AS
 		[dtdt].[log_bytes_used]
 	FROM 
 		sys.[dm_tran_active_transactions] dtat WITH(NOLOCK)
-		INNER JOIN sys.[dm_tran_session_transactions] dtst WITH(NOLOCK) ON [dtat].[transaction_id] = [dtst].[transaction_id]
-		INNER JOIN ( 
+		LEFT OUTER JOIN sys.[dm_tran_session_transactions] dtst WITH(NOLOCK) ON [dtat].[transaction_id] = [dtst].[transaction_id]
+		LEFT OUTER JOIN ( 
 			SELECT 
 				x.transaction_id,
 				MAX(x.database_id) [database_id], -- max isn''t always logical/best. But with tempdb_enlisted + enlisted_db_count... it''s as good as it gets... 
@@ -150,7 +154,7 @@ AS
 
 	--PRINT @topSQL;
 
-	INSERT INTO [#core] ([session_id], [database_id], [duration], [enlisted_db_count], [tempdb_enlisted], [transaction_type], [transaction_state], [enlist_count], 
+	INSERT INTO [#core] ([session_id], [transaction_id], [database_id], [duration], [enlisted_db_count], [tempdb_enlisted], [transaction_type], [transaction_state], [enlist_count], 
 		[is_user_transaction], [is_local], [is_enlisted], [is_bound], [open_transaction_count], [log_record_count], [log_bytes_used])
 	EXEC sys.[sp_executesql] @topSQL;
 
@@ -187,7 +191,7 @@ AS
 		c.[session_id], 
 		r.[sql_handle] [statement_handle], 
 		r.[plan_handle], 
-		r.[status], 
+		ISNULL(r.[status], N'Inactive'), 
 		CASE r.transaction_isolation_level 
 			WHEN 0 THEN 'Unspecified' 
 	        WHEN 1 THEN 'ReadUncomitted' 
@@ -219,7 +223,7 @@ AS
 	WHERE 
 		h.[statement_handle] IS NULL;
 
-	IF @IncludeStatements = 1 BEGIN
+	IF @IncludeStatements = 1 OR @IncludeContext = 1 BEGIN
 		
 		INSERT INTO [#statements] ([session_id], [statement_source], [statement])
 		SELECT 
@@ -242,6 +246,119 @@ AS
 			OUTER APPLY sys.[dm_exec_query_plan](h.[plan_handle]) p
 	END
 
+	-- correlated sub-query:
+	DECLARE @lockedResourcesSQL nvarchar(MAX) = N'
+		CAST((SELECT 
+			dtl.[resource_type] [@resource_type],
+			dtl.[request_session_id] [@owning_session_id],
+			DB_NAME(dtl.[resource_database_id]) [@database],
+			dtl.[resource_subtype] [@resource_subtype],
+			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
+			RTRIM(dtl.[resource_type] + N'': '' + CAST(dtl.[resource_database_id] AS sysname) + N'':'' + CASE WHEN dtl.[resource_type] = N''PAGE'' THEN CAST(dtl.[resource_description] AS sysname) ELSE CAST(dtl.[resource_associated_entity_id] AS sysname) END
+				+ CASE WHEN dtl.[resource_type] = N''KEY'' THEN N'' '' + CAST(dtl.[resource_description] AS sysname) ELSE '''' END
+				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' END) [resource_identifier], 
+			dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
+			dtl.[request_mode] [transaction/@request_mode], 
+			dtl.[request_status] [transaction/@request_status],
+			dtl.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
+			dtl.[request_owner_type] [transaction/@owner_type],
+			dtl.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
+			CONVERT(sysname, dtl.[lock_owner_address], 1) [lock_owner_address],   -- can be joined against sys.dm_os_waiting_tasks
+			x.[waiting_task_address] [waits/waiting_task_address],
+			x.[wait_duration_ms] [waits/wait_duration_ms], 
+			x.[wait_type] [waits/wait_type],
+			x.[blocking_session_id] [waits/blocking/blocking_session_id], 
+			x.[blocking_task_address] [waits/blocking/blocking_task_address], 
+			x.[resource_description] [waits/blocking/resource_description]
+		FROM 
+			sys.[dm_tran_locks] dtl
+			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x ON dtl.[lock_owner_address] = x.[resource_address]
+		WHERE 
+			dtl.[request_session_id] = c.session_id
+		FOR XML PATH (''resource''), ROOT(''locked_resources'')) AS xml) [locked_resources],	';
+	
+	DECLARE @contextSQL nvarchar(MAX) = N'
+CAST((
+	SELECT 
+		-- transaction
+			c2.transaction_id [transaction/@transaction_id], 
+			c2.transaction_state [transaction/current_state],
+			c2.transaction_type [transaction/transaction_type], 
+			h2.isolation_level [transaction/isolation_level], 
+			c2.enlist_count [transaction/active_request_count], 
+			c2.open_transaction_count [transaction/open_transaction_count], 
+		
+			-- statement
+				h2.statement_source [transaction/statement/statement_source], 
+				ISNULL(h2.[statement_start_offset], 0) [transaction/statement/sql_handle/@offset_start], 
+				ISNULL(h2.[statement_end_offset], 0) [transaction/statement/sql_handle/@offset_end],
+				ISNULL(CONVERT(nvarchar(128), h2.[statement_handle], 1), '''') [transaction/statement/sql_handle], 
+				h2.plan_handle [transaction/statement/plan_handle],
+				ISNULL(s2.statement, N'''') [transaction/statement/sql_text],
+			--/statement
+
+			-- waits
+				admindb.dbo.format_timespan(h2.wait_time) [transaction/waits/@wait_time], 
+				h2.wait_resource [transaction/waits/wait_resource], 
+				h2.wait_type [transaction/waits/wait_type], 
+				h2.last_wait_type [transaction/waits/last_wait_type],
+			--/waits
+
+			-- databases 
+				c2.enlisted_db_count [transaction/databases/enlisted_db_count], 
+				c2.tempdb_enlisted [transaction/databases/is_tempdb_enlisted], 
+				DB_NAME(c2.database_id) [transaction/databases/primary_db], 
+			--/databases
+		--/transaction 
+
+		-- time 
+			admindb.dbo.format_timespan(h2.cpu_time) [time/cpu_time], 
+			admindb.dbo.format_timespan(h2.wait_time) [time/wait_time], 
+			admindb.dbo.format_timespan(c2.duration) [time/duration], 
+			admindb.dbo.format_timespan(DATEDIFF(MILLISECOND, des2.last_request_start_time, GETDATE())) [time/time_since_last_request_start], 
+			ISNULL(CONVERT(sysname, des2.[last_request_start_time], 121), '''') [time/last_request_start]
+		--/time
+	FROM 
+		[#core] c2 
+		LEFT OUTER JOIN #handles h2 ON c2.session_id = h2.session_id
+		LEFT OUTER JOIN sys.dm_exec_sessions des2 ON c2.session_id = des.session_id
+		LEFT OUTER JOIN #statements s2 ON c2.session_id = s2.session_id
+	WHERE 
+		c2.session_id = c.session_id
+		AND h2.session_id = c.session_id 
+		AND des2.session_id = c.session_id
+		AND s2.session_id = c.session_id
+	FOR XML PATH(''''), ROOT(''context'')
+	) as xml) [context],	';
+
+	DECLARE @versionStoreSQL nvarchar(MAX) = N'
+CAST((
+	SELECT 
+		[dtvs].[version_sequence_num] [@version_id],
+		[dtst].[session_id] [@owner_session_id], 
+		[dtvs].[database_id] [versioned_rowset/@database_id],
+		[dtvs].[rowset_id] [versioned_rowset/@hobt_id],
+		SUM([dtvs].[record_length_first_part_in_bytes]) + SUM([dtvs].[record_length_second_part_in_bytes]) [versioned_rowset/@total_bytes], 
+		MAX([dtasdt].[elapsed_time_seconds]) [version_details/@total_seconds_old],
+		CASE WHEN MAX(ISNULL([dtasdt].[commit_sequence_num],0)) = 0 THEN 1 ELSE 0 END [version_details/@is_active_transaction],
+		MAX(CAST([dtasdt].[is_snapshot] AS tinyint)) [version_details/@is_snapshot],
+		MAX([dtasdt].[max_version_chain_traversed]) [version_details/@max_chain_traversed], 
+		MAX([dtvs].[status]) [version_details/@using_multipage_storage]
+	FROM 
+		sys.[dm_tran_session_transactions] dtst
+		LEFT OUTER JOIN sys.[dm_tran_locks] dtl ON [dtst].[transaction_id] = dtl.[request_owner_id]
+		LEFT OUTER JOIN sys.[dm_tran_version_store] dtvs ON dtl.[resource_database_id] = dtvs.[database_id] AND dtl.[resource_associated_entity_id] = [dtvs].[rowset_id]
+		LEFT OUTER JOIN sys.[dm_tran_active_snapshot_database_transactions] dtasdt ON dtst.[session_id] = c.[session_id]
+	WHERE 
+		dtst.[session_id] = c.[session_id]
+		AND [dtvs].[rowset_id] IS NOT NULL
+	GROUP BY 
+		[dtst].[session_id], [dtvs].[database_id], [dtvs].[rowset_id], [dtvs].[version_sequence_num]
+	ORDER BY 
+		[dtvs].[version_sequence_num]
+	FOR XML PATH(''version''), ROOT(''versions'')
+	) as xml) [version_store_data], '
+
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
         [c].[session_id],
@@ -253,43 +370,15 @@ AS
 		des.[login_name],
 		des.[program_name], 
 		des.[host_name],
-		CAST((''<context>
-			<transaction>
-				<current_state>'' + ISNULL(c.transaction_state,'''') + N''</current_state>
-				<isolation_level>'' + ISNULL(h.isolation_level, '''') + N''</isolation_level>
-				<active_request_count>'' + ISNULL(CAST(c.enlist_count as sysname), ''0'') + N''</active_request_count>
-				<open_transaction_count>'' + ISNULL(CAST(c.open_transaction_count as sysname), ''0'') + N''</open_transaction_count>
-				{dtc}
-				<statement>
-					<sql_statement_source>'' + ISNULL(h.statement_source, '''') + N''</sql_statement_source>
-					<sql_handle offset_start="'' + CAST(ISNULL(h.[statement_start_offset], 0) as sysname) + N''" offset_end="'' + CAST(ISNULL(h.[statement_end_offset], 0) as sysname) + N''">'' + ISNULL(CONVERT(nvarchar(128), h.[statement_handle], 1), '''') + N''</sql_handle>
-					<plan_handle>'' + ISNULL(CONVERT(nvarchar(128), h.[plan_handle], 1), '''') + N''</plan_handle>
-					{statementXML}
-				</statement>
-				<waits>
-					<wait_time>'' + dbo.format_timespan(h.wait_time) + N''</wait_time>
-					<wait_resource>'' + ISNULL([h].[wait_resource], '''') + N''</wait_resource>
-					<wait_type>'' + ISNULL([h].[wait_type], '''') + N''</wait_type>
-					<last_wait_type>'' + ISNULL([h].[last_wait_type], '''') + N''</last_wait_type>
-				</waits>
-				<databases>
-					<enlisted_db_count>'' + CAST(c.enlisted_db_count AS sysname) + N''</enlisted_db_count>
-					<is_tempdb_enlisted>'' + CAST(c.tempdb_enlisted as char(1)) + N''</is_tempdb_enlisted>
-					<primary_db>'' + ISNULL(DB_NAME([c].[database_id]), '''') + N''</primary_db>
-				</databases>
-			</transaction>
-			<time>
-				<cpu_time>'' + dbo.format_timespan([h].cpu_time) + N''</cpu_time>
-				<duration>'' + dbo.format_timespan([c].[duration]) + N''</duration>
-				<wait_time>'' + dbo.format_timespan([h].wait_time) + N''</wait_time>
-				<time_since_session_last_request_start>'' + dbo.format_timespan(DATEDIFF(MILLISECOND, des.last_request_start_time, GETDATE())) + N''</time_since_session_last_request_start>
-				<last_session_request_start>'' + ISNULL(CONVERT(sysname, des.[last_request_start_time], 121), '''') + N''</last_session_request_start>
-			</time>
-		</context>'') as xml) [context],
-		CASE WHEN [c].[is_user_transaction] = 1 THEN ''EXPLICIT'' ELSE ''IMPLICIT'' END [transaction_type], 
-		N'''' + ISNULL(CAST(c.log_record_count as sysname), ''0'') + N'' - '' + ISNULL(CAST(c.log_bytes_used as sysname),''0'') + N''''		[log_used (count - bytes)]
+		ISNULL(c.log_record_count, 0) [log_record_count], 
+		ISNULL(c.log_bytes_used, 0) [log_bytes_used],
+		--N'''' + ISNULL(CAST(c.log_record_count as sysname), ''0'') + N'' - '' + ISNULL(CAST(c.log_bytes_used as sysname),''0'') + N''''		[log_used (count - bytes)],
+		{context}
+		{locked_resources}
+		{version_store}
 		{plan}
 		{bound}
+		CASE WHEN [c].[is_user_transaction] = 1 THEN ''EXPLICIT'' ELSE ''IMPLICIT'' END [transaction_type]
 	FROM 
 		[#core] c 
 		LEFT OUTER JOIN #handles h ON c.session_id = h.session_id
@@ -299,16 +388,27 @@ AS
 	ORDER BY 
 		[c].[row_number];';
 
+	IF @IncludeContext = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{context}', @contextSQL);
+	  END; 
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{context}', N'');
+	END;
+
+	IF @IncludeVersionStoreDetails = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', @versionStoreSQL);
+	  END; 
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', N'');
+	END;
 
 	IF @IncludeStatements = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statement}', N'[s].[statement],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementJOIN}', N'LEFT OUTER JOIN #statements s ON c.session_id = s.session_id');
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementXML}', N'<text>'' + (SELECT ISNULL([s].[statement], '''') FOR XML PATH('''')) + N''</text>');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statement}', N'');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementJOIN}', N'');
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementXML}', N'');
 	END; 
 
 	IF @IncludePlans = 1 BEGIN 
@@ -334,7 +434,15 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'');
 	END;
 
---PRINT @projectionSQL;
+	IF @IncludeLockedResources = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
+	  END;
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
+	END;
+
+--EXEC admindb.dbo.[print_string] @Input = @projectionSQL;
+--RETURN;
 
 	-- final output:
 	EXEC sys.[sp_executesql] @projectionSQL;

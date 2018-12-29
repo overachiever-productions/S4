@@ -47,7 +47,7 @@ AS
 	DECLARE @vectorType nchar(1) = LOWER(RIGHT(@Vector, 1));
 
 	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
-	IF @vectorType NOT IN (SELECT [result] FROM dbo.split_string(@AllowedIntervals, N',')) BEGIN 
+	IF @vectorType NOT IN (SELECT REPLACE([result], N' ', '') FROM dbo.split_string(@AllowedIntervals, N',')) BEGIN 
 		SET @Error = N'Invalid @' + @ParameterName + N' value specified. @' + @ParameterName + N' must take the format of #x - where # is an integer, and x is a SINGLE letter which signifies s[econds], m[inutes], d[ays], w[eeks], q[uarters], y[ears]. Allowed Values Currently Available: [' + @AllowedIntervals + N'].';
 		RETURN -10000;	
 	END 
