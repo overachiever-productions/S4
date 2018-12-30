@@ -311,6 +311,8 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 
+	DECLARE @ignoredLogFiles int = 0;
+
 	DECLARE @logFilesToRestore table ( 
 		id int IDENTITY(1,1) NOT NULL, 
 		log_file sysname NOT NULL
@@ -325,7 +327,8 @@ AS
 		Applied datetime NULL, 
 		BackupSize bigint NULL, 
 		Compressed bit NULL, 
-		[Encrypted] bit NULL
+		[Encrypted] bit NULL, 
+		[Comment] nvarchar(MAX) NULL
 	); 
 
 	DECLARE @backupDate datetime, @backupSize bigint, @compressed bit, @encrypted bit;
@@ -425,6 +428,7 @@ AS
     WHILE @@FETCH_STATUS = 0 BEGIN
         
 		-- reset every 'loop' through... 
+		SET @ignoredLogFiles = 0;
         SET @statusDetail = NULL; 
         DELETE FROM @restoredFiles;
 		
@@ -707,9 +711,18 @@ AS
 					[BackupCreated] = @backupDate, 
 					[BackupSize] = @backupSize, 
 					[Compressed] = @compressed, 
-					[Encrypted] = @encrypted
+					[Encrypted] = @encrypted, 
+					[Comment] = @statusDetail
 				WHERE 
 					[FileName] = @backupName;
+
+				-- S4-86: Account for scenarios where we're told that the T-LOG is too 'early' (i.e., old): 
+				IF @statusDetail LIKE '%terminates%which is too early%a more recent log backup%can be restored%' BEGIN
+					SET @ignoredLogFiles += 1;  
+
+					IF @ignoredLogFiles < 3					
+						SET @statusDetail = NULL; 	
+				END;
 
                 IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
@@ -829,8 +842,6 @@ AS
 
         END;
 
-
-
 -- Primary Restore/Restore-Testing complete - log file lists, and cleanup/prep for next db to process... 
 NextDatabase:
 
@@ -863,7 +874,8 @@ NextDatabase:
 				Applied [applied], 
 				BackupSize [size], 
 				Compressed [compressed], 
-				[Encrypted] [encrypted]
+				[Encrypted] [encrypted], 
+				[Comment] [comments]
 			FROM 
 				@restoredFiles 
 			ORDER BY 

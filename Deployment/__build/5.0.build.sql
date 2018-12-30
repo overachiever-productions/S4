@@ -381,6 +381,23 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 END;
 GO
 
+-- 5.0.2754 - expand dbo.restore_log.[recovery]. S4-86.
+IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery' AND [max_length] = 10) BEGIN
+	BEGIN TRAN;
+
+		ALTER TABLE dbo.[restore_log]
+			ALTER COLUMN [recovery] varchar(15) NOT NULL; 
+
+		ALTER TABLE dbo.[restore_log]
+			DROP CONSTRAINT [DF_restore_log_recovery];
+
+		ALTER TABLE dbo.[restore_log]
+			ADD CONSTRAINT [DF_restore_log_recovery] DEFAULT ('NON-RECOVERED') FOR [recovery];
+
+	COMMIT;
+END;
+
+
 ---------------------------------------------------------------------------
 -- Process UTC to local time change (v4.7). 
 ---------------------------------------------------------------------------
