@@ -1,14 +1,18 @@
 
 /*
 
+	TODO: 
+		- Figure out why I'm being dumb and can't get the normal (numbers table) approach to work with ' ' (space). 
+			I'm doing something dumb there. The current fix/hack addresses this from a LOGICAL standpoint, but the perf isn't going to be solid/great.
 
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple	
-	
-	SCALABLE:
-		1+
+
+
+-- crappy tests... 
+SELECT * FROM dbo.[split_string](N'one', N'e');
+SELECT * FROM dbo.[split_string](N'one', N'twelve');
+SELECT * FROM dbo.[split_string](N'these are some words that i would like to have split and stuff.', N' ');
+
+
 */
 
 
@@ -22,32 +26,54 @@ GO
 
 CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20))
 RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
-	--WITH SCHEMABINDING 
+	--WITH SCHEMABINDING
 AS 
 	BEGIN
 
 	-- {copyright}
 	
-	IF NULLIF(@serialized,'') IS NOT NULL BEGIN
+	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
+		IF @delimiter = N' ' BEGIN 
+			-- this approach is going to be MUCH slower, but works for space delimiter... 
+			DECLARE @p int; 
+			DECLARE @s nvarchar(MAX);
+			WHILE CHARINDEX(N' ', @serialized) > 0 BEGIN 
+				SET @p = CHARINDEX(N' ', @serialized);
+				SET @s = SUBSTRING(@serialized, 1, @p - 1); 
+			
+				INSERT INTO @Results ([result])
+				VALUES(@s);
 
-		DECLARE @MaxLength int;
-		SET @MaxLength = LEN(@serialized) + 1000;
+				SELECT @serialized = SUBSTRING(@serialized, @p + 1, LEN(@serialized) - @p);
+			END;
+			
+			INSERT INTO @Results ([result])
+			VALUES (@serialized);
 
-		SET @serialized = @delimiter + @serialized + @delimiter;
+		  END; 
+		ELSE BEGIN
 
-		WITH tally AS ( 
-			SELECT TOP (@MaxLength) 
-				ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
-			FROM sys.all_objects o1 
-			CROSS JOIN sys.all_objects o2
-		)
+			DECLARE @MaxLength int = LEN(@serialized) + LEN(@delimiter);
 
-		INSERT INTO @Results (result)
-		SELECT RTRIM(LTRIM((SUBSTRING(@serialized, n + 1, CHARINDEX(@delimiter, @serialized, n + 1) - n - 1))))
-		FROM tally t
-		WHERE n < LEN(@serialized) 
-			AND SUBSTRING(@serialized, n, 1) = @delimiter
-		ORDER BY t.n;
+			WITH tally (n) AS ( 
+				SELECT TOP (@MaxLength) 
+					ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
+				FROM sys.all_objects o1 
+				CROSS JOIN sys.all_objects o2
+			)
+
+			INSERT INTO @Results ([result])
+			SELECT 
+				SUBSTRING(@serialized, n, CHARINDEX(@delimiter, @serialized + @delimiter, n) - n) [result]
+			FROM 
+				tally 
+			WHERE 
+				n <= LEN(@serialized) AND
+				LEN(@delimiter) <= LEN(@serialized) AND
+				RTRIM(LTRIM(SUBSTRING(@delimiter + @serialized, n, LEN(@delimiter)))) = @delimiter
+			ORDER BY 
+				 n;
+		END;
 	END;
 
 	RETURN;

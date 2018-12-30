@@ -203,8 +203,16 @@ AS
 
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
 		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+			
+			CREATE TABLE #hadr_names ([name] sysname NOT NULL);
+
+			-- 2018-11-26: This is a hell of a bug/issue ... i had an INSERT EXEC here... but that doesn't work cuz the whole idea of this sproc is to AVOID that... 
+			--		so... i'm FURTHER hacking this to use a temp table for now... which is even MORE stupid... but, i've got a full 'rewrite' planned for this .. so it's a temporary hack/work-around:
+			
+			EXEC sp_executesql N'INSERT INTO #hadr_names ([name]) SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
+
 			INSERT INTO @synchronized ([database_name])
-			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
+			SELECT [name] FROM #hadr_names;
 		END
 
 		-- Note, snapshots were removed earlier... 
