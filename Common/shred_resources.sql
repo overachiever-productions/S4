@@ -9,7 +9,7 @@
 
 
 
-DECLARE @raw xml = N'
+DECLARE @xml xml = N'
 <locked_resources>
   <resource resource_type="DATABASE" owning_session_id="63" database="tempdb" resource_subtype="BULKOP_BACKUP_LOG">
     <resource_identifier>DATABASE: 2:0</resource_identifier>
@@ -29,14 +29,12 @@ SELECT * FROM dbo.shred_resources(@xml);
 
 */
 
-
-
 USE [admindb];
 GO 
 
 
 IF OBJECT_ID('dbo.shred_resources','IF') IS NOT NULL
-	DROP FUNCTION dbo.shred_resources
+	DROP FUNCTION dbo.shred_resources;
 GO
 
 
@@ -44,6 +42,9 @@ CREATE FUNCTION dbo.shred_resources(@resources xml)
 RETURNS TABLE 
 AS 
   RETURN	
+	
+	-- {copyright}
+
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
 		[resource].value('@database[1]', 'sysname') [database], 

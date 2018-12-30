@@ -1,5 +1,3 @@
-
-
 /*
 
 	TODO: 
@@ -26,7 +24,16 @@
 							and... i can't really create a UDF in there... so that I could do SELECT <clientX>.dbo.UdfVariant(x, y, z)... 
 
 
-		
+							
+DECLARE @Statement nvarchar(MAX);
+EXEC dbo.[extract_statement]
+    @TargetDatabase = 'Xcelerator4', -- sysname
+    @ObjectID = 1288365096, -- int
+    @OffsetStart = 48872, -- int
+    @OffsetEnd = 48922, -- int
+    @Statement = @Statement OUTPUT;
+
+SELECT @Statement;
 
 
 */
@@ -36,7 +43,7 @@ USE [admindb];
 GO
 
 IF OBJECT_ID('dbo.extract_statement','P') IS NOT NULL
-	DROP PROC dbo.extract_statement
+	DROP PROC dbo.extract_statement;
 GO
 
 CREATE PROC dbo.extract_statement
@@ -69,18 +76,5 @@ WHERE
 		@OffsetEnd = @OffsetEnd, 
 		@Statement = @Statement OUTPUT; 
 
-
 	RETURN 0;
 GO
-
-
-
-DECLARE @Statement nvarchar(MAX);
-EXEC dbo.[extract_statement]
-    @TargetDatabase = 'Xcelerator4', -- sysname
-    @ObjectID = 1288365096, -- int
-    @OffsetStart = 48872, -- int
-    @OffsetEnd = 48922, -- int
-    @Statement = @Statement OUTPUT;
-
-SELECT @Statement;
