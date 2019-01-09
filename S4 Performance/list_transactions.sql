@@ -50,7 +50,7 @@ AS
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
 		[session_id] int NOT NULL,
-		[transaction_id] int NULL,
+		[transaction_id] bigint NULL,
 		[database_id] int NULL,
 		[duration] int NULL,
 		[enlisted_db_count] int NULL, 
