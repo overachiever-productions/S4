@@ -6,7 +6,7 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.0.2754.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.0.2754.1.
+		- This script will either install/deploy S4 version 5.1.2764.3 or upgrade a PREVIOUSLY deployed version of S4 to 5.1.2764.3.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -20,7 +20,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.0.2754.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 5.1.2764.3 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -99,7 +99,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.0.2754.1';
+DECLARE @CurrentVersion varchar(20) = N'5.1.2764.3';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -625,7 +625,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -663,7 +663,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -698,7 +698,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalide @FilterType specified.', 16, 1);
@@ -804,7 +804,7 @@ CREATE PROC dbo.load_database_names
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1109,7 +1109,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -1175,7 +1175,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -1262,7 +1262,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -1302,7 +1302,7 @@ CREATE PROC dbo.get_time_vector
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- cleanup:
 	SET @Vector = LTRIM(RTRIM(@Vector));
@@ -1436,7 +1436,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -1455,6 +1455,155 @@ GO
 
 
 
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Utilities:
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.count_matches','FN') IS NOT NULL
+	DROP FUNCTION dbo.count_matches;
+GO
+
+CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
+RETURNS int 
+AS 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	BEGIN 
+		DECLARE @output int = 0;
+
+		DECLARE @actualLength int = LEN(@input); 
+		DECLARE @replacedLength int = LEN(CAST(REPLACE(@input, @pattern, N'') AS nvarchar(MAX)));
+
+		IF @replacedLength < @actualLength BEGIN 
+
+			DECLARE @difference int = @actualLength - @replacedLength; 
+			SET @output =  @difference / LEN(@pattern);
+
+		END;
+		
+		RETURN @output;
+	END; 
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.shred_string','P') IS NOT NULL
+	DROP PROC dbo.shred_string
+GO
+
+CREATE PROC dbo.shred_string
+	@input						nvarchar(MAX), 
+	@rowDelimiter				nvarchar(10) = N',', 
+	@columnDelimiter			nvarchar(10) = N':'
+AS 
+	SET NOCOUNT ON; 
+
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	DECLARE @rows table ( 
+		[row_id] int,
+		[result] nvarchar(200)
+	);
+
+	INSERT INTO @rows ([row_id], [result])
+	SELECT [row_id], LTRIM(RTRIM([result])) 
+	FROM admindb.[dbo].[split_string](@input, @rowDelimiter);
+
+	DECLARE @columnCountMax int = 0;
+
+	SELECT 
+		@columnCountMax = 1 + MAX(dbo.count_matches([result], @columnDelimiter)) 
+	FROM 
+		@rows;
+
+	--SELECT @columnCountMax;
+	--SELECT * FROM @rows;
+
+	--DECLARE @pivoted table ( 
+	CREATE TABLE #pivoted (
+		row_id int NOT NULL, 
+		[column_id] int NOT NULL, 
+		[result] sysname NULL
+	);
+
+	DECLARE @currentRow nvarchar(200); 
+	DECLARE @currentRowID int = 1;
+
+	SET @currentRow = (SELECT [result] FROM @rows WHERE [row_id] = @currentRowID);
+	WHILE (@currentRow IS NOT NULL) BEGIN 
+
+		INSERT INTO #pivoted ([row_id], [column_id], [result])
+		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter);
+
+		SET @currentRowID = @currentRowID + 1;
+		SET @currentRow = (SELECT [result] FROM @rows WHERE [row_id] = @currentRowID);
+	END; 
+
+	DECLARE @sql nvarchar(MAX) = N'
+	WITH tally AS ( 
+		SELECT TOP (@columnCountMax)
+			ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
+		FROM sys.all_objects o1 
+	), 
+	transposed AS ( 
+		SELECT
+			p.row_id,
+			CAST(N''column_'' AS varchar(20)) + RIGHT(CAST(''00'' AS varchar(20)) + CAST(t.n AS varchar(20)), 2) [column_name], 
+			p.[result]
+		FROM 
+			#pivoted p
+			INNER JOIN [tally] t ON p.[column_id] = t.n 
+	)
+
+	SELECT 
+		[row_id], 
+		{columns}
+	FROM 
+		(
+			SELECT 
+				t.row_id, 
+				t.column_name, 
+				t.result 
+			FROM 
+				[transposed] t
+			--ORDER BY 
+			--	t.[row_id], t.[column_name]
+		) x 
+	PIVOT ( MAX([result]) 
+		FOR [column_name] IN ({columns})		
+	) p; ';
+
+	DECLARE @columns nvarchar(200) = N'';
+
+	WITH tally AS ( 
+		SELECT TOP (@columnCountMax)
+			ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
+		FROM sys.all_objects o1 
+	)
+
+	SELECT @columns = @columns + N'[' + CAST(N'column_' AS varchar(20)) + RIGHT(CAST('00' AS varchar(20)) + CAST(t.n AS varchar(20)), 2) + N'], ' FROM tally t;
+	SET @columns = LEFT(@columns, LEN(@columns) - 1);
+
+	SET @sql = REPLACE(@sql, N'{columns}', @columns); 
+
+	EXEC [sys].[sp_executesql]
+		@stmt = @sql, 
+		@params = N'@columnCountMax int', 
+		@columnCountMax = @columnCountMax;
+
+
+	RETURN 0;
+
+GO
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -5159,7 +5308,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -5234,7 +5383,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -5370,7 +5519,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6441,7 +6590,7 @@ CREATE PROC dbo.list_processes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -6702,12 +6851,12 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
 		[session_id] int NOT NULL,
-		[transaction_id] int NULL,
+		[transaction_id] bigint NULL,
 		[database_id] int NULL,
 		[duration] int NULL,
 		[enlisted_db_count] int NULL, 
@@ -7128,7 +7277,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -8127,7 +8276,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -8379,7 +8528,7 @@ CREATE PROC dbo.monitor_transaction_durations
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
@@ -8703,7 +8852,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -8829,6 +8978,200 @@ WHERE
 		@Statement = @Statement OUTPUT; 
 
 	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.extract_waitresource','P') IS NOT NULL
+	DROP PROC dbo.extract_waitresource;
+GO
+
+CREATE PROC dbo.extract_waitresource
+	@WaitResource				sysname, 
+	@DatabaseMappings			nvarchar(MAX)			= NULL,
+	@Output						nvarchar(2000)			= NULL    OUTPUT
+AS 
+	SET NOCOUNT ON; 
+
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
+		SET @Output = N'';
+		RETURN 0;
+	END;
+		
+	IF @WaitResource = N'0:0:0' BEGIN 
+		SET @Output = N'[0:0:0] - UNIDENTIFIED_RESOURCE';
+		RETURN 0;
+	END;
+
+	IF @WaitResource LIKE '%COMPILE]' BEGIN -- just change the formatting so that it matches 'rules processing' details below... 
+		SET @WaitResource = N'COMPILE: ' + REPLACE(REPLACE(@WaitResource, N' [COMPILE]', N''), N'OBJECT: ', N'');
+	END;
+
+	IF @WaitResource LIKE '%[0-9]%:%[0-9]%:%[0-9]%' AND @WaitResource NOT LIKE N'%: %' BEGIN -- this is a 'shorthand' PAGE identifier: 
+		SET @WaitResource = N'XPAGE: ' + @WaitResource;
+	END;
+
+	IF @WaitResource LIKE N'KEY: %' BEGIN 
+		SET @WaitResource = REPLACE(REPLACE(@WaitResource, N' (', N':'), N')', N'');  -- extract to 'explicit' @part4... 
+	END;
+
+	IF @WaitResource LIKE N'RID: %' BEGIN 
+		SET @WaitResource = REPLACE(@WaitResource, N'RID: ', N'ROW: '); -- standardize... 
+	END;
+
+	IF @WaitResource LIKE N'TABLE: %' BEGIN
+		SET @WaitResource = REPLACE(@WaitResource, N'TABLE: ', N'TAB: '); -- standardize formatting... 
+	END;
+
+	CREATE TABLE #ExtractionMapping ( 
+		row_id int NOT NULL, 
+		[database_id] int NOT NULL, 
+		[mapped_name] sysname NOT NULL, 
+		[metadata_name] sysname NULL
+	); 
+
+	IF NULLIF(@DatabaseMappings, N'') IS NOT NULL BEGIN
+		INSERT INTO #ExtractionMapping ([row_id], [database_id], [mapped_name], [metadata_name])
+		EXEC admindb.dbo.[shred_string] 
+		    @Input = @DatabaseMappings, 
+		    @RowDelimiter = N',',
+		    @ColumnDelimiter = N'|'
+	END;
+
+	SET @WaitResource = REPLACE(@WaitResource, N' ', N'');
+	DECLARE @parts table (row_id int, part nvarchar(200));
+
+	INSERT INTO @parts (row_id, part) 
+	SELECT [row_id], [result] FROM admindb.dbo.[split_string](@WaitResource, N':');
+
+	BEGIN TRY 
+		DECLARE @waittype sysname, @part2 bigint, @part3 bigint, @part4 sysname, @part5 sysname;
+		SELECT @waittype = part FROM @parts WHERE [row_id] = 1; 
+		SELECT @part2 = CAST(part AS bigint) FROM @parts WHERE [row_id] = 2; 
+		SELECT @part3 = CAST(part AS bigint) FROM @parts WHERE [row_id] = 3; 
+		SELECT @part4 = part FROM @parts WHERE [row_id] = 4; 
+		SELECT @part5 = part FROM @parts WHERE [row_id] = 5; 
+	
+		DECLARE @lookupSQL nvarchar(2000);
+		DECLARE @objectName sysname;
+		DECLARE @indexName sysname;
+		DECLARE @objectID int;
+		DECLARE @indexID int;
+		DECLARE @error bit = 0;
+
+		DECLARE @logicalDatabaseName sysname; 
+		DECLARE @metaDataDatabaseName sysname;
+
+		-- NOTE: _MAY_ need to override this in some resource types - but, it's used in SO many types (via @part2) that 'solving' for it here makes tons of sense). 
+		SET @logicalDatabaseName = ISNULL((SELECT [mapped_name] FROM #ExtractionMapping WHERE database_id = @part2) , DB_NAME(@part2));
+		SET @metaDataDatabaseName = ISNULL((SELECT ISNULL([metadata_name], [mapped_name]) FROM #ExtractionMapping WHERE database_id = @part2) , DB_NAME(@part2));
+
+		IF @waittype = N'DATABASE' BEGIN
+			IF @part3 = 0 
+				SELECT @Output = QUOTENAME(@logicalDatabaseName) + N'- SCHEMA_LOCK';
+			ELSE 
+				SELECT @Output = QUOTENAME(@logicalDatabaseName) + N' - DATABASE_LOCK';
+
+			RETURN 0;
+		END; 
+
+		IF @waittype = N'FILE' BEGIN 
+			SET @lookupSQL = N'SELECT @objectName = [physical_name] FROM [Xcelerator].sys.[database_files] WHERE FILE_ID = ' + CAST(@part3 AS sysname) + N';';
+			EXEC [sys].[sp_executesql]
+				@stmt = @lookupSQL, 
+				@params = N'@objectName sysname OUTPUT', 
+				@objectName = @objectName OUTPUT;
+
+			SELECT @Output = QUOTENAME(@logicalDatabaseName) + N' - FILE_LOCK (' + ISNULL(@objectName, N'FILE_ID: ' + CAST(@part3 AS sysname)) + N')';
+			RETURN 0;
+		END;
+
+		-- TODO: test/verify output AGAINST real 'capture' info.... 
+		IF @waittype = N'TAB' BEGIN 
+			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@part3 AS sysname) + N';';	
+
+			EXEC [sys].[sp_executesql]
+				@stmt = @lookupSQL, 
+				@params = N'@objectName sysname OUTPUT', 
+				@objectName = @objectName OUTPUT;
+
+			SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N' - TABLE_LOCK';
+			RETURN 0;
+		END;
+
+		IF @waittype = N'KEY' BEGIN 
+			SET @lookupSQL = N'SELECT @objectName = o.[name], @indexName = i.[name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.partitions p INNER JOIN [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects o ON p.[object_id] = o.[object_id] INNER JOIN [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.indexes i ON [o].[object_id] = [i].[object_id] AND p.[index_id] = [i].[index_id] WHERE p.hobt_id = ' + CAST(@part3 AS sysname) + N';';
+
+			EXEC [sys].[sp_executesql]
+				@stmt = @lookupSQL, 
+				@params = N'@objectName sysname OUTPUT, @indexName sysname OUTPUT', 
+				@objectName = @objectName OUTPUT, 
+				@indexName = @indexName OUTPUT;
+
+			SET @Output = QUOTENAME(ISNULL(@metaDataDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: -1')) + N'.[RANGE: (' + ISNULL(@part4, N'') + N')] - KEY_LOCK';
+			RETURN 0;
+		END;
+
+		IF @waittype = N'OBJECT' OR @waittype = N'COMPILE' BEGIN 
+			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@part3 AS sysname) + N';';	
+			EXEC [sys].[sp_executesql]
+				@stmt = @lookupSQL, 
+				@params = N'@objectName sysname OUTPUT', 
+				@objectName = @objectName OUTPUT;		
+
+			SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'OBJECT_ID: ' + CAST(@part3 AS sysname))) + N' - ' + @waittype +N'_LOCK';
+			RETURN 0;
+		END;
+
+		IF @waittype IN(N'PAGE', N'XPAGE', N'EXTENT', N'ROW') BEGIN 
+
+			CREATE TABLE #results (ParentObject varchar(255), [Object] varchar(255), Field varchar(255), [VALUE] varchar(255));
+			SET @lookupSQL = N'DBCC PAGE('''+ @metaDataDatabaseName + ''', ' + CAST(@part3 AS sysname) + ', ' + @part4 + ', 1) WITH TABLERESULTS;'
+
+			INSERT INTO #results ([ParentObject], [Object], [Field], [VALUE])
+			EXECUTE (@lookupSQL);
+		
+			SELECT @objectID = CAST([VALUE] AS int) FROM [#results] WHERE [ParentObject] = N'PAGE HEADER:' AND [Field] = N'Metadata: ObjectId';
+			SELECT @indexID = CAST([VALUE] AS int) FROM [#results] WHERE [ParentObject] = N'PAGE HEADER:' AND [Field] = N'Metadata: IndexId';
+		
+			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@objectID AS sysname) + N';';	
+			EXEC [sys].[sp_executesql]
+				@stmt = @lookupSQL, 
+				@params = N'@objectName sysname OUTPUT', 
+				@objectName = @objectName OUTPUT;
+
+			SET @lookupSQL = N'SELECT @indexName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.indexes WHERE object_id = ' + CAST(@objectID AS sysname) + N' AND index_id = ' + CAST(@indexID AS sysname) + N';';	
+			EXEC [sys].[sp_executesql]
+				@stmt = @lookupSQL, 
+				@params = N'@indexName sysname OUTPUT', 
+				@indexName = @indexName OUTPUT;
+
+			IF @waittype = N'ROW' 
+				SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: ' + CAST(@indexID AS sysname))) + N'.[PAGE_ID: ' + ISNULL(@part4, N'')  + N'].[SLOT: ' + ISNULL(@part5, N'') + N'] - ' + @waittype + N'_LOCK';
+			ELSE
+				SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: ' + CAST(@indexID AS sysname))) + N' - ' + @waittype + N'_LOCK';
+			RETURN 0;
+		END;
+	END TRY 
+	BEGIN CATCH 
+		PRINT 'PROCESSING_EXCEPTION: Line: ' + CAST(ERROR_LINE() AS sysname) + N' - Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' -> ' + ERROR_MESSAGE();
+		SET @error = 1;
+	END CATCH
+
+	-- IF we're still here - then either there was an exception 'shredding' the resource identifier - or we're in an unknown resource-type. (Either outcome, though, is that we're dealing with an unknown/non-implemented type.)
+	SELECT @waittype [wait_type], @part2 [part2], @part3 [part3], @part4 [part4], @part5 [part5];
+
+	IF @error = 1 
+		SET @Output = QUOTENAME(@WaitResource) + N' - EXCEPTION_PROCESSING_WAIT_RESOURCE';
+	ELSE
+		SET @Output = QUOTENAME(@WaitResource) + N' - S4_UNKNOWN_WAIT_RESOURCE';
+
+	RETURN -1;
 GO
 
 
@@ -11702,7 +12045,6 @@ GO
 
 
 
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Auditing:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -11722,7 +12064,7 @@ CREATE PROC dbo.generate_audit_signature
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -11791,7 +12133,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -11966,7 +12308,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12084,7 +12426,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.0.2754.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.1.2764.3.3] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12226,8 +12568,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.0.2754.1';
-DECLARE @VersionDescription nvarchar(200) = N'Initial Release of 5.0 Features and Code Improvements';
+DECLARE @CurrentVersion varchar(20) = N'5.1.2764.3';
+DECLARE @VersionDescription nvarchar(200) = N'Introduction of dbo.extract_waitresource + bug fixes and various improvements';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
