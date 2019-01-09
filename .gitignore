@@ -8,3 +8,6 @@
 /S4 Restore/~~ extract FILE HEADERONLY info from backups - initial testing and dev.sql
 /S4 Restore/~~ restore_databases - resiliency version (in progress).sql
 /Deployment/__build/build.log.txt
+/Common/Types/__UDTT Notes.txt
+/Common/Types/enumeration.sql
+/Common/Types/extraction_mapping.sql
