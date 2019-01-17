@@ -123,11 +123,11 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_databases','P') IS NOT NULL
-	DROP PROC dbo.list_databases;
+IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
+	DROP PROC dbo.load_databases;
 GO
 
-CREATE PROC dbo.list_databases 
+CREATE PROC dbo.load_databases 
 	@Targets					nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions					nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities					nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
