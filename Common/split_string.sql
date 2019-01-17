@@ -24,7 +24,7 @@ IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
 	DROP FUNCTION dbo.split_string;
 GO
 
-CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20))
+CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20), @TrimResults bit)
 RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 	--WITH SCHEMABINDING
 AS 
@@ -74,6 +74,11 @@ AS
 			ORDER BY 
 				 n;
 		END;
+
+		IF @TrimResults = 1 BEGIN
+			UPDATE @Results SET [result] = LTRIM(RTRIM([result])) WHERE DATALENGTH([result]) > 0;
+		END;
+
 	END;
 
 	RETURN;

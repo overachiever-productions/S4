@@ -4,12 +4,19 @@
 	5.2 Fixes: 
 		- [ ] - RENAME: dbo.list_databases 
 			[x] - change in file... 
-			[ ] - change in Git (i.e., rename only). 
+			[x] - change in Git (i.e., rename only). 
 			[x] - change in build script 
 			[ ] - change in ALL depedencies checks... 
-		- [ ] - REMOVE: @BackupType - this shouldn't need to know those details... 
-		- [ ] - Change @Input to @Target	
+		- [x] - REMOVE: @BackupType - this shouldn't need to know those details... 
+		- [x] - Change @Input to @Target	
 		- [ ] - Update docs... (don't think this pig is documented explicitly...)
+
+		- [x] - re-implement @Priorities functionality.
+
+		- [x] - bug with admindb (and... distribution?) being added 2x... 
+
+		- [x] - Validations for @Exclusions
+		- [x] - Enable [SYSTEM] + , x or x, [SYSTEM] syntax... (i.e., [SYSTEM] and OTHER exclusions together are allowed)... 
 
 */
 
@@ -25,15 +32,55 @@
 		
 
 	NOTES:
-		- JUSTIFICATION: the logic defined in this sproc is consumed by 3x different sprocs (dba_BackupDatabases, dba_RestoreDatabases, dba_RemoveBackupFiles). 
-			It is therefore put into this SINGLE sproc as an attempt at DRY (i.e., to avoid having 3x copies of ROUGHLY the same logic sprinkled throughout each
-			of the 'consumers'. HOWEVER, because any sproc that CAN (i.e., is allowed to) read the file-system via the [READ_FROM_FILESYSTEM] token will need to 
-			run an INSERT..EXEC statement, we CAN'T spit the output of THIS sproc (dba_LoadDatabaseNames) out as a normal projection (which could then be 'consumed'
-			via an INSERT...EXEC within the consumer - because that runs afoul of the dreaded 'nested insert exec' limitation that is prevented by SQL Server. 
-			AS SUCH: this sproc spits out a list of dbs via the @Output parameter as a serialized LIST of database names - that then need to be 'split' apart via
-			split_string (or something else). That's a significant 'work-around' but the performance overhead is non-existent, meaning that the only overhead
-			is one of code maintenance and the JUSTIFICATION for such a manuever is that, once coded, this will be EASIER to maintain as 1x block of code than 3x
-			semi-similar blocks of code spread out among 3x different routines. 
+		
+
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[SYSTEM]', 
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',');
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[ALL]', 
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',');
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[ALL]', 
+	@Exclusions = N'BayCar%',
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',');
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[READ_FROM_FILESYSTEM]', 
+	@TargetDirectory = N'[DEFAULT]', 
+	@Exclusions = N'[SYSTEM]',
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',');
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',');
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
+	@Priorities = N'SelectExp, *, Traces',
+	@Output = @output OUTPUT; 
+SELECT @output;
+GO
+
 
 
 */
@@ -46,13 +93,18 @@ IF OBJECT_ID('dbo.list_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_databases 
-	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
-	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
-	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED 
-	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP | NON_RECOVERED
-	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
-	@Output				nvarchar(MAX)	OUTPUT
+	@Targets					nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Exclusions					nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
+	@Priorities					nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
+	@TargetDirectory			sysname			= NULL,		-- Only required when @Targets is specified as [READ_FROM_FILESYSTEM].
+	@ExcludeClones				bit				= 1, 
+	@ExcludeSecondaries			bit				= 1,		-- exclude AG and Mirroring secondaries... 
+	@ExcludeSimpleRecovery		bit				= 0,		-- exclude databases in SIMPLE recovery mode
+	@ExcludeReadOnly			bit				= 0,		
+	@ExcludeRestoring			bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
+	@ExcludeRecovering			bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
+	@ExcludeOffline				bit				= 1,		-- removes ANY state other than ONLINE.
+	@Output						nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -60,50 +112,42 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
-	IF ISNULL(@Input, N'') = N'' BEGIN;
-		RAISERROR('@Input cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
+	IF NULLIF(@Targets, N'') IS NULL BEGIN
+		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
 
-	IF ISNULL(@Mode, N'') = N'' BEGIN;
-		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED ', 16, 1);
-		RETURN -2;
-	END
-	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED', N'NON_RECOVERED') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED', 16, 1);
-		RETURN -2;
-	END
-
-	IF UPPER(@Mode) = N'BACKUP' BEGIN;
-		IF @BackupType IS NULL BEGIN;
-			RAISERROR('When @Mode is set to BACKUP, the @BackupType value MUST be provided (and must be one of the following values: FULL | DIFF | LOG).', 16, 1);
+	IF (SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0 BEGIN
+		
+		IF UPPER(@Targets) <> N'[READ_FROM_FILESYSTEM]' BEGIN
+			RAISERROR(N'[SYSTEM] can ONLY be specified as an Exclusion when @Targets is set to [READ_FROM_FILESYSTEM].', 16, 1);
 			RETURN -5;
-		END
-
-		IF UPPER(@BackupType) NOT IN (N'FULL', N'DIFF', N'LOG') BEGIN;
-			RAISERROR('When @Mode is set to BACKUP, the @BackupType value MUST be provided (and must be one of the following values: FULL | DIFF | LOG).', 16, 1);
-			RETURN -5;
-		END
-	END
-
-	IF UPPER(@Mode) = N'LIST_RESTORED' BEGIN 
-		IF OBJECT_ID('dbo.restore_log') IS NULL BEGIN
-			RAISERROR('S4 table dbo.restore_log is required to list restored databases.', 16, 1);
-			RETURN -6;
 		END;
 	END;
 
-	IF UPPER(@Input) = N'[READ_FROM_FILESYSTEM]' BEGIN;
-		IF UPPER(@Mode) NOT IN (N'RESTORE', N'REMOVE') BEGIN;
-			RAISERROR('The specialized token [READ_FROM_FILESYSTEM] can only be used when @Mode is set to RESTORE or REMOVE.', 16, 1);
-			RETURN - 9;
-		END
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'[USER]')) > 0) OR ((SELECT dbo.[count_matches](@Exclusions, N'[ALL]')) > 0) BEGIN 
+		RAISERROR(N'@Exclusions may NOT be set to [ALL] or [USER].', 16, 1);
+		RETURN -6;
+	END;
+
+	-- Verify Backups Path:
+	IF UPPER(@Targets) = N'[READ_FROM_FILESYSTEM]' BEGIN
+		
+		IF UPPER(@TargetDirectory) = N'[DEFAULT]' BEGIN
+			SELECT @TargetDirectory = dbo.load_default_path('BACKUP');
+		END;
 
 		IF @TargetDirectory IS NULL BEGIN;
-			RAISERROR('When @Input is specified as [READ_FROM_FILESYSTEM], the @TargetDirectory must be specified - and must point to a valid path.', 16, 1);
+			RAISERROR('When @Targets is specified as [READ_FROM_FILESYSTEM], the @TargetDirectory must be specified - and must point to a valid path.', 16, 1);
 			RETURN - 10;
 		END
+
+		DECLARE @isValid bit;
+		EXEC dbo.check_paths @TargetDirectory, @isValid OUTPUT;
+		IF @isValid = 0 BEGIN
+			RAISERROR(N'Specified @TargetDirectory is invalid - check path and retry.', 16, 1);
+			RETURN -11;
+		END;
 	END
 
 	-----------------------------------------------------------------------------
@@ -113,44 +157,52 @@ AS
     INTO #Tally
     FROM sys.columns;
 
-    DECLARE @targets TABLE ( 
+	DECLARE @deserialized table (
+		[row_id] int NOT NULL, 
+		[result] sysname NOT NULL
+	); 
+
+    DECLARE @target_databases TABLE ( 
         [entry_id] int IDENTITY(1,1) NOT NULL, 
         [database_name] sysname NOT NULL
     ); 
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
-	    INSERT INTO @targets ([database_name])
-        SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
+    DECLARE @system_databases TABLE ( 
+        [entry_id] int IDENTITY(1,1) NOT NULL, 
+        [database_name] sysname NOT NULL
+    ); 
 
-		-- treat the admindb as a [SYSTEM] db if it exists: 
-		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') BEGIN
-			IF (SELECT dbo.is_system_database('admindb')) = 1 
-				INSERT INTO @targets ([database_name])
-				VALUES ('admindb');
-		END
-    END; 
+	-- define system databases - we'll potentially need this in a number of different cases...
+	INSERT INTO @system_databases ([database_name])
+    SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN; 
-        IF @BackupType = 'LOG'
-            INSERT INTO @targets ([database_name])
-            SELECT name FROM sys.databases 
-            WHERE recovery_model_desc = 'FULL' 
-                AND name NOT IN ('master', 'model', 'msdb', 'tempdb') 
-				AND source_database_id IS NULL  -- exclude database snapshots.
-            ORDER BY name;
-        ELSE 
-            INSERT INTO @targets ([database_name])
-            SELECT name FROM sys.databases 
-            WHERE name NOT IN ('master', 'model', 'msdb','tempdb') 
-				AND source_database_id IS NULL -- exclude database snapshots
-            ORDER BY name;
+	-- Treat admindb as [SYSTEM] if defined as system... : 
+	IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
+		INSERT INTO @system_databases ([database_name])
+		VALUES ('admindb');
+	END;
 
-		-- exclude admindb if it's treated as a [SYSTEM] database (vs a [USER] database):
-		IF (SELECT dbo.is_system_database('admindb')) = 1 
-			DELETE FROM @targets WHERE [database_name] = 'admindb';
-    END; 
+	-- same with distribution database - but only if present:
+	IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'distribution') BEGIN
+		IF (SELECT dbo.is_system_database('distribution')) = 1  BEGIN
+			INSERT INTO @system_databases ([database_name])
+			VALUES ('distribution');
+		END;
+	END
 
-    IF UPPER(@Input) = '[READ_FROM_FILESYSTEM]' BEGIN;
+	IF UPPER(@Targets) IN (N'[ALL]', N'[SYSTEM]') BEGIN 
+		INSERT INTO @target_databases ([database_name])
+		SELECT [database_name] FROM @system_databases; 
+	 END; 
+
+	 IF UPPER(@Targets) IN (N'[ALL]', N'[USER]') BEGIN 
+		INSERT INTO @target_databases ([database_name])
+		SELECT [name] FROM sys.databases
+		WHERE [name] NOT IN (SELECT [database_name] FROM @system_databases)
+		ORDER BY [name];
+	 END; 
+
+	 IF UPPER(@Targets) = N'[READ_FROM_FILESYSTEM]' BEGIN 
 
         DECLARE @directories table (
             row_id int IDENTITY(1,1) NOT NULL, 
@@ -161,127 +213,113 @@ AS
         INSERT INTO @directories (subdirectory, depth)
         EXEC master.sys.xp_dirtree @TargetDirectory, 1, 0;
 
-        INSERT INTO @targets ([database_name])
+        INSERT INTO @target_databases ([database_name])
         SELECT subdirectory FROM @directories ORDER BY row_id;
 
-      END; 
+	 END;
 
-    IF (SELECT COUNT(*) FROM @targets) <= 0 AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
+	 -- If not a token, then try comma delimitied: 
+	 IF NOT EXISTS (SELECT NULL FROM @target_databases) BEGIN
+	
+		INSERT INTO @deserialized ([row_id], [result])
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Targets, N',', 1);
 
-        DECLARE @SerializedDbs nvarchar(1200);
-		SET @SerializedDbs = N',' + @Input + N',';
+		IF EXISTS (SELECT NULL FROM @deserialized) BEGIN 
+			INSERT INTO @target_databases ([database_name])
+			SELECT RTRIM(LTRIM([result])) FROM @deserialized ORDER BY [row_id];
+		END;
 
-        INSERT INTO @targets ([database_name])
-        SELECT  RTRIM(LTRIM((SUBSTRING(@SerializedDbs, N + 1, CHARINDEX(',', @SerializedDbs, N + 1) - N - 1))))
-        FROM #Tally
-        WHERE N < LEN(@SerializedDbs) 
-            AND SUBSTRING(@SerializedDbs, N, 1) = ','
-        ORDER BY #Tally.N;
+	 END;
+	 
+	 IF @ExcludeClones = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NOT NULL);		
+	 END;
 
-		IF UPPER(@Mode) = N'BACKUP' BEGIN;
-			IF @BackupType = 'LOG' BEGIN
-				DELETE FROM @targets 
-				WHERE [database_name] NOT IN (
-					SELECT [name] FROM sys.databases WHERE recovery_model_desc = 'FULL'
-				);
-			  END;
-			ELSE 
-				DELETE FROM @targets
-				WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases);
-		END
-    END;
-
-	-- remove AG'd and Mirrored databases:
-	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
-		
-		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID)
-		DELETE FROM @targets 
-		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NULL);
+	 IF @ExcludeSecondaries = 1 BEGIN 
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
 		);
 
+		-- remove any mirrored secondaries: 
 		INSERT INTO @synchronized ([database_name])
-		SELECT [name] FROM sys.databases WHERE state_desc <> 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+		SELECT d.[name] 
+		FROM sys.[databases] d 
+		INNER JOIN sys.[database_mirroring] dm ON d.[database_id] = dm.[database_id] AND dm.[mirroring_guid] IS NOT NULL
+		WHERE UPPER(dm.[mirroring_role_desc]) <> N'PRINCIPAL';
 
-		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
-			
+		-- dynamically account for any AG'd databases:
+		IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN		
 			CREATE TABLE #hadr_names ([name] sysname NOT NULL);
-
-			-- 2018-11-26: This is a hell of a bug/issue ... i had an INSERT EXEC here... but that doesn't work cuz the whole idea of this sproc is to AVOID that... 
-			--		so... i'm FURTHER hacking this to use a temp table for now... which is even MORE stupid... but, i've got a full 'rewrite' planned for this .. so it's a temporary hack/work-around:
-			
 			EXEC sp_executesql N'INSERT INTO #hadr_names ([name]) SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
 
 			INSERT INTO @synchronized ([database_name])
 			SELECT [name] FROM #hadr_names;
 		END
 
-		-- Note, snapshots were removed earlier... 
-
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
-		DELETE FROM @targets 
+		DELETE FROM @target_databases 
 		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
-	END
-	
-	IF UPPER(@Mode) IN (N'LIST_RESTORED') BEGIN
-		-- only show dbs that have been restored (i.e., in dbo.restore_log).
-		INSERT INTO @targets ([database_name])
-		SELECT [database] FROM dbo.[restore_log] GROUP BY [database];
-	END;
 
-	IF UPPER(@Mode) IN (N'NON_RECOVERED') BEGIN
-	
-		-- remove dbs not in RECOVERY or STANDBY mode:
-		DELETE FROM @targets
-		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1 OR [state_desc] = N'RESTORING');
+	 END;
 
-		
-		-- now delete any dbs that are in RESTORING state becauses they're MIRRORED or in an AG:
-		DELETE FROM @targets 
-		WHERE [database_name] IN (
-			SELECT 
-				d.[name] [database_name]
-			FROM 
-				sys.database_mirroring dm
-				INNER JOIN sys.databases d ON dm.database_id = d.database_id
-			WHERE 
-				dm.mirroring_guid IS NOT NULL
+	 IF @ExcludeSimpleRecovery = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([recovery_model_desc]) = 'SIMPLE');
+	 END; 
 
-		UNION
+	 IF @ExcludeReadOnly = 1 BEGIN
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_read_only] = 1)
+	 END;
 
-			SELECT
-				dbcs.[database_name]
-			FROM
-				master.sys.availability_groups AS ag
-				INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
-				INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
-				INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
-		);
-	END;
+	 IF @ExcludeRestoring = 1 BEGIN
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) = 'RESTORING');		
 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1);
+	 END; 
+
+	 IF @ExcludeRecovering = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
+	 END;
+
+	 -- all states OTHER than online... 
+	 IF @ExcludeOffline = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
+	 END;
+	 
 	-- Exclude any databases specified for exclusion:
-	IF ISNULL(@Exclusions, '') <> '' BEGIN;
-	
-		DECLARE @removedDbs nvarchar(1200);
-		SET @removedDbs = N',' + @Exclusions + N',';
+	IF NULLIF(@Exclusions, '') IS NOT NULL BEGIN;
+		
+		DELETE FROM @deserialized;
+
+		IF (SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0 BEGIN
+			INSERT INTO @deserialized ([row_id], [result])
+			SELECT 1 [fake_row_id], [database_name] FROM @system_databases;	
+
+			-- account for distribution (and note that it can/will only be EXCLUDED (i.e., IF it was found and IF it's marked as 'system', we won't restore it)).
+			IF (SELECT dbo.is_system_database('distribution')) = 1  BEGIN
+				INSERT INTO @deserialized ([row_id], [result])
+				VALUES (99, 'distribution');
+			END;
+
+			SET @Exclusions = REPLACE(@Exclusions, N'[SYSTEM]', N'');
+		END;
+
+		INSERT INTO @deserialized ([row_id], [result])
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Exclusions, N',', 1);
 
 		DELETE t 
-		FROM @targets t 
-		INNER JOIN (
-			SELECT RTRIM(LTRIM(SUBSTRING(@removedDbs, N + 1, CHARINDEX(',', @removedDbs, N + 1) - N - 1))) [db_name]
-			FROM #Tally
-			WHERE N < LEN(@removedDbs)
-				AND SUBSTRING(@removedDbs, N, 1) = ','		
-		) exclusions ON t.[database_name] LIKE exclusions.[db_name];
-
+		FROM @target_databases t
+		INNER JOIN @deserialized d ON t.[database_name] LIKE d.[result];
 	END;
 
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
-		DECLARE @SerializedPriorities nvarchar(MAX);
-		SET @SerializedPriorities = N',' + @Priorities + N',';
 
 		DECLARE @prioritized table (
 			priority_id int IDENTITY(1,1) NOT NULL, 
@@ -289,17 +327,13 @@ AS
 		);
 
 		INSERT INTO @prioritized ([database_name])
-		SELECT  RTRIM(LTRIM((SUBSTRING(@SerializedPriorities, N + 1, CHARINDEX(',', @SerializedPriorities, N + 1) - N - 1))))
-        FROM #Tally
-        WHERE N < LEN(@SerializedPriorities) 
-            AND SUBSTRING(@SerializedPriorities, N, 1) = ','
-        ORDER BY #Tally.N;
-
+		SELECT [result] FROM dbo.[split_string](@Priorities, N',', 1) ORDER BY [row_id];
+				
 		DECLARE @alphabetized int;
 		SELECT @alphabetized = priority_id FROM @prioritized WHERE [database_name] = '*';
 
 		IF @alphabetized IS NULL
-			SET @alphabetized = (SELECT MAX(entry_id) + 1 FROM @targets);
+			SET @alphabetized = (SELECT MAX(entry_id) + 1 FROM @target_databases);
 
 		DECLARE @prioritized_targets TABLE ( 
 			[entry_id] int IDENTITY(1,1) NOT NULL, 
@@ -315,7 +349,7 @@ AS
 					WHEN p.[database_name] IS NOT NULL AND p.priority_id > @alphabetized THEN 32767 + p.priority_id
 				END [prioritized_priority]
 			FROM 
-				@targets t 
+				@target_databases t 
 				LEFT OUTER JOIN @prioritized p ON p.[database_name] = t.[database_name]
 		) 
 
@@ -326,20 +360,22 @@ AS
 		ORDER BY 
 			core.prioritized_priority;
 
-		DELETE FROM @targets;
-		INSERT INTO @targets ([database_name])
+		DELETE FROM @target_databases;
+		INSERT INTO @target_databases ([database_name])
 		SELECT [database_name] 
 		FROM @prioritized_targets
 		ORDER BY entry_id;
 
 	END 
 
-	-- Output (used to get around nasty 'insert exec can't be nested' error when reading from file-system.
+	-- Serialize:
 	SET @Output = N'';
-	SELECT @Output = @Output + [database_name] + ',' FROM @targets ORDER BY entry_id;
+	SELECT @Output = @Output + [database_name] + ',' FROM @target_databases ORDER BY entry_id;
 
 	IF ISNULL(@Output,'') <> ''
 		SET @Output = LEFT(@Output, LEN(@Output) - 1);
 
 	RETURN 0;
 GO
+
+
