@@ -1,5 +1,5 @@
 --##OUTPUT: \\Deployment
---##NOTE: This is a build/file (instructions for compiling a full deployment/upgrade script). Check Install and Upgrades folders for output.
+--##NOTE: This is a build file only (i.e., it stores upgade/install directives + place-holders for code to drop into admindb, etc.
 
 /*
 

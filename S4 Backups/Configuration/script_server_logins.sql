@@ -82,11 +82,6 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'

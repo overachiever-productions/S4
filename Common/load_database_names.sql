@@ -1,6 +1,20 @@
 
 
 /*
+	5.2 Fixes: 
+		- [ ] - RENAME: dbo.list_databases 
+			[ ] - change in Git (i.e., rename only). 
+			[ ] - change in build script 
+			[ ] - change in ALL depedencies checks... 
+		- [ ] - REMOVE: @BackupType - this shouldn't need to know those details... 
+		- [ ] - Change @Input to @Target	
+		- [ ] - Update docs... (don't think this pig is documented explicitly...)
+
+*/
+
+
+
+/*
 	TODO: 
 		- Implement logic for LIST_ALL mode - which will also include snapshots, offline dbs, and 'synchronizing' dbs... (i.e., all/everything).
 		- The VERIFY mode is never really used. Pretty sure I call/leverage it from a few of the sprocs that depend upon this pig - but there is no explicit 'path' through the code that accounts for any speciaization. 
@@ -19,16 +33,6 @@
 			split_string (or something else). That's a significant 'work-around' but the performance overhead is non-existent, meaning that the only overhead
 			is one of code maintenance and the JUSTIFICATION for such a manuever is that, once coded, this will be EASIER to maintain as 1x block of code than 3x
 			semi-similar blocks of code spread out among 3x different routines. 
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple	
-
-
-	SCALABLE:
-		3+
-
 
 
 */
@@ -143,7 +147,6 @@ AS
 		-- exclude admindb if it's treated as a [SYSTEM] database (vs a [USER] database):
 		IF (SELECT dbo.is_system_database('admindb')) = 1 
 			DELETE FROM @targets WHERE [database_name] = 'admindb';
-		
     END; 
 
     IF UPPER(@Input) = '[READ_FROM_FILESYSTEM]' BEGIN;
