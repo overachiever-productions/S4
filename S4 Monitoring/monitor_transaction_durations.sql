@@ -129,7 +129,7 @@ AS
 		SELECT 
 			s.[session_id]
 		FROM 
-			dbo.[split_string](@ExcludedLoginNames, N',') x 
+			dbo.[split_string](@ExcludedLoginNames, N',', 1) x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[login_name] LIKE x.[result];
 	END;
 
@@ -138,7 +138,7 @@ AS
 		SELECT 
 			s.[session_id]
 		FROM 
-			dbo.[split_string](@ExcludedProgramNames, N',') x 
+			dbo.[split_string](@ExcludedProgramNames, N',', 1) x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
 	END;
 
@@ -152,7 +152,7 @@ AS
 			N'%' + CONVERT(nvarchar(200), (CONVERT(varbinary(200), j.job_id , 1)), 1) + N'%' job_id
 		FROM 
 			msdb.dbo.sysjobs j
-			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',') x ON j.[name] LIKE x.[result];
+			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',', 1) x ON j.[name] LIKE x.[result];
 
 		INSERT INTO [#ExcludedSessions] ([session_id])
 		SELECT 

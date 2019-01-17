@@ -13,7 +13,7 @@
 	DEPENDENCIES: 
 		- S4 dbo.load_default_path
 		- S4 dbo.split_string
-		- S4 dbo.load_database_names
+		- S4 dbo.list_databases  (underlying sproc has dependency on this one)
 		- xp_cmdshell MUST be enabled. (For directing output.)
 
 

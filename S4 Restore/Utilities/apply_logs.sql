@@ -36,6 +36,7 @@ GO
 
 CREATE PROC dbo.apply_logs 
 	@SourceDatabases					nvarchar(MAX)		= NULL,						-- explicitly named dbs - e.g., N'db1, db7, db28' ... and, only works, obviously, if dbs specified are in non-recovered mode (or standby).
+	@Exclusions							nvarchar(MAX)		= NULL,
 	@Priorities							nvarchar(MAX)		= NULL, 
 	@BackupsRootPath					nvarchar(MAX)		= N'[DEFAULT]',
 	@TargetDbMappingPattern				sysname				= N'{0}',					-- MAY not use/allow... 
@@ -68,8 +69,8 @@ AS
         RETURN -1;
 	END; 
 
-    IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -182,39 +183,21 @@ AS
 		target_database_name sysname NOT NULL
 	);
 
-	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
-	SELECT [result], REPLACE(@TargetDbMappingPattern, N'{0}', [result]) [target] FROM [dbo].[split_string](@SourceDatabases, N',');
-
-	-- now, remove any dbs for which we a) don't have backups and/or b) there isn't a viable db in non-recovered (non-standby) mode for application:
 	DECLARE @serialized nvarchar(MAX);
-
-    EXEC dbo.load_database_names
-        @Input = @SourceDatabases,         
-        @Exclusions = NULL,		
+	EXEC dbo.list_databases 
+        @Target = @SourceDatabases,         
+        @Exclusions = @Exclusions,		
         @Priorities = @Priorities,
-        @Mode = N'RESTORE',
+
+		@ExcludeSimple = 1, 
+		@ExcludeRestoring = 0, -- we're explicitly targetting just these in fact... 
+		@ExcludeRecovering = 1, -- yeah, we don't want these... 
+
         @TargetDirectory = @BackupsRootPath, 
         @Output = @serialized OUTPUT;
 
-	DELETE FROM @applicableDatabases WHERE [source_database_name] NOT IN (SELECT [result] FROM dbo.[split_string](@serialized, N','));
-
-	-- now, remove any dbs where we don't have a corresponding db being restored.... 
-	DECLARE @renamedDBs nvarchar(MAX) = @SourceDatabases;
-	IF @TargetDbMappingPattern <> N'{0}' BEGIN
-		SET @renamedDBs = N'';
-		SELECT @renamedDBs = @renamedDBs + target_database_name + N',' FROM @applicableDatabases ORDER BY [entry_id];
-		SET @renamedDBs = LEFT(@renamedDBs, LEN(@renamedDBs) - 1);
-	END;
-
-    EXEC dbo.load_database_names
-        @Input = @renamedDBs,         
-        @Exclusions = NULL,		
-        @Priorities = @Priorities,
-        @Mode = N'NON_RECOVERED',		-- STANDBY and NORECOVERY only (excluding mirrored or AG'd databases).
-        @TargetDirectory = @BackupsRootPath, 
-        @Output = @serialized OUTPUT;
-
-	DELETE FROM @applicableDatabases WHERE [target_database_name] NOT IN (SELECT [result] FROM dbo.[split_string](@serialized, N','));
+	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
+	SELECT [result] [source_database_name], REPLACE(@TargetDbMappingPattern, N'{0}', [result]) [target_database_name] FROM dbo.[split_string](@serialized, N',', 1) ORDER BY [row_id];
 
     IF NOT EXISTS (SELECT NULL FROM @applicableDatabases) BEGIN
         SET @earlyTermination = N'Databases specified for apply_logs operation: [' + @SourceDatabases + ']. However, none of the databases specified can have T-LOGs applied - as there are no databases in STANDBY or NORECOVERY mode.';
@@ -317,7 +300,7 @@ AS
 		DELETE FROM @logFilesToRestore;
 
 		INSERT INTO @logFilesToRestore ([log_file])
-		SELECT [result] FROM dbo.[split_string](@backupFilesList, N',') ORDER BY row_id;
+		SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) ORDER BY row_id;
 
 		SET @logsWereApplied = 0;
 
@@ -412,7 +395,7 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @sourceDbName, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @backupFilesList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT [result] FROM dbo.[split_string](@backupFilesList, N',') WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
 					ORDER BY row_id;
 				END;
 

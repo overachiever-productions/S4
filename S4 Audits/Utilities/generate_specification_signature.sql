@@ -138,9 +138,9 @@ AS
 		-- Make sure the target database exists:
 		DECLARE @targetOutput nvarchar(max);
 
-		EXEC dbo.load_database_names
-			@Input = @Target,
-			@Mode = N'LIST_ACTIVE',
+		EXEC dbo.list_databases
+			@Target = @Target,
+			@ExcludeDev = 1,
 			@Output = @targetOutput OUTPUT;
 
 		IF LEN(ISNULL(@targetOutput,'')) < 1 BEGIN

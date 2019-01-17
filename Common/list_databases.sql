@@ -6,7 +6,7 @@
 			[x] - change in file... 
 			[x] - change in Git (i.e., rename only). 
 			[x] - change in build script 
-			[ ] - change in ALL depedencies checks... 
+			[x] - change in ALL depedencies checks... 
 		- [x] - REMOVE: @BackupType - this shouldn't need to know those details... 
 		- [x] - Change @Input to @Target	
 		- [ ] - Update docs... (don't think this pig is documented explicitly...)
@@ -35,18 +35,44 @@
 		
 
 
+-- expect exception:
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[ALL]', 
+	@Exclusions = N'[SYSTEM]',
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
+GO
+
+-- expect exception:
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[ALL]', 
+	@Exclusions = N'[USER]',
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
+GO
+
+
 DECLARE @output nvarchar(MAX);
 EXEC list_databases 
 	@Targets = N'[SYSTEM]', 
 	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',');
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[USER]', 
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
 GO
 
 DECLARE @output nvarchar(MAX);
 EXEC list_databases 
 	@Targets = N'[ALL]', 
 	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',');
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
 GO
 
 DECLARE @output nvarchar(MAX);
@@ -54,7 +80,7 @@ EXEC list_databases
 	@Targets = N'[ALL]', 
 	@Exclusions = N'BayCar%',
 	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',');
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
 GO
 
 DECLARE @output nvarchar(MAX);
@@ -63,14 +89,23 @@ EXEC list_databases
 	@TargetDirectory = N'[DEFAULT]', 
 	@Exclusions = N'[SYSTEM]',
 	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',');
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
+GO
+
+DECLARE @output nvarchar(MAX);
+EXEC list_databases 
+	@Targets = N'[READ_FROM_FILESYSTEM]', 
+	@TargetDirectory = N'[DEFAULT]', 
+	@Exclusions = N'_Migrat%, [SYSTEM] ',
+	@Output = @output OUTPUT; 
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
 GO
 
 DECLARE @output nvarchar(MAX);
 EXEC list_databases 
 	@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
 	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',');
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
 GO
 
 DECLARE @output nvarchar(MAX);
@@ -78,7 +113,7 @@ EXEC list_databases
 	@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
 	@Priorities = N'SelectExp, *, Traces',
 	@Output = @output OUTPUT; 
-SELECT @output;
+SELECT [result] FROM dbo.split_string(@output, N',', 1);
 GO
 
 
@@ -104,6 +139,8 @@ CREATE PROC dbo.list_databases
 	@ExcludeRestoring			bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
 	@ExcludeRecovering			bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
 	@ExcludeOffline				bit				= 1,		-- removes ANY state other than ONLINE.
+	@ExcludeDev					bit				= 0, 
+	@ExcludeTest				bit				= 0,
 	@Output						nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -286,13 +323,25 @@ AS
 		DELETE FROM @target_databases 
 		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
 	 END;
-
-	 -- all states OTHER than online... 
+	 
 	 IF @ExcludeOffline = 1 BEGIN 
+		-- all states OTHER than online... 
 		DELETE FROM @target_databases 
 		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
 	 END;
 	 
+	 IF @ExcludeDev = 1 OR @ExcludeTest = 1 BEGIN 
+		RAISERROR('Dev and Test Exclusions have not YET been implemented.', 16, 1);
+		RETURN - 100; 
+
+		-- NOTE: RATEHER than doing @ExcludeX explicitly... 
+		--		PROBABLY makes way more sense to have [DEV] [TEST] tokens - they work the SAME way (lookups to dbo.settings)... but end up being WAY more versatile...
+
+		-- TODO: Implement. for each type, there will be an option to drop in a setting/key that defines what dev or test dbs look like... 
+		--			as in ... a setting that effectively equates all dev or test with '%_dev' or 'test_%' - whatever an org's format is. 
+		--					AND, also needs to enable one-off additions to these as well, e.g., 'ImportStaging' or 'Blah' could be marked a test or dev.
+	 END; 
+
 	-- Exclude any databases specified for exclusion:
 	IF NULLIF(@Exclusions, '') IS NOT NULL BEGIN;
 		

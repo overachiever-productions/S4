@@ -304,7 +304,7 @@ AS
 	);
 
 	INSERT INTO @IgnoredLinkedServerNames([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredLinkedServers, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredLinkedServers, N',', 1);
 
 	DECLARE @remoteLinkedServers table ( 
 		[server_id] int NOT NULL,
@@ -404,7 +404,7 @@ AS
 	);
 
 	INSERT INTO @ignoredLoginName([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredLogins, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredLogins, N',', 1);
 
 	DECLARE @remotePrincipals table ( 
 		[principal_id] int NOT NULL,
@@ -536,7 +536,7 @@ AS
 	);
 
 	INSERT INTO @ignoredAlertName([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredAlerts, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredAlerts, N',', 1);
 
 	DECLARE @remoteAlerts table (
 		[name] sysname NOT NULL,
@@ -627,7 +627,7 @@ AS
 	);
 
 	INSERT INTO @ignoredMasterObjects([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',', 1);
 
 	INSERT INTO @localMasterObjects ([object_name])
 	SELECT [name] FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
