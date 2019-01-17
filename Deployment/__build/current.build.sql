@@ -433,6 +433,11 @@ IF @currentVersion < 4.7 BEGIN
 END;
 GO
 
+-- 5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
+IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
+	DROP PROC dbo.load_database_names;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 5. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
