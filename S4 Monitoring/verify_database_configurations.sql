@@ -45,8 +45,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -94,8 +94,8 @@ AS
 		[name] sysname
 	);
 	
-	EXEC dbo.list_databases 
-		@Input = N'[USER]',
+	EXEC dbo.load_databases 
+		@Targets = N'[USER]',
 		@Exclusions = @DatabasesToExclude, 
 		@Output = @serialized OUTPUT;
 

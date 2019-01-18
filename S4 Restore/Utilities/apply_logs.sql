@@ -184,12 +184,12 @@ AS
 	);
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.list_databases 
-        @Target = @SourceDatabases,         
+	EXEC dbo.load_databases 
+        @Targets = @SourceDatabases,         
         @Exclusions = @Exclusions,		
         @Priorities = @Priorities,
 
-		@ExcludeSimple = 1, 
+		@ExcludeSimpleRecovery = 1, 
 		@ExcludeRestoring = 0, -- we're explicitly targetting just these in fact... 
 		@ExcludeRecovering = 1, -- yeah, we don't want these... 
 

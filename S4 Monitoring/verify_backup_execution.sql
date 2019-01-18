@@ -70,8 +70,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -120,8 +120,8 @@ AS
 	);
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.list_databases 
-		@Target = @DatabasesToCheck,
+	EXEC dbo.load_databases 
+		@Targets = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
 		-- no exclusions - we're checking for all dbs... 
 		@Output = @serialized OUTPUT;
@@ -134,10 +134,10 @@ AS
 	INSERT INTO @databaseToCheckForFullBackups ([name])
 	VALUES ('master'),('msdb');
 
-	EXEC dbo.list_databases 
-		@Target = @DatabasesToCheck,
+	EXEC dbo.load_databases 
+		@Targets = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
-		@ExcludeSimple = 1,
+		@ExcludeSimpleRecovery = 1,
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 

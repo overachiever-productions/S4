@@ -6,7 +6,7 @@
 		- Requires dbo.get_time_vector - for time calculation logic/etc. 
 		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
 		- Requires dbo.check_paths - sproc to verify that paths are valid. 
-		- Requires dbo.list_databases - sproc that centralizes handling of which dbs/folders to process.
+		- Requires dbo.load_databases - sproc that centralizes handling of which dbs/folders to process.
 		- Requires dbo.split_string - udf to parse the above.
 		- Requires that xp_cmdshell must be enabled.
 
@@ -85,8 +85,8 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -221,10 +221,10 @@ AS
 		SET @excludeSimple = 1;
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.list_databases
-	    @Target = @DatabasesToProcess,
+	EXEC dbo.load_databases
+	    @Targets = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
-		@excludeSimple = @excludeSimple,
+		@ExcludeSimpleRecovery = @excludeSimple,
 		@TargetDirectory = @TargetDirectory,
 		@Output = @serialized OUTPUT;
 

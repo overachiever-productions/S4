@@ -117,8 +117,8 @@ AS
 
 	IF @TargetDatabases <> N'[ALL]' BEGIN
 		DECLARE @dbnames nvarchar(max);
-		EXEC dbo.list_databases 
-			@Target = @TargetDatabases, 
+		EXEC dbo.load_databases 
+			@Targets = @TargetDatabases, 
 			@ExcludeSecondaries = 1,
 			@Output = @dbnames OUTPUT; 
 

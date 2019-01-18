@@ -589,7 +589,7 @@ GO
 --##INCLUDE: Common\execute_uncatchable_command.sql
 
 -----------------------------------
---##INCLUDE: Common\load_database_names.sql
+--##INCLUDE: Common\load_databases.sql
 
 -----------------------------------
 --##INCLUDE: Common\split_string.sql

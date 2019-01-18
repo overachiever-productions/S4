@@ -142,8 +142,8 @@ AS
 	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 
 	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[list_databases]
-		@Target = @TargetDatabases,
+	EXEC admindb.dbo.[load_databases]
+		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@ExcludeSecondaries = 1,
 		@ExcludeOffline = 1,
@@ -228,7 +228,7 @@ AS
 			);
 
 			DECLARE @AllDbNames nvarchar(MAX); 
-			EXEC admindb.dbo.[list_databases]
+			EXEC admindb.dbo.[load_databases]
 				@Target = N'[ALL]',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1,

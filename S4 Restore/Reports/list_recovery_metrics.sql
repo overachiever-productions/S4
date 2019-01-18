@@ -53,8 +53,8 @@ AS
 	);
 
 	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[list_databases]
-		@Target = @TargetDatabases,
+	EXEC admindb.dbo.[load_databases]
+		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@Priorities = @Priorities,
 		@Output = @dbNames OUTPUT;

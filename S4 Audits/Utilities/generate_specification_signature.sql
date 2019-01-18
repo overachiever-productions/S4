@@ -138,8 +138,8 @@ AS
 		-- Make sure the target database exists:
 		DECLARE @targetOutput nvarchar(max);
 
-		EXEC dbo.list_databases
-			@Target = @Target,
+		EXEC dbo.load_databases
+			@Targets = @Target,
 			@ExcludeDev = 1,
 			@Output = @targetOutput OUTPUT;
 
