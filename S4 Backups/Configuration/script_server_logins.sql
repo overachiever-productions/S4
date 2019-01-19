@@ -13,7 +13,7 @@
 	DEPENDENCIES: 
 		- S4 dbo.load_default_path
 		- S4 dbo.split_string
-		- S4 dbo.load_database_names
+		- S4 dbo.list_databases  (underlying sproc has dependency on this one)
 		- xp_cmdshell MUST be enabled. (For directing output.)
 
 
@@ -81,11 +81,6 @@ AS
 		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
-
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
 
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')

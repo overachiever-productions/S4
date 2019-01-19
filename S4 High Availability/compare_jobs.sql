@@ -333,7 +333,7 @@ AS
 	);
 
 	INSERT INTO #IgnoredJobs ([name])
-	SELECT [result] [name] FROM admindb.dbo.split_string(@IgnoredJobs, N',');
+	SELECT [result] [name] FROM admindb.dbo.split_string(@IgnoredJobs, N',', 1);
 
 	CREATE TABLE #LocalJobs (
 		job_id uniqueidentifier, 

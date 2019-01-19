@@ -22,10 +22,10 @@ EXEC dbo.verify_database_activity
 /*
 
 PICKUP/NEXT:
-	- look at options/ways to run modifications against dbo.load_database_names to SEE if there's a good/better way to run 'VERIFY' mode operations - i.e., i'd like that to throw an error if 
+	- look at options/ways to run modifications against dbo.load_databases to SEE if there's a good/better way to run 'VERIFY' mode operations - i.e., i'd like that to throw an error if 
 		a) any db specified for review is NOT a valid/present db... or b) i was going to say: "the inverse of that" but i don't think that's an actual concern. 
 			that said. this sproc is handling that contingency well enough for now. 
-			AND, i think that to DO IT RIGHT, dbo.load_database_names would need to provide and fill an @Error ... OUTPUT parameter... to track details like exceptions if/when as needed. 
+			AND, i think that to DO IT RIGHT, dbo.load_databases would need to provide and fill an @Error ... OUTPUT parameter... to track details like exceptions if/when as needed. 
 				(then, tweak the code in 'callers' to throw execptions/errors if/when that's NOT NULL - and so on). 
 
 	- implement the validation/checkup logic
@@ -120,8 +120,8 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -212,11 +212,9 @@ AS
 	-----------------------------------------------------------------------------
 	-- Load databases to process: 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_database_names
-	    @Input = @DatabasesToProcess,         
-	    @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
-	    @Mode = N'RESTORE',
-	    @TargetDirectory = @BackupDirectory, 
+	EXEC dbo.load_databases
+	    @Targets = @DatabasesToProcess,         
+	    @Exclusions = @DatabasesToExclude,		
 		@Output = @serialized OUTPUT;
 
 	DECLARE @dbsToProcess table (
@@ -225,7 +223,7 @@ AS
     ); 
 
 	INSERT INTO @dbsToProcess ([database_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',');
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1);
 
 	IF (SELECT COUNT(*) FROM @dbsToProcess) <= 0 BEGIN
 		RAISERROR('No databases were found that match @DatabasesProcess (and/or any possible exclusions). Execution is terminating.', 16, 1);
