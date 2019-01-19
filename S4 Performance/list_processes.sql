@@ -9,6 +9,13 @@
 --			looks fairly interesting: https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-exec-input-buffer-transact-sql?view=sql-server-2017   (I can't get the parameters column to return ANYTHING... even when I bind it to 'active' sessions via sys.dm_exec_requests and so on... 
 
 
+FODDER 
+
+	https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-os-wait-stats-transact-sql?view=sql-server-2017
+
+
+
+
 -- TODO: Parameter Validation.... 
 -- TODO: test change to N'ORDER BY ' + LOWER(@OrderBy) + N' DESC' in @topSQL for IF @topRows > 0... 
 --			pretty sure those changes make sense - but need to verify.
@@ -72,13 +79,14 @@ CREATE PROC dbo.list_processes
 	@ExcludeSelf							bit			= 1,	
 	@IncludePlanHandle						bit			= 1,	
 	@IncludeIsolationLevel					bit			= 0,
+	@ExcludeBrokerProcesses					bit			= 1,		-- need to document that it does NOT block ALL broker waits (and, that it ONLY blocks broker WAITs - i.e., that's currently the ONLY way it excludes broker processes - by waits).
 	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
 	-- vNEXT				--@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
 	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
-	@IncludeExtendedDetails					bit			= 1
+	@IncludeExtendedDetails					bit			= 1,
 	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
-	-- VNEXT				--@ExtractExecutionCost					bit			= 0,	
+	@ExtractCost							bit			= 1	
 AS 
 	SET NOCOUNT ON; 
 
@@ -106,14 +114,16 @@ AS
 		sys.[dm_exec_requests] r
 		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
 	WHERE
-		r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWAITs} )
+		r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
 		{ExcludeSystemProcesses}
 		{ExcludeSelf}
 		{ExcludeNegative}
 		{ExcludeFTS}
+		
 	{OrderBy};';
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
+-- TODO: if i get gobs and gobs of excluded WAITs... then put them into a table to JOIN against vs using IN()... 
 	IF @TopNRows > 0 BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{TOP}', N'TOP(' + CAST(@TopNRows AS sysname) + N') ');
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
@@ -122,7 +132,6 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{TOP}', N'');
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
 	END; 
-		
 
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.[session_id] > 50) AND (r.[database_id] <> 0) AND (r.[session_id] NOT IN (SELECT [session_id] FROM sys.[dm_exec_sessions] WHERE [is_user_process] = 0)) ');
@@ -153,13 +162,20 @@ AS
 	END; 
 
 	IF @ExcludeFTSDaemonProcesses = 1 BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N', ''FT_COMPROWSET_RWLOCK'', ''FT_IFTS_RWLOCK'', ''FT_IFTS_SCHEDULER_IDLE_WAIT'', ''FT_IFTSHC_MUTEX'', ''FT_IFTSISM_MUTEX'', ''FT_MASTER_MERGE'', ''FULLTEXT GATHERER'' ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWaits}', N', ''FT_COMPROWSET_RWLOCK'', ''FT_IFTS_RWLOCK'', ''FT_IFTS_SCHEDULER_IDLE_WAIT'', ''FT_IFTSHC_MUTEX'', ''FT_IFTSISM_MUTEX'', ''FT_MASTER_MERGE'', ''FULLTEXT GATHERER'' ');
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'AND r.[command] NOT LIKE ''FT%'' ');
 	  END;
 	ELSE BEGIN 
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWaits}', N'');
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'');
 	END; 
+
+	IF @ExcludeBrokerProcesses = 1 BEGIN 
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N', ''BROKER_RECEIVE_WAITFOR'', ''BROKER_TASK_STOP'', ''BROKER_TO_FLUSH'', ''BROKER_TRANSMITTER'' ');
+	  END;
+	ELSE BEGIN 
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N'');
+	END;
 
 
 --PRINT @topSQL;
@@ -234,8 +250,6 @@ AS
 		INNER JOIN sys.dm_exec_requests r ON x.[session_id] = r.[session_id]
 		INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
 		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id;
-	--ORDER BY 
-	--	x.[row_number]; 
 
 	-- populate sql_handles for sessions without current requests: 
 	UPDATE x 
@@ -248,6 +262,90 @@ AS
 	WHERE 
 		x.[sql_handle] IS NULL;
 
+	-- load statements: 
+	SELECT 
+		d.[session_id], 
+		t.[text] [statement]
+	INTO 
+		#statements 
+	FROM 
+		[#detail] d 
+		OUTER APPLY sys.[dm_exec_sql_text](d.[sql_handle]) t;
+
+--TODO: Implement this (i.e., as per dbo.list_collisions ... but ... here - so'z we can get statements if/when they're not in the request itself..).
+	--IF @UseInputBuffer = 1 BEGIN
+		
+	--	DECLARE @sql nvarchar(MAX); 
+
+	--	DECLARE filler CURSOR LOCAL FAST_FORWARD READ_ONLY FOR 
+	--	SELECT 
+	--		session_id 
+	--	FROM 
+	--		[#statements] 
+	--	WHERE 
+	--		[statement] IS NULL; 
+
+	--	DECLARE @spid int; 
+	--	DECLARE @bufferStatement nvarchar(MAX);
+
+	--	CREATE TABLE #inputbuffer (EventType nvarchar(30), Params smallint, EventInfo nvarchar(4000))
+
+	--	OPEN filler; 
+	--	FETCH NEXT FROM filler INTO @spid;
+
+	--	WHILE @@FETCH_STATUS = 0 BEGIN 
+	--		TRUNCATE TABLE [#inputbuffer];
+
+	--		SET @sql = N'EXEC DBCC INPUTBUFFER(' + STR(@spid) + N');';
+			
+	--		BEGIN TRY 
+	--			INSERT INTO [#inputbuffer]
+	--			EXEC @sql;
+
+	--			SET @bufferStatement = (SELECT TOP (1) EventInfo FROM [#inputbuffer]);
+	--		END TRY 
+	--		BEGIN CATCH 
+	--			SET @bufferStatement = N'#Error Extracting Statement from DBCC INPUTBUFFER();';
+	--		END CATCH
+
+	--		UPDATE [#statements] 
+	--		SET 
+	--			[statement_source] = N'BUFFER', 
+	--			[statement] = @bufferStatement 
+	--		WHERE 
+	--			[session_id] = @spid;
+
+	--		FETCH NEXT FROM filler INTO @spid;
+	--	END;
+		
+	--	CLOSE filler; 
+	--	DEALLOCATE filler;
+
+	--END;
+
+	-- load plans: 
+	SELECT 
+		d.[session_id], 
+		p.query_plan [batch_plan]
+	INTO 
+		#plans 
+	FROM 
+		[#detail] d 
+		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
+
+	IF @ExtractCost = 1 BEGIN
+        
+        WITH XMLNAMESPACES (DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
+        SELECT
+            p.[session_id],
+            p.batch_plan.value('(/ShowPlanXML/BatchSequence/Batch/Statements/StmtSimple/@StatementSubTreeCost)[1]', 'nvarchar(max)') [plan_cost]
+		INTO 
+			#costs
+        FROM
+            [#plans] p;
+    END;
+
+
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
 		d.[session_id],
@@ -256,9 +354,10 @@ AS
 		{isolation_level}
 		d.[command], 
 		d.[last_wait_type],
-		t.[text],  -- statement_text?
+		t.[statement],  -- statement_text?
 		--{batch_text} ???
 		d.[status], 
+		{extractCost}
 		d.[cpu_time],
 		d.[reads],
 		d.[writes],
@@ -267,17 +366,16 @@ AS
 		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
 		dbo.format_timespan(d.[wait_time]) [wait_time],
 		d.[login_name],
-		d.[program_name],
 		d.[host_name],
 		{plan_handle}
 		{extended_details}
-		--{extractCost}  -- move into /context/statement/cost
 		--,{statement_plan} -- if i can get this working... 
-		p.query_plan [batch_plan]
+		p.[batch_plan]
 	FROM 
 		[#detail] d
-		OUTER APPLY sys.dm_exec_sql_text(d.sql_handle) t
-		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
+		INNER JOIN #statements t ON d.session_id = t.session_id
+		INNER JOIN #plans p ON d.session_id = p.session_id
+		{extractJoin}
 	ORDER BY
 		[row_number];'
 
@@ -308,6 +406,15 @@ AS
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'');
 	END; 
+
+	IF @ExtractCost = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST([plan_cost] as decimal(20,2)) [plan_cost],');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'LEFT OUTER JOIN #costs c ON d.[session_id] = c.[session_id]');
+	  END
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'');
+	END;
 
 
 --PRINT @projectionSQL;
