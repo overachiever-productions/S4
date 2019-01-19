@@ -6,7 +6,7 @@
 		- Requires dbo.get_time_vector - for time calculation logic/etc. 
 		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
 		- Requires dbo.check_paths - sproc to verify that paths are valid. 
-		- Requires dbo.load_database_names - sproc that centralizes handling of which dbs/folders to process.
+		- Requires dbo.load_databases - sproc that centralizes handling of which dbs/folders to process.
 		- Requires dbo.split_string - udf to parse the above.
 		- Requires that xp_cmdshell must be enabled.
 
@@ -56,7 +56,7 @@ IF OBJECT_ID('[dbo].[remove_backup_files]','P') IS NOT NULL
 GO
 
 CREATE PROC [dbo].[remove_backup_files] 
-	@BackupType							sysname,									-- { ALL | FULL|DIFF|LOG }
+	@BackupType							sysname,									-- { ALL|FULL|DIFF|LOG }
 	@DatabasesToProcess					nvarchar(1000),								-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000) = N'[DEFAULT]',				-- { path_to_backups }
@@ -85,8 +85,8 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -215,12 +215,16 @@ AS
 
 	SET @Output = NULL;
 
+	DECLARE @excludeSimple bit = 0;
+
+	IF @BackupType = N'LOG'
+		SET @excludeSimple = 1;
+
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_database_names
-	    @Input = @DatabasesToProcess,
+	EXEC dbo.load_databases
+	    @Targets = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
-	    @Mode = N'REMOVE',
-	    @BackupType = @BackupType, 
+		@ExcludeSimpleRecovery = @excludeSimple,
 		@TargetDirectory = @TargetDirectory,
 		@Output = @serialized OUTPUT;
 
@@ -230,7 +234,7 @@ AS
     ); 
 
 	INSERT INTO @targetDirectories ([directory_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER By row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER By row_id;
 
 	-----------------------------------------------------------------------------
 	-- Account for backups of system databases with the server-name in the path:  

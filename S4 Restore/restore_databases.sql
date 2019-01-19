@@ -14,7 +14,7 @@
 
     DEPENDENCIES:
         - Requires dbo.restore_log - to log information about restore operations AND failures. 
-        - Requires dbo.load_database_names - sproc used to 'parse' or determine which dbs to target based upon inputs.
+        - Requires dbo.load_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
 		- Requires dbo.load_backup_files - sproc used to extract (in re-usable form) lists of available backup files at a specified path.
 		- Requires dbo.load_header_details - sproc used to pull meta-data about backups from backup files. 
         - Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
@@ -110,8 +110,8 @@ AS
         RETURN -1;
 	END; 
 
-    IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -272,11 +272,16 @@ AS
     -----------------------------------------------------------------------------
     -- Construct list of databases to restore:
     DECLARE @serialized nvarchar(MAX);
-    EXEC dbo.load_database_names
-        @Input = @DatabasesToRestore,         
+    EXEC dbo.load_databases
+        @Targets = @DatabasesToRestore,         
         @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
         @Priorities = @Priorities,
-        @Mode = N'RESTORE',
+
+		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
+		@ExcludeRestoring = 0,
+		@ExcludeRecovering = 0,	
+		@ExcludeOffline = 0,		
+
         @TargetDirectory = @BackupsRootPath, 
         @Output = @serialized OUTPUT;
 
@@ -286,7 +291,7 @@ AS
     ); 
 
     INSERT INTO @dbsToRestore ([database_name])
-    SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+    SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
     IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN
         RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
@@ -670,7 +675,7 @@ AS
 
 			EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 			INSERT INTO @logFilesToRestore ([log_file])
-			SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
+			SELECT result FROM dbo.[split_string](@fileList, N',', 1) ORDER BY row_id;
 			
 			-- re-update the counter: 
 			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
@@ -734,7 +739,7 @@ AS
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',') WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					SELECT result FROM dbo.[split_string](@fileList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
 					ORDER BY row_id;
 				END;
 

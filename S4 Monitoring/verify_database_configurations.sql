@@ -45,8 +45,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -94,15 +94,13 @@ AS
 		[name] sysname
 	);
 	
-	EXEC dbo.load_database_names 
-		@Input = N'[USER]',
+	EXEC dbo.load_databases 
+		@Targets = N'[USER]',
 		@Exclusions = @DatabasesToExclude, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'FULL',
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databasesToCheck ([name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
 	DECLARE @excludedComptabilityDatabases table ( 
 		[name] sysname NOT NULL
@@ -110,7 +108,7 @@ AS
 
 	IF @CompatabilityExclusions IS NOT NULL BEGIN 
 		INSERT INTO @excludedComptabilityDatabases ([name])
-		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',') ORDER BY row_id;
+		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',', 1) ORDER BY row_id;
 	END; 
 
 	DECLARE @issues table ( 

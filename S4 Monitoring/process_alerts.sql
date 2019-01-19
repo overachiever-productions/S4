@@ -44,17 +44,19 @@
 		(NOTE: This tests the sproc, not the JOB.)
 
 
-		-- fake error - that'll get sent/forwarded: 
+		-- fake errorS - for sample/testing (note that values are HARD-CODED - which is ONLY for testing)... 
 		EXEC admindb.dbo.process_alerts
 			@ErrorNumber = 100001, 
 			@Severity = 19,
-			@Message = N'Totally fake error number and message detected.';
+			@Message = N'Totally fake error number and message detected.', 
+			@PrintOnly = 1;
 
 		-- example of an ignored (by S4 default) 
 		EXEC admindb.dbo.process_alerts
 			@ErrorNumber = 17806, 
 			@Severity = 20,
-			@Message = N'SSPI handshake failed with error code 0x88976, state 14 while establishing a connection with integrated security; the connection has been closed.';		
+			@Message = N'SSPI handshake failed with error code 0x88976, state 14 while establishing a connection with integrated security; the connection has been closed.', 
+			@PrintOnly = 1;		
 
 
 */
@@ -72,12 +74,14 @@ CREATE PROC dbo.process_alerts
 	@Severity					int, 
 	@Message					nvarchar(2048),
 	@OperatorName				sysname					= N'Alerts',
-	@MailProfileName			sysname					= N'General'
+	@MailProfileName			sysname					= N'General', 
+	@PrintOnly					bit						= 0
 AS 
 	SET NOCOUNT ON; 
 
-	DECLARE @response nvarchar(2000); 
+	-- {copyright} 
 
+	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
 	WHERE 
 		message_id = @ErrorNumber
@@ -86,9 +90,9 @@ AS
 	IF NULLIF(@response, N'') IS NOT NULL BEGIN 
 
 		IF UPPER(@response) = N'[IGNORE]' BEGIN 
-			
+
 			-- this is an explicitly ignored alert. print the error details (which'll go into the SQL Server Agent Job log), then bail/return: 
-			PRINT '[IGNORED] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
+			PRINT '[IGNORE] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
 			RETURN 0;
 		END;
 
@@ -114,14 +118,19 @@ ERROR NUMBER: {2}' ;
 	SET @subject = REPLACE(@subject, '{0}', @Severity);
 	SET @subject = REPLACE(@subject, '{1}', @@SERVERNAME); 
 	
-	EXEC msdb.dbo.sp_notify_operator
-		@profile_name = @MailProfileName, 
-		@name = @OperatorName,
-		@subject = @subject, 
-		@body = @body;
+	IF @PrintOnly = 1 BEGIN 
+			PRINT N'SUBJECT: ' + @subject; 
+			PRINT N'BODY: ' + @body;
+	  END;
+	ELSE BEGIN
+		EXEC msdb.dbo.sp_notify_operator
+			@profile_name = @MailProfileName, 
+			@name = @OperatorName,
+			@subject = @subject, 
+			@body = @body;
+	END;
 
 	RETURN 0;
-
 GO
 
 

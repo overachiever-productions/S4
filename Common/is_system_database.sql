@@ -18,6 +18,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 AS 
 	BEGIN 
 		DECLARE @output bit = 0;
+		DECLARE @override sysname; 
 
 		IF UPPER(@DatabaseName) IN (N'MASTER', N'MSDB', N'MODEL')
 			SET @output = 1; 
@@ -29,8 +30,17 @@ AS
 		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN
 			SET @output = 1;
 
-			DECLARE @override sysname; 
 			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'admindb_is_system_db';
+
+			IF @override = N'0'	-- only overwrite if a) the setting is there/defined AND the setting's value = 0 (i.e., false).
+				SET @output = 0;
+		END;
+
+		-- same with the distribution database... 
+		IF UPPER(@DatabaseName) = N'DISTRIBUTION' BEGIN
+			SET @output = 1;
+			
+			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'distribution_is_system_db';
 
 			IF @override = N'0'	-- only overwrite if a) the setting is there/defined AND the setting's value = 0 (i.e., false).
 				SET @output = 0;

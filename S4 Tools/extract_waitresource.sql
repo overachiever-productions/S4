@@ -1,5 +1,15 @@
 /*
 
+		FUN: 
+			Here' are some resource identifiers I've captured from Deadlock and OTHER traces: 
+
+				METADATA: database_id = 5 COMPRESSED_FRAGMENT(object_id = 597577167, fragment_id = 6088335), lockPartitionId = 0
+					METADATA: database_id = 5 COMPRESSED_FRAGMENT(object_id = 597577167, fragment_id = 1427564), lockPartitionId = 0
+						i.e., the two locks above were fighting with each other ... and caused a deadlock... 
+							PRETTY sure this is ..... Full Text Indexing... https://twitter.com/kevriley/status/301042539232915457  (especially since the table in question was FTI'd...  (and massive))...		
+
+
+
 		FODDER: 
 			- https://support.microsoft.com/en-us/help/224453/inf-understanding-and-resolving-sql-server-blocking-problems 
 				nice, there's a CHART in roughly the 'middle' of that page with info on what waitresources are and how the formats work... 
@@ -166,7 +176,7 @@ AS
 	DECLARE @parts table (row_id int, part nvarchar(200));
 
 	INSERT INTO @parts (row_id, part) 
-	SELECT [row_id], [result] FROM admindb.dbo.[split_string](@WaitResource, N':');
+	SELECT [row_id], [result] FROM admindb.dbo.[split_string](@WaitResource, N':', 1);
 
 	BEGIN TRY 
 		DECLARE @waittype sysname, @part2 bigint, @part3 bigint, @part4 sysname, @part5 sysname;

@@ -15,6 +15,8 @@
 				SELECT @numberOfMatches [match_count];
 
 
+				SELECT dbo.count_matches('   122', N' ')
+
 
 */
 
@@ -34,12 +36,16 @@ AS
 
 		DECLARE @actualLength int = LEN(@input); 
 		DECLARE @replacedLength int = LEN(CAST(REPLACE(@input, @pattern, N'') AS nvarchar(MAX)));
+		DECLARE @patternLength int = LEN(@pattern);  
 
 		IF @replacedLength < @actualLength BEGIN 
-
-			DECLARE @difference int = @actualLength - @replacedLength; 
-			SET @output =  @difference / LEN(@pattern);
-
+		
+			-- account for @pattern being 1 or more spaces: 
+			IF @patternLength = 0 AND DATALENGTH(LTRIM(@pattern)) = 0 
+				SET @patternLength = DATALENGTH(@pattern) / 2;
+			
+			IF @patternLength > 0
+				SET @output =  (@actualLength - @replacedLength) / @patternLength;
 		END;
 		
 		RETURN @output;

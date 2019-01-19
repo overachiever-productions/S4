@@ -179,7 +179,7 @@ AS
 	);
 
 	INSERT INTO #IgnoredJobs ([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',', 1);
 
 	----------------------------------------------
 	-- create a container for output/differences. 

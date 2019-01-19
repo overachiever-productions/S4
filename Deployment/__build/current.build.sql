@@ -1,5 +1,5 @@
 --##OUTPUT: \\Deployment
---##NOTE: This is a build/file (instructions for compiling a full deployment/upgrade script). Check Install and Upgrades folders for output.
+--##NOTE: This is a build file only (i.e., it stores upgade/install directives + place-holders for code to drop into admindb, etc.
 
 /*
 
@@ -433,6 +433,11 @@ IF @currentVersion < 4.7 BEGIN
 END;
 GO
 
+-- 5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
+IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
+	DROP PROC dbo.load_database_names;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 5. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -584,7 +589,7 @@ GO
 --##INCLUDE: Common\execute_uncatchable_command.sql
 
 -----------------------------------
---##INCLUDE: Common\load_database_names.sql
+--##INCLUDE: Common\load_databases.sql
 
 -----------------------------------
 --##INCLUDE: Common\split_string.sql

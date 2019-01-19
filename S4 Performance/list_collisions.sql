@@ -7,7 +7,6 @@
 
 
 
-
 */
 
 USE [admindb];
@@ -117,11 +116,14 @@ AS
 
 	IF @TargetDatabases <> N'[ALL]' BEGIN
 		DECLARE @dbnames nvarchar(max);
-		EXEC dbo.load_database_names @Input = @TargetDatabases, @Mode = N'LIST_ACTIVE', @Output = @dbnames OUTPUT; 
+		EXEC dbo.load_databases 
+			@Targets = @TargetDatabases, 
+			@ExcludeSecondaries = 1,
+			@Output = @dbnames OUTPUT; 
 
 		DELETE FROM #core 
 		WHERE 
-			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [result] FROM dbo.split_string(@dbnames, N',')));
+			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [result] FROM dbo.split_string(@dbnames, N',', 1)));
 	END; 
 
 	IF NOT EXISTS(SELECT NULL FROM [#core]) BEGIN

@@ -48,8 +48,8 @@ AS
 	);
 
 	INSERT INTO @rows ([row_id], [result])
-	SELECT [row_id], LTRIM(RTRIM([result])) 
-	FROM admindb.[dbo].[split_string](@input, @rowDelimiter);
+	SELECT [row_id], [result] 
+	FROM admindb.[dbo].[split_string](@input, @rowDelimiter, 1);
 
 	DECLARE @columnCountMax int = 0;
 
@@ -75,7 +75,7 @@ AS
 	WHILE (@currentRow IS NOT NULL) BEGIN 
 
 		INSERT INTO #pivoted ([row_id], [column_id], [result])
-		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter);
+		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter, 1);
 
 		SET @currentRowID = @currentRowID + 1;
 		SET @currentRow = (SELECT [result] FROM @rows WHERE [row_id] = @currentRowID);

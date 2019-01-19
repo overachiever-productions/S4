@@ -26,12 +26,13 @@ GO
 CREATE PROC dbo.list_recovery_metrics 
 	@TargetDatabases				nvarchar(MAX)		= N'[ALL]', 
 	@ExcludedDatabases				nvarchar(MAX)		= NULL,				-- e.g., 'demo, test, %_fake, etc.'
+	@Priorities						nvarchar(MAX)		= NULL,
 	@Mode							sysname				= N'SUMMARY',		-- SUMMARY | SLA | RPO | RTO | ERROR | DEVIATION
 	@Scope							sysname				= N'WEEK'			-- LATEST | DAY | WEEK | MONTH | QUARTER
 AS 
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright} 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -52,15 +53,14 @@ AS
 	);
 
 	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[load_database_names]
-		@Input = @TargetDatabases,
+	EXEC admindb.dbo.[load_databases]
+		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
-		@Priorities = NULL,
-		@Mode = N'LIST_RESTORED',
+		@Priorities = @Priorities,
 		@Output = @dbNames OUTPUT;
 
 	INSERT INTO [#targetDatabases] ([database_name])
-	SELECT [result] FROM dbo.[split_string](@dbNames, N',');
+	SELECT [result] FROM dbo.[split_string](@dbNames, N',', 1);
 
 	IF UPPER(@Scope) = N'LATEST'
 		INSERT INTO [#executionIDs] ([execution_id])
