@@ -22,10 +22,6 @@ FODDER
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
 
-
--- vNEXT: extract execution cost... fodder: http://www.sqlservercentral.com/articles/Stairway+Series/The+XML+exist()+and+nodes()+Methods/92785/  look at the example on .nodes() .. it returns a table(column) 'alias'... meaning I could simply
---			just a) grab all currentplan.nodes('/path/to/any/or/all/cost[@attributes]') ... and then .value() those out... and MAX() the 'table' of results to get the most expensive 'cost' defined in a single plan... done.
-
 -- vNEXT: batch vs statement plans/text (i.e., offsets and the likes). 
 -- vNEXT: detailed blocking info... (blocking chains if @DetailedBlockingInfo = 1 (expressed as xml)... 
 --			Andy Mallon has a great article on this stuff: https://am2.co/2017/10/finding-leader-blocker/
@@ -39,7 +35,6 @@ FODDER
 --			give it the sql statement? and... maybe the plan? dunno...   (this'd let me grab the "/* ReportID: xxxx; OrgID: yyyyy */ if needed.. and give other people similar details. 
 --			would'nt be allowed to be a 'filter'... just a formatter.... 
 --				and... maybe the variable's value should be nvarchar(300) or something and look like N'udfNameHere|columnAlias|includedColumns?'  or something like that... 
-
 
 
 -- FODDER: 

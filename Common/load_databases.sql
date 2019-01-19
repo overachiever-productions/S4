@@ -1,122 +1,92 @@
-
-
-/*
-	5.2 Fixes: 
-		- [ ] - RENAME: dbo.list_databases 
-			[x] - change in file... 
-			[x] - change in Git (i.e., rename only). 
-			[x] - change in build script 
-			[x] - change in ALL depedencies checks... 
-		- [x] - REMOVE: @BackupType - this shouldn't need to know those details... 
-		- [x] - Change @Input to @Target	
-		- [ ] - Update docs... (don't think this pig is documented explicitly...)
-
-		- [x] - re-implement @Priorities functionality.
-
-		- [x] - bug with admindb (and... distribution?) being added 2x... 
-
-		- [x] - Validations for @Exclusions
-		- [x] - Enable [SYSTEM] + , x or x, [SYSTEM] syntax... (i.e., [SYSTEM] and OTHER exclusions together are allowed)... 
-
-*/
-
-
-
 /*
 	TODO: 
-		- Implement logic for LIST_ALL mode - which will also include snapshots, offline dbs, and 'synchronizing' dbs... (i.e., all/everything).
-		- The VERIFY mode is never really used. Pretty sure I call/leverage it from a few of the sprocs that depend upon this pig - but there is no explicit 'path' through the code that accounts for any speciaization. 
-									hmmm. maybe that might be what verify means though - i.e., verify = 'drop through all of the default logic'?
 
 	DEPENDENCIES:
-		
 
 	NOTES:
 		
+	TESTS: 
+
+			-- expect exception:
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[ALL]', 
+				@Exclusions = N'[SYSTEM]',
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
+
+			-- expect exception:
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[ALL]', 
+				@Exclusions = N'[USER]',
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
 
--- expect exception:
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[ALL]', 
-	@Exclusions = N'[SYSTEM]',
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[SYSTEM]', 
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
--- expect exception:
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[ALL]', 
-	@Exclusions = N'[USER]',
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[USER]', 
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[ALL]', 
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[SYSTEM]', 
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[ALL]', 
+				@Exclusions = N'BayCar%',
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[USER]', 
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[READ_FROM_FILESYSTEM]', 
+				@TargetDirectory = N'[DEFAULT]', 
+				@Exclusions = N'[SYSTEM]',
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[ALL]', 
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'[READ_FROM_FILESYSTEM]', 
+				@TargetDirectory = N'[DEFAULT]', 
+				@Exclusions = N'_Migrat%, [SYSTEM] ',
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[ALL]', 
-	@Exclusions = N'BayCar%',
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[READ_FROM_FILESYSTEM]', 
-	@TargetDirectory = N'[DEFAULT]', 
-	@Exclusions = N'[SYSTEM]',
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
-
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'[READ_FROM_FILESYSTEM]', 
-	@TargetDirectory = N'[DEFAULT]', 
-	@Exclusions = N'_Migrat%, [SYSTEM] ',
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
-
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
-
-DECLARE @output nvarchar(MAX);
-EXEC list_databases 
-	@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
-	@Priorities = N'SelectExp, *, Traces',
-	@Output = @output OUTPUT; 
-SELECT [result] FROM dbo.split_string(@output, N',', 1);
-GO
-
-
+			DECLARE @output nvarchar(MAX);
+			EXEC list_databases 
+				@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
+				@Priorities = N'SelectExp, *, Traces',
+				@Output = @output OUTPUT; 
+			SELECT [result] FROM dbo.split_string(@output, N',', 1);
+			GO
 
 */
 
@@ -139,8 +109,8 @@ CREATE PROC dbo.load_databases
 	@ExcludeRestoring			bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
 	@ExcludeRecovering			bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
 	@ExcludeOffline				bit				= 1,		-- removes ANY state other than ONLINE.
-	@ExcludeDev					bit				= 0, 
-	@ExcludeTest				bit				= 0,
+	@ExcludeDev					bit				= 0,		-- not yet implemented
+	@ExcludeTest				bit				= 0,		-- not yet implemented
 	@Output						nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
