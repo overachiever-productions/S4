@@ -6,7 +6,7 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.1.2766.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.1.2766.1.
+		- This script will either install/deploy S4 version 5.2.2774.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.2.2774.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -20,7 +20,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.1.2766.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 5.2.2774.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -99,7 +99,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.1.2766.1';
+DECLARE @CurrentVersion varchar(20) = N'5.2.2774.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -431,6 +431,11 @@ IF @currentVersion < 4.7 BEGIN
 END;
 GO
 
+-- 5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
+IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
+	DROP PROC dbo.load_database_names;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 5. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -625,7 +630,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -663,7 +668,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -698,7 +703,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalide @FilterType specified.', 16, 1);
@@ -789,69 +794,68 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
-	DROP PROC dbo.load_database_names;
+IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
+	DROP PROC dbo.load_databases;
 GO
 
-CREATE PROC dbo.load_database_names 
-	@Input				nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
-	@Exclusions			nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
-	@Priorities			nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@Mode				sysname,					-- BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED 
-	@BackupType			sysname			= NULL,		-- FULL | DIFF | LOG  -- only needed if @Mode = BACKUP | NON_RECOVERED
-	@TargetDirectory	sysname			= NULL,		-- Only required when @Input is specified as [READ_FROM_FILESYSTEM].
-	@Output				nvarchar(MAX)	OUTPUT
+CREATE PROC dbo.load_databases 
+	@Targets					nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Exclusions					nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
+	@Priorities					nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
+	@TargetDirectory			sysname			= NULL,		-- Only required when @Targets is specified as [READ_FROM_FILESYSTEM].
+	@ExcludeClones				bit				= 1, 
+	@ExcludeSecondaries			bit				= 1,		-- exclude AG and Mirroring secondaries... 
+	@ExcludeSimpleRecovery		bit				= 0,		-- exclude databases in SIMPLE recovery mode
+	@ExcludeReadOnly			bit				= 0,		
+	@ExcludeRestoring			bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
+	@ExcludeRecovering			bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
+	@ExcludeOffline				bit				= 1,		-- removes ANY state other than ONLINE.
+	@ExcludeDev					bit				= 0,		-- not yet implemented
+	@ExcludeTest				bit				= 0,		-- not yet implemented
+	@Output						nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
-	IF ISNULL(@Input, N'') = N'' BEGIN;
-		RAISERROR('@Input cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
+	IF NULLIF(@Targets, N'') IS NULL BEGIN
+		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], [READ_FROM_FILESYSTEM], or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
 
-	IF ISNULL(@Mode, N'') = N'' BEGIN;
-		RAISERROR('@Mode cannot be null or empty - it must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED ', 16, 1);
-		RETURN -2;
-	END
-	
-	IF UPPER(@Mode) NOT IN (N'BACKUP',N'RESTORE',N'REMOVE',N'VERIFY', N'LIST_ACTIVE', N'LIST_ALL', N'LIST_RESTORED', N'NON_RECOVERED') BEGIN 
-		RAISERROR('Permitted values for @Mode must be one of the following values: BACKUP | RESTORE | REMOVE | VERIFY | LIST_ACTIVE | LIST_ALL | LIST_RESTORED | NON_RECOVERED', 16, 1);
-		RETURN -2;
-	END
-
-	IF UPPER(@Mode) = N'BACKUP' BEGIN;
-		IF @BackupType IS NULL BEGIN;
-			RAISERROR('When @Mode is set to BACKUP, the @BackupType value MUST be provided (and must be one of the following values: FULL | DIFF | LOG).', 16, 1);
+	IF (SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0 BEGIN
+		
+		IF UPPER(@Targets) <> N'[READ_FROM_FILESYSTEM]' BEGIN
+			RAISERROR(N'[SYSTEM] can ONLY be specified as an Exclusion when @Targets is set to [READ_FROM_FILESYSTEM].', 16, 1);
 			RETURN -5;
-		END
-
-		IF UPPER(@BackupType) NOT IN (N'FULL', N'DIFF', N'LOG') BEGIN;
-			RAISERROR('When @Mode is set to BACKUP, the @BackupType value MUST be provided (and must be one of the following values: FULL | DIFF | LOG).', 16, 1);
-			RETURN -5;
-		END
-	END
-
-	IF UPPER(@Mode) = N'LIST_RESTORED' BEGIN 
-		IF OBJECT_ID('dbo.restore_log') IS NULL BEGIN
-			RAISERROR('S4 table dbo.restore_log is required to list restored databases.', 16, 1);
-			RETURN -6;
 		END;
 	END;
 
-	IF UPPER(@Input) = N'[READ_FROM_FILESYSTEM]' BEGIN;
-		IF UPPER(@Mode) NOT IN (N'RESTORE', N'REMOVE') BEGIN;
-			RAISERROR('The specialized token [READ_FROM_FILESYSTEM] can only be used when @Mode is set to RESTORE or REMOVE.', 16, 1);
-			RETURN - 9;
-		END
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'[USER]')) > 0) OR ((SELECT dbo.[count_matches](@Exclusions, N'[ALL]')) > 0) BEGIN 
+		RAISERROR(N'@Exclusions may NOT be set to [ALL] or [USER].', 16, 1);
+		RETURN -6;
+	END;
+
+	-- Verify Backups Path:
+	IF UPPER(@Targets) = N'[READ_FROM_FILESYSTEM]' BEGIN
+		
+		IF UPPER(@TargetDirectory) = N'[DEFAULT]' BEGIN
+			SELECT @TargetDirectory = dbo.load_default_path('BACKUP');
+		END;
 
 		IF @TargetDirectory IS NULL BEGIN;
-			RAISERROR('When @Input is specified as [READ_FROM_FILESYSTEM], the @TargetDirectory must be specified - and must point to a valid path.', 16, 1);
+			RAISERROR('When @Targets is specified as [READ_FROM_FILESYSTEM], the @TargetDirectory must be specified - and must point to a valid path.', 16, 1);
 			RETURN - 10;
 		END
+
+		DECLARE @isValid bit;
+		EXEC dbo.check_paths @TargetDirectory, @isValid OUTPUT;
+		IF @isValid = 0 BEGIN
+			RAISERROR(N'Specified @TargetDirectory is invalid - check path and retry.', 16, 1);
+			RETURN -11;
+		END;
 	END
 
 	-----------------------------------------------------------------------------
@@ -861,45 +865,52 @@ AS
     INTO #Tally
     FROM sys.columns;
 
-    DECLARE @targets TABLE ( 
+	DECLARE @deserialized table (
+		[row_id] int NOT NULL, 
+		[result] sysname NOT NULL
+	); 
+
+    DECLARE @target_databases TABLE ( 
         [entry_id] int IDENTITY(1,1) NOT NULL, 
         [database_name] sysname NOT NULL
     ); 
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[SYSTEM]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
-	    INSERT INTO @targets ([database_name])
-        SELECT 'master' UNION SELECT 'msdb' UNION SELECT 'model';
+    DECLARE @system_databases TABLE ( 
+        [entry_id] int IDENTITY(1,1) NOT NULL, 
+        [database_name] sysname NOT NULL
+    ); 
 
-		-- treat the admindb as a [SYSTEM] db if it exists: 
-		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') BEGIN
-			IF (SELECT dbo.is_system_database('admindb')) = 1 
-				INSERT INTO @targets ([database_name])
-				VALUES ('admindb');
-		END
-    END; 
+	-- define system databases - we'll potentially need this in a number of different cases...
+	INSERT INTO @system_databases ([database_name])
+    SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
 
-    IF UPPER(@Input) IN (N'[ALL]', N'[USER]') AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN; 
-        IF @BackupType = 'LOG'
-            INSERT INTO @targets ([database_name])
-            SELECT name FROM sys.databases 
-            WHERE recovery_model_desc = 'FULL' 
-                AND name NOT IN ('master', 'model', 'msdb', 'tempdb') 
-				AND source_database_id IS NULL  -- exclude database snapshots.
-            ORDER BY name;
-        ELSE 
-            INSERT INTO @targets ([database_name])
-            SELECT name FROM sys.databases 
-            WHERE name NOT IN ('master', 'model', 'msdb','tempdb') 
-				AND source_database_id IS NULL -- exclude database snapshots
-            ORDER BY name;
+	-- Treat admindb as [SYSTEM] if defined as system... : 
+	IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
+		INSERT INTO @system_databases ([database_name])
+		VALUES ('admindb');
+	END;
 
-		-- exclude admindb if it's treated as a [SYSTEM] database (vs a [USER] database):
-		IF (SELECT dbo.is_system_database('admindb')) = 1 
-			DELETE FROM @targets WHERE [database_name] = 'admindb';
-		
-    END; 
+	-- same with distribution database - but only if present:
+	IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'distribution') BEGIN
+		IF (SELECT dbo.is_system_database('distribution')) = 1  BEGIN
+			INSERT INTO @system_databases ([database_name])
+			VALUES ('distribution');
+		END;
+	END
 
-    IF UPPER(@Input) = '[READ_FROM_FILESYSTEM]' BEGIN;
+	IF UPPER(@Targets) IN (N'[ALL]', N'[SYSTEM]') BEGIN 
+		INSERT INTO @target_databases ([database_name])
+		SELECT [database_name] FROM @system_databases; 
+	 END; 
+
+	 IF UPPER(@Targets) IN (N'[ALL]', N'[USER]') BEGIN 
+		INSERT INTO @target_databases ([database_name])
+		SELECT [name] FROM sys.databases
+		WHERE [name] NOT IN (SELECT [database_name] FROM @system_databases)
+		ORDER BY [name];
+	 END; 
+
+	 IF UPPER(@Targets) = N'[READ_FROM_FILESYSTEM]' BEGIN 
 
         DECLARE @directories table (
             row_id int IDENTITY(1,1) NOT NULL, 
@@ -910,127 +921,125 @@ AS
         INSERT INTO @directories (subdirectory, depth)
         EXEC master.sys.xp_dirtree @TargetDirectory, 1, 0;
 
-        INSERT INTO @targets ([database_name])
+        INSERT INTO @target_databases ([database_name])
         SELECT subdirectory FROM @directories ORDER BY row_id;
 
-      END; 
+	 END;
 
-    IF (SELECT COUNT(*) FROM @targets) <= 0 AND UPPER(@Mode) <> N'LIST_RESTORED' BEGIN;
+	 -- If not a token, then try comma delimitied: 
+	 IF NOT EXISTS (SELECT NULL FROM @target_databases) BEGIN
+	
+		INSERT INTO @deserialized ([row_id], [result])
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Targets, N',', 1);
 
-        DECLARE @SerializedDbs nvarchar(1200);
-		SET @SerializedDbs = N',' + @Input + N',';
+		IF EXISTS (SELECT NULL FROM @deserialized) BEGIN 
+			INSERT INTO @target_databases ([database_name])
+			SELECT RTRIM(LTRIM([result])) FROM @deserialized ORDER BY [row_id];
+		END;
 
-        INSERT INTO @targets ([database_name])
-        SELECT  RTRIM(LTRIM((SUBSTRING(@SerializedDbs, N + 1, CHARINDEX(',', @SerializedDbs, N + 1) - N - 1))))
-        FROM #Tally
-        WHERE N < LEN(@SerializedDbs) 
-            AND SUBSTRING(@SerializedDbs, N, 1) = ','
-        ORDER BY #Tally.N;
+	 END;
+	 
+	 IF @ExcludeClones = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NOT NULL);		
+	 END;
 
-		IF UPPER(@Mode) = N'BACKUP' BEGIN;
-			IF @BackupType = 'LOG' BEGIN
-				DELETE FROM @targets 
-				WHERE [database_name] NOT IN (
-					SELECT [name] FROM sys.databases WHERE recovery_model_desc = 'FULL'
-				);
-			  END;
-			ELSE 
-				DELETE FROM @targets
-				WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases);
-		END
-    END;
-
-	-- remove AG'd and Mirrored databases:
-	IF UPPER(@Mode) IN (N'BACKUP', N'LIST_ACTIVE') BEGIN;
-		
-		-- make sure that if any dbs were explicitly mentioned (i.e, N'oink, oink3, blah' - that they're VALID)
-		DELETE FROM @targets 
-		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NULL);
+	 IF @ExcludeSecondaries = 1 BEGIN 
 
 		DECLARE @synchronized table ( 
 			[database_name] sysname NOT NULL
 		);
 
+		-- remove any mirrored secondaries: 
 		INSERT INTO @synchronized ([database_name])
-		SELECT [name] FROM sys.databases WHERE state_desc <> 'ONLINE'; -- this gets DBs that are NOT online - including those listed as RESTORING because they're mirrored. 
+		SELECT d.[name] 
+		FROM sys.[databases] d 
+		INNER JOIN sys.[database_mirroring] dm ON d.[database_id] = dm.[database_id] AND dm.[mirroring_guid] IS NOT NULL
+		WHERE UPPER(dm.[mirroring_role_desc]) <> N'PRINCIPAL';
 
-		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
-			
+		-- dynamically account for any AG'd databases:
+		IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN		
 			CREATE TABLE #hadr_names ([name] sysname NOT NULL);
-
-			-- 2018-11-26: This is a hell of a bug/issue ... i had an INSERT EXEC here... but that doesn't work cuz the whole idea of this sproc is to AVOID that... 
-			--		so... i'm FURTHER hacking this to use a temp table for now... which is even MORE stupid... but, i've got a full 'rewrite' planned for this .. so it's a temporary hack/work-around:
-			
 			EXEC sp_executesql N'INSERT INTO #hadr_names ([name]) SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
 
 			INSERT INTO @synchronized ([database_name])
 			SELECT [name] FROM #hadr_names;
 		END
 
-		-- Note, snapshots were removed earlier... 
-
 		-- Exclude any databases that aren't operational: (NOTE, this excluding all dbs that are non-operational INCLUDING those that might be 'out' because of Mirroring, but it is NOT SOLELY trying to remove JUST mirrored/AG'd databases)
-		DELETE FROM @targets 
+		DELETE FROM @target_databases 
 		WHERE [database_name] IN (SELECT [database_name] FROM @synchronized);
-	END
-	
-	IF UPPER(@Mode) IN (N'LIST_RESTORED') BEGIN
-		-- only show dbs that have been restored (i.e., in dbo.restore_log).
-		INSERT INTO @targets ([database_name])
-		SELECT [database] FROM dbo.[restore_log] GROUP BY [database];
-	END;
 
-	IF UPPER(@Mode) IN (N'NON_RECOVERED') BEGIN
-	
-		-- remove dbs not in RECOVERY or STANDBY mode:
-		DELETE FROM @targets
-		WHERE [database_name] NOT IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1 OR [state_desc] = N'RESTORING');
+	 END;
 
-		
-		-- now delete any dbs that are in RESTORING state becauses they're MIRRORED or in an AG:
-		DELETE FROM @targets 
-		WHERE [database_name] IN (
-			SELECT 
-				d.[name] [database_name]
-			FROM 
-				sys.database_mirroring dm
-				INNER JOIN sys.databases d ON dm.database_id = d.database_id
-			WHERE 
-				dm.mirroring_guid IS NOT NULL
+	 IF @ExcludeSimpleRecovery = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([recovery_model_desc]) = 'SIMPLE');
+	 END; 
 
-		UNION
+	 IF @ExcludeReadOnly = 1 BEGIN
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_read_only] = 1)
+	 END;
 
-			SELECT
-				dbcs.[database_name]
-			FROM
-				master.sys.availability_groups AS ag
-				INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
-				INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
-				INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
-		);
-	END;
+	 IF @ExcludeRestoring = 1 BEGIN
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) = 'RESTORING');		
+
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1);
+	 END; 
+
+	 IF @ExcludeRecovering = 1 BEGIN 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
+	 END;
+	 
+	 IF @ExcludeOffline = 1 BEGIN 
+		-- all states OTHER than online... 
+		DELETE FROM @target_databases 
+		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
+	 END;
+	 
+	 IF @ExcludeDev = 1 OR @ExcludeTest = 1 BEGIN 
+		RAISERROR('Dev and Test Exclusions have not YET been implemented.', 16, 1);
+		RETURN - 100; 
+
+		-- NOTE: RATEHER than doing @ExcludeX explicitly... 
+		--		PROBABLY makes way more sense to have [DEV] [TEST] tokens - they work the SAME way (lookups to dbo.settings)... but end up being WAY more versatile...
+
+		-- TODO: Implement. for each type, there will be an option to drop in a setting/key that defines what dev or test dbs look like... 
+		--			as in ... a setting that effectively equates all dev or test with '%_dev' or 'test_%' - whatever an org's format is. 
+		--					AND, also needs to enable one-off additions to these as well, e.g., 'ImportStaging' or 'Blah' could be marked a test or dev.
+	 END; 
 
 	-- Exclude any databases specified for exclusion:
-	IF ISNULL(@Exclusions, '') <> '' BEGIN;
-	
-		DECLARE @removedDbs nvarchar(1200);
-		SET @removedDbs = N',' + @Exclusions + N',';
+	IF NULLIF(@Exclusions, '') IS NOT NULL BEGIN;
+		
+		DELETE FROM @deserialized;
+
+		IF (SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0 BEGIN
+			INSERT INTO @deserialized ([row_id], [result])
+			SELECT 1 [fake_row_id], [database_name] FROM @system_databases;	
+
+			-- account for distribution (and note that it can/will only be EXCLUDED (i.e., IF it was found and IF it's marked as 'system', we won't restore it)).
+			IF (SELECT dbo.is_system_database('distribution')) = 1  BEGIN
+				INSERT INTO @deserialized ([row_id], [result])
+				VALUES (99, 'distribution');
+			END;
+
+			SET @Exclusions = REPLACE(@Exclusions, N'[SYSTEM]', N'');
+		END;
+
+		INSERT INTO @deserialized ([row_id], [result])
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Exclusions, N',', 1);
 
 		DELETE t 
-		FROM @targets t 
-		INNER JOIN (
-			SELECT RTRIM(LTRIM(SUBSTRING(@removedDbs, N + 1, CHARINDEX(',', @removedDbs, N + 1) - N - 1))) [db_name]
-			FROM #Tally
-			WHERE N < LEN(@removedDbs)
-				AND SUBSTRING(@removedDbs, N, 1) = ','		
-		) exclusions ON t.[database_name] LIKE exclusions.[db_name];
-
+		FROM @target_databases t
+		INNER JOIN @deserialized d ON t.[database_name] LIKE d.[result];
 	END;
 
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
-		DECLARE @SerializedPriorities nvarchar(MAX);
-		SET @SerializedPriorities = N',' + @Priorities + N',';
 
 		DECLARE @prioritized table (
 			priority_id int IDENTITY(1,1) NOT NULL, 
@@ -1038,17 +1047,13 @@ AS
 		);
 
 		INSERT INTO @prioritized ([database_name])
-		SELECT  RTRIM(LTRIM((SUBSTRING(@SerializedPriorities, N + 1, CHARINDEX(',', @SerializedPriorities, N + 1) - N - 1))))
-        FROM #Tally
-        WHERE N < LEN(@SerializedPriorities) 
-            AND SUBSTRING(@SerializedPriorities, N, 1) = ','
-        ORDER BY #Tally.N;
-
+		SELECT [result] FROM dbo.[split_string](@Priorities, N',', 1) ORDER BY [row_id];
+				
 		DECLARE @alphabetized int;
 		SELECT @alphabetized = priority_id FROM @prioritized WHERE [database_name] = '*';
 
 		IF @alphabetized IS NULL
-			SET @alphabetized = (SELECT MAX(entry_id) + 1 FROM @targets);
+			SET @alphabetized = (SELECT MAX(entry_id) + 1 FROM @target_databases);
 
 		DECLARE @prioritized_targets TABLE ( 
 			[entry_id] int IDENTITY(1,1) NOT NULL, 
@@ -1064,7 +1069,7 @@ AS
 					WHEN p.[database_name] IS NOT NULL AND p.priority_id > @alphabetized THEN 32767 + p.priority_id
 				END [prioritized_priority]
 			FROM 
-				@targets t 
+				@target_databases t 
 				LEFT OUTER JOIN @prioritized p ON p.[database_name] = t.[database_name]
 		) 
 
@@ -1075,23 +1080,25 @@ AS
 		ORDER BY 
 			core.prioritized_priority;
 
-		DELETE FROM @targets;
-		INSERT INTO @targets ([database_name])
+		DELETE FROM @target_databases;
+		INSERT INTO @target_databases ([database_name])
 		SELECT [database_name] 
 		FROM @prioritized_targets
 		ORDER BY entry_id;
 
 	END 
 
-	-- Output (used to get around nasty 'insert exec can't be nested' error when reading from file-system.
+	-- Serialize:
 	SET @Output = N'';
-	SELECT @Output = @Output + [database_name] + ',' FROM @targets ORDER BY entry_id;
+	SELECT @Output = @Output + [database_name] + ',' FROM @target_databases ORDER BY entry_id;
 
 	IF ISNULL(@Output,'') <> ''
 		SET @Output = LEFT(@Output, LEN(@Output) - 1);
 
 	RETURN 0;
 GO
+
+
 
 
 -----------------------------------
@@ -1103,13 +1110,13 @@ IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
 	DROP FUNCTION dbo.split_string;
 GO
 
-CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20))
+CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20), @TrimResults bit)
 RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 	--WITH SCHEMABINDING
 AS 
 	BEGIN
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -1153,6 +1160,11 @@ AS
 			ORDER BY 
 				 n;
 		END;
+
+		IF @TrimResults = 1 BEGIN
+			UPDATE @Results SET [result] = LTRIM(RTRIM([result])) WHERE DATALENGTH([result]) > 0;
+		END;
+
 	END;
 
 	RETURN;
@@ -1175,7 +1187,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -1262,7 +1274,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -1302,7 +1314,7 @@ CREATE PROC dbo.get_time_vector
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- cleanup:
 	SET @Vector = LTRIM(RTRIM(@Vector));
@@ -1311,7 +1323,7 @@ AS
 	DECLARE @vectorType nchar(1) = LOWER(RIGHT(@Vector, 1));
 
 	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
-	IF @vectorType NOT IN (SELECT REPLACE([result], N' ', '') FROM dbo.split_string(@AllowedIntervals, N',')) BEGIN 
+	IF @vectorType NOT IN (SELECT REPLACE([result], N' ', '') FROM dbo.split_string(@AllowedIntervals, N',', 1)) BEGIN 
 		SET @Error = N'Invalid @' + @ParameterName + N' value specified. @' + @ParameterName + N' must take the format of #x - where # is an integer, and x is a SINGLE letter which signifies s[econds], m[inutes], d[ays], w[eeks], q[uarters], y[ears]. Allowed Values Currently Available: [' + @AllowedIntervals + N'].';
 		RETURN -10000;	
 	END 
@@ -1398,6 +1410,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 AS 
 	BEGIN 
 		DECLARE @output bit = 0;
+		DECLARE @override sysname; 
 
 		IF UPPER(@DatabaseName) IN (N'MASTER', N'MSDB', N'MODEL')
 			SET @output = 1; 
@@ -1409,8 +1422,17 @@ AS
 		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN
 			SET @output = 1;
 
-			DECLARE @override sysname; 
 			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'admindb_is_system_db';
+
+			IF @override = N'0'	-- only overwrite if a) the setting is there/defined AND the setting's value = 0 (i.e., false).
+				SET @output = 0;
+		END;
+
+		-- same with the distribution database... 
+		IF UPPER(@DatabaseName) = N'DISTRIBUTION' BEGIN
+			SET @output = 1;
+			
+			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'distribution_is_system_db';
 
 			IF @override = N'0'	-- only overwrite if a) the setting is there/defined AND the setting's value = 0 (i.e., false).
 				SET @output = 0;
@@ -1436,7 +1458,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -1472,18 +1494,22 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output int = 0;
 
 		DECLARE @actualLength int = LEN(@input); 
 		DECLARE @replacedLength int = LEN(CAST(REPLACE(@input, @pattern, N'') AS nvarchar(MAX)));
+		DECLARE @patternLength int = LEN(@pattern);  
 
 		IF @replacedLength < @actualLength BEGIN 
-
-			DECLARE @difference int = @actualLength - @replacedLength; 
-			SET @output =  @difference / LEN(@pattern);
-
+		
+			-- account for @pattern being 1 or more spaces: 
+			IF @patternLength = 0 AND DATALENGTH(LTRIM(@pattern)) = 0 
+				SET @patternLength = DATALENGTH(@pattern) / 2;
+			
+			IF @patternLength > 0
+				SET @output =  (@actualLength - @replacedLength) / @patternLength;
 		END;
 		
 		RETURN @output;
@@ -1507,7 +1533,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -1515,8 +1541,8 @@ AS
 	);
 
 	INSERT INTO @rows ([row_id], [result])
-	SELECT [row_id], LTRIM(RTRIM([result])) 
-	FROM admindb.[dbo].[split_string](@input, @rowDelimiter);
+	SELECT [row_id], [result] 
+	FROM admindb.[dbo].[split_string](@input, @rowDelimiter, 1);
 
 	DECLARE @columnCountMax int = 0;
 
@@ -1542,7 +1568,7 @@ AS
 	WHILE (@currentRow IS NOT NULL) BEGIN 
 
 		INSERT INTO #pivoted ([row_id], [column_id], [result])
-		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter);
+		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter, 1);
 
 		SET @currentRowID = @currentRowID + 1;
 		SET @currentRow = (SELECT [result] FROM @rows WHERE [row_id] = @currentRowID);
@@ -1749,7 +1775,7 @@ IF OBJECT_ID('[dbo].[remove_backup_files]','P') IS NOT NULL
 GO
 
 CREATE PROC [dbo].[remove_backup_files] 
-	@BackupType							sysname,									-- { ALL | FULL|DIFF|LOG }
+	@BackupType							sysname,									-- { ALL|FULL|DIFF|LOG }
 	@DatabasesToProcess					nvarchar(1000),								-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000) = N'[DEFAULT]',				-- { path_to_backups }
@@ -1778,8 +1804,8 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -1908,12 +1934,16 @@ AS
 
 	SET @Output = NULL;
 
+	DECLARE @excludeSimple bit = 0;
+
+	IF @BackupType = N'LOG'
+		SET @excludeSimple = 1;
+
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_database_names
-	    @Input = @DatabasesToProcess,
+	EXEC dbo.load_databases
+	    @Targets = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
-	    @Mode = N'REMOVE',
-	    @BackupType = @BackupType, 
+		@ExcludeSimpleRecovery = @excludeSimple,
 		@TargetDirectory = @TargetDirectory,
 		@Output = @serialized OUTPUT;
 
@@ -1923,7 +1953,7 @@ AS
     ); 
 
 	INSERT INTO @targetDirectories ([directory_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER By row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER By row_id;
 
 	-----------------------------------------------------------------------------
 	-- Account for backups of system databases with the server-name in the path:  
@@ -2326,8 +2356,8 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -2445,12 +2475,11 @@ AS
 	-----------------------------------------------------------------------------
 	-- Determine which databases to backup:
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_database_names
-	    @Input = @DatabasesToBackup,
+	EXEC dbo.load_databases
+	    @Targets = @DatabasesToBackup,
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
-	    @Mode = N'BACKUP',
-	    @BackupType = @BackupType, 
+		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
 		@Output = @serialized OUTPUT;
 
 	DECLARE @targetDatabases table (
@@ -2459,7 +2488,7 @@ AS
     ); 
 
 	INSERT INTO @targetDatabases ([database_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
@@ -2535,7 +2564,8 @@ AS
 		SET @outcome = NULL;
 		SET @currentOperationID = NULL;
 
--- TODO: this logic is duplicated in dbo.load_database_names. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
+-- TODO: Full details here: https://overachieverllc.atlassian.net/browse/S4-107
+-- TODO: this logic is duplicated in dbo.load_databases. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
 		DECLARE @synchronized table ([database_name] sysname NOT NULL);
 		INSERT INTO @synchronized ([database_name])
@@ -3054,18 +3084,18 @@ AS
 	DECLARE @info nvarchar(MAX);
 
 	INSERT INTO @ignoredDatabases ([database_name])
-	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',') ORDER BY row_id;
+	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',', 1) ORDER BY row_id;
 
 	INSERT INTO @ingnoredLogins ([login_name])
-	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',') ORDER BY row_id;
+	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',', 1) ORDER BY row_id;
 
 	IF @ExcludeMSAndServiceLogins = 1 BEGIN
 		INSERT INTO @ingnoredLogins ([login_name])
-		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',') ORDER BY row_id;		
+		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',', 1) ORDER BY row_id;		
 	END;
 
 	INSERT INTO @ingoredUsers ([user_name])
-	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',') ORDER BY row_id;
+	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',', 1) ORDER BY row_id;
 
 	-- remove ignored logins:
 	DELETE l 
@@ -3077,16 +3107,17 @@ AS
 	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 
 	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[load_database_names]
-		@Input = @TargetDatabases,
+	EXEC admindb.dbo.[load_databases]
+		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
+		@ExcludeSecondaries = 1,
+		@ExcludeOffline = 1,
 		@Priorities = @DatabasePriorities,
-		@Mode = N'LIST_ACTIVE',
 		@Output = @dbNames OUTPUT;
 
 	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [result] 
-	FROM admindb.dbo.[split_string](@dbNames, N',') ORDER BY row_id;
+	FROM admindb.dbo.[split_string](@dbNames, N',', 1) ORDER BY row_id;
 
 	OPEN [db_walker];
 	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
@@ -3162,16 +3193,17 @@ AS
 			);
 
 			DECLARE @AllDbNames nvarchar(MAX); 
-			EXEC admindb.dbo.[load_database_names]
-				@Input = N'[ALL]',  -- has to be all when looking for login-only logins
-				@Mode = N'LIST_ACTIVE',
+			EXEC admindb.dbo.[load_databases]
+				@Target = N'[ALL]',  -- has to be all when looking for login-only logins
+				@ExcludeSecondaries = 1,
+				@ExcludeOffline = 1,
 				@Output = @AllDbNames OUTPUT;
 
 			DECLARE @sidTemplate nvarchar(MAX) = N'SELECT [sid], N''{0}'' [database] FROM [{0}].sys.database_principals WHERE [sid] IS NOT NULL;';
 			DECLARE @sql nvarchar(MAX);
 
 			DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',') ORDER BY row_id;
+			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',', 1) ORDER BY row_id;
 
 			DECLARE @dbName sysname; 
 
@@ -3301,11 +3333,6 @@ AS
 		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
-
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
 
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
@@ -3995,11 +4022,6 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -4264,8 +4286,8 @@ AS
         RETURN -1;
 	END; 
 
-    IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -4426,11 +4448,16 @@ AS
     -----------------------------------------------------------------------------
     -- Construct list of databases to restore:
     DECLARE @serialized nvarchar(MAX);
-    EXEC dbo.load_database_names
-        @Input = @DatabasesToRestore,         
+    EXEC dbo.load_databases
+        @Targets = @DatabasesToRestore,         
         @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
         @Priorities = @Priorities,
-        @Mode = N'RESTORE',
+
+		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
+		@ExcludeRestoring = 0,
+		@ExcludeRecovering = 0,	
+		@ExcludeOffline = 0,		
+
         @TargetDirectory = @BackupsRootPath, 
         @Output = @serialized OUTPUT;
 
@@ -4440,7 +4467,7 @@ AS
     ); 
 
     INSERT INTO @dbsToRestore ([database_name])
-    SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+    SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
     IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN
         RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
@@ -4824,7 +4851,7 @@ AS
 
 			EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 			INSERT INTO @logFilesToRestore ([log_file])
-			SELECT result FROM dbo.[split_string](@fileList, N',') ORDER BY row_id;
+			SELECT result FROM dbo.[split_string](@fileList, N',', 1) ORDER BY row_id;
 			
 			-- re-update the counter: 
 			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
@@ -4888,7 +4915,7 @@ AS
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',') WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					SELECT result FROM dbo.[split_string](@fileList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
 					ORDER BY row_id;
 				END;
 
@@ -5438,7 +5465,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -5513,7 +5540,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -5636,6 +5663,7 @@ GO
 
 CREATE PROC dbo.apply_logs 
 	@SourceDatabases					nvarchar(MAX)		= NULL,						-- explicitly named dbs - e.g., N'db1, db7, db28' ... and, only works, obviously, if dbs specified are in non-recovered mode (or standby).
+	@Exclusions							nvarchar(MAX)		= NULL,
 	@Priorities							nvarchar(MAX)		= NULL, 
 	@BackupsRootPath					nvarchar(MAX)		= N'[DEFAULT]',
 	@TargetDbMappingPattern				sysname				= N'{0}',					-- MAY not use/allow... 
@@ -5649,7 +5677,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -5668,8 +5696,8 @@ AS
         RETURN -1;
 	END; 
 
-    IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -5782,39 +5810,21 @@ AS
 		target_database_name sysname NOT NULL
 	);
 
-	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
-	SELECT [result], REPLACE(@TargetDbMappingPattern, N'{0}', [result]) [target] FROM [dbo].[split_string](@SourceDatabases, N',');
-
-	-- now, remove any dbs for which we a) don't have backups and/or b) there isn't a viable db in non-recovered (non-standby) mode for application:
 	DECLARE @serialized nvarchar(MAX);
-
-    EXEC dbo.load_database_names
-        @Input = @SourceDatabases,         
-        @Exclusions = NULL,		
+	EXEC dbo.load_databases 
+        @Targets = @SourceDatabases,         
+        @Exclusions = @Exclusions,		
         @Priorities = @Priorities,
-        @Mode = N'RESTORE',
+
+		@ExcludeSimpleRecovery = 1, 
+		@ExcludeRestoring = 0, -- we're explicitly targetting just these in fact... 
+		@ExcludeRecovering = 1, -- yeah, we don't want these... 
+
         @TargetDirectory = @BackupsRootPath, 
         @Output = @serialized OUTPUT;
 
-	DELETE FROM @applicableDatabases WHERE [source_database_name] NOT IN (SELECT [result] FROM dbo.[split_string](@serialized, N','));
-
-	-- now, remove any dbs where we don't have a corresponding db being restored.... 
-	DECLARE @renamedDBs nvarchar(MAX) = @SourceDatabases;
-	IF @TargetDbMappingPattern <> N'{0}' BEGIN
-		SET @renamedDBs = N'';
-		SELECT @renamedDBs = @renamedDBs + target_database_name + N',' FROM @applicableDatabases ORDER BY [entry_id];
-		SET @renamedDBs = LEFT(@renamedDBs, LEN(@renamedDBs) - 1);
-	END;
-
-    EXEC dbo.load_database_names
-        @Input = @renamedDBs,         
-        @Exclusions = NULL,		
-        @Priorities = @Priorities,
-        @Mode = N'NON_RECOVERED',		-- STANDBY and NORECOVERY only (excluding mirrored or AG'd databases).
-        @TargetDirectory = @BackupsRootPath, 
-        @Output = @serialized OUTPUT;
-
-	DELETE FROM @applicableDatabases WHERE [target_database_name] NOT IN (SELECT [result] FROM dbo.[split_string](@serialized, N','));
+	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
+	SELECT [result] [source_database_name], REPLACE(@TargetDbMappingPattern, N'{0}', [result]) [target_database_name] FROM dbo.[split_string](@serialized, N',', 1) ORDER BY [row_id];
 
     IF NOT EXISTS (SELECT NULL FROM @applicableDatabases) BEGIN
         SET @earlyTermination = N'Databases specified for apply_logs operation: [' + @SourceDatabases + ']. However, none of the databases specified can have T-LOGs applied - as there are no databases in STANDBY or NORECOVERY mode.';
@@ -5917,7 +5927,7 @@ AS
 		DELETE FROM @logFilesToRestore;
 
 		INSERT INTO @logFilesToRestore ([log_file])
-		SELECT [result] FROM dbo.[split_string](@backupFilesList, N',') ORDER BY row_id;
+		SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) ORDER BY row_id;
 
 		SET @logsWereApplied = 0;
 
@@ -6012,7 +6022,7 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files @DatabaseToRestore = @sourceDbName, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @backupFilesList OUTPUT;
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT [result] FROM dbo.[split_string](@backupFilesList, N',') WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
 					ORDER BY row_id;
 				END;
 
@@ -6228,12 +6238,13 @@ GO
 CREATE PROC dbo.list_recovery_metrics 
 	@TargetDatabases				nvarchar(MAX)		= N'[ALL]', 
 	@ExcludedDatabases				nvarchar(MAX)		= NULL,				-- e.g., 'demo, test, %_fake, etc.'
+	@Priorities						nvarchar(MAX)		= NULL,
 	@Mode							sysname				= N'SUMMARY',		-- SUMMARY | SLA | RPO | RTO | ERROR | DEVIATION
 	@Scope							sysname				= N'WEEK'			-- LATEST | DAY | WEEK | MONTH | QUARTER
 AS 
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright} 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6254,15 +6265,14 @@ AS
 	);
 
 	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[load_database_names]
-		@Input = @TargetDatabases,
+	EXEC admindb.dbo.[load_databases]
+		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
-		@Priorities = NULL,
-		@Mode = N'LIST_RESTORED',
+		@Priorities = @Priorities,
 		@Output = @dbNames OUTPUT;
 
 	INSERT INTO [#targetDatabases] ([database_name])
-	SELECT [result] FROM dbo.[split_string](@dbNames, N',');
+	SELECT [result] FROM dbo.[split_string](@dbNames, N',', 1);
 
 	IF UPPER(@Scope) = N'LATEST'
 		INSERT INTO [#executionIDs] ([execution_id])
@@ -6710,17 +6720,18 @@ CREATE PROC dbo.list_processes
 	@ExcludeSelf							bit			= 1,	
 	@IncludePlanHandle						bit			= 1,	
 	@IncludeIsolationLevel					bit			= 0,
+	@ExcludeBrokerProcesses					bit			= 1,		-- need to document that it does NOT block ALL broker waits (and, that it ONLY blocks broker WAITs - i.e., that's currently the ONLY way it excludes broker processes - by waits).
 	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
 	-- vNEXT				--@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
 	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
-	@IncludeExtendedDetails					bit			= 1
+	@IncludeExtendedDetails					bit			= 1,
 	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
-	-- VNEXT				--@ExtractExecutionCost					bit			= 0,	
+	@ExtractCost							bit			= 1	
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -6744,14 +6755,16 @@ AS
 		sys.[dm_exec_requests] r
 		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
 	WHERE
-		r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWAITs} )
+		r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
 		{ExcludeSystemProcesses}
 		{ExcludeSelf}
 		{ExcludeNegative}
 		{ExcludeFTS}
+		
 	{OrderBy};';
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
+-- TODO: if i get gobs and gobs of excluded WAITs... then put them into a table to JOIN against vs using IN()... 
 	IF @TopNRows > 0 BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{TOP}', N'TOP(' + CAST(@TopNRows AS sysname) + N') ');
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
@@ -6760,7 +6773,6 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{TOP}', N'');
 		SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY ' + LOWER(@OrderBy) + N' DESC');
 	END; 
-		
 
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'AND (r.[session_id] > 50) AND (r.[database_id] <> 0) AND (r.[session_id] NOT IN (SELECT [session_id] FROM sys.[dm_exec_sessions] WHERE [is_user_process] = 0)) ');
@@ -6791,13 +6803,20 @@ AS
 	END; 
 
 	IF @ExcludeFTSDaemonProcesses = 1 BEGIN
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N', ''FT_COMPROWSET_RWLOCK'', ''FT_IFTS_RWLOCK'', ''FT_IFTS_SCHEDULER_IDLE_WAIT'', ''FT_IFTSHC_MUTEX'', ''FT_IFTSISM_MUTEX'', ''FT_MASTER_MERGE'', ''FULLTEXT GATHERER'' ');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWaits}', N', ''FT_COMPROWSET_RWLOCK'', ''FT_IFTS_RWLOCK'', ''FT_IFTS_SCHEDULER_IDLE_WAIT'', ''FT_IFTSHC_MUTEX'', ''FT_IFTSISM_MUTEX'', ''FT_MASTER_MERGE'', ''FULLTEXT GATHERER'' ');
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'AND r.[command] NOT LIKE ''FT%'' ');
 	  END;
 	ELSE BEGIN 
-		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWAITs}', N'');
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTSWaits}', N'');
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeFTS}', N'');
 	END; 
+
+	IF @ExcludeBrokerProcesses = 1 BEGIN 
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N', ''BROKER_RECEIVE_WAITFOR'', ''BROKER_TASK_STOP'', ''BROKER_TO_FLUSH'', ''BROKER_TRANSMITTER'' ');
+	  END;
+	ELSE BEGIN 
+		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N'');
+	END;
 
 
 --PRINT @topSQL;
@@ -6872,8 +6891,6 @@ AS
 		INNER JOIN sys.dm_exec_requests r ON x.[session_id] = r.[session_id]
 		INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
 		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id;
-	--ORDER BY 
-	--	x.[row_number]; 
 
 	-- populate sql_handles for sessions without current requests: 
 	UPDATE x 
@@ -6886,6 +6903,90 @@ AS
 	WHERE 
 		x.[sql_handle] IS NULL;
 
+	-- load statements: 
+	SELECT 
+		d.[session_id], 
+		t.[text] [statement]
+	INTO 
+		#statements 
+	FROM 
+		[#detail] d 
+		OUTER APPLY sys.[dm_exec_sql_text](d.[sql_handle]) t;
+
+--TODO: Implement this (i.e., as per dbo.list_collisions ... but ... here - so'z we can get statements if/when they're not in the request itself..).
+	--IF @UseInputBuffer = 1 BEGIN
+		
+	--	DECLARE @sql nvarchar(MAX); 
+
+	--	DECLARE filler CURSOR LOCAL FAST_FORWARD READ_ONLY FOR 
+	--	SELECT 
+	--		session_id 
+	--	FROM 
+	--		[#statements] 
+	--	WHERE 
+	--		[statement] IS NULL; 
+
+	--	DECLARE @spid int; 
+	--	DECLARE @bufferStatement nvarchar(MAX);
+
+	--	CREATE TABLE #inputbuffer (EventType nvarchar(30), Params smallint, EventInfo nvarchar(4000))
+
+	--	OPEN filler; 
+	--	FETCH NEXT FROM filler INTO @spid;
+
+	--	WHILE @@FETCH_STATUS = 0 BEGIN 
+	--		TRUNCATE TABLE [#inputbuffer];
+
+	--		SET @sql = N'EXEC DBCC INPUTBUFFER(' + STR(@spid) + N');';
+			
+	--		BEGIN TRY 
+	--			INSERT INTO [#inputbuffer]
+	--			EXEC @sql;
+
+	--			SET @bufferStatement = (SELECT TOP (1) EventInfo FROM [#inputbuffer]);
+	--		END TRY 
+	--		BEGIN CATCH 
+	--			SET @bufferStatement = N'#Error Extracting Statement from DBCC INPUTBUFFER();';
+	--		END CATCH
+
+	--		UPDATE [#statements] 
+	--		SET 
+	--			[statement_source] = N'BUFFER', 
+	--			[statement] = @bufferStatement 
+	--		WHERE 
+	--			[session_id] = @spid;
+
+	--		FETCH NEXT FROM filler INTO @spid;
+	--	END;
+		
+	--	CLOSE filler; 
+	--	DEALLOCATE filler;
+
+	--END;
+
+	-- load plans: 
+	SELECT 
+		d.[session_id], 
+		p.query_plan [batch_plan]
+	INTO 
+		#plans 
+	FROM 
+		[#detail] d 
+		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
+
+	IF @ExtractCost = 1 BEGIN
+        
+        WITH XMLNAMESPACES (DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
+        SELECT
+            p.[session_id],
+            p.batch_plan.value('(/ShowPlanXML/BatchSequence/Batch/Statements/StmtSimple/@StatementSubTreeCost)[1]', 'nvarchar(max)') [plan_cost]
+		INTO 
+			#costs
+        FROM
+            [#plans] p;
+    END;
+
+
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
 		d.[session_id],
@@ -6894,9 +6995,10 @@ AS
 		{isolation_level}
 		d.[command], 
 		d.[last_wait_type],
-		t.[text],  -- statement_text?
+		t.[statement],  -- statement_text?
 		--{batch_text} ???
 		d.[status], 
+		{extractCost}
 		d.[cpu_time],
 		d.[reads],
 		d.[writes],
@@ -6905,17 +7007,16 @@ AS
 		dbo.format_timespan(d.[elapsed_time]) [elapsed_time], 
 		dbo.format_timespan(d.[wait_time]) [wait_time],
 		d.[login_name],
-		d.[program_name],
 		d.[host_name],
 		{plan_handle}
 		{extended_details}
-		--{extractCost}  -- move into /context/statement/cost
 		--,{statement_plan} -- if i can get this working... 
-		p.query_plan [batch_plan]
+		p.[batch_plan]
 	FROM 
 		[#detail] d
-		OUTER APPLY sys.dm_exec_sql_text(d.sql_handle) t
-		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
+		INNER JOIN #statements t ON d.session_id = t.session_id
+		INNER JOIN #plans p ON d.session_id = p.session_id
+		{extractJoin}
 	ORDER BY
 		[row_number];'
 
@@ -6946,6 +7047,15 @@ AS
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'');
 	END; 
+
+	IF @ExtractCost = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST([plan_cost] as decimal(20,2)) [plan_cost],');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'LEFT OUTER JOIN #costs c ON d.[session_id] = c.[session_id]');
+	  END
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'');
+	END;
 
 
 --PRINT @projectionSQL;
@@ -6981,7 +7091,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7407,7 +7517,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -7495,11 +7605,14 @@ AS
 
 	IF @TargetDatabases <> N'[ALL]' BEGIN
 		DECLARE @dbnames nvarchar(max);
-		EXEC dbo.load_database_names @Input = @TargetDatabases, @Mode = N'LIST_ACTIVE', @Output = @dbnames OUTPUT; 
+		EXEC dbo.load_databases 
+			@Targets = @TargetDatabases, 
+			@ExcludeSecondaries = 1,
+			@Output = @dbnames OUTPUT; 
 
 		DELETE FROM #core 
 		WHERE 
-			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [result] FROM dbo.split_string(@dbnames, N',')));
+			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [result] FROM dbo.split_string(@dbnames, N',', 1)));
 	END; 
 
 	IF NOT EXISTS(SELECT NULL FROM [#core]) BEGIN
@@ -7747,8 +7860,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -7797,32 +7910,28 @@ AS
 	);
 
 	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_database_names 
-		@Input = @DatabasesToCheck,
+	EXEC dbo.load_databases 
+		@Targets = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
-		@Priorities = NULL, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'FULL',
+		-- no exclusions - we're checking for all dbs... 
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForFullBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
 
 	-- TODO: If these are somehow in the @Exclusions list... then... don't add them. 
 	INSERT INTO @databaseToCheckForFullBackups ([name])
 	VALUES ('master'),('msdb');
 
-	EXEC dbo.load_database_names 
-		@Input = @DatabasesToCheck,
+	EXEC dbo.load_databases 
+		@Targets = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
-		@Priorities = NULL, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'LOG',
+		@ExcludeSimpleRecovery = 1,
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
 
 	-- Verify that there are backups to check:
@@ -7839,7 +7948,7 @@ AS
 	);
 
 	INSERT INTO @specifiedJobs (jobname)
-	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',') ORDER BY row_id;
+	SELECT [result] FROM dbo.split_string(@MonitoredJobs, N',', 1) ORDER BY row_id;
 
 	INSERT INTO @jobsToCheck (jobname, jobid)
 	SELECT 
@@ -8197,8 +8306,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.load_database_names', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_database_names not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -8246,15 +8355,13 @@ AS
 		[name] sysname
 	);
 	
-	EXEC dbo.load_database_names 
-		@Input = N'[USER]',
+	EXEC dbo.load_databases 
+		@Targets = N'[USER]',
 		@Exclusions = @DatabasesToExclude, 
-		@Mode = N'VERIFY', 
-		@BackupType = N'FULL',
 		@Output = @serialized OUTPUT;
 
 	INSERT INTO @databasesToCheck ([name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',') ORDER BY row_id;
+	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
 
 	DECLARE @excludedComptabilityDatabases table ( 
 		[name] sysname NOT NULL
@@ -8262,7 +8369,7 @@ AS
 
 	IF @CompatabilityExclusions IS NOT NULL BEGIN 
 		INSERT INTO @excludedComptabilityDatabases ([name])
-		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',') ORDER BY row_id;
+		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',', 1) ORDER BY row_id;
 	END; 
 
 	DECLARE @issues table ( 
@@ -8406,7 +8513,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -8508,12 +8615,14 @@ CREATE PROC dbo.process_alerts
 	@Severity					int, 
 	@Message					nvarchar(2048),
 	@OperatorName				sysname					= N'Alerts',
-	@MailProfileName			sysname					= N'General'
+	@MailProfileName			sysname					= N'General', 
+	@PrintOnly					bit						= 0
 AS 
 	SET NOCOUNT ON; 
 
-	DECLARE @response nvarchar(2000); 
+	-- {copyright} 
 
+	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
 	WHERE 
 		message_id = @ErrorNumber
@@ -8522,9 +8631,9 @@ AS
 	IF NULLIF(@response, N'') IS NOT NULL BEGIN 
 
 		IF UPPER(@response) = N'[IGNORE]' BEGIN 
-			
+
 			-- this is an explicitly ignored alert. print the error details (which'll go into the SQL Server Agent Job log), then bail/return: 
-			PRINT '[IGNORED] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
+			PRINT '[IGNORE] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
 			RETURN 0;
 		END;
 
@@ -8550,14 +8659,19 @@ ERROR NUMBER: {2}' ;
 	SET @subject = REPLACE(@subject, '{0}', @Severity);
 	SET @subject = REPLACE(@subject, '{1}', @@SERVERNAME); 
 	
-	EXEC msdb.dbo.sp_notify_operator
-		@profile_name = @MailProfileName, 
-		@name = @OperatorName,
-		@subject = @subject, 
-		@body = @body;
+	IF @PrintOnly = 1 BEGIN 
+			PRINT N'SUBJECT: ' + @subject; 
+			PRINT N'BODY: ' + @body;
+	  END;
+	ELSE BEGIN
+		EXEC msdb.dbo.sp_notify_operator
+			@profile_name = @MailProfileName, 
+			@name = @OperatorName,
+			@subject = @subject, 
+			@body = @body;
+	END;
 
 	RETURN 0;
-
 GO
 
 
@@ -8658,7 +8772,7 @@ CREATE PROC dbo.monitor_transaction_durations
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
@@ -8753,7 +8867,7 @@ AS
 		SELECT 
 			s.[session_id]
 		FROM 
-			dbo.[split_string](@ExcludedLoginNames, N',') x 
+			dbo.[split_string](@ExcludedLoginNames, N',', 1) x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[login_name] LIKE x.[result];
 	END;
 
@@ -8762,7 +8876,7 @@ AS
 		SELECT 
 			s.[session_id]
 		FROM 
-			dbo.[split_string](@ExcludedProgramNames, N',') x 
+			dbo.[split_string](@ExcludedProgramNames, N',', 1) x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
 	END;
 
@@ -8776,7 +8890,7 @@ AS
 			N'%' + CONVERT(nvarchar(200), (CONVERT(varbinary(200), j.job_id , 1)), 1) + N'%' job_id
 		FROM 
 			msdb.dbo.sysjobs j
-			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',') x ON j.[name] LIKE x.[result];
+			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',', 1) x ON j.[name] LIKE x.[result];
 
 		INSERT INTO [#ExcludedSessions] ([session_id])
 		SELECT 
@@ -8982,7 +9096,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -9126,7 +9240,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -9177,7 +9291,7 @@ AS
 	DECLARE @parts table (row_id int, part nvarchar(200));
 
 	INSERT INTO @parts (row_id, part) 
-	SELECT [row_id], [result] FROM admindb.dbo.[split_string](@WaitResource, N':');
+	SELECT [row_id], [result] FROM admindb.dbo.[split_string](@WaitResource, N':', 1);
 
 	BEGIN TRY 
 		DECLARE @waittype sysname, @part2 bigint, @part3 bigint, @part4 sysname, @part5 sysname;
@@ -9708,7 +9822,7 @@ AS
 	);
 
 	INSERT INTO #IgnoredJobs ([name])
-	SELECT [result] [name] FROM admindb.dbo.split_string(@IgnoredJobs, N',');
+	SELECT [result] [name] FROM admindb.dbo.split_string(@IgnoredJobs, N',', 1);
 
 	CREATE TABLE #LocalJobs (
 		job_id uniqueidentifier, 
@@ -10449,7 +10563,7 @@ AS
 	);
 
 	INSERT INTO #IgnoredJobs ([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',', 1);
 
 	----------------------------------------------
 	-- create a container for output/differences. 
@@ -11303,7 +11417,7 @@ AS
 	);
 
 	INSERT INTO @IgnoredLinkedServerNames([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredLinkedServers, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredLinkedServers, N',', 1);
 
 	DECLARE @remoteLinkedServers table ( 
 		[server_id] int NOT NULL,
@@ -11403,7 +11517,7 @@ AS
 	);
 
 	INSERT INTO @ignoredLoginName([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredLogins, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredLogins, N',', 1);
 
 	DECLARE @remotePrincipals table ( 
 		[principal_id] int NOT NULL,
@@ -11535,7 +11649,7 @@ AS
 	);
 
 	INSERT INTO @ignoredAlertName([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredAlerts, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredAlerts, N',', 1);
 
 	DECLARE @remoteAlerts table (
 		[name] sysname NOT NULL,
@@ -11626,7 +11740,7 @@ AS
 	);
 
 	INSERT INTO @ignoredMasterObjects([name])
-	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',');
+	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',', 1);
 
 	INSERT INTO @localMasterObjects ([object_name])
 	SELECT [name] FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
@@ -11881,7 +11995,7 @@ AS
 	DELETE FROM @synchronizingDatabases WHERE [sync_type] = N'MIRRORED' AND [role] = N'MIRROR';
 
 	-- We're also not interested in any dbs we've been explicitly instructed to ignore: 
-	DELETE FROM @synchronizingDatabases WHERE [database_name] IN (SELECT [result] FROM admindb.dbo.[split_string](@IgnoredDatabases, N','));
+	DELETE FROM @synchronizingDatabases WHERE [database_name] IN (SELECT [result] FROM admindb.dbo.[split_string](@IgnoredDatabases, N',', 1));
 
 	IF NOT EXISTS (SELECT NULL FROM @synchronizingDatabases) BEGIN 
 		PRINT 'Server is not currently the Primary for any (monitored) synchronizing databases. Execution terminating (but will continue on primary).';
@@ -12194,7 +12308,7 @@ CREATE PROC dbo.generate_audit_signature
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -12263,7 +12377,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -12335,9 +12449,9 @@ AS
 		-- Make sure the target database exists:
 		DECLARE @targetOutput nvarchar(max);
 
-		EXEC dbo.load_database_names
-			@Input = @Target,
-			@Mode = N'LIST_ACTIVE',
+		EXEC dbo.load_databases
+			@Targets = @Target,
+			@ExcludeDev = 1,
 			@Output = @targetOutput OUTPUT;
 
 		IF LEN(ISNULL(@targetOutput,'')) < 1 BEGIN
@@ -12438,7 +12552,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12556,7 +12670,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.1.2766.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12596,9 +12710,9 @@ AS
 		-- Make sure the target database exists:
 		DECLARE @targetOutput nvarchar(max);
 
-		EXEC dbo.load_database_names
-			@Input = @Target,
-			@Mode = N'LIST_ACTIVE',
+		EXEC dbo.load_databases
+			@Targets = @Target,
+			@ExcludeDev = 1,
 			@Output = @targetOutput OUTPUT;
 
 		IF LEN(ISNULL(@targetOutput,'')) < 1 BEGIN
@@ -12698,8 +12812,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.1.2766.1';
-DECLARE @VersionDescription nvarchar(200) = N'HotFix: S4-98, S4-99; is_job_running + kill connections functionality';
+DECLARE @CurrentVersion varchar(20) = N'5.2.2774.1';
+DECLARE @VersionDescription nvarchar(200) = N'Rewrite of dbo.load_databases capabilities/signatures; HA changes, bug fixes, and plan cost in dbo.list_processes';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
