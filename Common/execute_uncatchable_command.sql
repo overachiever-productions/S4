@@ -31,6 +31,22 @@
 
 
 
+	vNEXT:			(this is v6.0 'stuff')
+		- dbo.execute_command
+		- dbo.execute_remote_command
+			
+			signatures: 
+				@Command						varchar(4000), 
+				@ExecutionAttempts				int,				 = 1, 
+				@ExclusionFilters				varchar(4000), 
+				@ExecutionDetails				nvarchar(max),			-- keep a ... key value pair and/or a 'table' of some sort (hell, xml, ... whatever) of how things went - pass/fail - and if fail... the error, and so on... 
+				@ResultText						varchar(4000)		
+											
+				
+
+			
+
+
 */
 
 USE [admindb];
@@ -50,7 +66,7 @@ AS
 	-- {copyright}
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
-		RAISERROR('Configuration Error: Invalide @FilterType specified.', 16, 1);
+		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
 		SET @Result = 'Configuration Problem with dbo.execute_uncatchable_command.';
 		RETURN -1;
 	END 
