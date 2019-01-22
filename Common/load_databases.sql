@@ -9,7 +9,7 @@
 
 			-- expect exception:
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[ALL]', 
 				@Exclusions = N'[SYSTEM]',
 				@Output = @output OUTPUT; 
@@ -18,7 +18,7 @@
 
 			-- expect exception:
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[ALL]', 
 				@Exclusions = N'[USER]',
 				@Output = @output OUTPUT; 
@@ -27,28 +27,28 @@
 
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[SYSTEM]', 
 				@Output = @output OUTPUT; 
 			SELECT [result] FROM dbo.split_string(@output, N',', 1);
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[USER]', 
 				@Output = @output OUTPUT; 
 			SELECT [result] FROM dbo.split_string(@output, N',', 1);
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[ALL]', 
 				@Output = @output OUTPUT; 
 			SELECT [result] FROM dbo.split_string(@output, N',', 1);
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[ALL]', 
 				@Exclusions = N'BayCar%',
 				@Output = @output OUTPUT; 
@@ -56,7 +56,7 @@
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[READ_FROM_FILESYSTEM]', 
 				@TargetDirectory = N'[DEFAULT]', 
 				@Exclusions = N'[SYSTEM]',
@@ -65,7 +65,7 @@
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'[READ_FROM_FILESYSTEM]', 
 				@TargetDirectory = N'[DEFAULT]', 
 				@Exclusions = N'_Migrat%, [SYSTEM] ',
@@ -74,14 +74,14 @@
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
 				@Output = @output OUTPUT; 
 			SELECT [result] FROM dbo.split_string(@output, N',', 1);
 			GO
 
 			DECLARE @output nvarchar(MAX);
-			EXEC list_databases 
+			EXEC load_databases 
 				@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing', 
 				@Priorities = N'SelectExp, *, Traces',
 				@Output = @output OUTPUT; 
@@ -206,6 +206,7 @@ AS
 		INSERT INTO @target_databases ([database_name])
 		SELECT [name] FROM sys.databases
 		WHERE [name] NOT IN (SELECT [database_name] FROM @system_databases)
+			AND LOWER([name]) <> N'tempdb'
 		ORDER BY [name];
 	 END; 
 
