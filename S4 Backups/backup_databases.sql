@@ -268,6 +268,11 @@ AS
 	END;
 
 	-----------------------------------------------------------------------------
+	DECLARE @excludeSimple bit = 0;
+
+	IF UPPER(@BackupType) = N'LOG'
+		SET @excludeSimple = 1;
+
 	-- Determine which databases to backup:
 	DECLARE @serialized nvarchar(MAX);
 	EXEC dbo.load_databases
@@ -275,6 +280,7 @@ AS
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
 		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
+		@ExcludeSimpleRecovery = @excludeSimple,
 		@Output = @serialized OUTPUT;
 
 	DECLARE @targetDatabases table (
