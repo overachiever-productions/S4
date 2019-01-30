@@ -46,7 +46,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright} 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -85,9 +85,6 @@ AS
 			RETURN -2;
 		END; 
 	END;
-
-	IF RTRIM(LTRIM(@CompatabilityExclusions)) = N''
-		SET @DatabasesToExclude = NULL;
 
 	-----------------------------------------------------------------------------
 	-- Set up / initialization:
@@ -154,27 +151,29 @@ AS
 	-- Page Verify: 
 	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
-		[name] [database], 
+		d.[name] [database], 
 		N'Page Verify should be set to CHECKSUM. Currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' [issue], 
-		N'ALTER DATABASE ' + QUOTENAME([name]) + N' SET PAGE_VERIFY CHECKSUM; ' [command], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET PAGE_VERIFY CHECKSUM; ' [command], 
 		N'Page Verify successfully set to CHECKSUM.' [success_message]
 	FROM 
-		sys.databases 
+		sys.databases d
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		page_verify_option_desc <> N'CHECKSUM'
 	ORDER BY 
-		[name];
+		d.[name];
 
 	-- OwnerChecks:
 	IF @ReportDatabasesNotOwnedBySA = 1 BEGIN
 		INSERT INTO @issues ([database], [issue], [command], [success_message])
 		SELECT 
-			[name] [database], 
+			d.[name] [database], 
 			N'Should by Owned by 0x01 (SysAdmin). Currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' [issue], 
-			N'ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name]) + N' TO sa;' [command], 
+			N'ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(d.[name]) + N' TO sa;' [command], 
 			N'Database owndership successfully transferred to 0x01 (SysAdmin).' [success_message]
 		FROM 
-			sys.databases 
+			sys.databases d
+			INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 		WHERE 
 			owner_sid <> 0x01;
 	END;
@@ -182,16 +181,17 @@ AS
 	-- AUTO_CLOSE:
 	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
-		[name] [database], 
+		d.[name] [database], 
 		N'AUTO_CLOSE should be DISABLED. Currently ENABLED.' [issue], 
-		N'ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_CLOSE OFF; ' [command], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET AUTO_CLOSE OFF; ' [command], 
 		N'AUTO_CLOSE successfully set to DISABLED.' [success_message]
 	FROM 
-		sys.databases 
+		sys.databases d
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		[is_auto_close_on] = 1
 	ORDER BY 
-		[name];
+		d.[name];
 
 	-- AUTO_SHRINK:
 	INSERT INTO @issues ([database], [issue], [command], [success_message])
@@ -202,6 +202,7 @@ AS
 		N'AUTO_SHRINK successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases 
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		[is_auto_shrink_on] = 1
 	ORDER BY 
