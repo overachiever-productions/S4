@@ -13,8 +13,18 @@
 							and report on any things that are/are-not as expected or defined/allowed. 
 
 
+EXEC [admindb].dbo.[verify_database_configurations]
+    --@DatabasesToExclude = N'', 
+    --@CompatabilityExclusions = N'', 
+    @ReportDatabasesNotOwnedBySA = 1, 
+    @PrintOnly = 1;
+
 
 */
+
+
+
+
 
 
 USE admindb;
@@ -76,9 +86,6 @@ AS
 		END; 
 	END;
 
-	IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
-		SET @DatabasesToExclude = NULL;
-
 	IF RTRIM(LTRIM(@CompatabilityExclusions)) = N''
 		SET @DatabasesToExclude = NULL;
 
@@ -114,7 +121,11 @@ AS
 	DECLARE @issues table ( 
 		issue_id int IDENTITY(1,1) NOT NULL, 
 		[database] sysname NOT NULL, 
-		issue varchar(2000) NOT NULL 
+		issue varchar(2000) NOT NULL, 
+		command nvarchar(2000) NOT NULL, 
+		success_message varchar(2000) NOT NULL,
+		succeeded bit NOT NULL DEFAULT (0),
+		[error_message] nvarchar(MAX) NULL 
 	);
 
 	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
@@ -124,10 +135,12 @@ AS
 	-- Checks: 
 	
 	-- Compatablity Checks: 
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database],
-		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name]) + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
+		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N'. Currently set to ' + CAST(d.[compatibility_level] AS sysname) + N'.' [issue], 
+		N'ALTER DATABASE' + QUOTENAME(d.[name]) + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [command], 
+		N'Database Compatibility successfully set to ' + CAST(@serverVersion AS sysname) + N'.'  [success_message]
 	FROM 
 		sys.databases d
 		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
@@ -138,12 +151,13 @@ AS
 	ORDER BY 
 		d.[name] ;
 		
-
 	-- Page Verify: 
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
 		[name] [database], 
-		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
+		N'Page Verify should be set to CHECKSUM. Currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME([name]) + N' SET PAGE_VERIFY CHECKSUM; ' [command], 
+		N'Page Verify successfully set to CHECKSUM.' [success_message]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -153,10 +167,12 @@ AS
 
 	-- OwnerChecks:
 	IF @ReportDatabasesNotOwnedBySA = 1 BEGIN
-		INSERT INTO @issues ([database], issue)
+		INSERT INTO @issues ([database], [issue], [command], [success_message])
 		SELECT 
 			[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name]) + N' TO sa;' [issue]
+			N'Should by Owned by 0x01 (SysAdmin). Currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' [issue], 
+			N'ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name]) + N' TO sa;' [command], 
+			N'Database owndership successfully transferred to 0x01 (SysAdmin).' [success_message]
 		FROM 
 			sys.databases 
 		WHERE 
@@ -164,10 +180,12 @@ AS
 	END;
 
 	-- AUTO_CLOSE:
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
 		[name] [database], 
-		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_CLOSE OFF; ' [issue]
+		N'AUTO_CLOSE should be DISABLED. Currently ENABLED.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_CLOSE OFF; ' [command], 
+		N'AUTO_CLOSE successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -176,10 +194,12 @@ AS
 		[name];
 
 	-- AUTO_SHRINK:
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
 		[name] [database], 
-		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_SHRINK OFF; ' [issue]
+		N'AUTO_SHRINK should be DISABLED. Currently ENABLED.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_SHRINK OFF; ' [command], 
+		N'AUTO_SHRINK successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases 
 	WHERE 
@@ -193,38 +213,122 @@ AS
 
 
 
+
 	-----------------------------------------------------------------------------
-	-- reporting: 
-	DECLARE @emailErrorMessage nvarchar(MAX);
+	-- (attempted) fixes: 
 	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
-		
-		DECLARE @emailSubject nvarchar(300);
 
-		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
-
+		DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
-			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database]) + N'. ' + [issue] + @crlf
+			[issue_id], 
+			[command] 
 		FROM 
 			@issues 
-		ORDER BY 
-			[database],
-			issue_id;
+		ORDER BY [issue_id];
+
+		DECLARE @currentID int;
+		DECLARE @currentCommand nvarchar(2000); 
+		DECLARE @errorMessage nvarchar(MAX);
+
+		OPEN [fixer];
+		FETCH NEXT FROM [fixer] INTO @currentID, @currentCommand;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN 
+			
+			SET @errorMessage = NULL;
+
+			BEGIN TRY 
+				EXEC sp_executesql @currentCommand;
+--IF @currentID = 1 RAISERROR('oh noess!', 16, 1);				
+				UPDATE @issues SET [succeeded] = 1 WHERE [issue_id] = @currentID;
+			END TRY 
+			BEGIN CATCH
+				SET @errorMessage = CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+				UPDATE @issues SET [error_message] = @errorMessage WHERE [issue_id] = @currentID;
+
+			END CATCH
+
+			FETCH NEXT FROM [fixer] INTO @currentID, @currentCommand;
+		END;
+
+		CLOSE [fixer]; 
+		DEALLOCATE fixer;
+
+	END;
+
+	-----------------------------------------------------------------------------
+	-- reporting: 
+	DECLARE @emailBody nvarchar(MAX) = NULL;
+	DECLARE @emailSubject nvarchar(300);
+	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
+		SET @emailBody = N'';
+		
+		DECLARE @correctionErrorsOccurred bit = 0;
+		DECLARE @correctionsCompletedSuccessfully bit = 0; 
+
+		IF EXISTS (SELECT NULL FROM @issues WHERE [succeeded] = 0) BEGIN -- process ERRORS first. 
+			SET @correctionErrorsOccurred = 1;
+		END; 
+
+		IF EXISTS (SELECT NULL FROM @issues WHERE [succeeded] = 1) BEGIN -- report on successful changes: 
+			SET @correctionsCompletedSuccessfully = 1;
+		END;
+
+		IF @correctionErrorsOccurred = 1 BEGIN
+			SET @emailSubject = @EmailSubjectPrefix + N' - Errors Addressing Database Settings';
+			
+			IF @correctionsCompletedSuccessfully = 1 
+				SET @emailBody = N'Configuration Problems Detected. Some were automatically corrected; Others encountered errors during attempt to correct:' + @crlf + @crlf;
+			ELSE 
+				SET @emailBody = N'Configuration Problems Detected.' + @crlf + @crlf + UPPER(' Errors encountred while attempting to correct:') + @crlf + @crlf;
+
+			SELECT 
+				@emailBody = @emailBody + @tab + QUOTENAME([database]) + N' - ' + [issue] + @crlf
+					+ @tab + @tab + N'ATTEMPTED CORRECTION: -> ' + [command] + @crlf
+					+ @tab + @tab + @tab + N'ERROR: ' + [error_message] + @crlf + @crlf
+			FROM 
+				@issues 
+			WHERE 
+				[succeeded] = 0 
+			ORDER BY [issue_id];
+
+		END;
+
+		IF @correctionsCompletedSuccessfully = 1 BEGIN
+			SET @emailSubject = @EmailSubjectPrefix + N' - Database Configuration Settings Successfully Updated';
+
+			IF @correctionErrorsOccurred = 1
+				SET @emailBody = @emailBody + @crlf + @crlf;
+
+			SET @emailBody = @emailBody + N'The following database configuration changes were successfully applied:' + @crlf + @crlf;
+
+			SELECT 
+				@emailBody = @emailBody + @tab + QUOTENAME([database]) + @crlf
+				+ @tab + @tab + N'OUTCOME: ' + [success_message] + @crlf + @crlf
+				+ @tab + @tab + @tab + @tab + N'Detected Problem: ' + [issue] + @crlf
+				+ @tab + @tab + @tab + @tab + N'Executed Correction: ' + [command] + @crlf + @crlf
+			FROM 
+				@issues 
+			WHERE 
+				[succeeded] = 1 
+			ORDER BY [issue_id];
+
+		END;
 
 	END;
 
 	-- send/display any problems:
-	IF @emailErrorMessage IS NOT NULL BEGIN
-		IF @PrintOnly = 1 
-			PRINT @emailErrorMessage;
+	IF @emailBody IS NOT NULL BEGIN
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @emailSubject;
+			PRINT @emailBody;
+		  END;
 		ELSE BEGIN 
-			SET @emailSubject = @EmailSubjectPrefix + N' - Configuration Problems Detected';
-
 			EXEC msdb..sp_notify_operator
 				@profile_name = @MailProfileName,
 				@name = @OperatorName,
 				@subject = @emailSubject, 
-				@body = @emailErrorMessage;
-
+				@body = @emailBody;
 		END
 	END;
 
