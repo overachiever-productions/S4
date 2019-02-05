@@ -93,7 +93,7 @@ AS
 			[#LongRunningTransactions] lrt
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
-			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',') ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
+			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',', 1) ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
 	END;
 
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 

@@ -6,7 +6,7 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.2.2774.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.2.2774.1.
+		- This script will either install/deploy S4 version 5.3.2792.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.3.2792.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -20,7 +20,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.2.2774.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 5.3.2792.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -99,7 +99,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.2.2774.1';
+DECLARE @CurrentVersion varchar(20) = N'5.3.2792.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -630,7 +630,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -668,7 +668,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -703,10 +703,10 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
-		RAISERROR('Configuration Error: Invalide @FilterType specified.', 16, 1);
+		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
 		SET @Result = 'Configuration Problem with dbo.execute_uncatchable_command.';
 		RETURN -1;
 	END 
@@ -799,24 +799,24 @@ IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_databases 
-	@Targets					nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
-	@Exclusions					nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
-	@Priorities					nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@TargetDirectory			sysname			= NULL,		-- Only required when @Targets is specified as [READ_FROM_FILESYSTEM].
-	@ExcludeClones				bit				= 1, 
-	@ExcludeSecondaries			bit				= 1,		-- exclude AG and Mirroring secondaries... 
-	@ExcludeSimpleRecovery		bit				= 0,		-- exclude databases in SIMPLE recovery mode
-	@ExcludeReadOnly			bit				= 0,		
-	@ExcludeRestoring			bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
-	@ExcludeRecovering			bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
-	@ExcludeOffline				bit				= 1,		-- removes ANY state other than ONLINE.
-	@ExcludeDev					bit				= 0,		-- not yet implemented
-	@ExcludeTest				bit				= 0,		-- not yet implemented
-	@Output						nvarchar(MAX)	OUTPUT
+	@Targets								nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Exclusions								nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
+	@Priorities								nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
+	@TargetDirectory						sysname			= NULL,		-- Only required when @Targets is specified as [READ_FROM_FILESYSTEM].
+	@ExcludeClones							bit				= 1, 
+	@ExcludeSecondaries						bit				= 1,		-- exclude AG and Mirroring secondaries... 
+	@ExcludeSimpleRecovery					bit				= 0,		-- exclude databases in SIMPLE recovery mode
+	@ExcludeReadOnly						bit				= 0,		
+	@ExcludeRestoring						bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
+	@ExcludeRecovering						bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
+	@ExcludeOffline							bit				= 1,		-- removes ANY state other than ONLINE.
+	@ExcludeDev								bit				= 0,		-- not yet implemented
+	@ExcludeTest							bit				= 0,		-- not yet implemented
+	@Output									nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -907,6 +907,7 @@ AS
 		INSERT INTO @target_databases ([database_name])
 		SELECT [name] FROM sys.databases
 		WHERE [name] NOT IN (SELECT [database_name] FROM @system_databases)
+			AND LOWER([name]) <> N'tempdb'
 		ORDER BY [name];
 	 END; 
 
@@ -924,6 +925,12 @@ AS
         INSERT INTO @target_databases ([database_name])
         SELECT subdirectory FROM @directories ORDER BY row_id;
 
+		-- NOTE: if @AddServerNameToSystemBackupPath was added to SYSTEM backups... then master, model, msdb, etc... folders WILL exist. (But there won't be FULL_<dbname>*.bak files in those subfolders). 
+		--		In dbo.load_databases we WILL list any 'folders' for system databases found (i.e., we're LISTING databases - not getting the actual backups or paths). 
+		--		However, in dbo.restore_databases if the @TargetPath + N'\' + @dbToRestore doesn't find any files, and @dbToRestore is a SystemDB, we'll look in @TargetPath + '\' + @ServerName + '\' + @dbToRestore for <backup_type>_<db_name>*.bak/.trn etc.)... 
+
+		-- once we evaluate this token, 'replace' it - so that [READ_FROM_FS] can't/won't end up in any outputs. 
+		SET @Targets = REPLACE(@Targets, N'[READ_FROM_FILESYSTEM]', N'');
 	 END;
 
 	 -- If not a token, then try comma delimitied: 
@@ -1116,7 +1123,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -1187,7 +1194,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -1274,7 +1281,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -1314,7 +1321,7 @@ CREATE PROC dbo.get_time_vector
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- cleanup:
 	SET @Vector = LTRIM(RTRIM(@Vector));
@@ -1458,7 +1465,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -1494,7 +1501,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output int = 0;
 
@@ -1533,7 +1540,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -1910,9 +1917,9 @@ AS
 
 	IF @PrintOnly = 1 BEGIN
 		IF @retentionType = 'b'
-			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+			PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
 		ELSE 
-			PRINT 'Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
+			PRINT '-- Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
 	END;
 
 	-- normalize paths: 
@@ -2460,6 +2467,9 @@ AS
 	--END;
 
 	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
+		IF (CHARINDEX(N'[', @EncryptionCertName) > 0) OR (CHARINDEX(N']', @EncryptionCertName) > 0) 
+			SET @EncryptionCertName = REPLACE(REPLACE(@EncryptionCertName, N']', N''), N'[', N'');
+		
 		-- make sure the cert name is legit and that an encryption algorithm was specified:
 		IF NOT EXISTS (SELECT NULL FROM master.sys.certificates WHERE name = @EncryptionCertName) BEGIN
 			RAISERROR('Certificate name specified by @EncryptionCertName is not a valid certificate (not found in sys.certificates).', 16, 1);
@@ -2473,6 +2483,11 @@ AS
 	END;
 
 	-----------------------------------------------------------------------------
+	DECLARE @excludeSimple bit = 0;
+
+	IF UPPER(@BackupType) = N'LOG'
+		SET @excludeSimple = 1;
+
 	-- Determine which databases to backup:
 	DECLARE @serialized nvarchar(MAX);
 	EXEC dbo.load_databases
@@ -2480,6 +2495,7 @@ AS
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
 		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
+		@ExcludeSimpleRecovery = @excludeSimple,
 		@Output = @serialized OUTPUT;
 
 	DECLARE @targetDatabases table (
@@ -3194,7 +3210,7 @@ AS
 
 			DECLARE @AllDbNames nvarchar(MAX); 
 			EXEC admindb.dbo.[load_databases]
-				@Target = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1,
 				@Output = @AllDbNames OUTPUT;
@@ -4531,10 +4547,10 @@ AS
         AND [restored_as] IN (SELECT name FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
 
     IF @CheckConsistency = 1 BEGIN
-        IF OBJECT_ID('tempdb..##DBCC_OUTPUT') IS NOT NULL 
-            DROP TABLE ##DBCC_OUTPUT;
+        IF OBJECT_ID('tempdb..#DBCC_OUTPUT') IS NOT NULL 
+            DROP TABLE #DBCC_OUTPUT;
 
-        CREATE TABLE ##DBCC_OUTPUT(
+        CREATE TABLE #DBCC_OUTPUT(
                 RowID int IDENTITY(1,1) NOT NULL, 
                 Error int NULL,
                 [Level] int NULL,
@@ -4628,8 +4644,8 @@ AS
         SET @sourcePath = @BackupsRootPath + N'\' + @databaseToRestore;
         EXEC dbo.check_paths @sourcePath, @isValid OUTPUT;
         IF @isValid = 0 BEGIN 
-            SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
-            GOTO NextDatabase;
+			SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid.';
+			GOTO NextDatabase;
         END;
         
 		-- Process attempt to overwrite an existing database: 
@@ -4685,6 +4701,7 @@ AS
         END;
 
 		-- Check for a FULL backup: 
+		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a [SYSTEM] database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
 		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
 		
 		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
@@ -4842,7 +4859,6 @@ AS
 				[FileName] = @backupName;
 		END;
 
-
         -- Restore any LOG backups if specified and if present:
         IF @SkipLogBackups = 0 BEGIN
 			
@@ -4986,13 +5002,13 @@ AS
                 IF @PrintOnly = 1 
                     PRINT @command;
                 ELSE BEGIN 
-                    DELETE FROM ##DBCC_OUTPUT;
-                    INSERT INTO ##DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
+                    DELETE FROM #DBCC_OUTPUT;
+                    INSERT INTO #DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
                     EXEC sp_executesql @command; 
 
-                    IF EXISTS (SELECT NULL FROM ##DBCC_OUTPUT) BEGIN -- consistency errors: 
+                    IF EXISTS (SELECT NULL FROM #DBCC_OUTPUT) BEGIN -- consistency errors: 
                         SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName) + N'. Details: ' + @crlf;
-                        SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM ##DBCC_OUTPUT ORDER BY RowID;
+                        SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM #DBCC_OUTPUT ORDER BY RowID;
 
                         UPDATE dbo.restore_log
                         SET 
@@ -5465,7 +5481,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -5485,6 +5501,19 @@ AS
 
 	-- High-level Cleanup: 
 	DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
+
+	-- if this is a SYSTEM database and we didn't get any results, test for @AppendServerNameToSystemDbs 
+	IF ((SELECT dbo.[is_system_database](@databaseToRestore)) = 1) AND NOT EXISTS (SELECT NULL FROM @results) BEGIN
+
+		SET @SourcePath = @SourcePath + N'\' + REPLACE(@@SERVERNAME, N'\', N'_');
+
+		SET @command = 'dir "' + @SourcePath + '\" /B /A-D /OD';
+		INSERT INTO @results ([output])
+		EXEC xp_cmdshell 
+			@stmt = @command;
+
+		DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
+	END;
 
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'FULL' BEGIN
@@ -5540,7 +5569,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -5677,7 +5706,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6731,7 +6760,7 @@ CREATE PROC dbo.list_processes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7091,7 +7120,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7109,7 +7138,7 @@ AS
 		[is_enlisted] bit NOT NULL,
 		[is_bound] bit NOT NULL,
 		[open_transaction_count] int NOT NULL,
-		[log_record_count] bigint NOT NULL,
+		[log_record_count] bigint NULL,
 		[log_bytes_used] bigint NOT NULL
 	);
 
@@ -7197,8 +7226,6 @@ AS
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'');
 	END; 
-
-	--PRINT @topSQL;
 
 	INSERT INTO [#core] ([session_id], [transaction_id], [database_id], [duration], [enlisted_db_count], [tempdb_enlisted], [transaction_type], [transaction_state], [enlist_count], 
 		[is_user_transaction], [is_local], [is_enlisted], [is_bound], [open_transaction_count], [log_record_count], [log_bytes_used])
@@ -7295,21 +7322,21 @@ AS
 	-- correlated sub-query:
 	DECLARE @lockedResourcesSQL nvarchar(MAX) = N'
 		CAST((SELECT 
-			dtl.[resource_type] [@resource_type],
-			dtl.[request_session_id] [@owning_session_id],
-			DB_NAME(dtl.[resource_database_id]) [@database],
-			dtl.[resource_subtype] [@resource_subtype],
-			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
+			--dtl.[resource_type] [@resource_type],
+			--dtl.[request_session_id] [@owning_session_id],
+			--DB_NAME(dtl.[resource_database_id]) [@database],
 			RTRIM(dtl.[resource_type] + N'': '' + CAST(dtl.[resource_database_id] AS sysname) + N'':'' + CASE WHEN dtl.[resource_type] = N''PAGE'' THEN CAST(dtl.[resource_description] AS sysname) ELSE CAST(dtl.[resource_associated_entity_id] AS sysname) END
 				+ CASE WHEN dtl.[resource_type] = N''KEY'' THEN N'' '' + CAST(dtl.[resource_description] AS sysname) ELSE '''' END
-				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' END) [resource_identifier], 
-			dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
+				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' 
+				END) [resource_identifier], 
+			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
+			dtl.[resource_subtype] [@resource_subtype],
+			--dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
 			dtl.[request_mode] [transaction/@request_mode], 
 			dtl.[request_status] [transaction/@request_status],
 			dtl.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
 			dtl.[request_owner_type] [transaction/@owner_type],
 			dtl.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
-			CONVERT(sysname, dtl.[lock_owner_address], 1) [lock_owner_address],   -- can be joined against sys.dm_os_waiting_tasks
 			x.[waiting_task_address] [waits/waiting_task_address],
 			x.[wait_duration_ms] [waits/wait_duration_ms], 
 			x.[wait_type] [waits/wait_type],
@@ -7317,8 +7344,8 @@ AS
 			x.[blocking_task_address] [waits/blocking/blocking_task_address], 
 			x.[resource_description] [waits/blocking/resource_description]
 		FROM 
-			sys.[dm_tran_locks] dtl
-			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x ON dtl.[lock_owner_address] = x.[resource_address]
+			sys.[dm_tran_locks] dtl WITH(NOLOCK)
+			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x WITH(NOLOCK) ON dtl.[lock_owner_address] = x.[resource_address]
 		WHERE 
 			dtl.[request_session_id] = c.session_id
 		FOR XML PATH (''resource''), ROOT(''locked_resources'')) AS xml) [locked_resources],	';
@@ -7441,13 +7468,6 @@ CAST((
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{context}', N'');
 	END;
 
-	IF @IncludeVersionStoreDetails = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', @versionStoreSQL);
-	  END; 
-	ELSE BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', N'');
-	END;
-
 	IF @IncludeStatements = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statement}', N'[s].[statement],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementJOIN}', N'LEFT OUTER JOIN #statements s ON c.session_id = s.session_id');
@@ -7458,12 +7478,26 @@ CAST((
 	END; 
 
 	IF @IncludePlans = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan}', N', [p].[query_plan]');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan}', N'[p].[query_plan],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{planJOIN}', N'LEFT OUTER JOIN #plans p ON c.session_id = p.session_id');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan}', N'');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{planJOIN}', N'');
+	END;
+
+	IF @IncludeLockedResources = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
+	  END;
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
+	END;
+
+	IF @IncludeVersionStoreDetails = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', @versionStoreSQL);
+	  END; 
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', N'');
 	END;
 
 	IF @IncludeBoundSessions = 1 BEGIN 
@@ -7478,13 +7512,6 @@ CAST((
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'');
-	END;
-
-	IF @IncludeLockedResources = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
-	  END;
-	ELSE BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
 	END;
 
 --EXEC admindb.dbo.[print_string] @Input = @projectionSQL;
@@ -7517,7 +7544,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -8297,7 +8324,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright} 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -8337,12 +8364,6 @@ AS
 		END; 
 	END;
 
-	IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
-		SET @DatabasesToExclude = NULL;
-
-	IF RTRIM(LTRIM(@CompatabilityExclusions)) = N''
-		SET @DatabasesToExclude = NULL;
-
 	-----------------------------------------------------------------------------
 	-- Set up / initialization:
 
@@ -8375,7 +8396,11 @@ AS
 	DECLARE @issues table ( 
 		issue_id int IDENTITY(1,1) NOT NULL, 
 		[database] sysname NOT NULL, 
-		issue varchar(2000) NOT NULL 
+		issue varchar(2000) NOT NULL, 
+		command nvarchar(2000) NOT NULL, 
+		success_message varchar(2000) NOT NULL,
+		succeeded bit NOT NULL DEFAULT (0),
+		[error_message] nvarchar(MAX) NULL 
 	);
 
 	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
@@ -8385,10 +8410,12 @@ AS
 	-- Checks: 
 	
 	-- Compatablity Checks: 
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database],
-		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N' but is currently set to ' + CAST(d.compatibility_level AS sysname) + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE' + QUOTENAME(d.[name]) + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [issue]
+		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N'. Currently set to ' + CAST(d.[compatibility_level] AS sysname) + N'.' [issue], 
+		N'ALTER DATABASE' + QUOTENAME(d.[name]) + N' SET COMPATIBILITY_LEVEL = ' + CAST(@serverVersion AS sysname) + N';' [command], 
+		N'Database Compatibility successfully set to ' + CAST(@serverVersion AS sysname) + N'.'  [success_message]
 	FROM 
 		sys.databases d
 		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
@@ -8399,54 +8426,65 @@ AS
 	ORDER BY 
 		d.[name] ;
 		
-
 	-- Page Verify: 
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
-		[name] [database], 
-		N'Page Verify should be set to CHECKSUM - but is currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET PAGE_VERIFY CHECKSUM; ' [issue]
+		d.[name] [database], 
+		N'Page Verify should be set to CHECKSUM. Currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET PAGE_VERIFY CHECKSUM; ' [command], 
+		N'Page Verify successfully set to CHECKSUM.' [success_message]
 	FROM 
-		sys.databases 
+		sys.databases d
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		page_verify_option_desc <> N'CHECKSUM'
 	ORDER BY 
-		[name];
+		d.[name];
 
 	-- OwnerChecks:
 	IF @ReportDatabasesNotOwnedBySA = 1 BEGIN
-		INSERT INTO @issues ([database], issue)
+		INSERT INTO @issues ([database], [issue], [command], [success_message])
 		SELECT 
-			[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin) but is currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' + @crlf + @tab + @tab + N'To correct, execute:  ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME([name]) + N' TO sa;' [issue]
+			d.[name] [database], 
+			N'Should by Owned by 0x01 (SysAdmin). Currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' [issue], 
+			N'ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(d.[name]) + N' TO sa;' [command], 
+			N'Database owndership successfully transferred to 0x01 (SysAdmin).' [success_message]
 		FROM 
-			sys.databases 
+			sys.databases d
+			INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 		WHERE 
 			owner_sid <> 0x01;
 	END;
 
 	-- AUTO_CLOSE:
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
-		[name] [database], 
-		N'AUTO_CLOSE is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_CLOSE OFF; ' [issue]
+		d.[name] [database], 
+		N'AUTO_CLOSE should be DISABLED. Currently ENABLED.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET AUTO_CLOSE OFF; ' [command], 
+		N'AUTO_CLOSE successfully set to DISABLED.' [success_message]
 	FROM 
-		sys.databases 
+		sys.databases d
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		[is_auto_close_on] = 1
 	ORDER BY 
-		[name];
+		d.[name];
 
 	-- AUTO_SHRINK:
-	INSERT INTO @issues ([database], issue)
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
-		[name] [database], 
-		N'AUTO_SHRINK is enabled - and should be DISABLED.' + @crlf + @tab + @tab + N'To correct, execute: ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_SHRINK OFF; ' [issue]
+		d.[name] [database], 
+		N'AUTO_SHRINK should be DISABLED. Currently ENABLED.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET AUTO_SHRINK OFF; ' [command], 
+		N'AUTO_SHRINK successfully set to DISABLED.' [success_message]
 	FROM 
-		sys.databases 
+		sys.databases d
+		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		[is_auto_shrink_on] = 1
 	ORDER BY 
-		[name];
+		d.[name];
 		
 	-----------------------------------------------------------------------------
 	-- add other checks as needed/required per environment:
@@ -8454,38 +8492,122 @@ AS
 
 
 
+
 	-----------------------------------------------------------------------------
-	-- reporting: 
-	DECLARE @emailErrorMessage nvarchar(MAX);
+	-- (attempted) fixes: 
 	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
-		
-		DECLARE @emailSubject nvarchar(300);
 
-		SET @emailErrorMessage = N'The following configuration discrepencies were detected: ' + @crlf;
-
+		DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
-			@emailErrorMessage = @emailErrorMessage + @tab + QUOTENAME([database]) + N'. ' + [issue] + @crlf
+			[issue_id], 
+			[command] 
 		FROM 
 			@issues 
-		ORDER BY 
-			[database],
-			issue_id;
+		ORDER BY [issue_id];
+
+		DECLARE @currentID int;
+		DECLARE @currentCommand nvarchar(2000); 
+		DECLARE @errorMessage nvarchar(MAX);
+
+		OPEN [fixer];
+		FETCH NEXT FROM [fixer] INTO @currentID, @currentCommand;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN 
+			
+			SET @errorMessage = NULL;
+
+			BEGIN TRY 
+				EXEC sp_executesql @currentCommand;
+--IF @currentID = 1 RAISERROR('oh noess!', 16, 1);				
+				UPDATE @issues SET [succeeded] = 1 WHERE [issue_id] = @currentID;
+			END TRY 
+			BEGIN CATCH
+				SET @errorMessage = CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+				UPDATE @issues SET [error_message] = @errorMessage WHERE [issue_id] = @currentID;
+
+			END CATCH
+
+			FETCH NEXT FROM [fixer] INTO @currentID, @currentCommand;
+		END;
+
+		CLOSE [fixer]; 
+		DEALLOCATE fixer;
+
+	END;
+
+	-----------------------------------------------------------------------------
+	-- reporting: 
+	DECLARE @emailBody nvarchar(MAX) = NULL;
+	DECLARE @emailSubject nvarchar(300);
+	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
+		SET @emailBody = N'';
+		
+		DECLARE @correctionErrorsOccurred bit = 0;
+		DECLARE @correctionsCompletedSuccessfully bit = 0; 
+
+		IF EXISTS (SELECT NULL FROM @issues WHERE [succeeded] = 0) BEGIN -- process ERRORS first. 
+			SET @correctionErrorsOccurred = 1;
+		END; 
+
+		IF EXISTS (SELECT NULL FROM @issues WHERE [succeeded] = 1) BEGIN -- report on successful changes: 
+			SET @correctionsCompletedSuccessfully = 1;
+		END;
+
+		IF @correctionErrorsOccurred = 1 BEGIN
+			SET @emailSubject = @EmailSubjectPrefix + N' - Errors Addressing Database Settings';
+			
+			IF @correctionsCompletedSuccessfully = 1 
+				SET @emailBody = N'Configuration Problems Detected. Some were automatically corrected; Others encountered errors during attempt to correct:' + @crlf + @crlf;
+			ELSE 
+				SET @emailBody = N'Configuration Problems Detected.' + @crlf + @crlf + UPPER(' Errors encountred while attempting to correct:') + @crlf + @crlf;
+
+			SELECT 
+				@emailBody = @emailBody + @tab + QUOTENAME([database]) + N' - ' + [issue] + @crlf
+					+ @tab + @tab + N'ATTEMPTED CORRECTION: -> ' + [command] + @crlf
+					+ @tab + @tab + @tab + N'ERROR: ' + [error_message] + @crlf + @crlf
+			FROM 
+				@issues 
+			WHERE 
+				[succeeded] = 0 
+			ORDER BY [issue_id];
+
+		END;
+
+		IF @correctionsCompletedSuccessfully = 1 BEGIN
+			SET @emailSubject = @EmailSubjectPrefix + N' - Database Configuration Settings Successfully Updated';
+
+			IF @correctionErrorsOccurred = 1
+				SET @emailBody = @emailBody + @crlf + @crlf;
+
+			SET @emailBody = @emailBody + N'The following database configuration changes were successfully applied:' + @crlf + @crlf;
+
+			SELECT 
+				@emailBody = @emailBody + @tab + QUOTENAME([database]) + @crlf
+				+ @tab + @tab + N'OUTCOME: ' + [success_message] + @crlf + @crlf
+				+ @tab + @tab + @tab + @tab + N'Detected Problem: ' + [issue] + @crlf
+				+ @tab + @tab + @tab + @tab + N'Executed Correction: ' + [command] + @crlf + @crlf
+			FROM 
+				@issues 
+			WHERE 
+				[succeeded] = 1 
+			ORDER BY [issue_id];
+
+		END;
 
 	END;
 
 	-- send/display any problems:
-	IF @emailErrorMessage IS NOT NULL BEGIN
-		IF @PrintOnly = 1 
-			PRINT @emailErrorMessage;
+	IF @emailBody IS NOT NULL BEGIN
+		IF @PrintOnly = 1 BEGIN 
+			PRINT @emailSubject;
+			PRINT @emailBody;
+		  END;
 		ELSE BEGIN 
-			SET @emailSubject = @EmailSubjectPrefix + N' - Configuration Problems Detected';
-
 			EXEC msdb..sp_notify_operator
 				@profile_name = @MailProfileName,
 				@name = @OperatorName,
 				@subject = @emailSubject, 
-				@body = @emailErrorMessage;
-
+				@body = @emailBody;
 		END
 	END;
 
@@ -8513,7 +8635,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -8772,7 +8894,7 @@ CREATE PROC dbo.monitor_transaction_durations
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
@@ -8831,7 +8953,7 @@ AS
 			[#LongRunningTransactions] lrt
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
-			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',') ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
+			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',', 1) ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
 	END;
 
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
@@ -9096,7 +9218,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -9210,7 +9332,6 @@ FROM
 WHERE 
 	[object_id] = @ObjectID; ';
 
-
 	SET @sql = REPLACE(@sql, N'{TargetDatabase}', @TargetDatabase);
 
 	EXEC sys.[sp_executesql] 
@@ -9240,7 +9361,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -12308,7 +12429,7 @@ CREATE PROC dbo.generate_audit_signature
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -12377,7 +12498,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -12552,7 +12673,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12670,7 +12791,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.2.2774.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.3.2792.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12812,8 +12933,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.2.2774.1';
-DECLARE @VersionDescription nvarchar(200) = N'Rewrite of dbo.load_databases capabilities/signatures; HA changes, bug fixes, and plan cost in dbo.list_processes';
+DECLARE @CurrentVersion varchar(20) = N'5.3.2792.1';
+DECLARE @VersionDescription nvarchar(200) = N'dbo.verify_database_configurations will now attempt changes; 12+ minor bug fixes and improvements';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
