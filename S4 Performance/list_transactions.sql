@@ -63,7 +63,7 @@ AS
 		[is_enlisted] bit NOT NULL,
 		[is_bound] bit NOT NULL,
 		[open_transaction_count] int NOT NULL,
-		[log_record_count] bigint NOT NULL,
+		[log_record_count] bigint NULL,
 		[log_bytes_used] bigint NOT NULL
 	);
 
@@ -151,8 +151,6 @@ AS
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'');
 	END; 
-
-	--PRINT @topSQL;
 
 	INSERT INTO [#core] ([session_id], [transaction_id], [database_id], [duration], [enlisted_db_count], [tempdb_enlisted], [transaction_type], [transaction_state], [enlist_count], 
 		[is_user_transaction], [is_local], [is_enlisted], [is_bound], [open_transaction_count], [log_record_count], [log_bytes_used])
@@ -249,21 +247,21 @@ AS
 	-- correlated sub-query:
 	DECLARE @lockedResourcesSQL nvarchar(MAX) = N'
 		CAST((SELECT 
-			dtl.[resource_type] [@resource_type],
-			dtl.[request_session_id] [@owning_session_id],
-			DB_NAME(dtl.[resource_database_id]) [@database],
-			dtl.[resource_subtype] [@resource_subtype],
-			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
+			--dtl.[resource_type] [@resource_type],
+			--dtl.[request_session_id] [@owning_session_id],
+			--DB_NAME(dtl.[resource_database_id]) [@database],
 			RTRIM(dtl.[resource_type] + N'': '' + CAST(dtl.[resource_database_id] AS sysname) + N'':'' + CASE WHEN dtl.[resource_type] = N''PAGE'' THEN CAST(dtl.[resource_description] AS sysname) ELSE CAST(dtl.[resource_associated_entity_id] AS sysname) END
 				+ CASE WHEN dtl.[resource_type] = N''KEY'' THEN N'' '' + CAST(dtl.[resource_description] AS sysname) ELSE '''' END
-				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' END) [resource_identifier], 
-			dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
+				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' 
+				END) [resource_identifier], 
+			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
+			dtl.[resource_subtype] [@resource_subtype],
+			--dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
 			dtl.[request_mode] [transaction/@request_mode], 
 			dtl.[request_status] [transaction/@request_status],
 			dtl.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
 			dtl.[request_owner_type] [transaction/@owner_type],
 			dtl.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
-			CONVERT(sysname, dtl.[lock_owner_address], 1) [lock_owner_address],   -- can be joined against sys.dm_os_waiting_tasks
 			x.[waiting_task_address] [waits/waiting_task_address],
 			x.[wait_duration_ms] [waits/wait_duration_ms], 
 			x.[wait_type] [waits/wait_type],
@@ -271,8 +269,8 @@ AS
 			x.[blocking_task_address] [waits/blocking/blocking_task_address], 
 			x.[resource_description] [waits/blocking/resource_description]
 		FROM 
-			sys.[dm_tran_locks] dtl
-			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x ON dtl.[lock_owner_address] = x.[resource_address]
+			sys.[dm_tran_locks] dtl WITH(NOLOCK)
+			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x WITH(NOLOCK) ON dtl.[lock_owner_address] = x.[resource_address]
 		WHERE 
 			dtl.[request_session_id] = c.session_id
 		FOR XML PATH (''resource''), ROOT(''locked_resources'')) AS xml) [locked_resources],	';
@@ -395,13 +393,6 @@ CAST((
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{context}', N'');
 	END;
 
-	IF @IncludeVersionStoreDetails = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', @versionStoreSQL);
-	  END; 
-	ELSE BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', N'');
-	END;
-
 	IF @IncludeStatements = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statement}', N'[s].[statement],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{statementJOIN}', N'LEFT OUTER JOIN #statements s ON c.session_id = s.session_id');
@@ -412,12 +403,26 @@ CAST((
 	END; 
 
 	IF @IncludePlans = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan}', N', [p].[query_plan]');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan}', N'[p].[query_plan],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{planJOIN}', N'LEFT OUTER JOIN #plans p ON c.session_id = p.session_id');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{plan}', N'');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{planJOIN}', N'');
+	END;
+
+	IF @IncludeLockedResources = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
+	  END;
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
+	END;
+
+	IF @IncludeVersionStoreDetails = 1 BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', @versionStoreSQL);
+	  END; 
+	ELSE BEGIN 
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{version_store}', N'');
 	END;
 
 	IF @IncludeBoundSessions = 1 BEGIN 
@@ -432,13 +437,6 @@ CAST((
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'');
-	END;
-
-	IF @IncludeLockedResources = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
-	  END;
-	ELSE BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
 	END;
 
 --EXEC admindb.dbo.[print_string] @Input = @projectionSQL;

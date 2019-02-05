@@ -255,6 +255,9 @@ AS
 	--END;
 
 	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
+		IF (CHARINDEX(N'[', @EncryptionCertName) > 0) OR (CHARINDEX(N']', @EncryptionCertName) > 0) 
+			SET @EncryptionCertName = REPLACE(REPLACE(@EncryptionCertName, N']', N''), N'[', N'');
+		
 		-- make sure the cert name is legit and that an encryption algorithm was specified:
 		IF NOT EXISTS (SELECT NULL FROM master.sys.certificates WHERE name = @EncryptionCertName) BEGIN
 			RAISERROR('Certificate name specified by @EncryptionCertName is not a valid certificate (not found in sys.certificates).', 16, 1);
@@ -268,6 +271,11 @@ AS
 	END;
 
 	-----------------------------------------------------------------------------
+	DECLARE @excludeSimple bit = 0;
+
+	IF UPPER(@BackupType) = N'LOG'
+		SET @excludeSimple = 1;
+
 	-- Determine which databases to backup:
 	DECLARE @serialized nvarchar(MAX);
 	EXEC dbo.load_databases
@@ -275,6 +283,7 @@ AS
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
 		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
+		@ExcludeSimpleRecovery = @excludeSimple,
 		@Output = @serialized OUTPUT;
 
 	DECLARE @targetDatabases table (

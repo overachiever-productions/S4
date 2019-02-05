@@ -65,7 +65,6 @@ FROM
 WHERE 
 	[object_id] = @ObjectID; ';
 
-
 	SET @sql = REPLACE(@sql, N'{TargetDatabase}', @TargetDatabase);
 
 	EXEC sys.[sp_executesql] 
