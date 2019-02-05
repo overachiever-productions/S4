@@ -509,6 +509,7 @@ AS
         END;
 
 		-- Check for a FULL backup: 
+		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a [SYSTEM] database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
 		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
 		
 		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
