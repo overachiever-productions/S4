@@ -71,6 +71,19 @@ AS
 	-- High-level Cleanup: 
 	DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
 
+	-- if this is a SYSTEM database and we didn't get any results, test for @AppendServerNameToSystemDbs 
+	IF ((SELECT dbo.[is_system_database](@databaseToRestore)) = 1) AND NOT EXISTS (SELECT NULL FROM @results) BEGIN
+
+		SET @SourcePath = @SourcePath + N'\' + REPLACE(@@SERVERNAME, N'\', N'_');
+
+		SET @command = 'dir "' + @SourcePath + '\" /B /A-D /OD';
+		INSERT INTO @results ([output])
+		EXEC xp_cmdshell 
+			@stmt = @command;
+
+		DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
+	END;
+
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'FULL' BEGIN
 		-- most recent full only: 

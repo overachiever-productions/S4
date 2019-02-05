@@ -452,8 +452,8 @@ AS
         SET @sourcePath = @BackupsRootPath + N'\' + @databaseToRestore;
         EXEC dbo.check_paths @sourcePath, @isValid OUTPUT;
         IF @isValid = 0 BEGIN 
-            SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid;';
-            GOTO NextDatabase;
+			SET @statusDetail = N'The backup path: ' + @sourcePath + ' is invalid.';
+			GOTO NextDatabase;
         END;
         
 		-- Process attempt to overwrite an existing database: 

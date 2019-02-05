@@ -97,20 +97,20 @@ IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_databases 
-	@Targets					nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
-	@Exclusions					nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
-	@Priorities					nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
-	@TargetDirectory			sysname			= NULL,		-- Only required when @Targets is specified as [READ_FROM_FILESYSTEM].
-	@ExcludeClones				bit				= 1, 
-	@ExcludeSecondaries			bit				= 1,		-- exclude AG and Mirroring secondaries... 
-	@ExcludeSimpleRecovery		bit				= 0,		-- exclude databases in SIMPLE recovery mode
-	@ExcludeReadOnly			bit				= 0,		
-	@ExcludeRestoring			bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
-	@ExcludeRecovering			bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
-	@ExcludeOffline				bit				= 1,		-- removes ANY state other than ONLINE.
-	@ExcludeDev					bit				= 0,		-- not yet implemented
-	@ExcludeTest				bit				= 0,		-- not yet implemented
-	@Output						nvarchar(MAX)	OUTPUT
+	@Targets								nvarchar(MAX),				-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Exclusions								nvarchar(MAX)	= NULL,		-- comma, delimited, list, of, db, names, %wildcards_allowed%
+	@Priorities								nvarchar(MAX)	= NULL,		-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
+	@TargetDirectory						sysname			= NULL,		-- Only required when @Targets is specified as [READ_FROM_FILESYSTEM].
+	@ExcludeClones							bit				= 1, 
+	@ExcludeSecondaries						bit				= 1,		-- exclude AG and Mirroring secondaries... 
+	@ExcludeSimpleRecovery					bit				= 0,		-- exclude databases in SIMPLE recovery mode
+	@ExcludeReadOnly						bit				= 0,		
+	@ExcludeRestoring						bit				= 1,		-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
+	@ExcludeRecovering						bit				= 1,		-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
+	@ExcludeOffline							bit				= 1,		-- removes ANY state other than ONLINE.
+	@ExcludeDev								bit				= 0,		-- not yet implemented
+	@ExcludeTest							bit				= 0,		-- not yet implemented
+	@Output									nvarchar(MAX)	OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -222,6 +222,10 @@ AS
 
         INSERT INTO @target_databases ([database_name])
         SELECT subdirectory FROM @directories ORDER BY row_id;
+
+		-- NOTE: if @AddServerNameToSystemBackupPath was added to SYSTEM backups... then master, model, msdb, etc... folders WILL exist. (But there won't be FULL_<dbname>*.bak files in those subfolders). 
+		--		In dbo.load_databases we WILL list any 'folders' for system databases found (i.e., we're LISTING databases - not getting the actual backups or paths). 
+		--		However, in dbo.restore_databases if the @TargetPath + N'\' + @dbToRestore doesn't find any files, and @dbToRestore is a SystemDB, we'll look in @TargetPath + '\' + @ServerName + '\' + @dbToRestore for <backup_type>_<db_name>*.bak/.trn etc.)... 
 
 		-- once we evaluate this token, 'replace' it - so that [READ_FROM_FS] can't/won't end up in any outputs. 
 		SET @Targets = REPLACE(@Targets, N'[READ_FROM_FILESYSTEM]', N'');
