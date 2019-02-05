@@ -196,17 +196,17 @@ AS
 	-- AUTO_SHRINK:
 	INSERT INTO @issues ([database], [issue], [command], [success_message])
 	SELECT 
-		[name] [database], 
+		d.[name] [database], 
 		N'AUTO_SHRINK should be DISABLED. Currently ENABLED.' [issue], 
-		N'ALTER DATABASE ' + QUOTENAME([name]) + N' SET AUTO_SHRINK OFF; ' [command], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET AUTO_SHRINK OFF; ' [command], 
 		N'AUTO_SHRINK successfully set to DISABLED.' [success_message]
 	FROM 
-		sys.databases 
+		sys.databases d
 		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
 	WHERE 
 		[is_auto_shrink_on] = 1
 	ORDER BY 
-		[name];
+		d.[name];
 		
 	-----------------------------------------------------------------------------
 	-- add other checks as needed/required per environment:
