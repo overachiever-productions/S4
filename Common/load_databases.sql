@@ -25,7 +25,6 @@
 			SELECT [result] FROM dbo.split_string(@output, N',', 1);
 			GO
 
-
 			DECLARE @output nvarchar(MAX);
 			EXEC load_databases 
 				@Targets = N'[SYSTEM]', 
@@ -224,6 +223,8 @@ AS
         INSERT INTO @target_databases ([database_name])
         SELECT subdirectory FROM @directories ORDER BY row_id;
 
+		-- once we evaluate this token, 'replace' it - so that [READ_FROM_FS] can't/won't end up in any outputs. 
+		SET @Targets = REPLACE(@Targets, N'[READ_FROM_FILESYSTEM]', N'');
 	 END;
 
 	 -- If not a token, then try comma delimitied: 
