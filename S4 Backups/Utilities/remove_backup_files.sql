@@ -191,9 +191,9 @@ AS
 
 	IF @PrintOnly = 1 BEGIN
 		IF @retentionType = 'b'
-			PRINT 'Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+			PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
 		ELSE 
-			PRINT 'Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
+			PRINT '-- Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
 	END;
 
 	-- normalize paths: 

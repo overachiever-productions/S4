@@ -255,6 +255,9 @@ AS
 	--END;
 
 	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
+		IF (CHARINDEX(N'[', @EncryptionCertName) > 0) OR (CHARINDEX(N']', @EncryptionCertName) > 0) 
+			SET @EncryptionCertName = REPLACE(REPLACE(@EncryptionCertName, N']', N''), N'[', N'');
+		
 		-- make sure the cert name is legit and that an encryption algorithm was specified:
 		IF NOT EXISTS (SELECT NULL FROM master.sys.certificates WHERE name = @EncryptionCertName) BEGIN
 			RAISERROR('Certificate name specified by @EncryptionCertName is not a valid certificate (not found in sys.certificates).', 16, 1);
