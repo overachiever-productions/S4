@@ -355,10 +355,10 @@ AS
         AND [restored_as] IN (SELECT name FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
 
     IF @CheckConsistency = 1 BEGIN
-        IF OBJECT_ID('tempdb..##DBCC_OUTPUT') IS NOT NULL 
-            DROP TABLE ##DBCC_OUTPUT;
+        IF OBJECT_ID('tempdb..#DBCC_OUTPUT') IS NOT NULL 
+            DROP TABLE #DBCC_OUTPUT;
 
-        CREATE TABLE ##DBCC_OUTPUT(
+        CREATE TABLE #DBCC_OUTPUT(
                 RowID int IDENTITY(1,1) NOT NULL, 
                 Error int NULL,
                 [Level] int NULL,
@@ -667,7 +667,6 @@ AS
 				[FileName] = @backupName;
 		END;
 
-
         -- Restore any LOG backups if specified and if present:
         IF @SkipLogBackups = 0 BEGIN
 			
@@ -811,13 +810,13 @@ AS
                 IF @PrintOnly = 1 
                     PRINT @command;
                 ELSE BEGIN 
-                    DELETE FROM ##DBCC_OUTPUT;
-                    INSERT INTO ##DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
+                    DELETE FROM #DBCC_OUTPUT;
+                    INSERT INTO #DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
                     EXEC sp_executesql @command; 
 
-                    IF EXISTS (SELECT NULL FROM ##DBCC_OUTPUT) BEGIN -- consistency errors: 
+                    IF EXISTS (SELECT NULL FROM #DBCC_OUTPUT) BEGIN -- consistency errors: 
                         SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName) + N'. Details: ' + @crlf;
-                        SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM ##DBCC_OUTPUT ORDER BY RowID;
+                        SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM #DBCC_OUTPUT ORDER BY RowID;
 
                         UPDATE dbo.restore_log
                         SET 
