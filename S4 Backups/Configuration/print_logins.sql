@@ -229,7 +229,7 @@ AS
 
 			DECLARE @AllDbNames nvarchar(MAX); 
 			EXEC admindb.dbo.[load_databases]
-				@Target = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1,
 				@Output = @AllDbNames OUTPUT;
