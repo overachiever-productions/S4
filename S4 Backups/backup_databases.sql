@@ -111,24 +111,25 @@ IF OBJECT_ID('dbo.backup_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.backup_databases 
-	@BackupType							sysname,										-- { FULL|DIFF|LOG }
-	@DatabasesToBackup					nvarchar(MAX),									-- { [SYSTEM]|[USER]|name1,name2,etc }
-	@DatabasesToExclude					nvarchar(MAX) = NULL,							-- { NULL | name1,name2 }  
-	@Priorities							nvarchar(MAX) = NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
-	@BackupDirectory					nvarchar(2000) = N'[DEFAULT]',					-- { [DEFAULT] | path_to_backups }
-	@CopyToBackupDirectory				nvarchar(2000) = NULL,							-- { NULL | path_for_backup_copies } 
-	@BackupRetention					nvarchar(10),									-- [DOCUMENT HERE]
-	@CopyToRetention					nvarchar(10) = NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
-	@RemoveFilesBeforeBackup			bit = 0,										-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
-	@EncryptionCertName					sysname = NULL,									-- Ignored if not specified. 
-	@EncryptionAlgorithm				sysname = NULL,									-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
-	@AddServerNameToSystemBackupPath	bit	= 0,										-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
-	@AllowNonAccessibleSecondaries		bit = 0,										-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
-	@LogSuccessfulOutcomes				bit = 0,										-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
-	@OperatorName						sysname = N'Alerts',
-	@MailProfileName					sysname = N'General',
-	@EmailSubjectPrefix					nvarchar(50) = N'[Database Backups ] ',
-	@PrintOnly							bit = 0											-- Instead of EXECUTING commands, they're printed to the console only. 	
+	@BackupType							sysname,																-- { FULL|DIFF|LOG }
+	@DatabasesToBackup					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
+	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
+	@BackupDirectory					nvarchar(2000)							= N'[DEFAULT]',					-- { [DEFAULT] | path_to_backups }
+	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } 
+	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
+	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
+	@RemoveFilesBeforeBackup			bit										= 0,							-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
+	@EncryptionCertName					sysname									= NULL,							-- Ignored if not specified. 
+	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
+	@AddServerNameToSystemBackupPath	bit										= 0,							-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
+	@AllowNonAccessibleSecondaries		bit										= 0,							-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
+	@Directives							nvarchar(400)							= NULL,							-- { COPY_ONLY | FILE:logical_file_name | FILEGROUP:file_group_name }  - NOTE: NOT mutually exclusive. Also, MULTIPLE FILE | FILEGROUP directives can be specified - just separate with commas. e.g., FILE:secondary, FILE:tertiarty. 
+	@LogSuccessfulOutcomes				bit										= 0,							-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
+	@OperatorName						sysname									= N'Alerts',
+	@MailProfileName					sysname									= N'General',
+	@EmailSubjectPrefix					nvarchar(50)							= N'[Database Backups ] ',
+	@PrintOnly							bit										= 0								-- Instead of EXECUTING commands, they're printed to the console only. 	
 AS
 	SET NOCOUNT ON;
 
@@ -236,7 +237,6 @@ AS
 		RETURN -9;
 	END
 
-
 -- TODO: I really need to validate retention details HERE... i.e., BEFORE we start running backups. 
 --		not sure of the best way to do that - i.e., short of copy/paste of the logic (here and there).
 
@@ -267,6 +267,54 @@ AS
 		IF NULLIF(@EncryptionAlgorithm, '') IS NULL BEGIN
 			RAISERROR('@EncryptionAlgorithm must be specified when @EncryptionCertName is specified.', 16, 1);
 			RETURN -15;
+		END;
+	END;
+
+	DECLARE @isCopyOnlyBackup bit = 0;
+	DECLARE @fileOrFileGroupDirective nvarchar(2000) = '';
+
+	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
+		SET @Directives = LTRIM(RTRIM(@Directives));
+		
+		DECLARE @allDirectives table ( 
+			row_id int NOT NULL, 
+			directive_type	sysname NOT NULL, 
+			logical_name sysname NULL 
+		);
+
+		INSERT INTO @allDirectives ([row_id], [directive_type], [logical_name])
+		EXEC admindb.dbo.[shred_string]
+			@input = @Directives, 
+			@rowDelimiter = N',', 
+			@columnDelimiter = N':';
+
+		IF NOT EXISTS (SELECT NULL FROM @allDirectives WHERE (UPPER([directive_type]) = N'COPY_ONLY') OR (UPPER([directive_type]) = N'FILE') OR (UPPER([directive_type]) = N'FILEGROUP')) BEGIN
+			RAISERROR(N'Invalid @Directives value specified. Permitted values are { COPY_ONLY | FILE:logical_name | FILEGROUP:group_name } only.', 16, 1);
+			RETURN -20;
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) = N'COPY_ONLY') BEGIN 
+			IF UPPER(@BackupType) = N'DIFF' BEGIN
+				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're a logical 'fault' - hence the S4 warning. Fodder: https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-2017
+				RAISERROR(N'Invalid @Directives value specified. COPY_ONLY can NOT be specified when @BackupType = DIFF. Only FULL and LOG backups may be COPY_ONLY (and should be used only for one-off testing or other specialized needs.', 16, 1);
+				RETURN -21;
+			END; 
+
+			SET @isCopyOnlyBackup = 1;
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE (UPPER([directive_type]) = N'FILE') OR (UPPER([directive_type]) = N'FILEGROUP')) BEGIN 
+
+			SELECT 
+				@fileOrFileGroupDirective = @fileOrFileGroupDirective + directive_type + N' = ''' + [logical_name] + N''', '
+			FROM 
+				@allDirectives
+			WHERE 
+				(UPPER([directive_type]) = N'FILE') OR (UPPER([directive_type]) = N'FILEGROUP')
+			ORDER BY 
+				row_id;
+
+			SET @fileOrFileGroupDirective = NCHAR(13) + NCHAR(10) + NCHAR(9) + LEFT(@fileOrFileGroupDirective, LEN(@fileOrFileGroupDirective) -1) + NCHAR(13) + NCHAR(10)+ NCHAR(9) + NCHAR(9);
 		END;
 	END;
 
@@ -442,9 +490,9 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @backupName = @BackupType + N'_' + @currentDatabase + '_backup_' + @timestamp + '_' + @offset + @extension;
 
-		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N' TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
+		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N'{FILE|FILEGROUP} TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
-		{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION} NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
+		{COPY_ONLY}{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION}NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
 	
 	';
 
@@ -463,12 +511,20 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{DIFFERENTIAL}', N'');
 
+		IF @isCopyOnlyBackup = 1 
+			SET @command = REPLACE(@command, N'{COPY_ONLY}', N'COPY_ONLY, ');
+		ELSE 
+			SET @command = REPLACE(@command, N'{COPY_ONLY}', N'');
+
 		IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
 			SET @encryptionClause = ' ENCRYPTION (ALGORITHM = ' + ISNULL(@EncryptionAlgorithm, N'AES_256') + N', SERVER CERTIFICATE = ' + ISNULL(@EncryptionCertName, '') + N'), ';
 			SET @command = REPLACE(@command, N'{ENCRYPTION}', @encryptionClause);
 		  END;
 		ELSE 
 			SET @command = REPLACE(@command, N'{ENCRYPTION}','');
+
+		-- account for 'partial' backups: 
+		SET @command = REPLACE(@command, N'{FILE|FILEGROUP}', @fileOrFileGroupDirective);
 
 		IF @PrintOnly = 1
 			PRINT @command;
