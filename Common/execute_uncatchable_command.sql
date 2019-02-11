@@ -83,6 +83,7 @@ AS
 	('BACKUP DATABASE successfully processed % pages in %','BACKUP'),
 	('BACKUP DATABASE WITH DIFFERENTIAL successfully processed % pages in %', 'BACKUP'),
 	('BACKUP LOG successfully processed % pages in %', 'BACKUP'),
+	('BACKUP DATABASE...FILE=<name> successfully processed % pages in % seconds %).', 'BACKUP'), -- for file/filegroup backups
 	('The log was not truncated because records at the beginning %sp_repldone% to mark transactions as distributed %', 'BACKUP'),  -- NOTE: should only be enabled on systems where there's a JOB to force cleanup of replication in log... 
 
 	-- RESTORE:

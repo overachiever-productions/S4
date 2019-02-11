@@ -96,9 +96,6 @@
 		- vNEXT: Potentially look at an @NumberOfFiles option - for striping backups across multiple files
 			Note that this would also require changes to dbo.dba_RestoreDatabases (i.e., to allow multiple files per 'logical' file) and
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
-
-	Scalable:
-		28+
 */
 
 
@@ -488,7 +485,7 @@ DoneRemovingFilesBeforeBackup:
 		SET @timestamp = REPLACE(REPLACE(REPLACE(CONVERT(sysname, @now, 120), '-','_'), ':',''), ' ', '_');
 		SET @offset = RIGHT(CAST(CAST(RAND() AS decimal(12,11)) AS varchar(20)),7);
 
-		SET @backupName = @BackupType + N'_' + @currentDatabase + '_backup_' + @timestamp + '_' + @offset + @extension;
+		SET @backupName = @BackupType + N'_' + @currentDatabase + (CASE WHEN @fileOrFileGroupDirective = '' THEN N'' ELSE N'_PARTIAL' END) + '_backup_' + @timestamp + '_' + @offset + @extension;
 
 		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N'{FILE|FILEGROUP} TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
