@@ -79,7 +79,8 @@ CREATE PROC dbo.restore_databases
 	@RpoWarningThreshold			nvarchar(10)	= N'24h',			-- Only evaluated if non-NULL. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
-    @OperatorName					sysname			= N'Alerts',
+    @Directives						nvarchar(400)	= NULL,				-- { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
+	@OperatorName					sysname			= N'Alerts',
     @MailProfileName				sysname			= N'General',
     @EmailSubjectPrefix				nvarchar(50)	= N'[RESTORE TEST] ',
     @PrintOnly						bit				= 0
@@ -235,6 +236,34 @@ AS
 		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
 	END;
 	
+	DECLARE @directivesText nvarchar(200) = N'';
+	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
+		SET @Directives = LTRIM(RTRIM(@Directives));
+		
+		DECLARE @allDirectives table ( 
+			row_id int NOT NULL, 
+			directive sysname NOT NULL
+		);
+
+		INSERT INTO @allDirectives ([row_id], [directive])
+		SELECT * FROM dbo.[split_string](@Directives, N',', 1);
+
+		-- verify that only supported directives are defined: 
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER')) BEGIN
+			RAISERROR(N'Invalid @Directives value specified. Permitted values are { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }.', 16, 1);
+			RETURN -20;
+		END;
+
+		-- make sure we're ONLY specifying a single BROKER directive (i.e., all three options are supported, but they're (obviously) mutually exclusive).
+		IF (SELECT COUNT(*) FROM @allDirectives WHERE [directive] LIKE '%BROKER%') > 1 BEGIN 
+			RAISERROR(N'Invalid @Directives values specified. ENABLE_BROKER, ERROR_BROKER_CONVERSATIONS, and NEW_BROKER directives are ALLOWED - but only one can be specified as part of a restore operation. Consult Books Online for more info.', 16, 1);
+			RETURN -21;
+		END;
+
+		SELECT @directivesText = @directivesText + [directive] + N', ' FROM @allDirectives ORDER BY [row_id];
+	END;
+
+	-----------------------------------------------------------------------------
     -- 'Global' Variables:
     DECLARE @isValid bit;
     DECLARE @earlyTermination nvarchar(MAX) = N'';
@@ -245,6 +274,7 @@ AS
     DECLARE @executionID uniqueidentifier = NEWID();
     DECLARE @executeDropAllowed bit;
     DECLARE @failedDropCount int = 0;
+	DECLARE @isPartialRestore bit = 0;
 
 	-- normalize paths: 
 	IF(RIGHT(@BackupsRootPath, 1) = '\')
@@ -305,7 +335,7 @@ AS
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
 
-    DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}'' WITH {move}, NORECOVERY;'; 
+    DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}''' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'WITH {partial}' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + '{move}, ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'NORECOVERY;'; 
     DECLARE @move nvarchar(MAX);
     DECLARE @restoreLogId int;
     DECLARE @sourcePath nvarchar(500);
@@ -435,6 +465,7 @@ AS
 		-- reset every 'loop' through... 
 		SET @ignoredLogFiles = 0;
         SET @statusDetail = NULL; 
+		SET @isPartialRestore = 0;
         DELETE FROM @restoredFiles;
 		
 		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
@@ -550,7 +581,11 @@ AS
         IF ((SELECT COUNT(*) FROM #FileList) < 2) BEGIN
             SET @statusDetail = N'The backup located at [' + @pathToDatabaseBackup + N'] is invalid, corrupt, or does not contain a viable FULL backup.';
             GOTO NextDatabase;
-        END ;
+        END;
+
+		IF EXISTS (SELECT NULL FROM [#FileList] WHERE [IsPresent] = 0) BEGIN
+			SET @isPartialRestore = 1;
+		END;
         
         -- Map File Destinations:
         DECLARE @LogicalFileName sysname, @FileId bigint, @Type char(1);
@@ -559,6 +594,8 @@ AS
             LogicalName, FileID, [Type]
         FROM 
             #FileList
+		WHERE 
+			[IsPresent] = 1 -- allow for partial restores
         ORDER BY 
             FileID;
 
@@ -589,7 +626,8 @@ AS
         SET @command = REPLACE(@fullRestoreTemplate, N'{0}', @restoredName);
         SET @command = REPLACE(@command, N'{1}', @pathToDatabaseBackup);
         SET @command = REPLACE(@command, N'{move}', @move);
-
+		SET @command = REPLACE(@command, N'{partial}', (CASE WHEN @isPartialRestore = 1 THEN N'PARTIAL, ' ELSE N'' END));
+		
         BEGIN TRY 
             IF @PrintOnly = 1 BEGIN
                 PRINT @command;
@@ -750,7 +788,8 @@ AS
 
         -- Recover the database if instructed: 
 		IF @ExecuteRecovery = 1 BEGIN
-			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' WITH RECOVERY;';
+			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' WITH {directives}RECOVERY;';
+			SET @command = REPLACE(@command, N'{directives}', @directivesText);
 
 			BEGIN TRY
 				IF @PrintOnly = 1 BEGIN

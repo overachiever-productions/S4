@@ -92,6 +92,7 @@ AS
 	('Processed % pages for database %', 'RESTORE'),
 		-- whenever there's a patch or upgrade...
 	('Converting database % from version % to the current version %', 'RESTORE'), 
+	('RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).', N'RESTORE'),  -- partial recovery operations... 
 	('Database % running the upgrade step from version % to version %.', 'RESTORE'),
 
 	-- CREATEDIR:
