@@ -576,7 +576,7 @@ GO
 --##INCLUDE: Common\tables\alert_responses.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
--- Common Code:
+-- Common and Utilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -586,45 +586,40 @@ GO
 --##INCLUDE: Common\check_paths.sql
 
 -----------------------------------
---##INCLUDE: Common\execute_uncatchable_command.sql
-
------------------------------------
---##INCLUDE: Common\load_databases.sql
-
------------------------------------
---##INCLUDE: Common\split_string.sql
-
------------------------------------
 --##INCLUDE: Common\load_default_path.sql
 
 -----------------------------------
 --##INCLUDE: Common\format_timespan.sql
 
 -----------------------------------
---##INCLUDE: Common\get_time_vector.sql
-
------------------------------------
---##INCLUDE: Common\is_system_database.sql
-
------------------------------------
 --##INCLUDE: Common\shred_resources.sql
-
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
--- Utilities:
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
---##INCLUDE: S4 Utilities\count_matches.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\shred_string.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\is_job_running.sql
 
 -----------------------------------
+--##INCLUDE: S4 Utilities\count_matches.sql
+
+-----------------------------------
+--##INCLUDE: Common\is_system_database.sql
+
+-----------------------------------
+--##INCLUDE: Common\split_string.sql
+
+-----------------------------------
+--##INCLUDE: Common\get_time_vector.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
+
+-----------------------------------
+--##INCLUDE: Common\execute_uncatchable_command.sql
+
+-----------------------------------
+--##INCLUDE: Common\load_databases.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\shred_string.sql
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -655,16 +650,16 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Restore\restore_databases.sql
-
------------------------------------
---##INCLUDE: S4 Restore\Tools\copy_database.sql
-
------------------------------------
 --##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Utilities\load_header_details.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\restore_databases.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Tools\copy_database.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Utilities\apply_logs.sql

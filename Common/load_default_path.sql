@@ -63,7 +63,6 @@ BEGIN
 		@output OUTPUT, 
 		'no_output';
 
-
 	-- account for older versions and/or values not being set for data/log paths: 
 	IF @output IS NULL BEGIN 
 		IF @PathType = 'DATA' BEGIN 
@@ -82,7 +81,6 @@ BEGIN
 				SELECT @output = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(400)); -- likely won't provide any data if we didn't get it previoulsy... 
 			END;
 		END;
-		
 
 		IF @PathType = 'LOG' BEGIN 
 			EXEC master..xp_instance_regread
