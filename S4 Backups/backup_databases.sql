@@ -273,6 +273,8 @@ AS
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
 		SET @Directives = LTRIM(RTRIM(@Directives));
 		
+		IF UPPER(@Directives) = N'COPY_ONLY' SET @Directives = N'COPY_ONLY:';  -- yeah, it's a hack... but meh.
+
 		DECLARE @allDirectives table ( 
 			row_id int NOT NULL, 
 			directive_type	sysname NOT NULL, 
