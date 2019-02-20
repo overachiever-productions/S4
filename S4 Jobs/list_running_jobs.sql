@@ -3,9 +3,6 @@
 /*
 
 
-
-
-
 	EXEC admindb.dbo.list_running_jobs 
 		@StartTime = '2019-02-18 15:00:00', 
 		@EndTime = '2019-02-18 17:16:00',
@@ -24,7 +21,8 @@ CREATE PROC list_running_jobs
 	@StartTime							datetime				= NULL, 
 	@EndTime							datetime				= NULL, 
 	@ExcludedJobs						nvarchar(MAX)			= NULL, 
-	@PreFilterPaddingWeeks				int						= 1				-- if @StartTime/@EndTime are specified, msdb.dbo.sysjobhistory stores start_dates as ints - so this is used to help pre-filter those results by @StartTime - N weeks and @EndTime + N weeks ... 
+	@SerializedOutput					xml						= NULL			OUTPUT,			-- when set to any non-null value (i.e., '') this will be populated with output - rather than having the output projected through the 'bottom' of the sproc (so that we can consume these details from other sprocs/etc.)
+	@PreFilterPaddingWeeks				int						= 1								-- if @StartTime/@EndTime are specified, msdb.dbo.sysjobhistory stores start_dates as ints - so this is used to help pre-filter those results by @StartTime - N weeks and @EndTime + N weeks ... 
 AS
 	SET NOCOUNT ON; 
 
@@ -148,10 +146,33 @@ AS
 	-- Exclude any jobs specified: 
 	DELETE FROM [#RunningJobs] WHERE [job_name] IN (SELECT [result] FROM admindb.dbo.[split_string](@ExcludedJobs, N',', 1));
     
-	-----------------------------------------------------------------------------
-    -- Project 
-
 	-- TODO: are there any expansions/details we want to join from the Jobs themselves at this point? (or any other history info?) 
+	
+	-----------------------------------------------------------------------------
+    -- Send output as XML if requested:
+	IF @SerializedOutput IS NOT NULL BEGIN 
+
+		SELECT @SerializedOutput = (
+			SELECT 
+				[job_name],
+				[job_id],
+				[step_name],
+				[step_id],
+				[start_time],
+				CASE WHEN [completed] = 1 THEN [end_time] ELSE NULL END [end_time], 
+				CASE WHEN [completed] = 1 THEN 'COMPLETED' ELSE 'INCOMPLETE' END [job_status]
+			FROM 
+				[#RunningJobs] 
+			ORDER BY 
+				[start_time]
+			FOR XML PATH('job'), ROOT('jobs')
+		);
+
+		RETURN 0;
+	END;
+
+	-----------------------------------------------------------------------------
+	-- otherwise, project:
 	SELECT 
 		[job_name],
         [job_id],
