@@ -1,5 +1,12 @@
 
 /*
+	TODO: 
+		- Sigh. TRY/CATCH in T-SQL is sooooo busted. Example, suppose Job X is running and we run EXEC msdb.dbo.sp_start_job 'x' ... etc. 
+			at that point, we'll get a big, ugly, exception - stating that the job can NOT be started - as it is already running. 
+			Only, that exception/info will _NOT_ be caught in the try/catch - at all. 
+
+			So. I'm going to have to tweak the code below to use xp_cmdshell... via 'execute command' logic... 
+
 
 	NOTE: 
 		This is really only designed to be run at Server Startup (i.e., as a job that does NOT run on a schedule - instead/rather, it will kick off when the SQL SErver Agent Starts up
@@ -76,6 +83,7 @@ AS
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @errorsEncountered bit = 0;
+	DECLARE @body nvarchar(MAX);
 	
 	SELECT @serviceStartupTime = sqlserver_start_time FROM sys.[dm_os_sys_info];
 	
@@ -103,6 +111,12 @@ LoadShutDownTime:
 			SET @attempts = @attempts + 1;
 			GOTO LoadShutDownTime;
 		END;
+	END; 
+
+	IF @serviceShutDownTime IS NULL BEGIN 
+		SET @errorsEncountered = 1;
+		SET @body = N'UNABLE TO DETERMINE SERVER SHUTDOWN TIME. Processing could NOT commence.';
+		GOTO SendOutputReport;
 	END; 
 
 	SET @serviceShutDownTime = DATEADD(SECOND, -40, @serviceShutDownTime);
@@ -169,9 +183,8 @@ LoadShutDownTime:
 	DECLARE @stepID int; 
 	DECLARE @stepName sysname;
 	DECLARE @command nvarchar(2000); 
-	DECLARE @template nvarchar(1000) = N'-- Restart Job [{job_name}] (at step: {step_id}) ' + @crlf + N'EXEC @outcome = msdb.dbo.sp_start_job @job_id = ''{job_id}'', @step_name = ''{step_name}'';' + @crlf;
+	DECLARE @template nvarchar(1000) = N'-- Restart [{job_name} (step: {step_id})] ' + @crlf + N'EXEC @outcome = msdb.dbo.sp_start_job @job_id = ''{job_id}'', @step_name = ''{step_name}'';' + @crlf + @crlf;
 	DECLARE @outcome int;
-	DECLARE @body nvarchar(MAX);
 	DECLARE @summary nvarchar(MAX) = N'';
 
 	IF EXISTS(SELECT NULL FROM [#JobsToRestart]) BEGIN
@@ -179,14 +192,17 @@ LoadShutDownTime:
 			SET @errorsEncountered = 1;  -- even though this is 'by design' we've still hit an 'error' (i.e., something that should be reported on). 
 			
 			SELECT 
-				@summary = @summary + 'details go here... things like... i dunno. job name, started, and ... stuff' + @crlf
+				@summary = @summary + @tab + '- ' + [job_name] + N' (' + CAST([job_id] AS sysname) + N')' + @crlf
+				+ @tab + @tab + N'Last Step Run: ' + CAST([last_job_step_id] AS sysname) + N' - ' + [last_attempted_step] + @crlf 
+				+ @tab + @tab + N'Previous Start Date: ' + CONVERT(sysname, [start_time], 112) + @crlf
+				+ @crlf
 			FROM 
 				[#JobsToRestart] 
 			ORDER BY 
 				[start_time];
 
-			SET @body = N'Non-Completed SQL Server Agent Jobs were detected. However, it has been > 10 minutes since the SQL Server Service on ' + @@SERVERNAME + N' has been started. Job restart processing will NOT be executed. (NOTE: you can force execution of stalled jobs by setting @OnlyRestartRecentlyFailedJobs = 0 and/or by executing this code with @PrintOnly = 1 and then running the output scripts for any SPECIFIC jobs you might wish to run.';
-			SET @body = @body + @crlf + @crlf + N'Details of Non-Completed Jobs: ';
+			SET @body = N'NON-COMPLETED SQL SERVER AGENT JOBS DETECTED' + @crlf + @tab + N'NOTE: Job restart processing was _NOT_ started (it has been > 10 minutes since server restarted).';
+			SET @body = @body + @crlf + @crlf + N'NON-COMPLETED JOB DETAILS: ' + @crlf + @crlf;
 			SET @body = @body + @summary;
 
 			GOTO SendOutputReport;
@@ -203,9 +219,7 @@ LoadShutDownTime:
 			SET @command = REPLACE(@command, N'{step_name}', @stepName);
 
 			BEGIN TRY 
-				IF @PrintOnly = 1 
-					PRINT @command 
-				ELSE BEGIN 
+				IF @PrintOnly = 0 BEGIN
 
 					SET @error = NULL;
 					SET @outcome = 0;
@@ -214,7 +228,7 @@ LoadShutDownTime:
 					EXEC master.sys.[sp_executesql] 
 						@command, 
 						N'@outcome int', 
-						@output = @outcome;
+						@outcome = @outcome;
 
 					IF @outcome <> 0 
 						SET @error = N'Uknown Problem. Exception was not thrown when attempting to restart job; however, sp_start_job did NOT return a 0 (success).';
@@ -222,7 +236,7 @@ LoadShutDownTime:
 			END TRY 
 			BEGIN CATCH
 				SET @errorsEncountered = 1;
-				SET @output = 2;
+				SET @outcome = 2;
 				SELECT @error = N'Exception while attempting to restart job. [Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE() + N'].';
 			END CATCH
 
@@ -248,21 +262,30 @@ LoadShutDownTime:
 		GOTO SendOutputReport;  -- skip reporting... 
 
 	SELECT
-		@summary = @summary + N'details of stuff go here... ' + @crlf
+		@summary = @summary + @tab + '- ' + [job_name] + N' (' + CAST([job_id] AS sysname) + N')' + @crlf
+		+ @tab + @tab + N'Last Step Run: ' + CAST([last_job_step_id] AS sysname) + N' - ' + [last_attempted_step] + @crlf 
+		+ @tab + @tab + N'Previous Start Date: ' + CONVERT(sysname, [start_time], 112) + @crlf 
+		+ @tab + @tab + N'Restart Outcome: ' + CASE WHEN [restart_outcome] = 0 THEN N'RESTART SUCCEEDED ' ELSE N'ERROR -> [' + [errors] + N']' END + @crlf
+		+ @tab + @tab + N'Restart Operation:' + @crlf + @crlf + @tab + @tab + @tab + REPLACE([command], @crlf, @crlf + @tab + @tab + @tab) + @crlf
 	FROM 
 		[#JobsToRestart] 
 	ORDER BY 
 		[start_time];
 
-	SET @body = N'some sort of header would go here... '; 
+	SET @body = N'NON-COMPLETED SQL SERVER AGENT JOBS DETECTED: ' + @crlf;
+	SET @body = @body + @tab + N'The following Jobs were detected as non-complete (following a server reboot) and the actions listed below were taken: ' + @crlf;
+	SET @body = @body + @tab + @tab + CASE WHEN @errorsEncountered = 1 THEN 'NOTE: RESTART ERRORS _WERE_ ENCOUNTERED ' ELSE N'(Note: NO errors were encountered during restart attempts.)' END + @crlf + @crlf
+	SET @body = @body + N'JOB DETAILS:' + @crlf + @crlf;
 	SET @body = @body + @summary;
 
 SendOutputReport: 
 
 	IF @body IS NOT NULL BEGIN; -- if we've build up a 'body', then we have a message to send (otherwise, there was either nothing to report, or the 'need' to report was set to 0 via various options/switches). 
 		
-		DECLARE @emailSubject sysname; 
-
+		DECLARE @emailSubject sysname = @EmailSubjectPrefix; 
+		
+		IF @errorsEncountered = 1 
+			SET @emailSubject = @emailSubject + N'(ERRORS ENCOUNTERED)';
 
 		IF @PrintOnly = 1 BEGIN
 			PRINT @emailSubject;
