@@ -7,6 +7,9 @@
 			- can spit out as 'report' or as xml. 
 
 		- dbo.shrink_logfiles 
+
+			- FODDER??? https://tracyboggiano.com/archive/2017/09/high-vlf-count-fix/
+
 			- get a list of those that need to be resized... 
 			- attempte the resize...   (note: don't use a SPROC here... just send a "USE {dbname}; DBCC SHRINKFILE(2, {targetSize}); etc... " command to dbo.execute_command
 			- get a list of those that STILL need to be resized... 
