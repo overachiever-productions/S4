@@ -7,13 +7,13 @@
 		Example Usages: 
 
 				-- simple example: 
-				DECLARE @input nvarchar(MAX) = N'7:Xclelerator:Xcelerator_Clone5, 5:BayCare, 5:admindb:admindb_fake';
-				EXEC admindb.dbo.shred_string @input, N',', N':';
+				DECLARE @Input nvarchar(MAX) = N'7:Xclelerator:Xcelerator_Clone5, 5:BayCare, 5:admindb:admindb_fake';
+				EXEC admindb.dbo.shred_string @Input, N',', N':';
 
 
 				-- using WITH RESULTSETS to 'refine' the output: 
-				DECLARE @input nvarchar(MAX) = N'7:Xclelerator:Xcelerator_Clone5, 5:BayCare, 5:admindb:admindb_fake';
-				EXEC admindb.dbo.shred_string @input, N',', N':'
+				DECLARE @Input nvarchar(MAX) = N'7:Xclelerator:Xcelerator_Clone5, 5:BayCare, 5:admindb:admindb_fake';
+				EXEC admindb.dbo.shred_string @Input, N',', N':'
 				WITH RESULT SETS ( 
 					(
 						row_id int, 
@@ -34,9 +34,9 @@ IF OBJECT_ID('dbo.shred_string','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.shred_string
-	@input						nvarchar(MAX), 
-	@rowDelimiter				nvarchar(10) = N',', 
-	@columnDelimiter			nvarchar(10) = N':'
+	@Input						nvarchar(MAX), 
+	@RowDelimiter				nvarchar(10) = N',', 
+	@ColumnDelimiter			nvarchar(10) = N':'
 AS 
 	SET NOCOUNT ON; 
 
@@ -49,12 +49,12 @@ AS
 
 	INSERT INTO @rows ([row_id], [result])
 	SELECT [row_id], [result] 
-	FROM admindb.[dbo].[split_string](@input, @rowDelimiter, 1);
+	FROM admindb.[dbo].[split_string](@Input, @RowDelimiter, 1);
 
 	DECLARE @columnCountMax int = 0;
 
 	SELECT 
-		@columnCountMax = 1 + MAX(dbo.count_matches([result], @columnDelimiter)) 
+		@columnCountMax = 1 + MAX(dbo.count_matches([result], @ColumnDelimiter)) 
 	FROM 
 		@rows;
 
@@ -75,7 +75,7 @@ AS
 	WHILE (@currentRow IS NOT NULL) BEGIN 
 
 		INSERT INTO #pivoted ([row_id], [column_id], [result])
-		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter, 1);
+		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @ColumnDelimiter, 1);
 
 		SET @currentRowID = @currentRowID + 1;
 		SET @currentRow = (SELECT [result] FROM @rows WHERE [row_id] = @currentRowID);

@@ -529,6 +529,14 @@ IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
 END;
 GO
 
+--------------------------------------------------------------
+-- Potential FORMER disk monitoring alerts: 
+IF OBJECT_ID('dbo.dba_drivespace_checks','P') IS NOT NULL BEGIN
+	DROP PROC dbo.dba_drivespace_checks;
+	SELECT 'NOTE: dbo.dba_drivespace_checks was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required (alert filtering)];
+END;
+GO
+
 -------------------------------------------------------------
 -- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
 USE [admindb];
@@ -610,10 +618,19 @@ GO
 --##INCLUDE: Common\get_time_vector.sql
 
 -----------------------------------
+--##INCLUDE: Common\get_vector.sql
+
+-----------------------------------
+--##INCLUDE: Common\get_vector_delay.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
 
 -----------------------------------
 --##INCLUDE: Common\execute_uncatchable_command.sql
+
+-----------------------------------
+--##INCLUDE: Common\execute_command.sql
 
 -----------------------------------
 --##INCLUDE: Common\load_databases.sql
@@ -698,6 +715,16 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\monitor_transaction_durations.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Maintenance
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Maintenance\Automated Log Shrinking\list_logfile_sizes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Maintenance\Automated Log Shrinking\shrink_logfiles.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Tools

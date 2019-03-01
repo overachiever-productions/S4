@@ -273,6 +273,8 @@ AS
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
 		SET @Directives = LTRIM(RTRIM(@Directives));
 		
+		IF UPPER(@Directives) = N'COPY_ONLY' SET @Directives = N'COPY_ONLY:';  -- yeah, it's a hack... but meh.
+
 		DECLARE @allDirectives table ( 
 			row_id int NOT NULL, 
 			directive_type	sysname NOT NULL, 
@@ -498,7 +500,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{type}', N'LOG');
 
-		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) <= 10.5 AND @Edition NOT IN ('ENTERPRISE'))
+		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) < 10.5 AND @Edition NOT IN ('ENTERPRISE'))
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'');
 		ELSE 
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'COMPRESSION, ');

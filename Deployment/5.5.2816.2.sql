@@ -6,7 +6,7 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.4.2806.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.4.2806.1.
+		- This script will either install/deploy S4 version 5.5.2816.2 or upgrade a PREVIOUSLY deployed version of S4 to 5.5.2816.2.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -20,7 +20,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.4.2806.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 5.5.2816.2 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -99,7 +99,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.4.2806.1';
+DECLARE @CurrentVersion varchar(20) = N'5.5.2816.2';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -638,7 +638,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -676,7 +676,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -710,7 +710,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -795,7 +795,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -832,7 +832,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -903,7 +903,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output int = 0;
 
@@ -987,7 +987,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -1062,7 +1062,7 @@ CREATE PROC dbo.get_time_vector
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- cleanup:
 	SET @Vector = LTRIM(RTRIM(@Vector));
@@ -1143,6 +1143,12 @@ AS
 
 	RETURN 0;
 GO
+
+
+-----------------------------------
+
+
+-----------------------------------
 
 
 -----------------------------------
@@ -1249,7 +1255,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
@@ -1342,6 +1348,233 @@ GO
 USE [admindb];
 GO
 
+
+IF OBJECT_ID('dbo.execute_command','P') IS NOT NULL
+	DROP PROC dbo.execute_command;
+GO
+
+CREATE PROC dbo.execute_command
+	@Command								nvarchar(MAX), 
+	@ExecutionType							sysname						= N'EXEC',							-- { EXEC | SHELL | PARTNER }
+	@ExecutionRetryCount					int							= 2,								-- number of times to try executing process - until either success (no error) or @ExecutionRetryCount reached. 
+	@DelayBetweenAttempts					sysname						= N'5s',
+	
+	@IgnoredResults							nvarchar(2000)				= N'[COMMAND_SUCCESS]',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, [tokens]'. Allowed Tokens: [COMMAND_SUCCESS] | [USE_DB_SUCCESS] | [ROWS_AFFECTED] | [BACKUP] | [RESTORE] | [SHRINKLOG] | [DBCC] ... 
+
+	@Results								xml							OUTPUT
+AS
+	SET NOCOUNT ON; 
+
+	-- {copyright} 
+
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+
+	-- split_string
+	-- get_vector_dealy
+	
+
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
+	IF @ExecutionRetryCount <= 0 SET @ExecutionRetryCount = 1;
+
+
+	-- if @ExecutionType = PARTNER, make sure we have a PARTNER entry in sys.servers... 
+
+
+	-- for SHELL and PARTNER... final 'statement' needs to be varchar(4000) or less. 
+
+	DECLARE @delay sysname; 
+	DECLARE @error nvarchar(MAX);
+	EXEC [admindb].dbo.[get_vector_delay]
+	    @Vector = @DelayBetweenAttempts,
+	    @ParameterName = N'@DelayBetweenAttempts',
+	    @Output = @delay OUTPUT, 
+	    @Error = @error OUTPUT;
+
+	IF @error IS NOT NULL BEGIN 
+		RAISERROR(@error, 16, 1);
+		RETURN -5;
+	END;
+
+	-----------------------------------------------------------------------------
+	-- Processing: 
+	DECLARE @ExecutionAttemptCount int = 0; -- set to 1 during first exectuion attempt:
+	DECLARE @succeeded bit = 0;
+
+	DECLARE @filters table (
+		filter_type varchar(20) NOT NULL, 
+		filter_text varchar(2000) NOT NULL
+	); 
+	
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[USE_DB_SUCCESS]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('USE_DB_SUCCESS', 'Changed database context to ''%');
+		
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[USE_DB_SUCCESS]', N'');
+	END; 
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[COMMAND_SUCCESS]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('COMMAND_SUCCESS', 'Command(s) completed successfully.');
+		
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[COMMAND_SUCCESS]', N'');
+	END; 
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[ROWS_AFFECTED]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('ROWS_AFFECTED', '% rows affected)%');
+		
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[ROWS_AFFECTED]', N'');
+	END; 
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[BACKUP]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('BACKUP', 'Processed % pages for database %'),
+			('BACKUP', 'BACKUP DATABASE successfully processed % pages in %'),
+			('BACKUP', 'BACKUP DATABASE WITH DIFFERENTIAL successfully processed % pages in %'),
+			('BACKUP', 'BACKUP LOG successfully processed % pages in %'),
+			('BACKUP', 'BACKUP DATABASE...FILE=<name> successfully processed % pages in % seconds %).'), -- for file/filegroup backups
+			('BACKUP', 'The log was not truncated because records at the beginning %sp_repldone% to mark transactions as distributed %');  -- NOTE: should only be enabled on systems where there's a JOB to force cleanup of replication in log... 
+		
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[BACKUP]', N'');
+	END; 
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[RESTORE]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('RESTORE', 'RESTORE DATABASE successfully processed % pages in %'),
+			('RESTORE', 'RESTORE LOG successfully processed % pages in %'),
+			('RESTORE', 'Processed % pages for database %'),
+			('RESTORE', 'Converting database % from version % to the current version %'),    -- whenever there's a patch or upgrade... 
+			('RESTORE', 'Database % running the upgrade step from version % to version %.'),	-- whenever there's a patch or upgrade... 
+			('RESTORE', 'RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).');  -- partial recovery operations... 
+		
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[RESTORE]', N'');
+	END;
+
+	INSERT INTO @filters ([filter_type], [filter_text])
+	SELECT 'CUSTOM', [result] FROM dbo.[split_string](@IgnoredResults, N',', 1) WHERE LEN([result]) > 0;
+
+	CREATE TABLE #Results (
+		result_id int IDENTITY(1,1),
+		result nvarchar(MAX)
+	);
+
+	DECLARE @result nvarchar(MAX);
+	DECLARE @resultDetails table ( 
+		result_id int IDENTITY(1,1) NOT NULL, 
+		execution_time datetime NOT NULL DEFAULT (GETDATE()),
+		result nvarchar(MAX) NOT NULL
+	);
+
+	DECLARE @xpCmd varchar(2000);
+	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
+	DECLARE @serverName sysname = '';
+
+	SET @xpCmd = 'sqlcmd {0} -q "' + REPLACE(@Command, @crlf, ' ') + '"';
+	IF UPPER(@ExecutionType) = N'SHELL' BEGIN 
+		
+		IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
+			SET @serverName = N' -S .\' + @@SERVICENAME;
+		
+		SET @xpCmd = REPLACE(@xpCmd, '{0}', @serverName);
+	END; 
+
+	IF UPPER(@ExecutionType) = N'PARTNER' BEGIN 
+		SELECT @serverName = REPLACE(data_source, N'tcp:', N'') FROM sys.servers WHERE [name] = N'PARTNER';
+
+-- TODO: ensure that this accounts for named instances:
+		SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
+	END; 
+	
+ExecutionAttempt:
+	
+	SET @ExecutionAttemptCount = @ExecutionAttemptCount + 1;
+	SET @result = NULL;
+
+	BEGIN TRY 
+
+		IF UPPER(@ExecutionType) = N'EXEC' BEGIN 
+			
+			EXEC sp_executesql @Command; 
+			SET @succeeded = 1;
+
+		  END; 
+		ELSE BEGIN 
+			DELETE FROM #Results;
+
+			INSERT INTO #Results (result) 
+			EXEC master.sys.[xp_cmdshell] @xpCmd;
+
+			DELETE r
+			FROM 
+				#Results r 
+				INNER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]);
+
+			IF EXISTS(SELECT NULL FROM [#Results] WHERE [result] IS NOT NULL) BEGIN 
+				SET @result = N'';
+				SELECT 
+					@result = @result + [result] + CHAR(13) + CHAR(10)
+				FROM 
+					[#Results] 
+				WHERE 
+					[result] IS NOT NULL
+				ORDER BY 
+					[result_id]; 
+									
+			  END;
+			ELSE BEGIN 
+				SET @succeeded = 1;
+			END;
+		END;
+	END TRY
+
+	BEGIN CATCH 
+		SET @result = N'EXCEPTION: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+	END CATCH;
+	
+	IF @result IS NOT NULL BEGIN 
+		INSERT INTO @resultDetails ([result])
+		VALUES 
+			(@result);
+	END; 
+
+	IF @succeeded = 0 BEGIN 
+		IF @ExecutionAttemptCount < @ExecutionRetryCount BEGIN 
+			WAITFOR DELAY @delay; 
+			GOTO ExecutionAttempt;
+		END;
+	END;  
+
+	IF EXISTS(SELECT NULL FROM @resultDetails) BEGIN
+		SELECT @Results = (SELECT 
+			[result_id] [result/@id],  
+            [execution_time] [result/@timestamp], 
+            [result]
+		FROM 
+			@resultDetails 
+		ORDER BY 
+			[result_id]
+		FOR XML PATH(''), ROOT('results'));
+	END; 
+
+	IF @succeeded = 1
+		RETURN 0;
+
+	RETURN 1;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 	DROP PROC dbo.load_databases;
 GO
@@ -1364,7 +1597,7 @@ CREATE PROC dbo.load_databases
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1666,13 +1899,13 @@ IF OBJECT_ID('dbo.shred_string','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.shred_string
-	@input						nvarchar(MAX), 
-	@rowDelimiter				nvarchar(10) = N',', 
-	@columnDelimiter			nvarchar(10) = N':'
+	@Input						nvarchar(MAX), 
+	@RowDelimiter				nvarchar(10) = N',', 
+	@ColumnDelimiter			nvarchar(10) = N':'
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -1681,12 +1914,12 @@ AS
 
 	INSERT INTO @rows ([row_id], [result])
 	SELECT [row_id], [result] 
-	FROM admindb.[dbo].[split_string](@input, @rowDelimiter, 1);
+	FROM admindb.[dbo].[split_string](@Input, @RowDelimiter, 1);
 
 	DECLARE @columnCountMax int = 0;
 
 	SELECT 
-		@columnCountMax = 1 + MAX(dbo.count_matches([result], @columnDelimiter)) 
+		@columnCountMax = 1 + MAX(dbo.count_matches([result], @ColumnDelimiter)) 
 	FROM 
 		@rows;
 
@@ -1707,7 +1940,7 @@ AS
 	WHILE (@currentRow IS NOT NULL) BEGIN 
 
 		INSERT INTO #pivoted ([row_id], [column_id], [result])
-		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @columnDelimiter, 1);
+		SELECT @currentRowID, row_id, [result] FROM [dbo].[split_string](@currentRow, @ColumnDelimiter, 1);
 
 		SET @currentRowID = @currentRowID + 1;
 		SET @currentRow = (SELECT [result] FROM @rows WHERE [row_id] = @currentRowID);
@@ -2718,7 +2951,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{type}', N'LOG');
 
-		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) <= 10.5 AND @Edition NOT IN ('ENTERPRISE'))
+		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) < 10.5 AND @Edition NOT IN ('ENTERPRISE'))
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'');
 		ELSE 
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'COMPRESSION, ');
@@ -4325,7 +4558,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -4413,7 +4646,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -5806,7 +6039,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6860,7 +7093,7 @@ CREATE PROC dbo.list_processes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7220,7 +7453,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7644,7 +7877,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -8735,7 +8968,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -8994,7 +9227,7 @@ CREATE PROC dbo.monitor_transaction_durations
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
@@ -9299,6 +9532,437 @@ GO
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Maintenance
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.shrink_logfiles','P') IS NOT NULL
+	DROP PROC dbo.shrink_logfiles;
+GO
+
+CREATE PROC dbo.shrink_logfiles
+	@TargetDatabases							nvarchar(MAX),																		-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToExclude							nvarchar(MAX)							= NULL,										-- { NULL | name1,name2 }  
+	@Priorities									nvarchar(MAX)							= NULL,										
+	@TargetLogPercentageSize					int										= 20,										-- can be > 100? i.e., 200? would be 200% - which ... i guess is legit, right? 
+	@ExcludeSimpleRecoveryDatabases				bit										= 1,										
+	@IgnoreLogFilesSmallerThanGBs				decimal(5,2)							= 0.25,										-- e.g., don't bother shrinking anything > 200MB in size... 								
+	@LogFileSizingBufferInGBs					decimal(5,2)							= 0.25,										-- a) when targetting a log for DBCC SHRINKFILE() add this into the target and b) when checking on dbs POST shrink, if they're under target + this Buffer, they're FINE/done/shrunk/ignored.
+	@MaxTimeToWaitForLogBackups					sysname									= N'20m',		
+	@LogBackupCheckPollingInterval				sysname									= N'40s',									-- Interval that defines how long to wait between 'polling' attempts to look for new T-LOG backups... 
+	@OperatorName								sysname									= N'Alerts',
+	@MailProfileName							sysname									= N'General',
+	@EmailSubjectPrefix							nvarchar(50)							= N'[Log Shrink Operations ] ',
+	@PrintOnly									bit										= 0
+AS
+	SET NOCOUNT ON; 
+
+	-- {copyright} 
+
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+	
+	-- get_vector
+
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
+
+	DECLARE @maxSecondsToWaitForLogFileBackups int; 
+	DECLARE @error nvarchar(MAX);
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+
+	EXEC [admindb].dbo.[get_vector]
+	    @Vector = @MaxTimeToWaitForLogBackups,
+	    @ParameterName = N'@MaxTimeToWaitForLogBackups',
+	    @AllowedIntervals = N's,m,h',
+	    @DatePart = N'SECOND',
+	    @Difference = @maxSecondsToWaitForLogFileBackups OUTPUT,
+	    @Error = @error OUTPUT;
+	
+	IF @error IS NOT NULL BEGIN 
+		RAISERROR(@error, 16, 1); 
+		RETURN -10;
+	END; 
+
+	DECLARE @waitDuration sysname;
+	EXEC admindb.dbo.[get_vector_delay]
+	    @Vector = @LogBackupCheckPollingInterval,
+	    @ParameterName = N'@LogBackupCheckPollingInterval',
+	    @Output = @waitDuration OUTPUT,
+	    @Error = @error OUTPUT;
+	
+	IF @error IS NOT NULL BEGIN 
+		RAISERROR(@error, 16, 1); 
+		RETURN -11;
+	END; 
+
+	-----------------------------------------------------------------------------
+	-- Processing: 
+	DECLARE @targetRatio decimal(6,2) = @TargetLogPercentageSize / 100.0;
+	DECLARE @BufferMBs int = CAST((@LogFileSizingBufferInGBs * 1024.0) AS int);  
+
+	-- get a list of dbs to target/review: 
+	CREATE TABLE #logSizes (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[database_name] sysname NOT NULL, 
+		[recovery_model] sysname NOT NULL,
+		[database_size_gb] decimal(20,2) NOT NULL, 
+		[log_size_gb] decimal(20,2) NOT NULL, 
+		[log_percent_used] decimal(5,2) NOT NULL,
+		[initial_min_allowed_gbs] decimal(20,2) NOT NULL, 
+		[target_log_size] decimal(20,2) NOT NULL, 
+		[operation] sysname NULL, 
+		[last_log_backup] datetime NULL, 
+		[processing_complete] bit NOT NULL DEFAULT (0)
+	);
+
+	CREATE TABLE #operations (
+		[row_id] int IDENTITY(1,1) NOT NULL, 
+		[database_name] sysname NOT NULL, 
+		[timestamp] datetime NOT NULL DEFAULT(GETDATE()), 
+		[operation] nvarchar(2000) NOT NULL, 
+		[outcome] nvarchar(MAX) NOT NULL, 
+	);
+
+	DECLARE @SerializedOutput xml = '';
+	EXEC [admindb].dbo.[list_logfile_sizes]
+	    @TargetDatabases = @TargetDatabases,
+	    @DatabasesToExclude = @DatabasesToExclude,
+	    @Priorities = @Priorities,
+	    @ExcludeSimpleRecoveryDatabases = @ExcludeSimpleRecoveryDatabases,
+	    @SerializedOutput = @SerializedOutput OUTPUT;
+	
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('database_name[1]', 'sysname') [database_name], 
+			[data].[row].value('recovery_model[1]', 'sysname') recovery_model, 
+			[data].[row].value('database_size_gb[1]', 'decimal(20,1)') database_size_gb, 
+			[data].[row].value('log_size_gb[1]', 'decimal(20,1)') log_size_gb,
+			[data].[row].value('log_percent_used[1]', 'decimal(5,2)') log_percent_used, 
+			--[data].[row].value('vlf_count[1]', 'int') vlf_count,
+			--[data].[row].value('log_as_percent_of_db_size[1]', 'decimal(5,2)') log_as_percent_of_db_size,
+			[data].[row].value('mimimum_allowable_log_size_gb[1]', 'decimal(20,1)') [initial_min_allowed_gbs]
+		FROM 
+			@SerializedOutput.nodes('//database') [data]([row])
+	), 
+	targets AS ( 
+		SELECT
+			[database_name],
+			CAST(([shredded].[database_size_gb] * @targetRatio) AS decimal(20,2)) [target_log_size] 
+		FROM 
+			[shredded]
+	) 
+	
+	INSERT INTO [#logSizes] ( [database_name], [recovery_model], [database_size_gb], [log_size_gb], [log_percent_used], [initial_min_allowed_gbs], [target_log_size])
+	SELECT 
+		[s].[database_name],
+        [s].[recovery_model],
+        [s].[database_size_gb],
+        [s].[log_size_gb],
+        [s].[log_percent_used],
+        [s].[initial_min_allowed_gbs] [starting_mimimum_allowable_log_size_gb], 
+		CAST((CASE WHEN t.[target_log_size] < @IgnoreLogFilesSmallerThanGBs THEN @IgnoreLogFilesSmallerThanGBs ELSE t.[target_log_size] END) AS decimal(20,2)) [target_log_size]
+	FROM 
+		[shredded] s 
+		INNER JOIN [targets] t ON [s].[database_name] = [t].[database_name];
+
+	WITH operations AS ( 
+		SELECT 
+			[database_name], 
+			CASE 
+				WHEN [log_size_gb] <= [target_log_size] THEN 'NOTHING' -- N'N/A - Log file is already at target size or smaller. (Current Size: ' + CAST([log_size_gb] AS sysname) + N' GB - Target Size: ' + CAST([target_log_size] AS sysname) + N' GB)'
+				ELSE CASE 
+					WHEN [initial_min_allowed_gbs] <= ([target_log_size] + @LogFileSizingBufferInGBs) THEN 'SHRINK'
+					ELSE N'CHECKPOINT + BACKUP + SHRINK'
+				END
+			END [operation]
+		FROM 
+			[#logSizes]
+	) 
+
+	UPDATE x 
+	SET 
+		x.[operation] = o.[operation]
+	FROM 
+		[#logSizes] x 
+		INNER JOIN [operations] o ON [x].[database_name] = [o].[database_name];
+
+	IF EXISTS (SELECT NULL FROM [#logSizes] WHERE [operation] = N'NOTHING') BEGIN 
+		INSERT INTO [#operations] ([database_name], [operation], [outcome])
+		SELECT 
+			[database_name],
+			N'NOTHING. Log file is already at target size or smaller. (Current Size: ' + CAST([log_size_gb] AS sysname) + N' GB - Target Size: ' + CAST([target_log_size] AS sysname) + N' GB)' [operation],
+			N'' [outcome]
+		FROM 
+			[#logSizes] 
+		WHERE 
+			[operation] = N'NOTHING'
+		ORDER BY 
+			[row_id];
+
+		UPDATE [#logSizes] 
+		SET 
+			[processing_complete] = 1
+		WHERE 
+			[operation] = N'NOTHING';
+	END;
+
+	DECLARE @returnValue int;
+	DECLARE @outcome nvarchar(MAX);
+	DECLARE @currentDatabase sysname;
+	DECLARE @targetSize int;
+	DECLARE @command nvarchar(2000); 
+	DECLARE @executionResults xml;
+
+	DECLARE @checkpointComplete datetime; 
+	DECLARE @waitStarted datetime;
+	IF EXISTS (SELECT NULL FROM [#logSizes] WHERE [operation] = N'CHECKPOINT + BACKUP + SHRINK') BEGIN 
+		
+		-- start by grabbing the latest backups: 
+		UPDATE [ls]
+		SET 
+			ls.[last_log_backup] = x.[backup_finish_date]
+		FROM 
+			[#logSizes] ls
+			INNER JOIN ( 
+				SELECT
+					[database_name],
+					MAX([backup_finish_date]) [backup_finish_date]
+				FROM 
+					msdb.dbo.[backupset]
+				WHERE 
+					[type] = 'L'
+				GROUP BY 
+					[database_name]
+			) x ON [ls].[database_name] = [x].[database_name]
+		WHERE 
+			ls.[processing_complete] = 0 AND [operation] = N'CHECKPOINT + BACKUP + SHRINK';
+
+		SET @command = N'CHECKPOINT; ' + @crlf + N'CHECKPOINT;' + @crlf + N'CHECKPOINT;';
+		
+		IF @PrintOnly = 1 
+			PRINT @command;
+		ELSE BEGIN 
+			
+			EXEC @returnValue = [admindb].dbo.[execute_command]
+			    @Command = @command,
+			    @ExecutionType = N'SHELL',
+			    @ExecutionRetryCount = 1, 
+			    @DelayBetweenAttempts = N'5s',
+			    @Results = @executionResults OUTPUT 
+			
+			IF @returnValue = 0	BEGIN
+				SET @outcome = N'SUCCESS';
+			  END;
+			ELSE BEGIN
+				SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+			END;
+
+			SET @checkpointComplete = GETDATE();
+
+			INSERT INTO [#operations] ([database_name], [timestamp], [operation], [outcome])
+			SELECT 
+				[database_name],
+				@checkpointComplete [timestamp], 
+				@command [operation],
+				@outcome [outcome]
+			FROM 
+				[#logSizes] 
+			WHERE 
+				[operation] = N'CHECKPOINT + BACKUP + SHRINK'
+			ORDER BY 
+				[row_id];
+
+			IF @returnValue <> 0 BEGIN
+				-- we needed a checkpoint before we could go any further... it didn't work (somhow... not even sure that's a possibility)... so, we're 'done'. we need to terminate early.
+				PRINT 'run an update where operation = checkpoint/backup/shrink and set those pigs to done with an ''early termination'' summary as the operation... we can keep trying other dbs... ';
+			END;
+
+		END;
+
+		SET @waitStarted = GETDATE();
+WaitAndCheck:
+		
+		IF @PrintOnly = 1 BEGIN 
+			SET @command = N'';
+			SELECT @command = @command + [database_name] + N', ' FROM [#logSizes] WHERE [operation] = N'CHECKPOINT + BACKUP + SHRINK';
+			
+			PRINT N'-- NOTE: LogFileBackups of the following databases are required before processing can continue: '
+			PRINT N'--		' + LEFT(@command, LEN(@command) - 1);
+
+			GOTO ShrinkLogFile;
+		END;
+
+		WAITFOR DELAY @waitDuration;  -- Wait, then poll for new T-LOG backups:
+-- TODO: arguably... i could keep track of the # of dbs we're waiting on ... and, each time we detect that a new DB has been T-log backed up... i could 'GOTO ShrinkDBs;' and then... if there are any dbs to process (at the end of that block of logic (i.e., @dbsWaitingOn > 0) then... GOTO WaitAndStuff;.. and, then, just tweak the way we do the final error/check - as in, if we've waited too long and stil have dbs to process, then.. we log the error message and 'goto' some other location (the end).
+--			that way, say we've got t-logs cycling at roughly 2-3 minute intervals over the next N minutes... ... currently, if we're going to wait up to 20 minutes, we'll wait until ALL of them have been be backed up (or as many as we could get to before we timed out) and then PROCESS ALL of them. 
+--				the logic above would, effectively, process each db _AS_ its t-log backup was completed... making it a bit more 'robust' and better ... 
+		-- keep looping/waiting while a) we have time left, and b) there are dbs that have NOT been backed up.... 
+		IF DATEDIFF(MINUTE, @waitStarted, GETDATE()) < @maxSecondsToWaitForLogFileBackups BEGIN 
+			IF EXISTS (SELECT NULL FROM [#logSizes] ls 
+				INNER JOIN (SELECT [database_name], MAX([backup_finish_date]) latest FROM msdb.dbo.[backupset] WHERE type = 'L' GROUP BY [database_name]) x ON ls.[database_name] = [x].[database_name] 
+					WHERE ls.[last_log_backup] IS NOT NULL AND x.[latest] < @checkpointComplete
+			) BEGIN
+					GOTO WaitAndCheck;
+			END;
+		END;
+
+		-- done waiting - either we've now got T-LOG backups for all DBs, or we hit our max wait time: 
+		INSERT INTO [#operations] ([database_name], [operation], [outcome])
+		SELECT 
+			ls.[database_name], 
+			N'TIMEOUT' [operation], 
+			N'Max Wait Time of (N) reached - last t-log backup of x was found (vs t-log backup > checkpoint date that was needed. SHRINKFILE won''t work.. ' [outcome]
+		FROM 
+			[#logSizes] ls 
+			INNER JOIN ( 
+				SELECT
+					[database_name],
+					MAX([backup_finish_date]) [backup_finish_date]
+				FROM 
+					msdb.dbo.[backupset]
+				WHERE 
+					[type] = 'L'
+				GROUP BY 
+					[database_name]
+			) x ON [ls].[database_name] = [x].[database_name] 
+		WHERE 
+			ls.[operation] = N'CHECKPOINT + BACKUP + SHRINK'
+			AND x.[backup_finish_date] < @checkpointComplete;
+		
+	END;
+
+
+ShrinkLogFile:
+	IF EXISTS (SELECT NULL FROM [#logSizes] WHERE ([operation] = N'SHRINK') OR ([operation] = N'CHECKPOINT + BACKUP + SHRINK')) BEGIN 
+		
+		DECLARE @minLogFileSize int = CAST((@IgnoreLogFilesSmallerThanGBs * 1024.0) as int);
+		DECLARE shrinker CURSOR LOCAL READ_ONLY FAST_FORWARD FOR 
+		SELECT [database_name], (CAST(([target_log_size] * 1024.0) AS int) - @BufferMBs) [target_log_size] FROM [#logSizes] WHERE [processing_complete] = 0 AND ([operation] = N'SHRINK') OR ([operation] = N'CHECKPOINT + BACKUP + SHRINK');
+
+		OPEN [shrinker]; 
+		FETCH NEXT FROM [shrinker] INTO @currentDatabase, @targetSize;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN
+
+			BEGIN TRY 
+
+				IF @targetSize < @minLogFileSize
+					SET @targetSize = @minLogFileSize;
+
+				SET @command = N'USE [{database}];' + @crlf + N'DBCC SHRINKFILE(2, {size}) WITH NO_INFOMSGS;';
+				SET @command = REPLACE(@command, N'{database}', @currentDatabase);
+				SET @command = REPLACE(@command, N'{size}', @targetSize);
+
+				IF @PrintOnly = 1 BEGIN
+					PRINT @command; 
+					SET @outcome = N'';
+				  END;
+				ELSE BEGIN
+					
+					EXEC @returnValue = [admindb].dbo.[execute_command]
+					    @Command = @command, 
+					    @ExecutionType = N'SHELL', 
+					    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS]', 
+					    @Results = @executionResults OUTPUT;
+					
+					IF @returnValue = 0
+						SET @outcome = N'SUCCESS';	
+					ELSE 
+						SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+				END;
+				
+			END TRY 
+			BEGIN CATCH 
+				SET @outcome = N'EXCEPTION: ' + CAST(ERROR_LINE() AS sysname ) + N' - ' + ERROR_MESSAGE();
+			END	CATCH
+
+			INSERT INTO [#operations] ([database_name], [operation], [outcome])
+			VALUES (@currentDatabase, @command, @outcome);
+
+			FETCH NEXT FROM [shrinker] INTO @currentDatabase, @targetSize;
+		END;
+
+		CLOSE shrinker;
+		DEALLOCATE [shrinker];
+
+	END; 
+
+
+
+	-- TODO: final operation... 
+	--   a) go get a new 'logFileSizes' report... 
+	--	b) report on any t-logs that are still > target... 
+
+	-- otherwise... spit out whatever form of output/report would make sense at this point... where... we can bind #operations up as XML ... as a set of details about what happened here... 
+
+	SET @SerializedOutput = '';
+	EXEC [admindb].dbo.[list_logfile_sizes]
+	    @TargetDatabases = @TargetDatabases,
+	    @DatabasesToExclude = @DatabasesToExclude,
+	    @Priorities = @Priorities,
+	    @ExcludeSimpleRecoveryDatabases = @ExcludeSimpleRecoveryDatabases,
+	    @SerializedOutput = @SerializedOutput OUTPUT;
+
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('database_name[1]', 'sysname') [database_name], 
+			[data].[row].value('recovery_model[1]', 'sysname') recovery_model, 
+			[data].[row].value('database_size_gb[1]', 'decimal(20,1)') database_size_gb, 
+			[data].[row].value('log_size_gb[1]', 'decimal(20,1)') log_size_gb,
+			[data].[row].value('log_percent_used[1]', 'decimal(5,2)') log_percent_used, 
+			--[data].[row].value('vlf_count[1]', 'int') vlf_count,
+			--[data].[row].value('log_as_percent_of_db_size[1]', 'decimal(5,2)') log_as_percent_of_db_size,
+			[data].[row].value('mimimum_allowable_log_size_gb[1]', 'decimal(20,1)') [initial_min_allowed_gbs]
+		FROM 
+			@SerializedOutput.nodes('//database') [data]([row])
+	)
+
+	SELECT 
+		[origin].[database_name], 
+		[origin].[database_size_gb], 
+		[origin].[log_size_gb] [original_log_size_gb], 
+		[origin].[target_log_size], 
+		x.[log_size_gb] [current_log_size_gb], 
+		CASE WHEN (x.[log_size_gb] - @LogFileSizingBufferInGBs) <= [origin].[target_log_size] THEN 'SUCCESS' ELSE 'FAILURE' END [shrink_outcome], 
+		CAST((
+			SELECT  
+				[row_id] [operation/@id],
+				[timestamp] [operation/@timestamp],
+				[operation],
+				[outcome]		
+			FROM 
+				[#operations] o 
+			WHERE 
+				o.[database_name] = x.[database_name]
+			ORDER BY 
+				[o].[row_id]
+			FOR XML PATH('operation'), ROOT('operations')) AS xml) [xml_operations]		
+	FROM 
+		[shredded] x 
+		INNER JOIN [#logSizes] origin ON [x].[database_name] = [origin].[database_name]
+	ORDER BY 
+		[origin].[row_id];
+
+	-- TODO: send email alerts based on outcomes above (specifically, pass/fail and such).
+
+
+	RETURN 0;
+GO
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Tools
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -9318,7 +9982,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -9461,7 +10125,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -12529,7 +13193,7 @@ CREATE PROC dbo.generate_audit_signature
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -12598,7 +13262,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -12773,7 +13437,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -12891,7 +13555,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.4.2806.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -13033,8 +13697,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.4.2806.1';
-DECLARE @VersionDescription nvarchar(200) = N'Ability to specify directives for backup and restore operations - including COPY_ONLY, FILE/FILEGROUP, etc.';
+DECLARE @CurrentVersion varchar(20) = N'5.5.2816.2';
+DECLARE @VersionDescription nvarchar(200) = N'Initial introduction of logic for automated log-shrinking';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
