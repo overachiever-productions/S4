@@ -416,12 +416,64 @@ ShrinkLogFile:
 
 	END; 
 
+
+
 	-- TODO: final operation... 
 	--   a) go get a new 'logFileSizes' report... 
 	--	b) report on any t-logs that are still > target... 
 
 	-- otherwise... spit out whatever form of output/report would make sense at this point... where... we can bind #operations up as XML ... as a set of details about what happened here... 
 
-	SELECT * FROM [#logSizes];
+	SET @SerializedOutput = '';
+	EXEC [admindb].dbo.[list_logfile_sizes]
+	    @TargetDatabases = @TargetDatabases,
+	    @DatabasesToExclude = @DatabasesToExclude,
+	    @Priorities = @Priorities,
+	    @ExcludeSimpleRecoveryDatabases = @ExcludeSimpleRecoveryDatabases,
+	    @SerializedOutput = @SerializedOutput OUTPUT;
 
-	SELECT * FROM [#operations];
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('database_name[1]', 'sysname') [database_name], 
+			[data].[row].value('recovery_model[1]', 'sysname') recovery_model, 
+			[data].[row].value('database_size_gb[1]', 'decimal(20,1)') database_size_gb, 
+			[data].[row].value('log_size_gb[1]', 'decimal(20,1)') log_size_gb,
+			[data].[row].value('log_percent_used[1]', 'decimal(5,2)') log_percent_used, 
+			--[data].[row].value('vlf_count[1]', 'int') vlf_count,
+			--[data].[row].value('log_as_percent_of_db_size[1]', 'decimal(5,2)') log_as_percent_of_db_size,
+			[data].[row].value('mimimum_allowable_log_size_gb[1]', 'decimal(20,1)') [initial_min_allowed_gbs]
+		FROM 
+			@SerializedOutput.nodes('//database') [data]([row])
+	)
+
+	SELECT 
+		[origin].[database_name], 
+		[origin].[database_size_gb], 
+		[origin].[log_size_gb] [original_log_size_gb], 
+		[origin].[target_log_size], 
+		x.[log_size_gb] [current_log_size_gb], 
+		CASE WHEN (x.[log_size_gb] - @LogFileSizingBufferInGBs) <= [origin].[target_log_size] THEN 'SUCCESS' ELSE 'FAILURE' END [shrink_outcome], 
+		CAST((
+			SELECT  
+				[row_id] [operation/@id],
+				[timestamp] [operation/@timestamp],
+				[operation],
+				[outcome]		
+			FROM 
+				[#operations] o 
+			WHERE 
+				o.[database_name] = x.[database_name]
+			ORDER BY 
+				[o].[row_id]
+			FOR XML PATH('operation'), ROOT('operations')) AS xml) [xml_operations]		
+	FROM 
+		[shredded] x 
+		INNER JOIN [#logSizes] origin ON [x].[database_name] = [origin].[database_name]
+	ORDER BY 
+		[origin].[row_id];
+
+	-- TODO: send email alerts based on outcomes above (specifically, pass/fail and such).
+
+
+	RETURN 0;
+GO
