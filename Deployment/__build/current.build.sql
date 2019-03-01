@@ -721,10 +721,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Maintenance\list_logfile_sizes.sql
+--##INCLUDE: S4 Maintenance\Automated Log Shrinking\list_logfile_sizes.sql
 
 -----------------------------------
---##INCLUDE: S4 Maintenance\shrink_logfiles.sql
+--##INCLUDE: S4 Maintenance\Automated Log Shrinking\shrink_logfiles.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Tools
