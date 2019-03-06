@@ -1,6 +1,7 @@
 
 
 /*
+
 	TODO: 
 		- this current implementation is, in some ways, an MVP. Specifically, there are some known problems/issues/tweaks that should be made to get this up to speed: 
 			- For starters, I need to 'finish' this - right now it just spits out SELECTs from both of the 'temp tables' it uses along the way. Instead, I need to output some sort of summary or whatever... 
@@ -264,49 +265,61 @@ AS
 					[database_name]
 			) x ON [ls].[database_name] = [x].[database_name]
 		WHERE 
-			ls.[processing_complete] = 0 AND [operation] = N'CHECKPOINT + BACKUP + SHRINK';
+			ls.[processing_complete] = 0 AND ls.[operation] = N'CHECKPOINT + BACKUP + SHRINK';
 
-		SET @command = N'CHECKPOINT; ' + @crlf + N'CHECKPOINT;' + @crlf + N'CHECKPOINT;';
-		
-		IF @PrintOnly = 1 
-			PRINT @command;
-		ELSE BEGIN 
+
+		DECLARE @checkpointTemplate nvarchar(200) = N'USE [{0}]; ' + @crlf + N'CHECKPOINT; ' + @crlf + N'CHECKPOINT;' + @crlf + N'CHECKPOINT;';
+		DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			[database_name]
+		FROM 
+			[#logSizes] 
+		WHERE 
+			[processing_complete] = 0 AND [operation] = N'CHECKPOINT + BACKUP + SHRINK';
+
+		OPEN walker; 
+		FETCH NEXT FROM walker INTO @currentDatabase;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN
+
+			SET @command = REPLACE(@checkpointTemplate, N'{0}', @currentDatabase);
+
+			IF @PrintOnly = 1 
+				PRINT @command;
+			ELSE BEGIN 
 			
-			EXEC @returnValue = [admindb].dbo.[execute_command]
-			    @Command = @command,
-			    @ExecutionType = N'SHELL',
-			    @ExecutionRetryCount = 1, 
-			    @DelayBetweenAttempts = N'5s',
-			    @Results = @executionResults OUTPUT 
+				EXEC @returnValue = [admindb].dbo.[execute_command]
+					@Command = @command,
+					@ExecutionType = N'SHELL',
+					@ExecutionRetryCount = 1, 
+					@DelayBetweenAttempts = N'5s',
+					@Results = @executionResults OUTPUT 
 			
-			IF @returnValue = 0	BEGIN
-				SET @outcome = N'SUCCESS';
-			  END;
-			ELSE BEGIN
-				SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+				IF @returnValue = 0	BEGIN
+					SET @outcome = N'SUCCESS';
+				  END;
+				ELSE BEGIN
+					SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+				END;
+
+				SET @checkpointComplete = GETDATE();
+
+				INSERT INTO [#operations] ([database_name], [timestamp], [operation], [outcome])
+				VALUES (@currentDatabase, @checkpointComplete, @command, @outcome);
+
+				IF @returnValue <> 0 BEGIN
+					-- we needed a checkpoint before we could go any further... it didn't work (somhow... not even sure that's a possibility)... so, we're 'done'. we need to terminate early.
+					PRINT 'run an update where operation = checkpoint/backup/shrink and set those pigs to done with an ''early termination'' summary as the operation... we can keep trying other dbs... ';
+				END;
+
 			END;
 
-			SET @checkpointComplete = GETDATE();
-
-			INSERT INTO [#operations] ([database_name], [timestamp], [operation], [outcome])
-			SELECT 
-				[database_name],
-				@checkpointComplete [timestamp], 
-				@command [operation],
-				@outcome [outcome]
-			FROM 
-				[#logSizes] 
-			WHERE 
-				[operation] = N'CHECKPOINT + BACKUP + SHRINK'
-			ORDER BY 
-				[row_id];
-
-			IF @returnValue <> 0 BEGIN
-				-- we needed a checkpoint before we could go any further... it didn't work (somhow... not even sure that's a possibility)... so, we're 'done'. we need to terminate early.
-				PRINT 'run an update where operation = checkpoint/backup/shrink and set those pigs to done with an ''early termination'' summary as the operation... we can keep trying other dbs... ';
-			END;
-
+			FETCH NEXT FROM walker INTO @currentDatabase;
 		END;
+
+		CLOSE walker;
+		DEALLOCATE walker;
+
 
 		SET @waitStarted = GETDATE();
 WaitAndCheck:
@@ -474,6 +487,15 @@ ShrinkLogFile:
 
 	-- TODO: send email alerts based on outcomes above (specifically, pass/fail and such).
 
+	-- in terms of output: 
+	--		want to see those that PASSED and those that FAILED> 
+	--			also? I'd like to see a summary of how much disk was reclaimed ... and how much stands to be reclaimed if/when we fix the 'FAILURE' outcomes. 
+	--				so, in other words, some sort of header... 
+	--		and... need the output sorted by a) failures first, then successes, b) row_id... (that way... it's clear which ones passed/failed). 
+	--		
+
+	--	also... MIGHT want to look at removing the WITH NO_INFOMSGS switch from the DBCC SHRINKFILE operations... 
+	--			cuz.. i'd like to collect/gather the friggin errors - they seem to consistently keep coming back wiht 'end of file' crap - which is odd, given that I'm running checkpoint up the wazoo. 
 
 	RETURN 0;
 GO
