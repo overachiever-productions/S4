@@ -29,6 +29,9 @@ EXEC list_logfile_sizes
 
 */
 
+USE [admindb];
+GO
+
 
 IF OBJECT_ID('dbo.list_logfile_sizes','P') IS NOT NULL
 	DROP PROC dbo.list_logfile_sizes;
@@ -234,6 +237,5 @@ AS
 		[row_id];
 
 
-
-
-	
+	RETURN 0;
+GO

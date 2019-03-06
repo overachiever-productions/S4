@@ -7,6 +7,8 @@
 
 */
 
+USE [admindb];
+GO
 
 IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
 	DROP PROC dbo.get_vector_delay;
