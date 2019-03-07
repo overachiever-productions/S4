@@ -1,6 +1,8 @@
 ﻿# SETUP AND DEPLOYMENT
+-- TODO: links to other 'high level docs pages'... 
 
 
+-- TODO: create links/toc... for the details below... 
 #### Table of Contents
 - S4 Deployment
 - Updating existing S4 Deployments
