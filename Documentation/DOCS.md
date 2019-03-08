@@ -9,6 +9,8 @@
 NOTE: Before reading the documentation below, you should have a good handle on installation/setup, features and benefits, and S4 conventions. (The data in this section of the documentation is intended as reference material - whereas the documentation sections just mentioned focus primarily on how (and why) to get started with S4.)
 
 ### Table of Contents
+- Signatures (i think i want this here or ... maybe it goes somewhere else? but ... all syntax examples in terms of quick/simple examples?)
+
 - S4 Audits
 - S4 Backups
 - S4 Configuration
