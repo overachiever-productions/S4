@@ -1,5 +1,6 @@
 ﻿# S4 Conventions and Best Practices
 
+[NOTE TO SELF: I need to drop in some detailed (i.e., best practices) info on how to create SQL Server Agent Jobs. Specifically: why (to automate stuff) - and why S4 uses them (because they;re powerful and solid), how (owners, naming, categories, scheduling, steps and handling... (and advanced options/recommendations) and ... ALERTS/NOTIFICATIONS...  and so on. ARGUABLY, I _MIGHT_ want to document the absolute hell out of agent jobs on definitivesql.com ... ]
 
 
 ## S4 Basics

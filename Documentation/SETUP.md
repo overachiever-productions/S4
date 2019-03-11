@@ -1,47 +1,65 @@
 ﻿# SETUP AND DEPLOYMENT
--- TODO: links to other 'high level docs pages'... 
+## S4 Documentation
+* **Setup and Installation**
 
+* [Examples (Features and Benefits)](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2FFEATURES.md)
+* [Using S4 (Conventions and Best Practices)s](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2FCONVENTIONS.md)
+* [APIs (Detailed Documentation)](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2FDOCS.md)
 
--- TODO: create links/toc... for the details below... 
-#### Table of Contents
-- S4 Deployment
-- Updating existing S4 Deployments
-- Enabling Advanced Features
+### <a name="toc"></a>Setup and Installation Table of Contents
+- [S4 Deployment](#setup)
+- [Updating Existing S4 Deployments](#update)
+- [Enabling Advanced Features](#advanced)
 
-## What to Expect
-- A single S4 .sql script will create an **[admindb]** on your target server instance. 
-- All S4 code and functionality will then be deployed into the [admindb]. (So that it's not 'creeping around' in any of your other databases (including [master] - and so that you can easily remove S4 if you no longer want it on your system.)
-- Optionally, once deployed, you can enable advanced S4 error handling capabilities - which require a potential change to server configuration (to allow the error handling needed to facilitate backups, restore-tests, and other advanced operations).
+### <a name="setup"></a>S4 Deployment
 
-## Step by Step Deployment Instructions
+#### Requirements
+- SQL Server 2008+ (NOTE: Not ALL S4 functionality is intended to work with SQL Server 2008 / 2008R2 instances - but all S4 functionality IS designed to work with SQL Server 2012 and above).
+- Ability to run .sql file against SQL Server and create a database ([admindb]).
+- Advanced Error Handling (required for backups + automated restore tests and many other 'advanced' S4 features) require xp_cmdshell to be enabled - as outlined [below](#advanced).
+- SMTP (Database Mail) for notifications and alerts when using advanced/automated S4 features.
+
+#### What to Expect
+- Setup will be handled by means of a single .sql file that you can run against your target server.
+- This script will create a new database: [adminidb].
+- And then this same script will push all entities and functionality into the [admindb] - so that all S4 code is stored in the same location (which you can delete or remove if decide that you no longer want S4 on your system).
+- Once the [admindb] has been created and populated, you can also enable [advanced error handling capabilities](#advanced) - which are needed to enable S4 Backups, S4 Restores, and other advanced functionality. 
+
+#### Step by Step Deployment Instructions
 To deploy S4 to a target SQL Server Instance:
-1. Locate the latest version of S4 in the Deployment folder. By convention, only the latest and most-up-to-date version of S4 will be in the Deployment folder (and will use a min.max.signature.build.sql file format - e.g.., "5.5.2816.2.sql"). 
+1. Locate the latest version of S4 in the [Deployment](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Deployment) folder. By convention, only the latest and most-up-to-date version of S4 will be in the Deployment folder (and will use a min.max.signature.build.sql file format - e.g.., "5.5.2816.2.sql"). 
 
 ![](images/install_get_latest_file.gif)
 
 2. Run/Execute the contents of the latest-version.sql (e.g., "5.5.2816.2.sql") file against your target server. 
-3. The script will do everything necessary to create a new database (the [admindb]) and populate it with all S4 code and entities needed. 
+3. The script will do everything necessary to create a new database (the [admindb]) and populate it with all S4 entities and code needed. 
 4. As script execution completes, information about the current version(s) installed on your server instance will be displayed. 
+
+![](images/install_install_completed.gif)
 
 **NOTE:** *If S4 has already been deployed to your target SQL Server Instance, the deployment script will detect this and simply UPDATE all code in the [admindb] to the latest version - adding a new entry into admindb.dbo.version_history.* 
 
-## Step by Step Updating Instructions
+[Return to Setup Table of Contents](#toc)
+
+### <a name="update"></a>Updating Existing S4 Deployments
 Once S4 has been deployed, keeping it updated is simple: 
-1. As with a new installation/deployment, simply locate the latest.version.sql file (e.g., "5.6.2820.1.sql")
+1. As with a new installation/deployment, simply locate the latest.version.sql file (e.g., "5.6.2820.1.sql") in the [Deployment](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Deployment) folder,
 
 -- TODO: insert an image of 5.6 or 5.7 in the repo... 
 
 2. Execute it against your target SQL Server Instance. 
 3. The script will do everything necessary to update all code, tables, and other stuctures/entities needed to push your code to the latest version of S4 goodness. 
-4. Upon completion, the update/deployment script will output information about all versions installed on your target server instance.
+4. Upon completion, the update/deployment script will output information about all versions installed on your target server instance:
 
--- TODO: insert an image showing the last N versions on a target instance.
+-- TODO: provide a screenshot of an updated install to 5.6 or 5.7
 
 
-## Enabling Advanced Features 
-[v6.0 is where xp_cmdshell enabling will be 'split' out from the main deployment process into a sproc that'll report on the current setting, provide some info/docs/"don't panic details", and enable sp _ configure functionality. ]
+[Return to Setup Table of Contents](#toc)
 
--- TODO: document this fully as part of the v6.0 release (as that's where enabling xp_cmdshell will be removed from normal installation/deployment and become an OPTIONAL feature that can be enabled within the admindb itself (well, via the admindb - cuz it'll enable xp_cmdshell across the server if/as needed.)
+## <a name="advanced"></a>Enabling Advanced Features 
+*[-- TODO: document this fully as part of the v6.0 release (as that's where enabling xp _cmdshell will be removed from normal installation/deployment and become an OPTIONAL feature that can be enabled within the admindb itself (well, via the admindb - cuz it'll enable xp _cmdshell across the server if/as needed.)
+v6.0 is where xp_cmdshell enabling will be 'split' out from the main deployment process into a sproc that'll report on the current setting, provide some info/docs/"don't panic details", and enable sp _ configure functionality.]*
+
 
 [LINK to CONVENTIONS about how S4 doesn't want to just 'try' things and throw up hands if/when there's an error. it strives for caller-inform. So that troubleshooting is easy and natural - as DBAs/admins will have immediate access to specific exceptions and errors - without having to spend tons of time debugging and so on... ]
 
@@ -60,7 +78,7 @@ Once S4 has been deployed, keeping it updated is simple:
 
 [find the other/existing 'docs' i have already defined for xp_cmdshell and integrate them here... ]
 
-
+[Return to Setup Table of Contents](#toc)
 
 
 
