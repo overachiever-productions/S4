@@ -30,35 +30,29 @@ AS
 
 	-- {copyright} 
 
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
 	IF UPPER(HOST_NAME()) = UPPER(@HostName) BEGIN 
 		RAISERROR('Invalid HostName - You can''t KILL spids owned by the connection running this stored procedure.', 16, 1);
 		RETURN -1;
 	END;
 
-	-- TODO: extract the following logic into a UDF for better re-use: 
-							DECLARE @milliseconds int; 
+	DECLARE @waitFor sysname
+	DECLARE @error nvarchar(MAX);
 
-							DECLARE @ReturnValue int; 
-							DECLARE @OutputDate datetime;
-							DECLARE @Error nvarchar(max);
+	EXEC [admindb].dbo.[translate_vector_delay]
+	    @Vector = @Interval,
+	    @ParameterName = N'@Interval',
+	    @Output = @waitFor OUTPUT,
+	    @Error = @error OUTPUT;
+	
+	IF @error IS NOT NULL BEGIN 
+		RAISERROR(@error, 16, 1);
+		RETURN -10;
+	END;
 
-							DECLARE @now datetime = GETDATE();
-							EXEC @ReturnValue = dbo.get_time_vector
-								@Vector = @Interval, 
-								@ParameterName = N'@Interval', 
-								@Mode = N'Add',
-								@Output = @OutputDate OUTPUT, 
-								@Error = @Error OUTPUT;
-
-							-- TODO: handle overflows... i.e., if @Interval = '2y'... this'll explode...   (meaning... move a set of ALLOWED values into the UDF where this logic will live...)
-							IF @Error IS NULL 
-								SET @milliseconds = DATEDIFF(MILLISECOND, @now, @OutputDate);
-
-
-							-- TODO: make sure there's at LEAST a 1 second wait... 
-							DECLARE @waitFor sysname = admindb.dbo.[format_timespan](@milliseconds);
-	-- end-ish new UDF... 
-
+	-----------------------------------------------------------------------------
+	-- Processing: 	
 	DECLARE @statement nvarchar(MAX) = N'';
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
