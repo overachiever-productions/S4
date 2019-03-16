@@ -2,19 +2,19 @@
 
 /*
 
-
-
+	Outputs the 'hh:mm:ss.xxx' for a WAITFOR DELAY statement/operation.
+	
 
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
-	DROP PROC dbo.get_vector_delay;
+IF OBJECT_ID('dbo.translate_vector_delay','P') IS NOT NULL
+	DROP PROC dbo.translate_vector_delay;
 GO
 
-CREATE PROC dbo.get_vector_delay
+CREATE PROC dbo.translate_vector_delay
 	@Vector					nvarchar(10)	= NULL, 
 	@ParameterName			sysname			= NULL, 
 	@Output					sysname			= NULL		OUT, 
@@ -26,13 +26,13 @@ AS
 
 	DECLARE @difference int;
 
-	EXEC admindb.dbo.[get_vector]
-	    @Vector = @Vector,
-	    @ParameterName = @ParameterName,
-	    @AllowedIntervals = N's,m,h',
-	    @DatePart = N'MILLISECOND',
-	    @Difference = @difference OUTPUT,
-	    @Error = @Error OUTPUT;
+	EXEC admindb.dbo.translate_vector 
+		@Vector = @Vector, 
+		@ValidationParameterName = @ParameterName,
+		@ProhibitedIntervals = 'DAY,WEEK,MONTH,QUARTER,YEAR',  -- days are overkill for any sort of WAITFOR delay specifier (that said, 38 HOURS would work... )  
+		@TranslationInterval = N'MILLISECOND', 
+		@Output = @difference OUTPUT, 
+		@Error = @Error OUTPUT;
 
 	IF @Error IS NOT NULL BEGIN 
 		RAISERROR(@Error, 16, 1); 

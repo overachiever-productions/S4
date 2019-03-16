@@ -566,6 +566,20 @@ IF OBJECT_ID('dbo.data_synchronization_checks', 'P') IS NOT NULL BEGIN
 	DROP PROC dbo.data_synchronization_checks;
 END;
 
+--------------------------------------------------------------
+-- v5.6 Vector Standardization (cleanup):
+IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
+	DROP PROC dbo.get_time_vector;
+GO
+
+IF OBJECT_ID('dbo.get_vector','P') IS NOT NULL
+	DROP PROC dbo.get_vector;
+GO
+
+IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
+	DROP PROC dbo.get_vector_delay;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 6. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
