@@ -34,7 +34,6 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.execute_command','P') IS NOT NULL
 	DROP PROC dbo.execute_command;
 GO
@@ -72,7 +71,7 @@ AS
 
 	DECLARE @delay sysname; 
 	DECLARE @error nvarchar(MAX);
-	EXEC [admindb].dbo.[get_vector_delay]
+	EXEC [admindb].dbo.[translate_vector_delay]
 	    @Vector = @DelayBetweenAttempts,
 	    @ParameterName = N'@DelayBetweenAttempts',
 	    @Output = @delay OUTPUT, 

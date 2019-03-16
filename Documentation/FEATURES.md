@@ -12,7 +12,7 @@
 * [APIs (Detailed Documentation)](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2FDOCS.md)
 
 
-### <a name="toc"></a>Examples Table of Contents
+### <a name="toc"></a>Examples:
 - [xxxxx](#xxxx)
 - [yyyy](#yyyy)
 - [zzzzzz](#zzzz)

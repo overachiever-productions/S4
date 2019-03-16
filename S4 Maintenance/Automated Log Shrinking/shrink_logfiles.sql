@@ -100,12 +100,12 @@ AS
 	DECLARE @error nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
-	EXEC [admindb].dbo.[get_vector]
+	EXEC [admindb].dbo.[translate_vector]
 	    @Vector = @MaxTimeToWaitForLogBackups,
-	    @ParameterName = N'@MaxTimeToWaitForLogBackups',
-	    @AllowedIntervals = N's,m,h',
-	    @DatePart = N'SECOND',
-	    @Difference = @maxSecondsToWaitForLogFileBackups OUTPUT,
+	    @ValidationParameterName = N'@MaxTimeToWaitForLogBackups',
+		@ProhibitedIntervals = N'MILLISECOND, DAY, WEEK, MONTH, QUARTER, YEAR',
+	    @TranslationInterval = N'SECOND',
+	    @Output = @maxSecondsToWaitForLogFileBackups OUTPUT,
 	    @Error = @error OUTPUT;
 	
 	IF @error IS NOT NULL BEGIN 
@@ -114,7 +114,7 @@ AS
 	END; 
 
 	DECLARE @waitDuration sysname;
-	EXEC admindb.dbo.[get_vector_delay]
+	EXEC admindb.dbo.[translate_vector_delay]
 	    @Vector = @LogBackupCheckPollingInterval,
 	    @ParameterName = N'@LogBackupCheckPollingInterval',
 	    @Output = @waitDuration OUTPUT,
