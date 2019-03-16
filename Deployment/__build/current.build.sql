@@ -629,13 +629,10 @@ GO
 --##INCLUDE: Common\split_string.sql
 
 -----------------------------------
---##INCLUDE: Common\get_time_vector.sql
+--##INCLUDE: Common\translate_vector.sql
 
 -----------------------------------
---##INCLUDE: Common\get_vector.sql
-
------------------------------------
---##INCLUDE: Common\get_vector_delay.sql
+--##INCLUDE: Common\translate_vector_delay.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql

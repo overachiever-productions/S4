@@ -6,7 +6,7 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.5.2816.2 or upgrade a PREVIOUSLY deployed version of S4 to 5.5.2816.2.
+		- This script will either install/deploy S4 version 5.6.2831.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.6.2831.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -20,7 +20,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.5.2816.2 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 5.6.2831.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -99,7 +99,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.5.2816.2';
+DECLARE @CurrentVersion varchar(20) = N'5.6.2831.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -564,6 +564,20 @@ IF OBJECT_ID('dbo.data_synchronization_checks', 'P') IS NOT NULL BEGIN
 	DROP PROC dbo.data_synchronization_checks;
 END;
 
+--------------------------------------------------------------
+-- v5.6 Vector Standardization (cleanup):
+IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
+	DROP PROC dbo.get_time_vector;
+GO
+
+IF OBJECT_ID('dbo.get_vector','P') IS NOT NULL
+	DROP PROC dbo.get_vector;
+GO
+
+IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
+	DROP PROC dbo.get_vector_delay;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 6. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -638,7 +652,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -676,7 +690,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -710,7 +724,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -795,7 +809,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -832,7 +846,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -903,7 +917,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN 
 		DECLARE @output int = 0;
 
@@ -987,7 +1001,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -1048,107 +1062,145 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
-	DROP PROC dbo.get_time_vector;
+IF OBJECT_ID('dbo.translate_vector','P') IS NOT NULL
+	DROP PROC dbo.translate_vector;
 GO
 
-CREATE PROC dbo.get_time_vector 
-	@Vector					nvarchar(10)	= NULL, 
-	@ParameterName			sysname			= NULL, 
-	@AllowedIntervals		sysname			= N's,m,h,d,w,q,y',		-- s[econds], m[inutes], h[ours], d[ays], w[eeks], q[uarters], y[ears]  (NOTE: the concept of b[ackups] applies to backups only and is handled in dbo.remove_backup_files. Only time values are handled here.)
-	@Mode					sysname			= N'SUBTRACT',			-- ADD | SUBTRACT
-	@Output					datetime		= NULL		OUT, 
-	@Error					nvarchar(MAX)	= NULL		OUT
-AS 
+CREATE PROC dbo.translate_vector
+	@Vector									sysname						= NULL, 
+	@ValidationParameterName				sysname						= NULL, 
+	@ProhibitedIntervals					sysname						= NULL,								-- By default, ALL intervals are allowed. 
+	@TranslationInterval					sysname						= N'MS',							-- { MILLISECONDS | SECONDS | MINUTES | HOURS | DAYS | WEEKS | MONTHS | YEARS }
+	@Output									bigint						= NULL		OUT, 
+	@Error									nvarchar(MAX)				= NULL		OUT
+AS
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- {copyright} 
 
-	-- cleanup:
-	SET @Vector = LTRIM(RTRIM(@Vector));
-	SET @ParameterName = REPLACE(LTRIM(RTRIM((@ParameterName))), N'@', N'');
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
+	SET @ValidationParameterName = ISNULL(NULLIF(@ValidationParameterName, N''), N'@Vector');
+	IF @ValidationParameterName LIKE N'@%'
+		SET @ValidationParameterName = REPLACE(@ValidationParameterName, N'@', N'');
 
-	DECLARE @vectorType nchar(1) = LOWER(RIGHT(@Vector, 1));
+	DECLARE @intervals table ( 
+		[key] sysname NOT NULL, 
+		[interval] sysname NOT NULL
+	);
 
-	-- Only approved values are allowed: (m[inutes], [h]ours, [d]ays, [b]ackups (a specific count)). 
-	IF @vectorType NOT IN (SELECT REPLACE([result], N' ', '') FROM dbo.split_string(@AllowedIntervals, N',', 1)) BEGIN 
-		SET @Error = N'Invalid @' + @ParameterName + N' value specified. @' + @ParameterName + N' must take the format of #x - where # is an integer, and x is a SINGLE letter which signifies s[econds], m[inutes], d[ays], w[eeks], q[uarters], y[ears]. Allowed Values Currently Available: [' + @AllowedIntervals + N'].';
-		RETURN -10000;	
-	END 
+	INSERT INTO @intervals ([key],[interval]) 
+	SELECT [key], [interval] 
+	FROM (VALUES (
+			'MILLISECOND', 'MILLISECOND'), ('MS', 'MILLISECOND'), ('SECOND', 'SECOND'), ('S', 'SECOND'),('MINUTE', 'MINUTE'), ('M', 'MINUTE'), 
+			('N', 'MINUTE'), ('HOUR', 'HOUR'), ('H', 'HOUR'), ('DAY', 'DAY'), ('D', 'DAY'), ('WEEK', 'WEEK'), ('W', 'WEEK'),
+			 ('MONTH', 'MONTH'), ('MO', 'MONTH'), ('QUARTER', 'QUARTER'), ('Q', 'QUARTER'), ('YEAR', 'YEAR'), ('Y', 'YEAR')
+	) x ([key], [interval]);
 
-	-- a WHOLE lot of negation going on here... but, this is, insanely, right:
-	IF NOT EXISTS (SELECT 1 WHERE LEFT(@Vector, LEN(@Vector) - 1) NOT LIKE N'%[^0-9]%') BEGIN 
-		SET @Error = N'Invalid @' + @ParameterName + N' value specified (more than one non-integer value present). @' + @ParameterName + N' must take the format of #x - where # is an integer, and x is a SINGLE letter which signifies s[econds], m[inutes], d[ays], w[eeks], q[uarters], y[ears]. Allowed Values Currently Available: [' + @AllowedIntervals + N'].';
-		RETURN -10001;
-	END
-	
-	DECLARE @vectorValue int = CAST(LEFT(@Vector, LEN(@Vector) -1) AS int);
+	SET @Vector = LTRIM(RTRIM(UPPER(REPLACE(@Vector, N' ', N''))));
+	DECLARE @boundary int, @duration sysname, @interval sysname;
+	SET @boundary = PATINDEX(N'%[^0-9]%', @Vector) - 1;
 
-	IF @Mode = N'SUBTRACT' BEGIN
-		IF @vectorType = 's'
-			SET @Output = DATEADD(SECOND, 0 - @vectorValue, GETDATE());
-		
-		IF @vectorType = 'm'
-			SET @Output = DATEADD(MINUTE, 0 - @vectorValue, GETDATE());
-
-		IF @vectorType = 'h'
-			SET @Output = DATEADD(HOUR, 0 - @vectorValue, GETDATE());
-
-		IF @vectorType = 'd'
-			SET @Output = DATEADD(DAY, 0 - @vectorValue, GETDATE());
-
-		IF @vectorType = 'w'
-			SET @Output = DATEADD(WEEK, 0 - @vectorValue, GETDATE());
-
-		IF @vectorType = 'q'
-			SET @Output = DATEADD(QUARTER, 0 - @vectorValue, GETDATE());
-
-		IF @vectorType = 'y'
-			SET @Output = DATEADD(YEAR, 0 - @vectorValue, GETDATE());
-		
-		IF @Output >= GETDATE() BEGIN; 
-				SET @Error = N'Invalid @' + @ParameterName + N' specification. Specified value is in the future.';
-				RETURN -10002;
-		END;		
-	  END;
-	ELSE BEGIN
-
-		IF @vectorType = 's'
-			SET @Output = DATEADD(SECOND, @vectorValue, GETDATE());
-		
-		IF @vectorType = 'm'
-			SET @Output = DATEADD(MINUTE, @vectorValue, GETDATE());
-
-		IF @vectorType = 'h'
-			SET @Output = DATEADD(HOUR, @vectorValue, GETDATE());
-
-		IF @vectorType = 'd'
-			SET @Output = DATEADD(DAY, @vectorValue, GETDATE());
-
-		IF @vectorType = 'w'
-			SET @Output = DATEADD(WEEK, @vectorValue, GETDATE());
-
-		IF @vectorType = 'q'
-			SET @Output = DATEADD(QUARTER, @vectorValue, GETDATE());
-
-		IF @vectorType = 'y'
-			SET @Output = DATEADD(YEAR, @vectorValue, GETDATE());
-
-		IF @Output <= GETDATE() BEGIN; 
-				SET @Error = N'Invalid @' + @ParameterName + N' specification. Specified value is in the past.';
-				RETURN -10003;
-		END;	
-
+	IF @boundary < 1 BEGIN 
+		SET @Error = N'Invalid Vector format specified for parameter @' + @ValidationParameterName + N'. Format must be in ''XX nn'' or ''XXnn'' format - where XX is an ''integer'' duration (e.g., 72) and nn is an interval-specifier (e.g., HOUR, HOURS, H, or h).';
+		RETURN -1;
 	END;
+
+	SET @duration = LEFT(@Vector, @boundary);
+	SET @interval = UPPER(REPLACE(@Vector, @duration, N''));
+
+	IF @interval LIKE '%S' AND @interval NOT IN ('S', 'MS')
+		SET @interval = LEFT(@interval, LEN(@interval) - 1); 
+
+	IF NOT @interval IN (SELECT [key] FROM @intervals) BEGIN
+		SET @Error = N'Invalid interval specifier defined for @' + @ValidationParameterName + N'. Valid interval specifiers are { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [QUARTER(S)|Q] | [YEAR(S)|Y] }';
+		RETURN -10;
+	END;
+
+	-- convert @TranslationInterval to a sanitized version of itself:
+	SELECT @TranslationInterval = [interval] FROM @intervals WHERE [key] = @TranslationInterval;
+	IF @TranslationInterval IS NULL OR @TranslationInterval NOT IN ('MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH', 'YEAR') BEGIN 
+		SET @Error = N'Invalid @TranslationInterval value specified. Allowed values are: { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [YEAR(S)|Y] }.';
+		RETURN -12;
+	END;
+
+	--  convert @interval to a sanitized version of itself:
+	SELECT @interval = [interval] FROM @intervals WHERE [key] = @interval;
+
+	-- allow for prohibited intervals: 
+	IF NULLIF(@ProhibitedIntervals, N'') IS NOT NULL BEGIN 
+
+		-- delete INTERVALS based on keys - e.g., if ms is prohibited, we don't want to simply delete the MS entry - we want to get all 'forms' of it (i.e., MS, MILLISECOND, etc.)
+		DELETE FROM @intervals WHERE [interval] IN (SELECT [interval] FROM @intervals WHERE [key] IN (SELECT [result] FROM dbo.[split_string](@ProhibitedIntervals, N',', 1)));
+		
+		IF @interval NOT IN (SELECT [interval] FROM @intervals) BEGIN
+			SET @Error = N'The interval-specifier [' + @interval + N'] is not permitted in this operation type. Prohibited intervals for this operation are: [' + @ProhibitedIntervals + N'].';
+			RETURN -30;
+		END;
+	END;
+
+	-----------------------------------------------------------------------------
+	-- Processing: 
+	DECLARE @now datetime = GETDATE();
+	
+	BEGIN TRY 
+
+		DECLARE @command nvarchar(400) = N'SELECT @difference = DATEDIFF(' + @TranslationInterval + N', @now, (DATEADD(' + @interval + N', ' + @duration + N', @now)));'
+		EXEC sp_executesql 
+			@command, 
+			N'@now datetime, @difference int OUTPUT', 
+			@now = @now, 
+			@difference = @Output OUTPUT;
+
+	END TRY 
+	BEGIN CATCH
+		SELECT @Error = N'EXCEPTION: ' + CAST(ERROR_MESSAGE() AS sysname) + N' - ' + ERROR_MESSAGE();
+		RETURN -30;
+	END CATCH
 
 	RETURN 0;
 GO
 
+	
+
 
 -----------------------------------
+USE [admindb];
+GO
 
+IF OBJECT_ID('dbo.translate_vector_delay','P') IS NOT NULL
+	DROP PROC dbo.translate_vector_delay;
+GO
 
------------------------------------
+CREATE PROC dbo.translate_vector_delay
+	@Vector					nvarchar(10)	= NULL, 
+	@ParameterName			sysname			= NULL, 
+	@Output					sysname			= NULL		OUT, 
+	@Error					nvarchar(MAX)	= NULL		OUT
+AS 
+	SET NOCOUNT ON; 
+
+	-- {copyright} 
+
+	DECLARE @difference int;
+
+	EXEC admindb.dbo.translate_vector 
+		@Vector = @Vector, 
+		@ValidationParameterName = @ParameterName,
+		@ProhibitedIntervals = 'DAY,WEEK,MONTH,QUARTER,YEAR',  -- days are overkill for any sort of WAITFOR delay specifier (that said, 38 HOURS would work... )  
+		@TranslationInterval = N'MILLISECOND', 
+		@Output = @difference OUTPUT, 
+		@Error = @Error OUTPUT;
+
+	IF @Error IS NOT NULL BEGIN 
+		RAISERROR(@Error, 16, 1); 
+		RETURN -5;
+	END;
+	
+	SELECT @Output = RIGHT([admindb].dbo.[format_timespan](@difference), 12);
+
+	RETURN 0;
+GO
 
 
 -----------------------------------
@@ -1174,35 +1226,29 @@ AS
 
 	-- {copyright} 
 
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
 	IF UPPER(HOST_NAME()) = UPPER(@HostName) BEGIN 
 		RAISERROR('Invalid HostName - You can''t KILL spids owned by the connection running this stored procedure.', 16, 1);
 		RETURN -1;
 	END;
 
-	-- TODO: extract the following logic into a UDF for better re-use: 
-							DECLARE @milliseconds int; 
+	DECLARE @waitFor sysname
+	DECLARE @error nvarchar(MAX);
 
-							DECLARE @ReturnValue int; 
-							DECLARE @OutputDate datetime;
-							DECLARE @Error nvarchar(max);
+	EXEC [admindb].dbo.[translate_vector_delay]
+	    @Vector = @Interval,
+	    @ParameterName = N'@Interval',
+	    @Output = @waitFor OUTPUT,
+	    @Error = @error OUTPUT;
+	
+	IF @error IS NOT NULL BEGIN 
+		RAISERROR(@error, 16, 1);
+		RETURN -10;
+	END;
 
-							DECLARE @now datetime = GETDATE();
-							EXEC @ReturnValue = dbo.get_time_vector
-								@Vector = @Interval, 
-								@ParameterName = N'@Interval', 
-								@Mode = N'Add',
-								@Output = @OutputDate OUTPUT, 
-								@Error = @Error OUTPUT;
-
-							-- TODO: handle overflows... i.e., if @Interval = '2y'... this'll explode...   (meaning... move a set of ALLOWED values into the UDF where this logic will live...)
-							IF @Error IS NULL 
-								SET @milliseconds = DATEDIFF(MILLISECOND, @now, @OutputDate);
-
-
-							-- TODO: make sure there's at LEAST a 1 second wait... 
-							DECLARE @waitFor sysname = admindb.dbo.[format_timespan](@milliseconds);
-	-- end-ish new UDF... 
-
+	-----------------------------------------------------------------------------
+	-- Processing: 	
 	DECLARE @statement nvarchar(MAX) = N'';
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
@@ -1255,7 +1301,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
@@ -1348,7 +1394,6 @@ GO
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.execute_command','P') IS NOT NULL
 	DROP PROC dbo.execute_command;
 GO
@@ -1386,7 +1431,7 @@ AS
 
 	DECLARE @delay sysname; 
 	DECLARE @error nvarchar(MAX);
-	EXEC [admindb].dbo.[get_vector_delay]
+	EXEC [admindb].dbo.[translate_vector_delay]
 	    @Vector = @DelayBetweenAttempts,
 	    @ParameterName = N'@DelayBetweenAttempts',
 	    @Output = @delay OUTPUT, 
@@ -1597,7 +1642,7 @@ CREATE PROC dbo.load_databases
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1905,7 +1950,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -2052,8 +2097,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.get_time_vector', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.translate_vector', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -2122,33 +2167,52 @@ AS
 		RETURN -7;
 	END;
 
-	SET @Retention = LTRIM(RTRIM(@Retention));
+	SET @Retention = LTRIM(RTRIM(REPLACE(@Retention, N' ', N'')));
+
 	DECLARE @retentionType char(1);
+	DECLARE @retentionValue bigint;
+	DECLARE @retentionError nvarchar(MAX);
 	DECLARE @retentionCutoffTime datetime; 
-	DECLARE @retentionValue int;
 
-	SET @retentionType = RIGHT(@Retention, 1);
+	IF UPPER(@Retention) LIKE '%B%' OR UPPER(@Retention) LIKE '%BACKUP%' BEGIN 
+		-- Backups to be kept by # of backups NOT by timestamp
+		DECLARE @boundary int = PATINDEX(N'%[^0-9]%', @Retention)- 1;
 
-	IF LOWER(ISNULL(@retentionType, N'x')) = N'b' BEGIN 
+		IF @boundary < 1 BEGIN 
+			SET @retentionError = N'Invalid Vector format specified for parameter @Retention. Format must be in ''XX nn'' or ''XXnn'' format - where XX is an ''integer'' duration (e.g., 72) and nn is an interval-specifier (e.g., HOUR, HOURS, H, or h).';
+			RAISERROR(@retentionError, 16, 1);
+			RETURN -1;
+		END;
 
-		SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+		BEGIN TRY
+			SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
+		END TRY
+		BEGIN CATCH
+			SET @retentionValue = -1;
+		END CATCH
+
+		IF @retentionValue < 0 BEGIN 
+			RAISERROR('Invalid @Retention value specified. Number of Backups specified was formatted incorrectly or < 0.', 16, 1);
+			RETURN -25;
+		END;
+
 	  END;
 	ELSE BEGIN 
-		DECLARE @returnValue int; 
-		DECLARE @vectorError nvarchar(MAX);
-		
-		EXEC @returnValue = dbo.get_time_vector 
-			@Vector = @Retention, 
-			@ParameterName = N'@Retention',
-			@AllowedIntervals = N'm, h, d, w', 
-			@Mode = N'SUBTRACT', 
-			@Output = @retentionCutoffTime OUTPUT, 
-			@Error = @vectorError OUTPUT;
 
-		IF @returnValue <> 0 BEGIN
-			RAISERROR(@vectorError, 16, 1); 
-			RETURN @returnValue;
+		EXEC [dbo].[translate_vector]
+		    @Vector = @Retention,
+		    @ValidationParameterName = N'@Retention',
+		    @ProhibitedIntervals = N'MILLISECOND',
+		    @TranslationInterval = N'MILLISECOND',
+		    @Output = @retentionValue OUTPUT,
+		    @Error = @retentionError OUTPUT;
+
+		IF @retentionError IS NOT NULL BEGIN 
+			RAISERROR(@retentionError, 16, 1);
+			RETURN -26;
 		END;
+
+		SET @retentionCutoffTime = DATEADD(MILLISECOND, 0 - @retentionValue, GETDATE());
 	END;
 
 	IF @PrintOnly = 1 BEGIN
@@ -4558,7 +4622,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -4646,7 +4710,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -4825,8 +4889,8 @@ AS
         RETURN -1;
     END;
 
-    IF OBJECT_ID('dbo.get_time_vector','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.translate_vector','P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -4918,28 +4982,23 @@ AS
         RETURN -22;
     END;
 
-	DECLARE @rpoCutoff datetime; 
-	DECLARE @vectorReturn int; 
+	DECLARE @vector bigint;  -- 'global'
 	DECLARE @vectorError nvarchar(MAX);
-	DECLARE @vector int;  -- 'global'
-
-	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
-		EXEC @vectorReturn = dbo.get_time_vector
-			@Vector = @RpoWarningThreshold, 
-			@ParameterName = N'@RpoWarningThreshold',
-			@AllowedIntervals = N'm, h, d', 
-			@Mode = N'SUBTRACT', 
-			@Output = @rpoCutoff OUTPUT, 
-			@Error = @vectorError OUTPUT;
-
-		IF @vectorReturn <> 0 BEGIN
-			RAISERROR(@vectorError, 16, 1); 
-			RETURN @vectorReturn;
-		END;
-
-		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
-	END;
 	
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		EXEC [dbo].[translate_vector]
+		    @Vector = @RpoWarningThreshold, 
+		    @ValidationParameterName = N'@RpoWarningThreshold', 
+		    @TranslationInterval = N'MILLISECOND', 
+		    @Output = @vector OUTPUT, 
+		    @Error = @vectorError OUTPUT;
+
+		IF @vectorError IS NOT NULL BEGIN 
+			RAISERROR(@vectorError, 16, 1);
+			RETURN -20;
+		END;
+	END;
+
 	DECLARE @directivesText nvarchar(200) = N'';
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
 		SET @Directives = LTRIM(RTRIM(@Directives));
@@ -6039,7 +6098,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6068,8 +6127,8 @@ AS
         RETURN -1;
     END;
 
-    IF OBJECT_ID('dbo.get_time_vector','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.translate_vector','P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -6120,24 +6179,25 @@ AS
     END;
 
 	DECLARE @rpoCutoff datetime; 
-	DECLARE @vectorReturn int; 
-	DECLARE @vectorError nvarchar(MAX);
-	DECLARE @vector int;  -- represents # of MS that something is allowed to be stale
 	DECLARE @latestApplied datetime;
+
+	DECLARE @vectorError nvarchar(MAX);
+	DECLARE @vector bigint;  -- represents # of MILLISECONDS that a 'restore' operation is allowed to be stale
+	
 
 	IF NULLIF(@StaleAlertThreshold, N'') IS NOT NULL BEGIN
 
-		EXEC @vectorReturn = dbo.get_time_vector
-			@Vector = @StaleAlertThreshold, 
-			@ParameterName = N'@StaleAlertThreshold',
-			@AllowedIntervals = N's, m, h, d', 
-			@Mode = N'SUBTRACT', 
-			@Output = @rpoCutoff OUTPUT, 
-			@Error = @vectorError OUTPUT;
+		EXEC [dbo].[translate_vector]
+		    @Vector = @StaleAlertThreshold, 
+		    @ValidationParameterName = N'@StaleAlertThreshold', 
+		    @ProhibitedIntervals = NULL, 
+		    @TranslationInterval = N'MILLISECOND', 
+		    @Output = @vector OUTPUT, 
+		    @Error = @vectorError OUTPUT;
 
-		IF @vectorReturn <> 0 BEGIN
+		IF @vectorError IS NOT NULL BEGIN
 			RAISERROR(@vectorError, 16, 1); 
-			RETURN @vectorReturn;
+			RETURN -30;
 		END;
 
 		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
@@ -7093,7 +7153,7 @@ CREATE PROC dbo.list_processes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7411,7 +7471,7 @@ AS
 	END; 
 
 	IF @ExtractCost = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST([plan_cost] as decimal(20,2)) [plan_cost],');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST((CAST([plan_cost] as float)) as decimal(20,2)) [plan_cost],');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'LEFT OUTER JOIN #costs c ON d.[session_id] = c.[session_id]');
 	  END
 	ELSE BEGIN 
@@ -7453,7 +7513,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7877,7 +7937,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -8968,7 +9028,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9227,25 +9287,30 @@ CREATE PROC dbo.monitor_transaction_durations
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
+    -----------------------------------------------------------------------------
+    -- Validate Inputs: 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
-	DECLARE @vectorError nvarchar(MAX); 
-	DECLARE @returnValue int; 
-	
-	EXEC @returnValue = dbo.get_time_vector 
-		@Vector = @AlertThreshold, 
-		@ParameterName = N'@AlertThreshold',
-		@AllowedIntervals = N's, m, h, d', 
-		@Mode = N'SUBTRACT', 
-		@Output = @transactionCutoffTime OUTPUT, 
-		@Error = @vectorError OUTPUT;
 
-	IF @returnValue <> 0 BEGIN
+	DECLARE @vectorError nvarchar(MAX); 
+	DECLARE @vectorMilliseconds bigint;
+
+	EXEC [dbo].[translate_vector]
+	    @Vector = @AlertThreshold, 
+	    @ValidationParameterName = N'@AlertThreshold', 
+	    @ProhibitedIntervals = N'WEEK, MONTH, QUARTER, YEAR', 
+	    @TranslationInterval = N'MILLISECOND', 
+	    @Output = @vectorMilliseconds OUTPUT, 
+	    @Error = @vectorError OUTPUT;
+
+	IF @vectorError IS NOT NULL BEGIN 
 		RAISERROR(@vectorError, 16, 1); 
-		RETURN @returnValue;
+		RETURN -10;
 	END;
+
+	SET @transactionCutoffTime = DATEADD(MILLISECOND, @vectorMilliseconds, GETDATE());
 
 	SELECT 
 		[dtat].[transaction_id],
@@ -9536,6 +9601,216 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.list_logfile_sizes','P') IS NOT NULL
+	DROP PROC dbo.list_logfile_sizes;
+GO
+
+CREATE PROC dbo.list_logfile_sizes
+	@TargetDatabases					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
+	@Priorities							nvarchar(MAX)							= NULL,
+	--@IgnoreLogFilesWithGBsLessThan	decimal(12,1)							= 0.5,
+	@ExcludeSimpleRecoveryDatabases		bit										= 1,
+	@SerializedOutput					xml										= NULL			OUTPUT
+AS 
+	SET NOCOUNT ON; 
+
+	-- {copyright} 
+
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+
+	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END
+
+	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
+		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
+		RETURN -3;
+	END;
+
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
+
+
+
+
+
+
+
+	-----------------------------------------------------------------------------
+	
+	DECLARE @serialized nvarchar(MAX);
+	EXEC [admindb].dbo.[load_databases]
+	    @Targets = @TargetDatabases, 
+	    @Exclusions = @DatabasesToExclude, 
+	    @Priorities = @Priorities, 
+	    @ExcludeSimpleRecovery = @ExcludeSimpleRecoveryDatabases, 
+	    @Output = @serialized OUTPUT;
+
+	CREATE TABLE #targetDatabases ( 
+		row_id int NOT NULL, 
+		[database_name] sysname NOT NULL, 
+		[vlf_count] int NULL, 
+		[mimimum_allowable_log_size_gb] decimal(20,2) NULL
+	);
+
+	INSERT INTO [#targetDatabases] ( [row_id], [database_name])
+	SELECT [row_id], [result] FROM [admindb].dbo.[split_string](@serialized, N',', 1);
+
+	CREATE TABLE #logSizes (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[database_name] sysname NOT NULL, 
+		[recovery_model] sysname NOT NULL,
+		[database_size_gb] decimal(20,2) NOT NULL, 
+		[log_size_gb] decimal(20,2) NOT NULL, 
+		[log_percent_used] decimal(5,2) NOT NULL,
+		[vlf_count] int NOT NULL,
+		[log_as_percent_of_db_size] decimal(5,2) NULL, 
+		[mimimum_allowable_log_size_gb] decimal(20,2) NOT NULL, 
+	);
+
+	IF NOT EXISTS (SELECT NULL FROM [#targetDatabases]) BEGIN 
+		PRINT 'No databases matched @TargetDatbases (and @DatabasesToExclude) Inputs.'; 
+		SELECT * FROM [#logSizes];
+		RETURN 0; -- success (ish).
+	END;
+
+	DECLARE walker CURSOR LOCAL READ_ONLY FAST_FORWARD FOR 
+	SELECT [database_name] FROM [#targetDatabases];
+
+	DECLARE @currentDBName sysname; 
+	DECLARE @vlfCount int; 
+	DECLARE @startOffset bigint;
+	DECLARE @fileSize bigint;
+	DECLARE @MinAllowableSize decimal(20,2);
+
+	DECLARE @template nvarchar(1000) = N'INSERT INTO #logInfo EXECUTE (''DBCC LOGINFO([{0}]) WITH NO_INFOMSGS''); ';
+	DECLARE @command nvarchar(2000);
+
+	CREATE TABLE #logInfo (
+		RecoveryUnitId bigint,
+		FileID bigint,
+		FileSize bigint,
+		StartOffset bigint,
+		FSeqNo bigint,
+		[Status] bigint,
+		Parity bigint,
+		CreateLSN varchar(50)
+	);
+
+	OPEN [walker];
+	FETCH NEXT FROM [walker] INTO @currentDBName;
+
+	WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+		DELETE FROM [#logInfo];
+		SET @command = REPLACE(@template, N'{0}', @currentDBName); 
+
+		EXEC master.sys.[sp_executesql] @command;
+		SELECT @vlfCount = COUNT(*) FROM [#logInfo];
+
+		SELECT @startOffset = MAX(StartOffset) FROM #LogInfo WHERE [Status] = 2;
+		SELECT @fileSize = FileSize FROM #LogInfo WHERE StartOffset = @startOffset;
+		SET @MinAllowableSize = CAST(((@startOffset + @fileSize) / (1024.0 * 1024.0 * 1024.0)) AS decimal(20,2))
+
+		UPDATE [#targetDatabases] 
+		SET 
+			[vlf_count] = @vlfCount, 
+			[mimimum_allowable_log_size_gb] = @MinAllowableSize 
+		WHERE 
+			[database_name] = @currentDBName;
+
+		FETCH NEXT FROM [walker] INTO @currentDBName;
+	END;
+	
+	CLOSE [walker];
+	DEALLOCATE [walker];
+
+	WITH core AS ( 
+		SELECT
+			x.[row_id],
+			db.[name] [database_name], 
+			db.recovery_model_desc [recovery_model],	
+			CAST((CONVERT(decimal(20,2), sizes.size * 8.0 / (1024.0) / (1024.0))) AS decimal(20,2)) database_size_gb,
+			CAST((logsize.log_size / (1024.0)) AS decimal(20,2)) [log_size_gb],
+			CASE 
+				WHEN logsize.log_size = 0 THEN 0.0
+				WHEN logused.log_used = 0 THEN 0.0
+				ELSE CAST(((logused.log_used / logsize.log_size) * 100.0) AS decimal(5,2))
+			END log_percent_used, 
+			x.[vlf_count], 
+			x.[mimimum_allowable_log_size_gb]
+		FROM 
+			sys.databases db
+			INNER JOIN #targetDatabases x ON db.[name] = x.database_name
+			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / (1024.0)) AS decimal(20,2)) [log_size] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Size %') logsize ON db.[name] = logsize.[db_name]
+			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / (1024.0)) AS decimal(20,2)) [log_used] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Used %') logused ON db.[name] = logused.[db_name]
+			LEFT OUTER JOIN (
+				SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
+			) sizes ON db.database_id = sizes.database_id		
+	) 
+
+	INSERT INTO [#logSizes] ([database_name], [recovery_model], [database_size_gb], [log_size_gb], [log_percent_used], [vlf_count], [log_as_percent_of_db_size], [mimimum_allowable_log_size_gb])
+	SELECT 
+        [database_name],
+        [recovery_model],
+        [database_size_gb],
+        [log_size_gb],
+        [log_percent_used], 
+		[vlf_count],
+		CAST(((([log_size_gb] / CASE WHEN [database_size_gb] = 0 THEN 0.01 ELSE [core].[database_size_gb] END) * 100.0)) AS decimal(20,2)) [log_as_percent_of_db_size],		-- goofy issue with divide by zero is reason for CASE... 
+		[mimimum_allowable_log_size_gb]
+	FROM 
+		[core]
+	ORDER BY 
+		[row_id];
+
+	-----------------------------------------------------------------------------
+    -- Send output as XML if requested:
+	IF @SerializedOutput IS NOT NULL BEGIN 
+		SELECT @SerializedOutput = (SELECT 
+			[database_name],
+			[recovery_model],
+			[database_size_gb],
+			[log_size_gb],
+			[log_percent_used],
+			[vlf_count],
+			[log_as_percent_of_db_size], 
+			[mimimum_allowable_log_size_gb]
+		FROM 
+			[#logSizes]
+		ORDER BY 
+			[row_id] 
+		FOR XML PATH('database'), ROOT('databases'));
+
+		RETURN 0;
+	END; 
+
+	-----------------------------------------------------------------------------
+	-- otherwise, project:
+	SELECT 
+        [database_name],
+        [recovery_model],
+        [database_size_gb],
+        [log_size_gb],
+        [log_percent_used],
+		[vlf_count],
+        [log_as_percent_of_db_size], 
+		[mimimum_allowable_log_size_gb]
+	FROM 
+		[#logSizes]
+	ORDER BY 
+		[row_id];
+
+
+	RETURN 0;
+GO
 
 
 -----------------------------------
@@ -9582,12 +9857,12 @@ AS
 	DECLARE @error nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
-	EXEC [admindb].dbo.[get_vector]
+	EXEC [admindb].dbo.[translate_vector]
 	    @Vector = @MaxTimeToWaitForLogBackups,
-	    @ParameterName = N'@MaxTimeToWaitForLogBackups',
-	    @AllowedIntervals = N's,m,h',
-	    @DatePart = N'SECOND',
-	    @Difference = @maxSecondsToWaitForLogFileBackups OUTPUT,
+	    @ValidationParameterName = N'@MaxTimeToWaitForLogBackups',
+		@ProhibitedIntervals = N'MILLISECOND, DAY, WEEK, MONTH, QUARTER, YEAR',
+	    @TranslationInterval = N'SECOND',
+	    @Output = @maxSecondsToWaitForLogFileBackups OUTPUT,
 	    @Error = @error OUTPUT;
 	
 	IF @error IS NOT NULL BEGIN 
@@ -9596,7 +9871,7 @@ AS
 	END; 
 
 	DECLARE @waitDuration sysname;
-	EXEC admindb.dbo.[get_vector_delay]
+	EXEC admindb.dbo.[translate_vector_delay]
 	    @Vector = @LogBackupCheckPollingInterval,
 	    @ParameterName = N'@LogBackupCheckPollingInterval',
 	    @Output = @waitDuration OUTPUT,
@@ -9747,49 +10022,61 @@ AS
 					[database_name]
 			) x ON [ls].[database_name] = [x].[database_name]
 		WHERE 
-			ls.[processing_complete] = 0 AND [operation] = N'CHECKPOINT + BACKUP + SHRINK';
+			ls.[processing_complete] = 0 AND ls.[operation] = N'CHECKPOINT + BACKUP + SHRINK';
 
-		SET @command = N'CHECKPOINT; ' + @crlf + N'CHECKPOINT;' + @crlf + N'CHECKPOINT;';
-		
-		IF @PrintOnly = 1 
-			PRINT @command;
-		ELSE BEGIN 
+
+		DECLARE @checkpointTemplate nvarchar(200) = N'USE [{0}]; ' + @crlf + N'CHECKPOINT; ' + @crlf + N'CHECKPOINT;' + @crlf + N'CHECKPOINT;';
+		DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			[database_name]
+		FROM 
+			[#logSizes] 
+		WHERE 
+			[processing_complete] = 0 AND [operation] = N'CHECKPOINT + BACKUP + SHRINK';
+
+		OPEN walker; 
+		FETCH NEXT FROM walker INTO @currentDatabase;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN
+
+			SET @command = REPLACE(@checkpointTemplate, N'{0}', @currentDatabase);
+
+			IF @PrintOnly = 1 
+				PRINT @command;
+			ELSE BEGIN 
 			
-			EXEC @returnValue = [admindb].dbo.[execute_command]
-			    @Command = @command,
-			    @ExecutionType = N'SHELL',
-			    @ExecutionRetryCount = 1, 
-			    @DelayBetweenAttempts = N'5s',
-			    @Results = @executionResults OUTPUT 
+				EXEC @returnValue = [admindb].dbo.[execute_command]
+					@Command = @command,
+					@ExecutionType = N'SHELL',
+					@ExecutionRetryCount = 1, 
+					@DelayBetweenAttempts = N'5s',
+					@Results = @executionResults OUTPUT 
 			
-			IF @returnValue = 0	BEGIN
-				SET @outcome = N'SUCCESS';
-			  END;
-			ELSE BEGIN
-				SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+				IF @returnValue = 0	BEGIN
+					SET @outcome = N'SUCCESS';
+				  END;
+				ELSE BEGIN
+					SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+				END;
+
+				SET @checkpointComplete = GETDATE();
+
+				INSERT INTO [#operations] ([database_name], [timestamp], [operation], [outcome])
+				VALUES (@currentDatabase, @checkpointComplete, @command, @outcome);
+
+				IF @returnValue <> 0 BEGIN
+					-- we needed a checkpoint before we could go any further... it didn't work (somhow... not even sure that's a possibility)... so, we're 'done'. we need to terminate early.
+					PRINT 'run an update where operation = checkpoint/backup/shrink and set those pigs to done with an ''early termination'' summary as the operation... we can keep trying other dbs... ';
+				END;
+
 			END;
 
-			SET @checkpointComplete = GETDATE();
-
-			INSERT INTO [#operations] ([database_name], [timestamp], [operation], [outcome])
-			SELECT 
-				[database_name],
-				@checkpointComplete [timestamp], 
-				@command [operation],
-				@outcome [outcome]
-			FROM 
-				[#logSizes] 
-			WHERE 
-				[operation] = N'CHECKPOINT + BACKUP + SHRINK'
-			ORDER BY 
-				[row_id];
-
-			IF @returnValue <> 0 BEGIN
-				-- we needed a checkpoint before we could go any further... it didn't work (somhow... not even sure that's a possibility)... so, we're 'done'. we need to terminate early.
-				PRINT 'run an update where operation = checkpoint/backup/shrink and set those pigs to done with an ''early termination'' summary as the operation... we can keep trying other dbs... ';
-			END;
-
+			FETCH NEXT FROM walker INTO @currentDatabase;
 		END;
+
+		CLOSE walker;
+		DEALLOCATE walker;
+
 
 		SET @waitStarted = GETDATE();
 WaitAndCheck:
@@ -9957,6 +10244,15 @@ ShrinkLogFile:
 
 	-- TODO: send email alerts based on outcomes above (specifically, pass/fail and such).
 
+	-- in terms of output: 
+	--		want to see those that PASSED and those that FAILED> 
+	--			also? I'd like to see a summary of how much disk was reclaimed ... and how much stands to be reclaimed if/when we fix the 'FAILURE' outcomes. 
+	--				so, in other words, some sort of header... 
+	--		and... need the output sorted by a) failures first, then successes, b) row_id... (that way... it's clear which ones passed/failed). 
+	--		
+
+	--	also... MIGHT want to look at removing the WITH NO_INFOMSGS switch from the DBCC SHRINKFILE operations... 
+	--			cuz.. i'd like to collect/gather the friggin errors - they seem to consistently keep coming back wiht 'end of file' crap - which is odd, given that I'm running checkpoint up the wazoo. 
 
 	RETURN 0;
 GO
@@ -9982,7 +10278,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -10125,7 +10421,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -13193,7 +13489,7 @@ CREATE PROC dbo.generate_audit_signature
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -13262,7 +13558,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -13437,7 +13733,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -13555,7 +13851,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.5.2816.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -13697,8 +13993,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.5.2816.2';
-DECLARE @VersionDescription nvarchar(200) = N'Initial introduction of logic for automated log-shrinking';
+DECLARE @CurrentVersion varchar(20) = N'5.6.2831.1';
+DECLARE @VersionDescription nvarchar(200) = N'Documentation Revamp + natural-language interval-specifier support for @Vectors';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
