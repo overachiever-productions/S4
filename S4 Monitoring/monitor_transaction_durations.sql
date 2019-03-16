@@ -36,23 +36,28 @@ AS
 
 	-- {copyright}
 
+    -----------------------------------------------------------------------------
+    -- Validate Inputs: 
 	SET @AlertThreshold = LTRIM(RTRIM(@AlertThreshold));
 	DECLARE @transactionCutoffTime datetime; 
-	DECLARE @vectorError nvarchar(MAX); 
-	DECLARE @returnValue int; 
-	
-	EXEC @returnValue = dbo.get_time_vector 
-		@Vector = @AlertThreshold, 
-		@ParameterName = N'@AlertThreshold',
-		@AllowedIntervals = N's, m, h, d', 
-		@Mode = N'SUBTRACT', 
-		@Output = @transactionCutoffTime OUTPUT, 
-		@Error = @vectorError OUTPUT;
 
-	IF @returnValue <> 0 BEGIN
+	DECLARE @vectorError nvarchar(MAX); 
+	DECLARE @vectorMilliseconds bigint;
+
+	EXEC [dbo].[translate_vector]
+	    @Vector = @AlertThreshold, 
+	    @ValidationParameterName = N'@AlertThreshold', 
+	    @ProhibitedIntervals = N'WEEK, MONTH, QUARTER, YEAR', 
+	    @TranslationInterval = N'MILLISECOND', 
+	    @Output = @vectorMilliseconds OUTPUT, 
+	    @Error = @vectorError OUTPUT;
+
+	IF @vectorError IS NOT NULL BEGIN 
 		RAISERROR(@vectorError, 16, 1); 
-		RETURN @returnValue;
+		RETURN -10;
 	END;
+
+	SET @transactionCutoffTime = DATEADD(MILLISECOND, @vectorMilliseconds, GETDATE());
 
 	SELECT 
 		[dtat].[transaction_id],

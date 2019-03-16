@@ -90,8 +90,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.get_time_vector', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.translate_vector', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -160,33 +160,52 @@ AS
 		RETURN -7;
 	END;
 
-	SET @Retention = LTRIM(RTRIM(@Retention));
+	SET @Retention = LTRIM(RTRIM(REPLACE(@Retention, N' ', N'')));
+
 	DECLARE @retentionType char(1);
+	DECLARE @retentionValue bigint;
+	DECLARE @retentionError nvarchar(MAX);
 	DECLARE @retentionCutoffTime datetime; 
-	DECLARE @retentionValue int;
 
-	SET @retentionType = RIGHT(@Retention, 1);
+	IF UPPER(@Retention) LIKE '%B%' OR UPPER(@Retention) LIKE '%BACKUP%' BEGIN 
+		-- Backups to be kept by # of backups NOT by timestamp
+		DECLARE @boundary int = PATINDEX(N'%[^0-9]%', @Retention)- 1;
 
-	IF LOWER(ISNULL(@retentionType, N'x')) = N'b' BEGIN 
+		IF @boundary < 1 BEGIN 
+			SET @retentionError = N'Invalid Vector format specified for parameter @Retention. Format must be in ''XX nn'' or ''XXnn'' format - where XX is an ''integer'' duration (e.g., 72) and nn is an interval-specifier (e.g., HOUR, HOURS, H, or h).';
+			RAISERROR(@retentionError, 16, 1);
+			RETURN -1;
+		END;
 
-		SET @retentionValue = CAST(LEFT(@Retention, LEN(@Retention) -1) AS int);
+		BEGIN TRY
+			SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
+		END TRY
+		BEGIN CATCH
+			SET @retentionValue = -1;
+		END CATCH
+
+		IF @retentionValue < 0 BEGIN 
+			RAISERROR('Invalid @Retention value specified. Number of Backups specified was formatted incorrectly or < 0.', 16, 1);
+			RETURN -25;
+		END;
+
 	  END;
 	ELSE BEGIN 
-		DECLARE @returnValue int; 
-		DECLARE @vectorError nvarchar(MAX);
-		
-		EXEC @returnValue = dbo.get_time_vector 
-			@Vector = @Retention, 
-			@ParameterName = N'@Retention',
-			@AllowedIntervals = N'm, h, d, w', 
-			@Mode = N'SUBTRACT', 
-			@Output = @retentionCutoffTime OUTPUT, 
-			@Error = @vectorError OUTPUT;
 
-		IF @returnValue <> 0 BEGIN
-			RAISERROR(@vectorError, 16, 1); 
-			RETURN @returnValue;
+		EXEC [dbo].[translate_vector]
+		    @Vector = @Retention,
+		    @ValidationParameterName = N'@Retention',
+		    @ProhibitedIntervals = N'MILLISECOND',
+		    @TranslationInterval = N'MILLISECOND',
+		    @Output = @retentionValue OUTPUT,
+		    @Error = @retentionError OUTPUT;
+
+		IF @retentionError IS NOT NULL BEGIN 
+			RAISERROR(@retentionError, 16, 1);
+			RETURN -26;
 		END;
+
+		SET @retentionCutoffTime = DATEADD(MILLISECOND, 0 - @retentionValue, GETDATE());
 	END;
 
 	IF @PrintOnly = 1 BEGIN

@@ -121,8 +121,8 @@ AS
         RETURN -1;
     END;
 
-    IF OBJECT_ID('dbo.get_time_vector','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.get_time_vector not defined - unable to continue.', 16, 1);
+    IF OBJECT_ID('dbo.translate_vector','P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
         RETURN -1;
     END;
 
@@ -214,28 +214,23 @@ AS
         RETURN -22;
     END;
 
-	DECLARE @rpoCutoff datetime; 
-	DECLARE @vectorReturn int; 
+	DECLARE @vector bigint;  -- 'global'
 	DECLARE @vectorError nvarchar(MAX);
-	DECLARE @vector int;  -- 'global'
-
-	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
-		EXEC @vectorReturn = dbo.get_time_vector
-			@Vector = @RpoWarningThreshold, 
-			@ParameterName = N'@RpoWarningThreshold',
-			@AllowedIntervals = N'm, h, d', 
-			@Mode = N'SUBTRACT', 
-			@Output = @rpoCutoff OUTPUT, 
-			@Error = @vectorError OUTPUT;
-
-		IF @vectorReturn <> 0 BEGIN
-			RAISERROR(@vectorError, 16, 1); 
-			RETURN @vectorReturn;
-		END;
-
-		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
-	END;
 	
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		EXEC [dbo].[translate_vector]
+		    @Vector = @RpoWarningThreshold, 
+		    @ValidationParameterName = N'@RpoWarningThreshold', 
+		    @TranslationInterval = N'MILLISECOND', 
+		    @Output = @vector OUTPUT, 
+		    @Error = @vectorError OUTPUT;
+
+		IF @vectorError IS NOT NULL BEGIN 
+			RAISERROR(@vectorError, 16, 1);
+			RETURN -20;
+		END;
+	END;
+
 	DECLARE @directivesText nvarchar(200) = N'';
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
 		SET @Directives = LTRIM(RTRIM(@Directives));
