@@ -51,7 +51,7 @@ Once S4 has been deployed, keeping it updated is simple:
 3. The script will do everything necessary to update all code, tables, and other stuctures/entities needed to push your code to the latest version of S4 goodness. 
 4. Upon completion, the update/deployment script will output information about all versions installed on your target server instance:
 
--- TODO: provide a screenshot of an updated install to 5.6 or 5.7
+![](images/install_update_completed.gif)
 
 
 [Return to Setup Table of Contents](#toc)
