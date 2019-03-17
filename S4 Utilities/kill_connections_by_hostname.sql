@@ -28,7 +28,7 @@ CREATE PROC dbo.kill_connections_by_hostname
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:

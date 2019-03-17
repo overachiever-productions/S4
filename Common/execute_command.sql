@@ -50,7 +50,7 @@ CREATE PROC dbo.execute_command
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

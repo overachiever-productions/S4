@@ -109,6 +109,8 @@ CREATE PROC [dbo].[verify_job_synchronization]
 AS 
 	SET NOCOUNT ON;
 
+	-- {copyright}
+
 	---------------------------------------------
 	-- Validation Checks: 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:

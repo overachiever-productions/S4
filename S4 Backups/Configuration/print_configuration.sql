@@ -15,7 +15,6 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.print_configuration','P') IS NOT NULL
 	DROP PROC dbo.print_configuration;
 GO
@@ -24,6 +23,8 @@ CREATE PROC dbo.print_configuration
 
 AS
 	SET NOCOUNT ON;
+
+	-- {copyright}
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 

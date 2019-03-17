@@ -1,4 +1,3 @@
-
 /*
 
 	NOTE: 
@@ -11,7 +10,6 @@
 
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.list_collisions', 'P') IS NOT NULL
 	DROP PROC dbo.list_collisions;
@@ -330,4 +328,3 @@ AS
 
 	RETURN 0;
 GO
-

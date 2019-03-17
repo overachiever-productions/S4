@@ -1,4 +1,3 @@
-
 /*
 
 	NOTES:
@@ -15,11 +14,8 @@
 */
 
 
-
-
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.get_engine_version','FN') IS NOT NULL
 	DROP FUNCTION dbo.get_engine_version;
@@ -29,6 +25,7 @@ CREATE FUNCTION dbo.get_engine_version()
 RETURNS decimal(4,2)
 AS
 	-- {copyright}
+
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -48,5 +45,3 @@ AS
 		RETURN @output;
 	END;
 GO
-
-

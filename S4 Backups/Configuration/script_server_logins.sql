@@ -121,7 +121,7 @@ AS
 
 		-- Profile Checks:
 		DECLARE @databaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @databaseMailProfile OUT, @no_output = N'no_output';
  
 		IF @databaseMailProfile != @MailProfileName BEGIN
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
@@ -312,9 +312,3 @@ REPORTING:
 
 	RETURN 0;
 GO
-
-
-
-
-
-

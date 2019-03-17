@@ -54,10 +54,8 @@ EXEC admindb.dbo.[list_processes]
 
 */
 
-
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.list_processes','P') IS NOT NULL
 	DROP PROC dbo.list_processes;

@@ -1,4 +1,3 @@
-
 /*
 
 
@@ -35,8 +34,9 @@ CREATE FUNCTION dbo.is_job_running (@JobName sysname)
 RETURNS bit 
 	WITH RETURNS NULL ON NULL INPUT
 AS 
-	-- {copyright} 
-	
+
+	-- {copyright}
+
 	BEGIN;
 		
 		DECLARE @output bit = 0;

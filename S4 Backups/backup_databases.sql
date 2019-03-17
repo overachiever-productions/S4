@@ -463,7 +463,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
-				EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @Result = @outcome OUTPUT;
 
 				IF @outcome IS NOT NULL
 					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -530,7 +530,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
-				EXEC dbo.execute_uncatchable_command @command, 'BACKUP', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'BACKUP', @Result = @outcome OUTPUT;
 
 				IF @outcome IS NOT NULL
 					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -599,7 +599,7 @@ DoneRemovingFilesBeforeBackup:
 			ELSE BEGIN
 				BEGIN TRY 
 					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @result = @outcome OUTPUT;
+					EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @Result = @outcome OUTPUT;
 					
 					IF @outcome IS NOT NULL
 						SET @copyMessage = @outcome;
@@ -648,7 +648,7 @@ DoneRemovingFilesBeforeBackup:
 
 			IF @copyMessage IS NOT NULL BEGIN
 
-				IF @currentOperationId IS NULL BEGIN
+				IF @currentOperationID IS NULL BEGIN
 					-- if we weren't logging successful operations, this operation isn't now a 100% failure, but there are problems, so we need to create a row for reporting/tracking purposes:
 					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded)
 					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(),0);
@@ -768,7 +768,7 @@ NextDatabase:
 			IF @PrintOnly = 1 
 				PRINT @errorMessage;
 			ELSE BEGIN;
-				IF @currentOperationId IS NULL BEGIN;
+				IF @currentOperationID IS NULL BEGIN;
 					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, error_details)
 					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(), 0, @errorMessage);
 				  END;

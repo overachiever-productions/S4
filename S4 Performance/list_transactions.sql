@@ -1,4 +1,3 @@
-
 /*
 	
 	vNEXT:
@@ -24,7 +23,6 @@ EXEC dbo.list_transactions
 
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.list_transactions','P') IS NOT NULL
 	DROP PROC dbo.list_transactions;

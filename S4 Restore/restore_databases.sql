@@ -59,7 +59,6 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.restore_databases','P') IS NOT NULL
     DROP PROC dbo.restore_databases;
 GO
@@ -87,7 +86,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-    -- {copyright}
+	-- {copyright}
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -629,7 +628,7 @@ AS
               END;
             ELSE BEGIN
                 SET @outcome = NULL;
-                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
                 SET @statusDetail = @outcome;
             END;
@@ -673,7 +672,7 @@ AS
                   END;
                 ELSE BEGIN
                     SET @outcome = NULL;
-                    EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+                    EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
                     SET @statusDetail = @outcome;
                 END;
@@ -730,7 +729,7 @@ AS
                       END;
                     ELSE BEGIN
                         SET @outcome = NULL;
-                        EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+                        EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
                         SET @statusDetail = @outcome;
                     END;
@@ -792,7 +791,7 @@ AS
 				  END;
 				ELSE BEGIN
 					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
 					SET @statusDetail = @outcome;
 				END;
@@ -1152,7 +1151,7 @@ FINALIZE:
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
         ELSE BEGIN
-            SET @emailSubject = @emailSubjectPrefix + N' - ERROR';
+            SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
 
             EXEC msdb..sp_notify_operator
                 @profile_name = @MailProfileName,

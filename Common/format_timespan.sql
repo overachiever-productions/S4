@@ -1,4 +1,3 @@
-
 /*
 
 
@@ -9,7 +8,6 @@
 
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.format_timespan','FN') IS NOT NULL
 	DROP FUNCTION dbo.format_timespan;

@@ -119,7 +119,7 @@ ALERTS:
 			EXEC msdb.dbo.sp_notify_operator 
 				@profile_name = @MailProfileName, 
 				@name = @OperatorName, 
-				@subject = @Subject, 
+				@subject = @subject, 
 				@body = @errorMessage;	
 		END;
 	END;

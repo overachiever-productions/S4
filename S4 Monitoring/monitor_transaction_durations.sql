@@ -1,5 +1,3 @@
-
-
 /*
 
 	-- TODO: show 'status' of the query - i.e., running, runnable, sleeping, etc..... that info will be CRITICAL in determining what's up... 
@@ -13,7 +11,6 @@
 
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.monitor_transaction_durations','P') IS NOT NULL
 	DROP PROC dbo.monitor_transaction_durations;
@@ -340,4 +337,3 @@ BlockingCheckComplete:
 
 	RETURN 0;
 GO
-

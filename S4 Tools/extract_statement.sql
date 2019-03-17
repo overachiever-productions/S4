@@ -38,7 +38,6 @@ SELECT @Statement;
 
 */
 
-
 USE [admindb];
 GO
 
@@ -55,7 +54,7 @@ CREATE PROC dbo.extract_statement
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	DECLARE @sql nvarchar(2000) = N'
 SELECT 
