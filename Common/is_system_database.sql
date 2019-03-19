@@ -15,7 +15,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 	RETURNS bit
 AS 
 
-	-- {copyright} 
+	-- {copyright}
 
 	BEGIN 
 		DECLARE @output bit = 0;
