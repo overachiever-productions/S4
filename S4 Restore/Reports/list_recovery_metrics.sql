@@ -310,6 +310,7 @@ AS
 	-- SUMMARY: 
 	IF UPPER(@Mode) = N'SUMMARY' BEGIN
 	
+		DECLARE @compatibilityCommand nvarchar(MAX) = N'
 		SELECT 
 			f.[operation_date], 
 			f.[database] + N' -> ' + f.[restored_as] [operation],
@@ -322,15 +323,30 @@ AS
 			dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
 			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
 			CASE 
-				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N' days' 
+				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N'' days'' 
 				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
 			END [rpo_gap], 
 			ISNULL(f.[error_details], N'') [error_details]
 		FROM 
 			#facts f
 		ORDER BY 
-			f.[row_number];
+			f.[row_number]; ';
 
+		IF (SELECT dbo.[get_engine_version]()) <= 10.5 BEGIN 
+			-- TODO: the fix here won't be too hard. i.e., I just need to do the following: 
+			--		a) figure out how to 'order' the rows in #facts as needed... i.e., either by a ROW_NUMBER() ... windowing function (assuming that's supported) or by means of some other option... 
+			--		b) instead of using SUM() OVER ()... 
+			--				just 1) create an INNER JOIN against #facts f2 ON f1.previousRowIDs <= f2.currentRowID - as per this approach: https://stackoverflow.com/a/2120639/11191
+			--				then 2) just SUM against f2 instead... and that should work just fine. 
+			
+			-- as in... i'd create/define a DIFFERENT @compatibilityCommand 'body'... then let that be RUN below via sp_executesql... 
+
+
+			RAISERROR('The SUMMARY mode is currently NOT supported in SQL Server 2008 and 2008R2.', 16, 1); 
+			RETURN -100;
+		END; 
+
+		EXEC sys.[sp_executesql] @compatibilityCommand;
 	END; 
 
 	-----------------------------------------------------------------------------
