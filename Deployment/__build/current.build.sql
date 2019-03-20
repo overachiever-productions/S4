@@ -408,7 +408,7 @@ GO
 DECLARE @currentVersion decimal(2,1); 
 SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
 
-IF @currentVersion < 4.7 BEGIN 
+IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN 
 
 	DECLARE @hoursDiff int; 
 	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
