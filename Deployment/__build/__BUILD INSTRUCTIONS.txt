@@ -1,0 +1,64 @@
+--------------------------------------------------------------------------------------------------------
+BUILD PROTOTYPE SYNTAX: 
+> S4BuildPrototype.exe <xxx.build.sql> Maj.Min "description" 
+	<xxx.build.sql> = name of the build/.sql file to use. 
+	Maj.Min = Major and Min version of the build/version being created. 
+	"description" = brief overview of what changes were made/added. 
+
+SAMPLE BUILD COMMAND/EXECUTION:
+> S4BuildPrototype.exe current.build.sql 5.x "This is what is in 5.x" 
+
+--------------------------------------------------------------------------------------------------------
+BUILD DIRECTIVES HANDLED BY S4Build(Prototype).exe: 
+
+	--##NOTE: sample comment here...  		
+		comment or note - won't be output into the final/projected .sql file. 
+
+	--##OUTPUT: \\Deployment
+		specifies a relative path to where the output .sql file will be dropped. 
+		where the filename of the output/built-file will be: 
+			Maj.Min.Identifier.BuildNumber.sql
+
+	--##INCLUDE: Folder\file_name.sql 
+		root relative path to a .sql file to include as part of the output/build. 
+		e.g., if we want to include S4\S4 Performance\list_processes.sql 
+			then we'd simply define a directive in the form of: 
+				--##INCLUDE: S4 Performance\list_processes.sql 
+
+			NOTE: if the path defined does not exist or match a .sql file the Build Tool will throw an exception.
+
+	--##CONDITIONAL_SUPPORT(xxx) 
+		where xxx is the condition to be satisfied 
+		and where this directive, when place above a sproc's definition (in an --##INCLUDE'd file) 
+			will cause the build file to: 
+				a) create a place-holder that says that the sproc isn't supported
+					(currently it says "not supported in 2008" but I need to tweak this so that the RAISERORR content is 
+						passed along in the form of this syntax:  --##CONDITIONAL_SUPPORT(< 10.5)[This is the OPTIONAL RaiseError message - otherwise there will be a default placeholder of "sorry, not supported".]
+
+	##{{S4version}}
+		token, which will be replaced by Maj.Min.Id.BuildID whenever the build file is running and processing
+		include'd .sql files. 
+
+
+	##{{S4version_summary}}
+		similar to the above - but contains the "description" passed into the build tool during build.
+
+		
+	-- {copyright} 
+		token that is replaced with versioned copyright info + repo links. 
+		TODO: this should just be ##{{Copyright}} - so that  it matches other 'inline' token syntax (version details). 
+			meaning that it would be 'dropped' into .sql files as: 
+				-- ##{{Copyright}} and the -- would NOT be replaced, just the token.. 
+
+TODO: 
+	- Modify ##CONDITIONAL_SUPPORT(xxx) to enable passing in the RAISERROR message: 
+			e.g., ##CONDITIONAL_SUPPORT(> 10.5) [This is the error that will be raised in RAISERROR...]
+
+	-- make {copyright} a better token. 
+
+	-- S4BuildPrototype.exe is a brute-force (proof of concept) tool at present. 
+		rewrite using design patterns, and then add to S4 as an additional 'bit' of code... 
+
+	-- Create a PS1 file that asks for a Maj.Min and a description
+		and have it be the 'default' build file - i.e., point it at current.build.sql 
+			and have it feed in the PS1 'requested' version and description and then report on success/failure.
