@@ -408,7 +408,7 @@ GO
 DECLARE @currentVersion decimal(2,1); 
 SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
 
-IF @currentVersion < 4.7 BEGIN 
+IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN 
 
 	DECLARE @hoursDiff int; 
 	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
@@ -660,17 +660,22 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
 
------------------------------------
---##INCLUDE: S4 Backups\Configuration\print_logins.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Configuration:
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Backups\Configuration\script_server_logins.sql
+--##INCLUDE: S4 Configuration\print_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Backups\Configuration\print_configuration.sql
+--##INCLUDE: S4 Configuration\script_server_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Backups\Configuration\script_server_configuration.sql
+--##INCLUDE: S4 Configuration\print_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\script_server_configuration.sql
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------

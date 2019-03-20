@@ -1,7 +1,3 @@
-
-
-
-
 /*
 
 	DEPENDENCIES:
@@ -23,8 +19,6 @@
 
 USE [admindb];
 GO
-
-
 
 IF OBJECT_ID('dbo.verify_drivespace','P') IS NOT NULL
 	DROP PROC dbo.verify_drivespace;

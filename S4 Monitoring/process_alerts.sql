@@ -1,4 +1,3 @@
-
 /*
 	PURPOSES:
 		- Severity 17+ alerts are great - only, sometimes, there's 'noise' in the sense that SOME errors don't really need to be addressed at all. 
@@ -59,84 +58,7 @@
 			@PrintOnly = 1;		
 
 
-*/
 
-
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.process_alerts','P') IS NOT NULL
-	DROP PROC dbo.process_alerts;
-GO
-
-CREATE PROC dbo.process_alerts 
-	@ErrorNumber				int, 
-	@Severity					int, 
-	@Message					nvarchar(2048),
-	@OperatorName				sysname					= N'Alerts',
-	@MailProfileName			sysname					= N'General', 
-	@PrintOnly					bit						= 0
-AS 
-	SET NOCOUNT ON; 
-
-	-- {copyright} 
-
-	DECLARE @response nvarchar(2000); 
-	SELECT @response = response FROM dbo.alert_responses 
-	WHERE 
-		message_id = @ErrorNumber
-		AND is_enabled = 1;
-
-	IF NULLIF(@response, N'') IS NOT NULL BEGIN 
-
-		IF UPPER(@response) = N'[IGNORE]' BEGIN 
-
-			-- this is an explicitly ignored alert. print the error details (which'll go into the SQL Server Agent Job log), then bail/return: 
-			PRINT '[IGNORE] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
-			RETURN 0;
-		END;
-
-		-- vNEXT:
-			-- add additional processing options here. 
-	END;
-
-	------------------------------------
-	-- If we're still here, then there were now 'special instructions' for this specific error/alert(so send an email with details): 
-
-	DECLARE @body nvarchar(MAX) = N'DATE/TIME: {0}
-
-DESCRIPTION: {1}
-
-ERROR NUMBER: {2}' ;
-
-	SET @body = REPLACE(@body, '{0}', CONVERT(nvarchar(20), GETDATE(), 100));
-	SET @body = REPLACE(@body, '{1}', @Message);
-	SET @body = REPLACE(@body, '{2}', @ErrorNumber);
-
-	DECLARE @subject nvarchar(256) = N'SQL Server Alert System: ''Severity {0}'' occurred on {1}';
-
-	SET @subject = REPLACE(@subject, '{0}', @Severity);
-	SET @subject = REPLACE(@subject, '{1}', @@SERVERNAME); 
-	
-	IF @PrintOnly = 1 BEGIN 
-			PRINT N'SUBJECT: ' + @subject; 
-			PRINT N'BODY: ' + @body;
-	  END;
-	ELSE BEGIN
-		EXEC msdb.dbo.sp_notify_operator
-			@profile_name = @MailProfileName, 
-			@name = @OperatorName,
-			@subject = @subject, 
-			@body = @body;
-	END;
-
-	RETURN 0;
-GO
-
-
-
-
-/*
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Job Creation (Step 3):
@@ -204,4 +126,76 @@ EXEC admindb.dbo.process_alerts
 GO
 
 
+
 */
+
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.process_alerts','P') IS NOT NULL
+	DROP PROC dbo.process_alerts;
+GO
+
+CREATE PROC dbo.process_alerts 
+	@ErrorNumber				int, 
+	@Severity					int, 
+	@Message					nvarchar(2048),
+	@OperatorName				sysname					= N'Alerts',
+	@MailProfileName			sysname					= N'General', 
+	@PrintOnly					bit						= 0
+AS 
+	SET NOCOUNT ON; 
+
+	-- {copyright}
+
+	DECLARE @response nvarchar(2000); 
+	SELECT @response = response FROM dbo.alert_responses 
+	WHERE 
+		message_id = @ErrorNumber
+		AND is_enabled = 1;
+
+	IF NULLIF(@response, N'') IS NOT NULL BEGIN 
+
+		IF UPPER(@response) = N'[IGNORE]' BEGIN 
+
+			-- this is an explicitly ignored alert. print the error details (which'll go into the SQL Server Agent Job log), then bail/return: 
+			PRINT '[IGNORE] Error. Severity: ' + CAST(@Severity AS sysname) + N', ErrorNumber: ' + CAST(@ErrorNumber AS sysname) + N', Message: '  + @Message;
+			RETURN 0;
+		END;
+
+		-- vNEXT:
+			-- add additional processing options here. 
+	END;
+
+	------------------------------------
+	-- If we're still here, then there were now 'special instructions' for this specific error/alert(so send an email with details): 
+
+	DECLARE @body nvarchar(MAX) = N'DATE/TIME: {0}
+
+DESCRIPTION: {1}
+
+ERROR NUMBER: {2}' ;
+
+	SET @body = REPLACE(@body, '{0}', CONVERT(nvarchar(20), GETDATE(), 100));
+	SET @body = REPLACE(@body, '{1}', @Message);
+	SET @body = REPLACE(@body, '{2}', @ErrorNumber);
+
+	DECLARE @subject nvarchar(256) = N'SQL Server Alert System: ''Severity {0}'' occurred on {1}';
+
+	SET @subject = REPLACE(@subject, '{0}', @Severity);
+	SET @subject = REPLACE(@subject, '{1}', @@SERVERNAME); 
+	
+	IF @PrintOnly = 1 BEGIN 
+			PRINT N'SUBJECT: ' + @subject; 
+			PRINT N'BODY: ' + @body;
+	  END;
+	ELSE BEGIN
+		EXEC msdb.dbo.sp_notify_operator
+			@profile_name = @MailProfileName, 
+			@name = @OperatorName,
+			@subject = @subject, 
+			@body = @body;
+	END;
+
+	RETURN 0;
+GO

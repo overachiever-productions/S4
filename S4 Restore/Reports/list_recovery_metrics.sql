@@ -14,6 +14,149 @@
 			- that'll require some additional validation/filtering and other logic. 
 			- BUT... this'll also mean i can tweak restore_databases to pull back 'error' details by means of executing this sproc? 
 
+
+
+---------------------------------------------------------------------------------------------------
+---- sample RPO checks: 
+
+
+								--DECLARE @LatestBatch uniqueidentifier;
+								--SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
+
+								--SET @LatestBatch = '2A7A3D02-350E-47AC-A74E-65680ABF38C5';
+
+
+								--SELECT 
+								--	[database] + N' -> ' + [restored_as] [operation], 
+								--	[restore_succeeded],
+								--	[test_date], 
+								--	restore_end, 
+								--	ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count],
+								--	ISNULL(restored_files.exist('/files/file/name[contains(., "DIFF_")]'), 0) [diff_restored],
+								--	--0 [diff_included],			-- derive from restored_files
+								--	restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [latest_backup]
+
+								--FROM 
+								--	dbo.[restore_log]
+								--WHERE 
+								--	[execution_id] = @LatestBatch
+								--ORDER BY 
+								--	[restore_test_id];
+
+
+								--GO
+
+--;
+--WITH core AS ( 
+
+--	SELECT TOP 100
+--		restore_test_id,
+--		[database] + N' -> ' + [restored_as] [operation], 
+--		[restore_succeeded],
+--		[test_date], 
+--		[restore_start],
+--		restore_end, 
+--		ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count],
+--		ISNULL(restored_files.exist('/files/file/name[contains(., "DIFF_")]'), 0) [diff_restored],
+--		--0 [diff_included],			-- derive from restored_files
+--		restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [latest_backup]
+
+--	FROM 
+--		dbo.[restore_log]
+
+--	ORDER BY 
+--		[restore_test_id] DESC
+--)
+
+--SELECT 
+--	[restore_test_id],
+--    [operation],
+--    [restore_succeeded],
+--    [test_date],
+--	[restore_start],
+--    [restore_end],
+--    [restored_file_count],
+--    [diff_restored],
+--    [latest_backup], 
+--	dbo.format_timespan(DATEDIFF(MILLISECOND, [core].[latest_backup], [core].[restore_end])) [recovery_point_vector]
+--FROM 
+--	core;
+
+
+
+
+---------------------------------------------------------------------------------------------------
+---- RTO checks: 
+
+---- TODO: currently outputs as hh:mm:ss ... probably need to enable a dd hh:mm:ss option too... cuz of long-running restores and such... (i.e., i don't have any clients (currently) that need this ... but ... it could happen... 
+----		well... or... if 49:12:12 pretty clear..... guess it is. (so, just make sure that'll work as expected).
+
+--DECLARE @LatestBatch uniqueidentifier;
+--SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
+
+--DECLARE @Errors bit = 0;
+
+--IF EXISTS (SELECT NULL FROM dbo.[restore_log] WHERE [execution_id] = @LatestBatch AND [restore_succeeded] = 0 OR [consistency_succeeded] = 0)
+--	SET @Errors = 1;
+
+--IF @Errors = 1 
+--	SELECT 'Errors Were Detected - Check for Details' [outcome];
+--ELSE BEGIN 
+--	DECLARE @totalSeconds int;
+
+--	SELECT @totalSeconds = SUM(DATEDIFF(SECOND, restore_start, restore_end)) FROM dbo.[restore_log] WHERE [execution_id] = @LatestBatch;
+
+--	SELECT N'Total Restore Time -> '	
+--			+ RIGHT('0' + CAST(@totalSeconds / 3600 AS sysname),2) + ':' +
+--			+ RIGHT('0' + CAST((@totalSeconds / 60) % 60 AS sysname),2) + ':' +
+--			+ RIGHT('0' + CAST(@totalSeconds % 60 AS sysname),2)
+--END;
+
+--GO
+
+
+
+-------------------------------------------------------------------
+---- F. RTO checks over x days (well.. last 10):
+
+--WITH core AS ( 
+--	SELECT 
+--		rl.[execution_id],
+--		(SELECT MIN([test_date]) FROM dbo.[restore_log] x WHERE x.[execution_id] = rl.[execution_id]) [test_date],
+--		CASE
+--			WHEN rl.[restore_succeeded] = 1 THEN DATEDIFF(SECOND, rl.[restore_start], rl.[restore_end])
+--			ELSE 0
+--		END [restore_seconds]
+--	FROM 
+--		dbo.[restore_log] rl
+--), 
+--grouped AS (
+--	SELECT 
+--		[core].[execution_id], 
+--		[core].[test_date],
+--		SUM([core].[restore_seconds]) [total_seconds]
+--	FROM 
+--		core 
+--	WHERE 
+--		[core].[test_date] > DATEADD(DAY, -10, GETDATE())
+--	GROUP BY 
+--		[core].[execution_id], [core].[test_date]
+--)
+	
+--SELECT 
+--	[grouped].[test_date], 
+--	RIGHT('0' + CAST([total_seconds] / 3600 AS sysname),2) + ':' +
+--		+ RIGHT('0' + CAST(([total_seconds] / 60) % 60 AS sysname),2) + ':' +
+--		+ RIGHT('0' + CAST([total_seconds] % 60 AS sysname),2) [total_rto_time]
+--FROM 
+--	grouped 
+--ORDER BY 
+--	[grouped].[test_date];
+
+--GO	
+
+
+
 */
 
 USE [admindb];
@@ -167,9 +310,10 @@ AS
 	-- SUMMARY: 
 	IF UPPER(@Mode) = N'SUMMARY' BEGIN
 	
+		DECLARE @compatibilityCommand nvarchar(MAX) = N'
 		SELECT 
 			f.[operation_date], 
-			f.[database] + N' -> ' + f.[restored_as] [operation],
+			f.[database] + N'' -> '' + f.[restored_as] [operation],
 			f.[restore_succeeded], 
 			f.[consistency_succeeded] [check_succeeded],
 			f.[restored_file_count],
@@ -179,15 +323,30 @@ AS
 			dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
 			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
 			CASE 
-				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N' days' 
+				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N'' days'' 
 				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
 			END [rpo_gap], 
 			ISNULL(f.[error_details], N'') [error_details]
 		FROM 
 			#facts f
 		ORDER BY 
-			f.[row_number];
+			f.[row_number]; ';
 
+		IF (SELECT dbo.[get_engine_version]()) <= 10.5 BEGIN 
+			-- TODO: the fix here won't be too hard. i.e., I just need to do the following: 
+			--		a) figure out how to 'order' the rows in #facts as needed... i.e., either by a ROW_NUMBER() ... windowing function (assuming that's supported) or by means of some other option... 
+			--		b) instead of using SUM() OVER ()... 
+			--				just 1) create an INNER JOIN against #facts f2 ON f1.previousRowIDs <= f2.currentRowID - as per this approach: https://stackoverflow.com/a/2120639/11191
+			--				then 2) just SUM against f2 instead... and that should work just fine. 
+			
+			-- as in... i'd create/define a DIFFERENT @compatibilityCommand 'body'... then let that be RUN below via sp_executesql... 
+
+
+			RAISERROR('The SUMMARY mode is currently NOT supported in SQL Server 2008 and 2008R2.', 16, 1); 
+			RETURN -100;
+		END; 
+
+		EXEC sys.[sp_executesql] @compatibilityCommand;
 	END; 
 
 	-----------------------------------------------------------------------------
@@ -341,144 +500,3 @@ AS
 
 	RETURN 0;
 GO
-
-
-
----------------------------------------------------------------------------------------------------
----- sample RPO checks: 
-
-
-								--DECLARE @LatestBatch uniqueidentifier;
-								--SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
-
-								--SET @LatestBatch = '2A7A3D02-350E-47AC-A74E-65680ABF38C5';
-
-
-								--SELECT 
-								--	[database] + N' -> ' + [restored_as] [operation], 
-								--	[restore_succeeded],
-								--	[test_date], 
-								--	restore_end, 
-								--	ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count],
-								--	ISNULL(restored_files.exist('/files/file/name[contains(., "DIFF_")]'), 0) [diff_restored],
-								--	--0 [diff_included],			-- derive from restored_files
-								--	restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [latest_backup]
-
-								--FROM 
-								--	dbo.[restore_log]
-								--WHERE 
-								--	[execution_id] = @LatestBatch
-								--ORDER BY 
-								--	[restore_test_id];
-
-
-								--GO
-
---;
---WITH core AS ( 
-
---	SELECT TOP 100
---		restore_test_id,
---		[database] + N' -> ' + [restored_as] [operation], 
---		[restore_succeeded],
---		[test_date], 
---		[restore_start],
---		restore_end, 
---		ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count],
---		ISNULL(restored_files.exist('/files/file/name[contains(., "DIFF_")]'), 0) [diff_restored],
---		--0 [diff_included],			-- derive from restored_files
---		restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [latest_backup]
-
---	FROM 
---		dbo.[restore_log]
-
---	ORDER BY 
---		[restore_test_id] DESC
---)
-
---SELECT 
---	[restore_test_id],
---    [operation],
---    [restore_succeeded],
---    [test_date],
---	[restore_start],
---    [restore_end],
---    [restored_file_count],
---    [diff_restored],
---    [latest_backup], 
---	dbo.format_timespan(DATEDIFF(MILLISECOND, [core].[latest_backup], [core].[restore_end])) [recovery_point_vector]
---FROM 
---	core;
-
-
-
-
----------------------------------------------------------------------------------------------------
----- RTO checks: 
-
----- TODO: currently outputs as hh:mm:ss ... probably need to enable a dd hh:mm:ss option too... cuz of long-running restores and such... (i.e., i don't have any clients (currently) that need this ... but ... it could happen... 
-----		well... or... if 49:12:12 pretty clear..... guess it is. (so, just make sure that'll work as expected).
-
---DECLARE @LatestBatch uniqueidentifier;
---SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
-
---DECLARE @Errors bit = 0;
-
---IF EXISTS (SELECT NULL FROM dbo.[restore_log] WHERE [execution_id] = @LatestBatch AND [restore_succeeded] = 0 OR [consistency_succeeded] = 0)
---	SET @Errors = 1;
-
---IF @Errors = 1 
---	SELECT 'Errors Were Detected - Check for Details' [outcome];
---ELSE BEGIN 
---	DECLARE @totalSeconds int;
-
---	SELECT @totalSeconds = SUM(DATEDIFF(SECOND, restore_start, restore_end)) FROM dbo.[restore_log] WHERE [execution_id] = @LatestBatch;
-
---	SELECT N'Total Restore Time -> '	
---			+ RIGHT('0' + CAST(@totalSeconds / 3600 AS sysname),2) + ':' +
---			+ RIGHT('0' + CAST((@totalSeconds / 60) % 60 AS sysname),2) + ':' +
---			+ RIGHT('0' + CAST(@totalSeconds % 60 AS sysname),2)
---END;
-
---GO
-
-
-
--------------------------------------------------------------------
----- F. RTO checks over x days (well.. last 10):
-
---WITH core AS ( 
---	SELECT 
---		rl.[execution_id],
---		(SELECT MIN([test_date]) FROM dbo.[restore_log] x WHERE x.[execution_id] = rl.[execution_id]) [test_date],
---		CASE
---			WHEN rl.[restore_succeeded] = 1 THEN DATEDIFF(SECOND, rl.[restore_start], rl.[restore_end])
---			ELSE 0
---		END [restore_seconds]
---	FROM 
---		dbo.[restore_log] rl
---), 
---grouped AS (
---	SELECT 
---		[core].[execution_id], 
---		[core].[test_date],
---		SUM([core].[restore_seconds]) [total_seconds]
---	FROM 
---		core 
---	WHERE 
---		[core].[test_date] > DATEADD(DAY, -10, GETDATE())
---	GROUP BY 
---		[core].[execution_id], [core].[test_date]
---)
-	
---SELECT 
---	[grouped].[test_date], 
---	RIGHT('0' + CAST([total_seconds] / 3600 AS sysname),2) + ':' +
---		+ RIGHT('0' + CAST(([total_seconds] / 60) % 60 AS sysname),2) + ':' +
---		+ RIGHT('0' + CAST([total_seconds] % 60 AS sysname),2) [total_rto_time]
---FROM 
---	grouped 
---ORDER BY 
---	[grouped].[test_date];
-
---GO	

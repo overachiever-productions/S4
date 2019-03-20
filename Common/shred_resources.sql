@@ -1,7 +1,3 @@
-
-
-
-
 /*
 
 
@@ -37,7 +33,6 @@ IF OBJECT_ID('dbo.shred_resources','IF') IS NOT NULL
 	DROP FUNCTION dbo.shred_resources;
 GO
 
-
 CREATE FUNCTION dbo.shred_resources(@resources xml)
 RETURNS TABLE 
 AS 
@@ -57,7 +52,3 @@ AS
 		@resources.nodes('//resource') [XmlData]([resource]);
 
 GO
-
-
-
-

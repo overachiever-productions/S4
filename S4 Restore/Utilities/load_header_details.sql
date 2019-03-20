@@ -1,5 +1,3 @@
-
-
 /*
 
 		DECLARE @backupDate datetime, @backupSize int, @compressed bit, @encrypted bit;
@@ -19,7 +17,6 @@
 
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.load_header_details','P') IS NOT NULL
 	DROP PROC dbo.load_header_details;
@@ -142,8 +139,3 @@ AS
 
 	RETURN 0;
 GO
-
-
-
-
-

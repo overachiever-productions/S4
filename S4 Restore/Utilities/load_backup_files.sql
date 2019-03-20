@@ -1,5 +1,3 @@
-
-
 /*
 
 	Sproc exists primarily for 1 reason: 
@@ -72,7 +70,7 @@ AS
 	DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
 
 	-- if this is a SYSTEM database and we didn't get any results, test for @AppendServerNameToSystemDbs 
-	IF ((SELECT dbo.[is_system_database](@databaseToRestore)) = 1) AND NOT EXISTS (SELECT NULL FROM @results) BEGIN
+	IF ((SELECT dbo.[is_system_database](@DatabaseToRestore)) = 1) AND NOT EXISTS (SELECT NULL FROM @results) BEGIN
 
 		SET @SourcePath = @SourcePath + N'\' + REPLACE(@@SERVERNAME, N'\', N'_');
 
@@ -115,4 +113,3 @@ AS
 
 	RETURN 0;
 GO
-

@@ -1,5 +1,3 @@
-
-
 /*
 	TODO: 
 		- Perf tuning - there's an implicit conversion going on in here... 
@@ -31,6 +29,7 @@ CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname)
 RETURNS int 
 AS 
 	-- {copyright}
+
 	BEGIN 
 		DECLARE @output int = 0;
 

@@ -1,4 +1,3 @@
-
 /*
 
 	General Workflows: 
@@ -32,7 +31,6 @@ EXEC list_logfile_sizes
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.list_logfile_sizes','P') IS NOT NULL
 	DROP PROC dbo.list_logfile_sizes;
 GO
@@ -47,7 +45,7 @@ CREATE PROC dbo.list_logfile_sizes
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

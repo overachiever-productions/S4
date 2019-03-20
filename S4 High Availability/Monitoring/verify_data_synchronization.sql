@@ -55,6 +55,8 @@ CREATE PROC dbo.verify_data_synchronization
 AS
 	SET NOCOUNT ON;
 
+	-- {copyright}
+
 	---------------------------------------------
 	-- Validation Checks: 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -393,7 +395,7 @@ REPORTING:
 			EXEC msdb..sp_notify_operator 
 				@profile_name = @MailProfileName, 
 				@name = @OperatorName, 
-				@subject = @Subject, 
+				@subject = @subject, 
 				@body = @errorMessage;	
 		END;
 	END;

@@ -1,6 +1,3 @@
-
-
-
 /*
 
 	NOTE: 
@@ -24,12 +21,8 @@ EXEC [admindb].dbo.[verify_database_configurations]
 
 
 
-
-
-
 USE admindb;
 GO
-
 
 IF OBJECT_ID('dbo.verify_database_configurations','P') IS NOT NULL
 	DROP PROC dbo.verify_database_configurations;
@@ -46,7 +39,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

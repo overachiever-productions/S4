@@ -30,7 +30,7 @@ CREATE PROC dbo.translate_vector
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -113,6 +113,4 @@ AS
 	END CATCH
 
 	RETURN 0;
-GO
-
-	
+GO	
