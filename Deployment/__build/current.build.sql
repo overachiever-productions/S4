@@ -660,17 +660,22 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
 
------------------------------------
---##INCLUDE: S4 Backups\Configuration\print_logins.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Configuration:
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Backups\Configuration\script_server_logins.sql
+--##INCLUDE: S4 Configuration\print_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Backups\Configuration\print_configuration.sql
+--##INCLUDE: S4 Configuration\script_server_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Backups\Configuration\script_server_configuration.sql
+--##INCLUDE: S4 Configuration\print_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\script_server_configuration.sql
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
