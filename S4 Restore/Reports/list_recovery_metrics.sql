@@ -313,7 +313,7 @@ AS
 		DECLARE @compatibilityCommand nvarchar(MAX) = N'
 		SELECT 
 			f.[operation_date], 
-			f.[database] + N' -> ' + f.[restored_as] [operation],
+			f.[database] + N'' -> '' + f.[restored_as] [operation],
 			f.[restore_succeeded], 
 			f.[consistency_succeeded] [check_succeeded],
 			f.[restored_file_count],

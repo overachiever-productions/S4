@@ -4,6 +4,9 @@
 		This report isn't just designed to grab blocked proceses ONLY. It also grabs the processes that are BLOCKING as well. 
 
 
+	NOTE: 
+		- Not currently (and likely ever) supported in SQL Server 2008/R2.
+		- Dynamic ALTER statements as part of deployment. 
 
 
 */
@@ -54,7 +57,7 @@ AS
 
 	SELECT 
 		s.session_id, 
-		s.database_id, 
+		r.database_id,	--MKC: S4-1: 2008/R2 don't have s.database_id - so I 'dumbed this down' to use r(equest). But my original intention in using s.database_id was to cast a 'wide' net relative to which db the SPID is (or WAS) in. 
 		r.wait_time, 
 		ISNULL(r.blocking_session_id, 0) blocking_session_id, 
 		s.session_id [blocked_session_id],
