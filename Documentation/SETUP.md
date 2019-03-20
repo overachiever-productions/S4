@@ -45,7 +45,7 @@ To deploy S4 to a target SQL Server Instance:
 Once S4 has been deployed, keeping it updated is simple: 
 1. As with a new installation/deployment, simply locate the latest.version.sql file (e.g., "5.6.2820.1.sql") in the [Deployment](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Deployment) folder,
 
--- TODO: insert an image of 5.6 or 5.7 in the repo... 
+![](images/install_update_latest_file.gif)
 
 2. Execute it against your target SQL Server Instance. 
 3. The script will do everything necessary to update all code, tables, and other stuctures/entities needed to push your code to the latest version of S4 goodness. 

@@ -22,7 +22,7 @@ CREATE PROC dbo.translate_vector_delay
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	DECLARE @difference int;
 

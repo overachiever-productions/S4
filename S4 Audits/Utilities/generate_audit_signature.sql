@@ -35,6 +35,8 @@ IF OBJECT_ID('dbo.generate_audit_signature','P') IS NOT NULL
 	DROP PROC dbo.generate_audit_signature;
 GO
 
+--##CONDITIONAL_SUPPORT(> 10.5)
+
 CREATE PROC dbo.generate_audit_signature 
 	@AuditName					sysname, 
 	@IncludeGuidInHash			bit			= 1, 

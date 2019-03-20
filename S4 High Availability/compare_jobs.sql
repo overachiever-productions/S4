@@ -1,3 +1,6 @@
+/*
+
+*/
 
 USE [admindb];
 GO
@@ -12,6 +15,8 @@ CREATE PROC dbo.compare_jobs
 	@IgnoreEnabledState		bit = 0
 AS
 	SET NOCOUNT ON; 
+	
+	-- {copyright}
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -401,7 +406,7 @@ AS
 	DELETE FROM [#RemoteJobs] WHERE [name] IN (SELECT [name] FROM [#IgnoredJobs]);
 
 	SELECT 
-		N'ONLY ON ' + @LocalServerName [difference], * 
+		N'ONLY ON ' + @localServerName [difference], * 
 	FROM 
 		#LocalJobs 
 	WHERE
@@ -409,7 +414,7 @@ AS
 		AND [name] NOT IN (SELECT name FROM #IgnoredJobs)
 
 	UNION SELECT 
-		N'ONLY ON ' + @RemoteServerName [difference], *
+		N'ONLY ON ' + @remoteServerName [difference], *
 	FROM 
 		#RemoteJobs
 	WHERE 
@@ -434,7 +439,7 @@ AS
 	), 
 	core AS ( 
 		SELECT 
-			@LocalServerName [server],
+			@localServerName [server],
             lj.[name],
             lj.[enabled],
             lj.[description],
@@ -450,7 +455,7 @@ AS
 			lj.[name] IN (SELECT [name] FROM names)
 
 		UNION SELECT 
-			@RemoteServerName [server],
+			@remoteServerName [server],
             rj.[name],
             rj.[enabled],
             rj.[description],
@@ -484,4 +489,3 @@ AS
 
 	RETURN 0;
 GO
-

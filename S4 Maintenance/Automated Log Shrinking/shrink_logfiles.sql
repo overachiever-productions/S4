@@ -1,5 +1,3 @@
-
-
 /*
 
 	TODO: 
@@ -81,7 +79,7 @@ CREATE PROC dbo.shrink_logfiles
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

@@ -43,6 +43,8 @@ CREATE PROC dbo.verify_job_states
 AS 
 	SET NOCOUNT ON;
 
+	-- {copyright}
+
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
 		IF ISNULL(@OperatorName, '') IS NULL BEGIN

@@ -43,7 +43,6 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.print_logins','P') IS NOT NULL
 	DROP PROC dbo.print_logins;
 GO
@@ -61,6 +60,8 @@ CREATE PROC dbo.print_logins
 	@WarnOnLoginsHomedToOtherDatabases		bit						= 0				-- warns when a) set to 1, and b) default_db is NOT master NOR the current DB where the user is defined... (for a corresponding login).
 AS
 	SET NOCOUNT ON; 
+
+	-- {copyright}
 
 	IF NULLIF(@TargetDatabases,'') IS NULL BEGIN
 		RAISERROR('Parameter @TargetDatabases cannot be NULL or empty.', 16, 1)

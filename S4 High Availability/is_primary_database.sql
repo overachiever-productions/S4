@@ -57,8 +57,10 @@ GO
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	BEGIN 
 
+	-- {copyright}
+
+	BEGIN 
 		DECLARE @description sysname;
 				
 		-- Check for Mirrored Status First: 

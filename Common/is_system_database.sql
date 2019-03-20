@@ -1,5 +1,3 @@
-
-
 /*
 
 			
@@ -16,6 +14,9 @@ GO
 CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname) 
 	RETURNS bit
 AS 
+
+	-- {copyright}
+
 	BEGIN 
 		DECLARE @output bit = 0;
 		DECLARE @override sysname; 
@@ -26,8 +27,7 @@ AS
 		IF UPPER(@DatabaseName) = N'TEMPDB'  -- not sure WHY this would ever be interrogated, but... it IS a system database.
 			SET @output = 1;
 		
-		-- by default, the [admindb] is treated as a system database (but this can be overwritten as a setting in dbo.settings).
-		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN
+		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN -- by default, the [admindb] is treated as a system database (but this can be overwritten as a setting in dbo.settings).
 			SET @output = 1;
 
 			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'admindb_is_system_db';
@@ -36,8 +36,7 @@ AS
 				SET @output = 0;
 		END;
 
-		-- same with the distribution database... 
-		IF UPPER(@DatabaseName) = N'DISTRIBUTION' BEGIN
+		IF UPPER(@DatabaseName) = N'DISTRIBUTION' BEGIN -- same with the distribution database... 
 			SET @output = 1;
 			
 			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'distribution_is_system_db';

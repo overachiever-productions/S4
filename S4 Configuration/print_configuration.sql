@@ -15,7 +15,6 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.print_configuration','P') IS NOT NULL
 	DROP PROC dbo.print_configuration;
 GO
@@ -24,6 +23,8 @@ CREATE PROC dbo.print_configuration
 
 AS
 	SET NOCOUNT ON;
+
+	-- {copyright}
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 
@@ -54,8 +55,18 @@ AS
 	SET @output = @output + @tab + @tab + N'ProcessorFamily: ' + @cpuFamily + @crlf;
 	PRINT @output;
 
+	DECLARE @physicalMemorySize bigint;
+	DECLARE @memoryLookupCommand nvarchar(2000) = N'SELECT @physicalMemorySize = physical_memory_kb/1024 FROM sys.[dm_os_sys_info];';
+	IF (SELECT dbo.[get_engine_version]()) < 11  -- account for change to sys.dm_os_sys_info between SQL Server 2008R2 and 2012 ... 
+		SET @memoryLookupCommand = N'SELECT @physicalMemorySize = physical_memory_in_bytes/1024/1024 FROM sys.[dm_os_sys_info];';
+
+	EXEC sys.[sp_executesql]
+		@memoryLookupCommand, 
+		N'@physicalMemorySize bigint OUTPUT', 
+		@physicalMemorySize = @physicalMemorySize OUTPUT;
+
 	SET @output = @crlf + @tab + N'-- Memory' + @crlf;
-	SELECT @output = @output + @tab + @tab + N'PhysicalMemoryOnServer: ' + CAST(physical_memory_kb/1024 AS sysname) + N'MB ' + @crlf FROM sys.[dm_os_sys_info];
+	SELECT @output = @output + @tab + @tab + N'PhysicalMemoryOnServer: ' + CAST(@physicalMemorySize AS sysname) + N'MB ' + @crlf FROM sys.[dm_os_sys_info];
 	SET @output = @output + @tab + @tab + N'MemoryNodes: ' + @crlf;
 
 	SELECT @output = @output 

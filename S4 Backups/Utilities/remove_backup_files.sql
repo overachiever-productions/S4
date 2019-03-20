@@ -71,7 +71,7 @@ CREATE PROC [dbo].[remove_backup_files]
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -448,7 +448,7 @@ AS
 
 			IF @BackupType IN ('LOG', 'ALL') BEGIN;
 			
-				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 1;';
+				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
 
 				IF @PrintOnly = 1 
 					PRINT @command;
@@ -511,7 +511,7 @@ AS
 					SET @errorMessage = NULL;
 					SET @outcome = NULL
 
-					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 0;';
+					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 0;';
 
 					IF @PrintOnly = 1 
 						PRINT @command;
@@ -572,7 +572,7 @@ AS
 			SELECT @errorInfo = @errorInfo + [error_message] + N', ' FROM @errors ORDER BY error_id;
 			SET @errorInfo = LEFT(@errorInfo, LEN(@errorInfo) - 2);
 
-			SET @output = @errorInfo;
+			SET @Output = @errorInfo;
 		  END
 		ELSE BEGIN;
 

@@ -1,5 +1,3 @@
-
-
 /*
 
 	-- TODO: show 'status' of the query - i.e., running, runnable, sleeping, etc..... that info will be CRITICAL in determining what's up... 
@@ -14,10 +12,11 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.monitor_transaction_durations','P') IS NOT NULL
 	DROP PROC dbo.monitor_transaction_durations;
 GO
+
+--##CONDITIONAL_SUPPORT(> 10.5)
 
 CREATE PROC dbo.monitor_transaction_durations	
 	@ExcludeSystemProcesses				bit					= 1,				
@@ -79,8 +78,7 @@ AS
 
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
 		RETURN 0;  -- nothing to report on... 
-
-
+		
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		DELETE lrt 
 		FROM 
@@ -340,4 +338,3 @@ BlockingCheckComplete:
 
 	RETURN 0;
 GO
-
