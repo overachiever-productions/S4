@@ -6,7 +6,7 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.6.2831.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.6.2831.1.
+		- This script will either install/deploy S4 version 5.7.2835.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.7.2835.1.
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
@@ -20,7 +20,7 @@
 		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
 		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
 		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.6.2831.1 code to admindb (overwriting any previous versions). 
+		6. Deploy S4 version 5.7.2835.1 code to admindb (overwriting any previous versions). 
 		7. Reporting on current + any previous versions of S4 installed. 
 
 */
@@ -99,7 +99,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.6.2831.1';
+DECLARE @CurrentVersion varchar(20) = N'5.7.2835.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -406,7 +406,7 @@ GO
 DECLARE @currentVersion decimal(2,1); 
 SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
 
-IF @currentVersion < 4.7 BEGIN 
+IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN 
 
 	DECLARE @hoursDiff int; 
 	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
@@ -644,7 +644,6 @@ GO
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.get_engine_version','FN') IS NOT NULL
 	DROP FUNCTION dbo.get_engine_version;
 GO
@@ -652,7 +651,8 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	BEGIN 
 		DECLARE @output decimal(4,2);
 		
@@ -674,8 +674,6 @@ AS
 GO
 
 
-
-
 -----------------------------------
 USE [admindb];
 GO
@@ -690,7 +688,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -724,7 +722,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -801,7 +799,6 @@ GO
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.format_timespan','FN') IS NOT NULL
 	DROP FUNCTION dbo.format_timespan;
 GO
@@ -809,7 +806,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -840,13 +837,12 @@ IF OBJECT_ID('dbo.shred_resources','IF') IS NOT NULL
 	DROP FUNCTION dbo.shred_resources;
 GO
 
-
 CREATE FUNCTION dbo.shred_resources(@resources xml)
 RETURNS TABLE 
 AS 
   RETURN	
 	
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -862,10 +858,6 @@ AS
 GO
 
 
-
-
-
-
 -----------------------------------
 USE [admindb];
 GO
@@ -878,8 +870,9 @@ CREATE FUNCTION dbo.is_job_running (@JobName sysname)
 RETURNS bit 
 	WITH RETURNS NULL ON NULL INPUT
 AS 
-	-- {copyright} 
-	
+
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	BEGIN;
 		
 		DECLARE @output bit = 0;
@@ -917,7 +910,8 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	BEGIN 
 		DECLARE @output int = 0;
 
@@ -951,6 +945,9 @@ GO
 CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname) 
 	RETURNS bit
 AS 
+
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	BEGIN 
 		DECLARE @output bit = 0;
 		DECLARE @override sysname; 
@@ -961,8 +958,7 @@ AS
 		IF UPPER(@DatabaseName) = N'TEMPDB'  -- not sure WHY this would ever be interrogated, but... it IS a system database.
 			SET @output = 1;
 		
-		-- by default, the [admindb] is treated as a system database (but this can be overwritten as a setting in dbo.settings).
-		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN
+		IF UPPER(@DatabaseName) = N'ADMINDB' BEGIN -- by default, the [admindb] is treated as a system database (but this can be overwritten as a setting in dbo.settings).
 			SET @output = 1;
 
 			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'admindb_is_system_db';
@@ -971,8 +967,7 @@ AS
 				SET @output = 0;
 		END;
 
-		-- same with the distribution database... 
-		IF UPPER(@DatabaseName) = N'DISTRIBUTION' BEGIN
+		IF UPPER(@DatabaseName) = N'DISTRIBUTION' BEGIN -- same with the distribution database... 
 			SET @output = 1;
 			
 			SELECT @override = setting_value FROM dbo.settings WHERE setting_key = N'distribution_is_system_db';
@@ -1001,7 +996,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -1076,7 +1071,7 @@ CREATE PROC dbo.translate_vector
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -1159,9 +1154,7 @@ AS
 	END CATCH
 
 	RETURN 0;
-GO
-
-	
+GO	
 
 
 -----------------------------------
@@ -1180,7 +1173,7 @@ CREATE PROC dbo.translate_vector_delay
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @difference int;
 
@@ -1224,7 +1217,7 @@ CREATE PROC dbo.kill_connections_by_hostname
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -1301,7 +1294,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
@@ -1410,7 +1403,7 @@ CREATE PROC dbo.execute_command
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -1642,7 +1635,7 @@ CREATE PROC dbo.load_databases
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1950,7 +1943,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -2078,7 +2071,7 @@ CREATE PROC [dbo].[remove_backup_files]
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -2455,7 +2448,7 @@ AS
 
 			IF @BackupType IN ('LOG', 'ALL') BEGIN;
 			
-				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 1;';
+				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
 
 				IF @PrintOnly = 1 
 					PRINT @command;
@@ -2518,7 +2511,7 @@ AS
 					SET @errorMessage = NULL;
 					SET @outcome = NULL
 
-					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @RetentionCutoffTime, 120), ' ', 'T') + ''', 0;';
+					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 0;';
 
 					IF @PrintOnly = 1 
 						PRINT @command;
@@ -2579,7 +2572,7 @@ AS
 			SELECT @errorInfo = @errorInfo + [error_message] + N', ' FROM @errors ORDER BY error_id;
 			SET @errorInfo = LEFT(@errorInfo, LEN(@errorInfo) - 2);
 
-			SET @output = @errorInfo;
+			SET @Output = @errorInfo;
 		  END
 		ELSE BEGIN;
 
@@ -2978,7 +2971,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
-				EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @Result = @outcome OUTPUT;
 
 				IF @outcome IS NOT NULL
 					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -3045,7 +3038,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				SET @outcome = NULL;
-				EXEC dbo.execute_uncatchable_command @command, 'BACKUP', @result = @outcome OUTPUT;
+				EXEC dbo.execute_uncatchable_command @command, 'BACKUP', @Result = @outcome OUTPUT;
 
 				IF @outcome IS NOT NULL
 					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
@@ -3114,7 +3107,7 @@ DoneRemovingFilesBeforeBackup:
 			ELSE BEGIN
 				BEGIN TRY 
 					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @result = @outcome OUTPUT;
+					EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @Result = @outcome OUTPUT;
 					
 					IF @outcome IS NOT NULL
 						SET @copyMessage = @outcome;
@@ -3163,7 +3156,7 @@ DoneRemovingFilesBeforeBackup:
 
 			IF @copyMessage IS NOT NULL BEGIN
 
-				IF @currentOperationId IS NULL BEGIN
+				IF @currentOperationID IS NULL BEGIN
 					-- if we weren't logging successful operations, this operation isn't now a 100% failure, but there are problems, so we need to create a row for reporting/tracking purposes:
 					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded)
 					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(),0);
@@ -3283,7 +3276,7 @@ NextDatabase:
 			IF @PrintOnly = 1 
 				PRINT @errorMessage;
 			ELSE BEGIN;
-				IF @currentOperationId IS NULL BEGIN;
+				IF @currentOperationID IS NULL BEGIN;
 					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, error_details)
 					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(), 0, @errorMessage);
 				  END;
@@ -3378,10 +3371,14 @@ NextDatabase:
 GO
 
 
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Configuration:
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
 -----------------------------------
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.print_logins','P') IS NOT NULL
 	DROP PROC dbo.print_logins;
@@ -3400,6 +3397,8 @@ CREATE PROC dbo.print_logins
 	@WarnOnLoginsHomedToOtherDatabases		bit						= 0				-- warns when a) set to 1, and b) default_db is NOT master NOR the current DB where the user is defined... (for a corresponding login).
 AS
 	SET NOCOUNT ON; 
+
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases,'') IS NULL BEGIN
 		RAISERROR('Parameter @TargetDatabases cannot be NULL or empty.', 16, 1)
@@ -3747,7 +3746,7 @@ AS
 
 		-- Profile Checks:
 		DECLARE @databaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @databaseMailProfile OUT, @no_output = N'no_output';
  
 		IF @databaseMailProfile != @MailProfileName BEGIN
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
@@ -3940,16 +3939,9 @@ REPORTING:
 GO
 
 
-
-
-
-
-
-
 -----------------------------------
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.print_configuration','P') IS NOT NULL
 	DROP PROC dbo.print_configuration;
@@ -3959,6 +3951,8 @@ CREATE PROC dbo.print_configuration
 
 AS
 	SET NOCOUNT ON;
+
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 
@@ -3989,8 +3983,18 @@ AS
 	SET @output = @output + @tab + @tab + N'ProcessorFamily: ' + @cpuFamily + @crlf;
 	PRINT @output;
 
+	DECLARE @physicalMemorySize bigint;
+	DECLARE @memoryLookupCommand nvarchar(2000) = N'SELECT @physicalMemorySize = physical_memory_kb/1024 FROM sys.[dm_os_sys_info];';
+	IF (SELECT dbo.[get_engine_version]()) < 11  -- account for change to sys.dm_os_sys_info between SQL Server 2008R2 and 2012 ... 
+		SET @memoryLookupCommand = N'SELECT @physicalMemorySize = physical_memory_in_bytes/1024/1024 FROM sys.[dm_os_sys_info];';
+
+	EXEC sys.[sp_executesql]
+		@memoryLookupCommand, 
+		N'@physicalMemorySize bigint OUTPUT', 
+		@physicalMemorySize = @physicalMemorySize OUTPUT;
+
 	SET @output = @crlf + @tab + N'-- Memory' + @crlf;
-	SELECT @output = @output + @tab + @tab + N'PhysicalMemoryOnServer: ' + CAST(physical_memory_kb/1024 AS sysname) + N'MB ' + @crlf FROM sys.[dm_os_sys_info];
+	SELECT @output = @output + @tab + @tab + N'PhysicalMemoryOnServer: ' + CAST(@physicalMemorySize AS sysname) + N'MB ' + @crlf FROM sys.[dm_os_sys_info];
 	SET @output = @output + @tab + @tab + N'MemoryNodes: ' + @crlf;
 
 	SELECT @output = @output 
@@ -4435,7 +4439,7 @@ AS
 
 		-- Profile Checks:
 		DECLARE @databaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
+		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @databaseMailProfile OUT, @no_output = N'no_output';
  
 		IF @databaseMailProfile != @MailProfileName BEGIN
 			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
@@ -4622,7 +4626,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -4644,7 +4648,7 @@ AS
 	DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
 
 	-- if this is a SYSTEM database and we didn't get any results, test for @AppendServerNameToSystemDbs 
-	IF ((SELECT dbo.[is_system_database](@databaseToRestore)) = 1) AND NOT EXISTS (SELECT NULL FROM @results) BEGIN
+	IF ((SELECT dbo.[is_system_database](@DatabaseToRestore)) = 1) AND NOT EXISTS (SELECT NULL FROM @results) BEGIN
 
 		SET @SourcePath = @SourcePath + N'\' + REPLACE(@@SERVERNAME, N'\', N'_');
 
@@ -4689,11 +4693,9 @@ AS
 GO
 
 
-
 -----------------------------------
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.load_header_details','P') IS NOT NULL
 	DROP PROC dbo.load_header_details;
@@ -4710,7 +4712,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -4818,15 +4820,9 @@ AS
 GO
 
 
-
-
-
-
-
 -----------------------------------
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.restore_databases','P') IS NOT NULL
     DROP PROC dbo.restore_databases;
@@ -4855,7 +4851,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-    -- {copyright}
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -5397,7 +5393,7 @@ AS
               END;
             ELSE BEGIN
                 SET @outcome = NULL;
-                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
                 SET @statusDetail = @outcome;
             END;
@@ -5441,7 +5437,7 @@ AS
                   END;
                 ELSE BEGIN
                     SET @outcome = NULL;
-                    EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+                    EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
                     SET @statusDetail = @outcome;
                 END;
@@ -5498,7 +5494,7 @@ AS
                       END;
                     ELSE BEGIN
                         SET @outcome = NULL;
-                        EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+                        EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
                         SET @statusDetail = @outcome;
                     END;
@@ -5560,7 +5556,7 @@ AS
 				  END;
 				ELSE BEGIN
 					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
 					SET @statusDetail = @outcome;
 				END;
@@ -5920,7 +5916,7 @@ FINALIZE:
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
         ELSE BEGIN
-            SET @emailSubject = @emailSubjectPrefix + N' - ERROR';
+            SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
 
             EXEC msdb..sp_notify_operator
                 @profile_name = @MailProfileName,
@@ -6098,7 +6094,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6801,9 +6797,10 @@ AS
 	-- SUMMARY: 
 	IF UPPER(@Mode) = N'SUMMARY' BEGIN
 	
+		DECLARE @compatibilityCommand nvarchar(MAX) = N'
 		SELECT 
 			f.[operation_date], 
-			f.[database] + N' -> ' + f.[restored_as] [operation],
+			f.[database] + N'' -> '' + f.[restored_as] [operation],
 			f.[restore_succeeded], 
 			f.[consistency_succeeded] [check_succeeded],
 			f.[restored_file_count],
@@ -6813,15 +6810,30 @@ AS
 			dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
 			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
 			CASE 
-				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N' days' 
+				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N'' days'' 
 				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
 			END [rpo_gap], 
 			ISNULL(f.[error_details], N'') [error_details]
 		FROM 
 			#facts f
 		ORDER BY 
-			f.[row_number];
+			f.[row_number]; ';
 
+		IF (SELECT dbo.[get_engine_version]()) <= 10.5 BEGIN 
+			-- TODO: the fix here won't be too hard. i.e., I just need to do the following: 
+			--		a) figure out how to 'order' the rows in #facts as needed... i.e., either by a ROW_NUMBER() ... windowing function (assuming that's supported) or by means of some other option... 
+			--		b) instead of using SUM() OVER ()... 
+			--				just 1) create an INNER JOIN against #facts f2 ON f1.previousRowIDs <= f2.currentRowID - as per this approach: https://stackoverflow.com/a/2120639/11191
+			--				then 2) just SUM against f2 instead... and that should work just fine. 
+			
+			-- as in... i'd create/define a DIFFERENT @compatibilityCommand 'body'... then let that be RUN below via sp_executesql... 
+
+
+			RAISERROR('The SUMMARY mode is currently NOT supported in SQL Server 2008 and 2008R2.', 16, 1); 
+			RETURN -100;
+		END; 
+
+		EXEC sys.[sp_executesql] @compatibilityCommand;
 	END; 
 
 	-----------------------------------------------------------------------------
@@ -6977,147 +6989,6 @@ AS
 GO
 
 
-
----------------------------------------------------------------------------------------------------
----- sample RPO checks: 
-
-
-								--DECLARE @LatestBatch uniqueidentifier;
-								--SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
-
-								--SET @LatestBatch = '2A7A3D02-350E-47AC-A74E-65680ABF38C5';
-
-
-								--SELECT 
-								--	[database] + N' -> ' + [restored_as] [operation], 
-								--	[restore_succeeded],
-								--	[test_date], 
-								--	restore_end, 
-								--	ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count],
-								--	ISNULL(restored_files.exist('/files/file/name[contains(., "DIFF_")]'), 0) [diff_restored],
-								--	--0 [diff_included],			-- derive from restored_files
-								--	restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [latest_backup]
-
-								--FROM 
-								--	dbo.[restore_log]
-								--WHERE 
-								--	[execution_id] = @LatestBatch
-								--ORDER BY 
-								--	[restore_test_id];
-
-
-								--GO
-
---;
---WITH core AS ( 
-
---	SELECT TOP 100
---		restore_test_id,
---		[database] + N' -> ' + [restored_as] [operation], 
---		[restore_succeeded],
---		[test_date], 
---		[restore_start],
---		restore_end, 
---		ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count],
---		ISNULL(restored_files.exist('/files/file/name[contains(., "DIFF_")]'), 0) [diff_restored],
---		--0 [diff_included],			-- derive from restored_files
---		restored_files.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime') [latest_backup]
-
---	FROM 
---		dbo.[restore_log]
-
---	ORDER BY 
---		[restore_test_id] DESC
---)
-
---SELECT 
---	[restore_test_id],
---    [operation],
---    [restore_succeeded],
---    [test_date],
---	[restore_start],
---    [restore_end],
---    [restored_file_count],
---    [diff_restored],
---    [latest_backup], 
---	dbo.format_timespan(DATEDIFF(MILLISECOND, [core].[latest_backup], [core].[restore_end])) [recovery_point_vector]
---FROM 
---	core;
-
-
-
-
----------------------------------------------------------------------------------------------------
----- RTO checks: 
-
----- TODO: currently outputs as hh:mm:ss ... probably need to enable a dd hh:mm:ss option too... cuz of long-running restores and such... (i.e., i don't have any clients (currently) that need this ... but ... it could happen... 
-----		well... or... if 49:12:12 pretty clear..... guess it is. (so, just make sure that'll work as expected).
-
---DECLARE @LatestBatch uniqueidentifier;
---SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
-
---DECLARE @Errors bit = 0;
-
---IF EXISTS (SELECT NULL FROM dbo.[restore_log] WHERE [execution_id] = @LatestBatch AND [restore_succeeded] = 0 OR [consistency_succeeded] = 0)
---	SET @Errors = 1;
-
---IF @Errors = 1 
---	SELECT 'Errors Were Detected - Check for Details' [outcome];
---ELSE BEGIN 
---	DECLARE @totalSeconds int;
-
---	SELECT @totalSeconds = SUM(DATEDIFF(SECOND, restore_start, restore_end)) FROM dbo.[restore_log] WHERE [execution_id] = @LatestBatch;
-
---	SELECT N'Total Restore Time -> '	
---			+ RIGHT('0' + CAST(@totalSeconds / 3600 AS sysname),2) + ':' +
---			+ RIGHT('0' + CAST((@totalSeconds / 60) % 60 AS sysname),2) + ':' +
---			+ RIGHT('0' + CAST(@totalSeconds % 60 AS sysname),2)
---END;
-
---GO
-
-
-
--------------------------------------------------------------------
----- F. RTO checks over x days (well.. last 10):
-
---WITH core AS ( 
---	SELECT 
---		rl.[execution_id],
---		(SELECT MIN([test_date]) FROM dbo.[restore_log] x WHERE x.[execution_id] = rl.[execution_id]) [test_date],
---		CASE
---			WHEN rl.[restore_succeeded] = 1 THEN DATEDIFF(SECOND, rl.[restore_start], rl.[restore_end])
---			ELSE 0
---		END [restore_seconds]
---	FROM 
---		dbo.[restore_log] rl
---), 
---grouped AS (
---	SELECT 
---		[core].[execution_id], 
---		[core].[test_date],
---		SUM([core].[restore_seconds]) [total_seconds]
---	FROM 
---		core 
---	WHERE 
---		[core].[test_date] > DATEADD(DAY, -10, GETDATE())
---	GROUP BY 
---		[core].[execution_id], [core].[test_date]
---)
-	
---SELECT 
---	[grouped].[test_date], 
---	RIGHT('0' + CAST([total_seconds] / 3600 AS sysname),2) + ':' +
---		+ RIGHT('0' + CAST(([total_seconds] / 60) % 60 AS sysname),2) + ':' +
---		+ RIGHT('0' + CAST([total_seconds] % 60 AS sysname),2) [total_rto_time]
---FROM 
---	grouped 
---ORDER BY 
---	[grouped].[test_date];
-
---GO	
-
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Performance
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -7125,7 +6996,6 @@ GO
 -----------------------------------
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.list_processes','P') IS NOT NULL
 	DROP PROC dbo.list_processes;
@@ -7153,7 +7023,7 @@ CREATE PROC dbo.list_processes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7493,7 +7363,6 @@ GO
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.list_transactions','P') IS NOT NULL
 	DROP PROC dbo.list_transactions;
 GO
@@ -7513,7 +7382,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7921,7 +7790,6 @@ GO
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.list_collisions', 'P') IS NOT NULL
 	DROP PROC dbo.list_collisions;
 GO
@@ -7937,7 +7805,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -7965,7 +7833,7 @@ AS
 
 	SELECT 
 		s.session_id, 
-		s.database_id, 
+		r.database_id,	--MKC: S4-1: 2008/R2 don't have s.database_id - so I 'dumbed this down' to use r(equest). But my original intention in using s.database_id was to cast a 'wide' net relative to which db the SPID is (or WAS) in. 
 		r.wait_time, 
 		ISNULL(r.blocking_session_id, 0) blocking_session_id, 
 		s.session_id [blocked_session_id],
@@ -8241,7 +8109,6 @@ AS
 GO
 
 
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Monitoring
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -8270,8 +8137,7 @@ CREATE PROC dbo.verify_backup_execution
 AS
 	SET NOCOUNT ON; 
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
-	-- To determine current/deployed version, execute the following: SELECT CAST([value] AS sysname) [Version] FROM master.sys.extended_properties WHERE major_id = OBJECT_ID('dbo.dba_DatabaseBackups_Log') AND [name] = 'Version';	
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -8701,7 +8567,6 @@ GO
 USE admindb;
 GO
 
-
 IF OBJECT_ID('dbo.verify_database_configurations','P') IS NOT NULL
 	DROP PROC dbo.verify_database_configurations;
 GO
@@ -8717,7 +8582,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -9012,8 +8877,6 @@ GO
 USE [admindb];
 GO
 
-
-
 IF OBJECT_ID('dbo.verify_drivespace','P') IS NOT NULL
 	DROP PROC dbo.verify_drivespace;
 GO
@@ -9028,7 +8891,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9135,7 +8998,7 @@ CREATE PROC dbo.process_alerts
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
@@ -9190,87 +9053,14 @@ ERROR NUMBER: {2}' ;
 GO
 
 
-
-
-/*
-
-----------------------------------------------------------------------------------------------------------------------
--- Job Creation (Step 3):
---	NOTE: script below ASSUMES convention of 'Alerts' as operator to notify in case of problems... 
-
-USE [msdb];
-GO
-
-BEGIN TRANSACTION;
-	DECLARE @ReturnCode int;
-	SELECT @ReturnCode = 0;
-	IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Monitoring' AND category_class=1) BEGIN
-		EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Monitoring';
-		IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback;
-	END;
-
-	DECLARE @jobId BINARY(16);
-	EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'Process Alerts', 
-			@enabled=1, 
-			@notify_level_eventlog=0, 
-			@notify_level_email=2, 
-			@notify_level_netsend=0, 
-			@notify_level_page=0, 
-			@delete_level=0, 
-			@description=N'NOTE: This job responds to alerts (and filters out specific error messages/ids) and therefore does NOT have a schedule.', 
-			@category_name=N'Monitoring', 
-			@owner_login_name=N'sa', 
-			@notify_email_operator_name=N'Alerts', 
-			@job_id = @jobId OUTPUT;
-	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
-
-	EXEC @ReturnCode = msdb.dbo.sp_add_jobstep 
-			@job_id=@jobId, 
-			@step_name=N'Filter and Send Alerts', 
-			@step_id=1, 
-			@cmdexec_success_code=0, 
-			@on_success_action=1, 
-			@on_success_step_id=0, 
-			@on_fail_action=2, 
-			@on_fail_step_id=0, 
-			@retry_attempts=0, 
-			@retry_interval=0, 
-			@os_run_priority=0, @subsystem=N'TSQL', 
-			@command=N'DECLARE @ErrorNumber int, @Severity int;
-SET @ErrorNumber = CONVERT(int, N''$(ESCAPE_SQUOTE(A-ERR))'');
-SET @Severity = CONVERT(int, N''$(ESCAPE_NONE(A-SEV))'');
-
-EXEC admindb.dbo.process_alerts 
-	@ErrorNumber = @ErrorNumber, 
-	@Severity = @Severity,
-	@Message = N''$(ESCAPE_SQUOTE(A-MSG))'';', 
-			@database_name=N'admindb', 
-			@flags=0;
-	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
-	EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1;
-	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
-	EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)';
-	IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
-	COMMIT TRANSACTION;
-	GOTO EndSave;
-	QuitWithRollback:
-		IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
-	EndSave:
-
-GO
-
-
-*/
-
-
 -----------------------------------
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.monitor_transaction_durations','P') IS NOT NULL
 	DROP PROC dbo.monitor_transaction_durations;
 GO
+
 
 CREATE PROC dbo.monitor_transaction_durations	
 	@ExcludeSystemProcesses				bit					= 1,				
@@ -9285,9 +9075,27 @@ CREATE PROC dbo.monitor_transaction_durations
 	@EmailSubjectPrefix					nvarchar(50)		= N'[ALERT:] ', 
 	@PrintOnly							bit					= 0
 AS
+	
+	RAISERROR('Sorry. The S4 stored procedure dbo.monitor_transaction_durations is NOT supported on SQL Server 2008/2008R2 instances.', 16, 1);
+	RETURN -100;
+GO
+
+DECLARE @monitor_transaction_durations nvarchar(MAX) = N'ALTER PROC dbo.monitor_transaction_durations	
+	@ExcludeSystemProcesses				bit					= 1,				
+	@ExcludedDatabases					nvarchar(MAX)		= NULL,				-- N''master, msdb''  -- recommended that tempdb NOT be excluded... (long running txes in tempdb are typically going to be a perf issue - typically (but not always).
+	@ExcludedLoginNames					nvarchar(MAX)		= NULL, 
+	@ExcludedProgramNames				nvarchar(MAX)		= NULL,
+	@ExcludedSQLAgentJobNames			nvarchar(MAX)		= NULL,
+	@AlertOnlyWhenBlocking				bit					= 0,				-- if there''s a long-running TX, but it''s not blocking... and this is set to 1, then no alert is raised. 
+	@AlertThreshold						sysname				= N''10m'',			-- defines how long a transaction has to be running before it''s ''raised'' as a potential problem.
+	@OperatorName						sysname				= N''Alerts'',
+	@MailProfileName					sysname				= N''General'',
+	@EmailSubjectPrefix					nvarchar(50)		= N''[ALERT:] '', 
+	@PrintOnly							bit					= 0
+AS
 	SET NOCOUNT ON;
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -9299,9 +9107,9 @@ AS
 
 	EXEC [dbo].[translate_vector]
 	    @Vector = @AlertThreshold, 
-	    @ValidationParameterName = N'@AlertThreshold', 
-	    @ProhibitedIntervals = N'WEEK, MONTH, QUARTER, YEAR', 
-	    @TranslationInterval = N'MILLISECOND', 
+	    @ValidationParameterName = N''@AlertThreshold'', 
+	    @ProhibitedIntervals = N''WEEK, MONTH, QUARTER, YEAR'', 
+	    @TranslationInterval = N''MILLISECOND'', 
 	    @Output = @vectorMilliseconds OUTPUT, 
 	    @Error = @vectorError OUTPUT;
 
@@ -9332,8 +9140,7 @@ AS
 
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
 		RETURN 0;  -- nothing to report on... 
-
-
+		
 	IF @ExcludeSystemProcesses = 1 BEGIN 
 		DELETE lrt 
 		FROM 
@@ -9345,13 +9152,13 @@ AS
 			OR des.[database_id] IS NULL;  -- also, delete any operations where the db_id is NULL
 	END;
 
-	IF NULLIF(@ExcludedDatabases, N'') IS NOT NULL BEGIN 
+	IF NULLIF(@ExcludedDatabases, N'''') IS NOT NULL BEGIN 
 		DELETE lrt 
 		FROM 
 			[#LongRunningTransactions] lrt
 			LEFT OUTER JOIN sys.[dm_exec_sessions] des ON lrt.[session_id] = des.[session_id]
 		WHERE 
-			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N',', 1) ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
+			des.[database_id] IN (SELECT d.database_id FROM sys.databases d LEFT OUTER JOIN dbo.[split_string](@ExcludedDatabases, N'','', 1) ss ON d.[name] = ss.[result] WHERE ss.[result] IS NOT NULL);
 	END;
 
 	IF NOT EXISTS(SELECT NULL FROM [#LongRunningTransactions]) 
@@ -9381,36 +9188,36 @@ AS
 	);
 
 	-- Process additional exclusions if present: 
-	IF ISNULL(@ExcludedLoginNames, N'') IS NOT NULL BEGIN 
+	IF ISNULL(@ExcludedLoginNames, N'''') IS NOT NULL BEGIN 
 
 		INSERT INTO [#ExcludedSessions] ([session_id])
 		SELECT 
 			s.[session_id]
 		FROM 
-			dbo.[split_string](@ExcludedLoginNames, N',', 1) x 
+			dbo.[split_string](@ExcludedLoginNames, N'','', 1) x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[login_name] LIKE x.[result];
 	END;
 
-	IF ISNULL(@ExcludedProgramNames, N'') IS NOT NULL BEGIN 
+	IF ISNULL(@ExcludedProgramNames, N'''') IS NOT NULL BEGIN 
 		INSERT INTO [#ExcludedSessions] ([session_id])
 		SELECT 
 			s.[session_id]
 		FROM 
-			dbo.[split_string](@ExcludedProgramNames, N',', 1) x 
+			dbo.[split_string](@ExcludedProgramNames, N'','', 1) x 
 			INNER JOIN sys.[dm_exec_sessions] s ON s.[program_name] LIKE x.[result];
 	END;
 
-	IF ISNULL(@ExcludedSQLAgentJobNames, N'') IS NOT NULL BEGIN 
+	IF ISNULL(@ExcludedSQLAgentJobNames, N'''') IS NOT NULL BEGIN 
 		DECLARE @jobIds table ( 
 			job_id nvarchar(200) 
 		); 
 
 		INSERT INTO @jobIds ([job_id])
 		SELECT 
-			N'%' + CONVERT(nvarchar(200), (CONVERT(varbinary(200), j.job_id , 1)), 1) + N'%' job_id
+			N''%'' + CONVERT(nvarchar(200), (CONVERT(varbinary(200), j.job_id , 1)), 1) + N''%'' job_id
 		FROM 
 			msdb.dbo.sysjobs j
-			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N',', 1) x ON j.[name] LIKE x.[result];
+			INNER JOIN admindb.dbo.[split_string](@ExcludedSQLAgentJobNames, N'','', 1) x ON j.[name] LIKE x.[result];
 
 		INSERT INTO [#ExcludedSessions] ([session_id])
 		SELECT 
@@ -9436,7 +9243,7 @@ AS
 
 CheckForBlocking:
 		
-		-- NOTE: ARGUABLY, this should be using sys.dm_exec_requests... only, there's a HUGE problem with that 'table' - it only shows in-flight requests that are blocked... (so if something is blocked and NOT in a RUNNING state... it won't show up). 
+		-- NOTE: ARGUABLY, this should be using sys.dm_exec_requests... only, there''s a HUGE problem with that ''table'' - it only shows in-flight requests that are blocked... (so if something is blocked and NOT in a RUNNING state... it won''t show up). 
 
 		SELECT 
 			lrt.session_id 
@@ -9447,12 +9254,12 @@ CheckForBlocking:
 		WHERE 
 			lrt.[session_id] NOT IN (SELECT session_id FROM @sessions_that_are_blocking);
 
-		-- short-circuit if we've confirmed that ALL long-running-transactions are blocking:
+		-- short-circuit if we''ve confirmed that ALL long-running-transactions are blocking:
 		IF NOT EXISTS (SELECT NULL FROM [#LongRunningTransactions] t1 LEFT OUTER JOIN @sessions_that_are_blocking t2 ON t1.[session_id] = t2.[session_id] WHERE t2.[session_id] IS NULL) BEGIN 
 			GOTO BlockingCheckComplete;
 		END;
 
-		WAITFOR DELAY '00:00:02.000';
+		WAITFOR DELAY ''00:00:02.000'';
 	
 		SET @iteration = @iteration + 1; 
 
@@ -9473,36 +9280,36 @@ BlockingCheckComplete:
 		RETURN 0;  -- nothing to report on... 
 
 	-- Assemble output/report: 
-	DECLARE @line nvarchar(200) = REPLICATE(N'-', 200);
+	DECLARE @line nvarchar(200) = REPLICATE(N''-'', 200);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @tab nchar(1) = NCHAR(9); 
-	DECLARE @messageBody nvarchar(MAX) = N'';
+	DECLARE @messageBody nvarchar(MAX) = N'''';
 
 	SELECT 
 		@messageBody = @messageBody + @line + @crlf
-		+ '- session_id [' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N'] has been running in database ' +  QUOTENAME(COALESCE(DB_NAME([dtdt].[database_id]), DB_NAME(sx.[database_id]),'#NULL#')) + N' for a duration of: ' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N'.' + @crlf 
-		+ @tab + N'METRICS: ' + @crlf
-		+ @tab + @tab + N'[is_user_transaction: ' + CAST(ISNULL(lrt.[is_user_transaction], N'-1') AS sysname) + N']' + @crlf 
-		+ @tab + @tab + N'[open_transaction_count: '+ CAST(ISNULL(lrt.[open_transaction_count], N'-1') AS sysname) + N']' + @crlf
-		+ @tab + @tab + N'[blocked_session_count: ' + CAST(ISNULL((SELECT COUNT(*) FROM sys.[sysprocesses] p WHERE lrt.session_id = p.blocked), 0) AS sysname) + N']' + @crlf  
-		+ @tab + @tab + N'[active_requests: ' + CAST(ISNULL(lrt.[active_requests], N'-1') AS sysname) + N']' + @crlf 
-		+ @tab + @tab + N'[is_tempdb_enlisted: ' + CAST(ISNULL([dtdt].[tempdb_enlisted], N'-1') AS sysname) + N']' + @crlf 
-		+ @tab + @tab + N'[log_record (count|bytes): (' + CAST(ISNULL([dtdt].[log_record_count], N'-1') AS sysname) + N') | ( ' + CAST(ISNULL([dtdt].[log_bytes_used], N'-1') AS sysname) + N') ]' + @crlf
+		+ ''- session_id ['' + CAST(ISNULL(lrt.[session_id], -1) AS sysname) + N''] has been running in database '' +  QUOTENAME(COALESCE(DB_NAME([dtdt].[database_id]), DB_NAME(sx.[database_id]),''#NULL#'')) + N'' for a duration of: '' + dbo.[format_timespan](DATEDIFF(MILLISECOND, lrt.[transaction_begin_time], GETDATE())) + N''.'' + @crlf 
+		+ @tab + N''METRICS: '' + @crlf
+		+ @tab + @tab + N''[is_user_transaction: '' + CAST(ISNULL(lrt.[is_user_transaction], N''-1'') AS sysname) + N'']'' + @crlf 
+		+ @tab + @tab + N''[open_transaction_count: ''+ CAST(ISNULL(lrt.[open_transaction_count], N''-1'') AS sysname) + N'']'' + @crlf
+		+ @tab + @tab + N''[blocked_session_count: '' + CAST(ISNULL((SELECT COUNT(*) FROM sys.[sysprocesses] p WHERE lrt.session_id = p.blocked), 0) AS sysname) + N'']'' + @crlf  
+		+ @tab + @tab + N''[active_requests: '' + CAST(ISNULL(lrt.[active_requests], N''-1'') AS sysname) + N'']'' + @crlf 
+		+ @tab + @tab + N''[is_tempdb_enlisted: '' + CAST(ISNULL([dtdt].[tempdb_enlisted], N''-1'') AS sysname) + N'']'' + @crlf 
+		+ @tab + @tab + N''[log_record (count|bytes): ('' + CAST(ISNULL([dtdt].[log_record_count], N''-1'') AS sysname) + N'') | ( '' + CAST(ISNULL([dtdt].[log_bytes_used], N''-1'') AS sysname) + N'') ]'' + @crlf
 		+ @crlf
-		+ @tab + N'CONTEXT: ' + @crlf
-		+ @tab + @tab + N'[login_name]: ' + CAST(ISNULL(sx.[login_name], N'#NULL#') AS sysname) + N']' + @crlf 
-		+ @tab + @tab + N'[program_name]: ' + CAST(ISNULL(sx.[program_name], N'#NULL#') AS sysname) + N']' + @crlf 
-		+ @tab + @tab + N'[host_name]: ' + CAST(ISNULL(sx.[host_name], N'#NULL#') AS sysname) + N']' + @crlf 
+		+ @tab + N''CONTEXT: '' + @crlf
+		+ @tab + @tab + N''[login_name]: '' + CAST(ISNULL(sx.[login_name], N''#NULL#'') AS sysname) + N'']'' + @crlf 
+		+ @tab + @tab + N''[program_name]: '' + CAST(ISNULL(sx.[program_name], N''#NULL#'') AS sysname) + N'']'' + @crlf 
+		+ @tab + @tab + N''[host_name]: '' + CAST(ISNULL(sx.[host_name], N''#NULL#'') AS sysname) + N'']'' + @crlf 
 		+ @crlf
-        + @tab + N'STATEMENT' + @crlf + @crlf
-		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N'#EMPTY STATEMENT#'), @crlf, @crlf + @tab + @tab)
+        + @tab + N''STATEMENT'' + @crlf + @crlf
+		+ @tab + @tab + REPLACE(ISNULL(s.[statement], N''#EMPTY STATEMENT#''), @crlf, @crlf + @tab + @tab)
 	FROM 
 		[#LongRunningTransactions] lrt
 		LEFT OUTER JOIN sys.[dm_exec_sessions] sx ON lrt.[session_id] = sx.[session_id]
 		LEFT OUTER JOIN ( 
 			SELECT 
 				x.transaction_id,
-				MAX(x.database_id) [database_id], -- max isn''t always logical/best. But with tempdb_enlisted + enlisted_db_count... it''s as good as it gets... 
+				MAX(x.database_id) [database_id], -- max isn''''t always logical/best. But with tempdb_enlisted + enlisted_db_count... it''''s as good as it gets... 
 				SUM(CASE WHEN x.database_id = 2 THEN 1 ELSE 0 END) [tempdb_enlisted],
 				COUNT(x.database_id) [enlisted_db_count],
 				MAX(x.[database_transaction_log_record_count]) [log_record_count],
@@ -9514,63 +9321,63 @@ BlockingCheckComplete:
 		) dtdt ON lrt.[transaction_id] = dtdt.[transaction_id]
 		LEFT OUTER JOIN [#Statements] s ON lrt.[session_id] = s.[session_id]
 
-	DECLARE @message nvarchar(MAX) = N'The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of ['  + @AlertThreshold + N'].' + @crlf
-		+ @tab + N'(Details about how to resolve/address potential problems follow AFTER identified long-running transactions.)' + @crlf 
-		+ ISNULL(@messageBody, N'#NULL in DETAILS#')
+	DECLARE @message nvarchar(MAX) = N''The following long-running transactions (and associated) details were found - which exceed the @AlertThreshold of [''  + @AlertThreshold + N''].'' + @crlf
+		+ @tab + N''(Details about how to resolve/address potential problems follow AFTER identified long-running transactions.)'' + @crlf 
+		+ ISNULL(@messageBody, N''#NULL in DETAILS#'')
 		+ @crlf 
 		+ @crlf 
 		+ @line + @crlf
 		+ @line + @crlf 
-		+ @tab + N'To resolve:  ' + @crlf
-		+ @tab + @tab + N'First, execute the following statement against ' + @@SERVERNAME + N' to ensure that the long-running transaction is still causing problems: ' + @crlf
+		+ @tab + N''To resolve:  '' + @crlf
+		+ @tab + @tab + N''First, execute the following statement against '' + @@SERVERNAME + N'' to ensure that the long-running transaction is still causing problems: '' + @crlf
 		+ @crlf
-		+ @tab + @tab + @tab + @tab + N'EXEC admindb.dbo.list_transactions;' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''EXEC admindb.dbo.list_transactions;'' + @crlf 
 		+ @crlf 
-		+ @tab + @tab + N'If the same session_id is still listed and causing problems, you can attempt to KILL the session in question by running ' + @crlf 
-		+ @tab + @tab + @tab + N'KILL X - where X is the session_id you wish to terminate. (So, if session_id 234 is causing problems, you would execute KILL 234; )' + @crlf 
-		+ @tab + @tab + N'WARNING: KILLing an in-flight/long-running transaction is NOT an immediate operation. It typically takes around 75% - 150% of the time a ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'transaction has taken to ''roll-forward'' in order to ''KILL'' or ROLLBACK a long-running operation. ' + @crlf
-		+ @tab + @tab + @tab + N'Example: suppose it takes 10 minutes for a long-running transaction (like a large UPDATE or DELETE operation) to complete and/or ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'GET stuck - or it has been running for ~10 minutes when you attempt to KILL it.' + @crlf
-		+ @tab + @tab + @tab + @tab + N'At this point (i.e., 10 minutes into an active transaction), you should ROUGHLY expect the rollback to take '  + @crlf
-		+ @tab + @tab + @tab + @tab + @tab + N' anywhere from 7 - 15 minutes to execute.' + @crlf
-		+ @tab + @tab + @tab + @tab + N'NOTE: If a short/simple transaction (like running an UPDATE against a single row) executes and the gets ''orphaned'' (i.e., it ' + @crlf 
-		+ @tab + @tab + @tab + @tab + @tab + N'somehow gets stuck and/or there was an EXPLICIT BEGIN TRAN and the operation is waiting on an explicit COMMIT), ' + @crlf
-		+ @tab + @tab + @tab + @tab + @tab + N'then, in this case, the transactional ''overhead'' should have been minimal - meaning that a KILL operation should be very QUICK '  + @crlf 
-		+ @tab + @tab + @tab + @tab + @tab + @tab + N'and almost immediate - because you are only rolling-back a few milliseconds'' or second''s worth of transactional overhead.' + @crlf 
+		+ @tab + @tab + N''If the same session_id is still listed and causing problems, you can attempt to KILL the session in question by running '' + @crlf 
+		+ @tab + @tab + @tab + N''KILL X - where X is the session_id you wish to terminate. (So, if session_id 234 is causing problems, you would execute KILL 234; )'' + @crlf 
+		+ @tab + @tab + N''WARNING: KILLing an in-flight/long-running transaction is NOT an immediate operation. It typically takes around 75% - 150% of the time a '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''transaction has taken to ''''roll-forward'''' in order to ''''KILL'''' or ROLLBACK a long-running operation. '' + @crlf
+		+ @tab + @tab + @tab + N''Example: suppose it takes 10 minutes for a long-running transaction (like a large UPDATE or DELETE operation) to complete and/or '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''GET stuck - or it has been running for ~10 minutes when you attempt to KILL it.'' + @crlf
+		+ @tab + @tab + @tab + @tab + N''At this point (i.e., 10 minutes into an active transaction), you should ROUGHLY expect the rollback to take ''  + @crlf
+		+ @tab + @tab + @tab + @tab + @tab + N'' anywhere from 7 - 15 minutes to execute.'' + @crlf
+		+ @tab + @tab + @tab + @tab + N''NOTE: If a short/simple transaction (like running an UPDATE against a single row) executes and the gets ''''orphaned'''' (i.e., it '' + @crlf 
+		+ @tab + @tab + @tab + @tab + @tab + N''somehow gets stuck and/or there was an EXPLICIT BEGIN TRAN and the operation is waiting on an explicit COMMIT), '' + @crlf
+		+ @tab + @tab + @tab + @tab + @tab + N''then, in this case, the transactional ''''overhead'''' should have been minimal - meaning that a KILL operation should be very QUICK ''  + @crlf 
+		+ @tab + @tab + @tab + @tab + @tab + @tab + N''and almost immediate - because you are only rolling-back a few milliseconds'''' or second''''s worth of transactional overhead.'' + @crlf 
 		+ @crlf
-		+ @tab + @tab + N'Once you KILL a session, the rollback proccess will begin (if there was a transaction in-flight). Keep checking admindb.dbo.list_transactions to see ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'IF the session in question is still running - and once it is DONE running blocked processes and other operations SHOULD start to work as normal again.' + @crlf
-		+ @tab + @tab + @tab + N'IF you would like to see ROLLBACK process you can run: KILL ### WITH STATUSONLY; and SQL Server will USUALLY (but not always) provide a relatively accurate ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'picture of how far along the rollback is. ' + @crlf 
+		+ @tab + @tab + N''Once you KILL a session, the rollback proccess will begin (if there was a transaction in-flight). Keep checking admindb.dbo.list_transactions to see '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''IF the session in question is still running - and once it is DONE running blocked processes and other operations SHOULD start to work as normal again.'' + @crlf
+		+ @tab + @tab + @tab + N''IF you would like to see ROLLBACK process you can run: KILL ### WITH STATUSONLY; and SQL Server will USUALLY (but not always) provide a relatively accurate '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''picture of how far along the rollback is. '' + @crlf 
 		+ @crlf
-		+ @tab + @tab + N'NOTE: If you are unable to determine the ''root'' blocker and/or are WILLING to effectively take the ENTIRE database ''down'' to fix problems with blocking/time-outs ' + @crlf 
-		+ @tab + @tab + @tab + N'due to long-running transactions, you CAN kick the entire database in question into SINGLE_USER mode thereby forcing all ' + @crlf
-		+ @tab + @tab + @tab + N'in-flight transactions to ROLLBACK - at the expense of (effectively) KILLing ALL connections into the database AND preventing new connections.' + @crlf
-		+ @tab + @tab + @tab + N'As you might suspect, this is effectively a ''nuclear'' option - and can/will result in across-the-board down-time against the database in question. ' + @crlf
-		+ @tab + @tab + @tab + N'WARNING: Knocking a database into SINGLE_USER mode will NOT do ANYTHING to ''speed up'' or decrease ROLLBACK time for any transactions in flight. ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'In fact, because it KILLs ALL transactions in the target database, it can take LONGER in some cases to ''go'' SINGLE_USER mode ' + @crlf
-		+ @tab + @tab + @tab + @tab + N'than finding/KILLing a root-blocker. Likewise, taking a database into SINGLE_USER mode is a semi-advanced operation and should NOT be done lightly.' + @crlf 
+		+ @tab + @tab + N''NOTE: If you are unable to determine the ''''root'''' blocker and/or are WILLING to effectively take the ENTIRE database ''''down'''' to fix problems with blocking/time-outs '' + @crlf 
+		+ @tab + @tab + @tab + N''due to long-running transactions, you CAN kick the entire database in question into SINGLE_USER mode thereby forcing all '' + @crlf
+		+ @tab + @tab + @tab + N''in-flight transactions to ROLLBACK - at the expense of (effectively) KILLing ALL connections into the database AND preventing new connections.'' + @crlf
+		+ @tab + @tab + @tab + N''As you might suspect, this is effectively a ''''nuclear'''' option - and can/will result in across-the-board down-time against the database in question. '' + @crlf
+		+ @tab + @tab + @tab + N''WARNING: Knocking a database into SINGLE_USER mode will NOT do ANYTHING to ''''speed up'''' or decrease ROLLBACK time for any transactions in flight. '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''In fact, because it KILLs ALL transactions in the target database, it can take LONGER in some cases to ''''go'''' SINGLE_USER mode '' + @crlf
+		+ @tab + @tab + @tab + @tab + N''than finding/KILLing a root-blocker. Likewise, taking a database into SINGLE_USER mode is a semi-advanced operation and should NOT be done lightly.'' + @crlf 
 		+ @crlf 
-		+ @tab + @tab + @tab + N'To force a database into SINGLE_USER mode (and kill all connections/transactions), run the following from within the master database: ' + @crlf
+		+ @tab + @tab + @tab + N''To force a database into SINGLE_USER mode (and kill all connections/transactions), run the following from within the master database: '' + @crlf
 		+ @crlf 
-		+ @tab + @tab + @tab + @tab + N'ALTER DATABSE [targetDBNameHere] SET SINGLE_USER WITH ROLLBACK AFTER 5 SECONDS;' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''ALTER DATABSE [targetDBNameHere] SET SINGLE_USER WITH ROLLBACK AFTER 5 SECONDS;'' + @crlf 
 		+ @crlf 
-		+ @tab + @tab + @tab + N'The command above will allow any/all connections and transactions currently active in the target database another 5 seconds to complete - while also ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'blocking any NEW connections into the database. After 5 seconds (and you can obvious set this value as you would like), all in-flight transactions ' + @crlf
-		+ @tab + @tab + @tab + @tab + N'will be KILLed and start the ROLLBACK process - and any active connections in the database will also be KILLed and kicked-out of the database in question.' + @crlf
-		+ @tab + @tab + @tab + N'WARNING: Once a database has been put into SINGLE_USER mode it can ONLY be accessed by the session that switched the database into SINGLE_USER mode. As such, if ' + @crlf 
-		+ @tab + @tab + @tab + @tab + N'you CLOSE your connection/session - ''control'' of the database ''falls'' to the next session that ' + @crlf
-		+ @tab + @tab + @tab + @tab + N'accesses the database - and all OTHER connections are blocked - which means that IF you close your connection/session, you will have to ACTIVELY fight other ' + @crlf
-		+ @tab + @tab + @tab + @tab + N'processes for connection into the database before you can set it to MULTI_USER again - and clear it for production use.' + @crlf 
+		+ @tab + @tab + @tab + N''The command above will allow any/all connections and transactions currently active in the target database another 5 seconds to complete - while also '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''blocking any NEW connections into the database. After 5 seconds (and you can obvious set this value as you would like), all in-flight transactions '' + @crlf
+		+ @tab + @tab + @tab + @tab + N''will be KILLed and start the ROLLBACK process - and any active connections in the database will also be KILLed and kicked-out of the database in question.'' + @crlf
+		+ @tab + @tab + @tab + N''WARNING: Once a database has been put into SINGLE_USER mode it can ONLY be accessed by the session that switched the database into SINGLE_USER mode. As such, if '' + @crlf 
+		+ @tab + @tab + @tab + @tab + N''you CLOSE your connection/session - ''''control'''' of the database ''''falls'''' to the next session that '' + @crlf
+		+ @tab + @tab + @tab + @tab + N''accesses the database - and all OTHER connections are blocked - which means that IF you close your connection/session, you will have to ACTIVELY fight other '' + @crlf
+		+ @tab + @tab + @tab + @tab + N''processes for connection into the database before you can set it to MULTI_USER again - and clear it for production use.'' + @crlf 
 		+ @crlf 
-		+ @tab + @tab + @tab + N'Once a database has been put into SINGLE_USER mode (i.e., after the command has been executed and ALL in-flight transactions have been rolled-back and all ' + @crlf
-		+ @tab + @tab + @tab + @tab + N'connections have been terminated and the state of the database switches to SINGLE_USER mode), any transactional locking and blocking in the target database' + @crlf
-		+ @tab + @tab + @tab + @tab + N'will be corrected. At which point you can then return the database to active service by switching it back to MULTI_USER mode by executing the following: ' + @crlf 
+		+ @tab + @tab + @tab + N''Once a database has been put into SINGLE_USER mode (i.e., after the command has been executed and ALL in-flight transactions have been rolled-back and all '' + @crlf
+		+ @tab + @tab + @tab + @tab + N''connections have been terminated and the state of the database switches to SINGLE_USER mode), any transactional locking and blocking in the target database'' + @crlf
+		+ @tab + @tab + @tab + @tab + N''will be corrected. At which point you can then return the database to active service by switching it back to MULTI_USER mode by executing the following: '' + @crlf 
 		+ @crlf 
-		+ @tab + @tab + @tab + @tab + @tab + N'ALTER DATABASE [targetDatabaseInSINGLE_USERMode] SET MULTI_USER;' + @crlf 
+		+ @tab + @tab + @tab + @tab + @tab + N''ALTER DATABASE [targetDatabaseInSINGLE_USERMode] SET MULTI_USER;'' + @crlf 
 		+ @crlf 
-		+ @tab + @tab + @tab + @tab + N'Note that the command above can ONLY be successfully executed by the session_id that currently ''owns'' the SINGLE_USER access into the database in question.' + @crlf;
+		+ @tab + @tab + @tab + @tab + N''Note that the command above can ONLY be successfully executed by the session_id that currently ''''owns'''' the SINGLE_USER access into the database in question.'' + @crlf;
 
 	IF @PrintOnly = 1 BEGIN 
 		PRINT @message;
@@ -9581,8 +9388,8 @@ BlockingCheckComplete:
 		DECLARE @txCount int; 
 		SET @txCount = (SELECT COUNT(*) FROM [#LongRunningTransactions]); 
 
-		SET @subject = @EmailSubjectPrefix + 'Long-Running Transaction Detected';
-		IF @txCount > 1 SET @subject = @EmailSubjectPrefix + CAST(@txCount AS sysname) + ' Long-Running Transactions Detected';
+		SET @subject = @EmailSubjectPrefix + ''Long-Running Transaction Detected'';
+		IF @txCount > 1 SET @subject = @EmailSubjectPrefix + CAST(@txCount AS sysname) + '' Long-Running Transactions Detected'';
 
 		EXEC msdb..sp_notify_operator
 			@profile_name = @MailProfileName,
@@ -9592,9 +9399,11 @@ BlockingCheckComplete:
 	END;
 
 	RETURN 0;
-GO
 
+ ';
 
+IF (SELECT dbo.get_engine_version())> 10.5 
+	EXEC sp_executesql @monitor_transaction_durations;
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
@@ -9603,7 +9412,6 @@ GO
 -----------------------------------
 USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.list_logfile_sizes','P') IS NOT NULL
 	DROP PROC dbo.list_logfile_sizes;
@@ -9619,7 +9427,7 @@ CREATE PROC dbo.list_logfile_sizes
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -9838,7 +9646,7 @@ CREATE PROC dbo.shrink_logfiles
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -10278,7 +10086,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -10382,7 +10190,7 @@ CREATE PROC dbo.extract_statement
 AS
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @sql nvarchar(2000) = N'
 SELECT 
@@ -10421,7 +10229,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -10615,8 +10423,10 @@ GO
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	BEGIN 
 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	BEGIN 
 		DECLARE @description sysname;
 				
 		-- Check for Mirrored Status First: 
@@ -10682,6 +10492,8 @@ CREATE PROC dbo.compare_jobs
 	@IgnoreEnabledState		bit = 0
 AS
 	SET NOCOUNT ON; 
+	
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -11071,7 +10883,7 @@ AS
 	DELETE FROM [#RemoteJobs] WHERE [name] IN (SELECT [name] FROM [#IgnoredJobs]);
 
 	SELECT 
-		N'ONLY ON ' + @LocalServerName [difference], * 
+		N'ONLY ON ' + @localServerName [difference], * 
 	FROM 
 		#LocalJobs 
 	WHERE
@@ -11079,7 +10891,7 @@ AS
 		AND [name] NOT IN (SELECT name FROM #IgnoredJobs)
 
 	UNION SELECT 
-		N'ONLY ON ' + @RemoteServerName [difference], *
+		N'ONLY ON ' + @remoteServerName [difference], *
 	FROM 
 		#RemoteJobs
 	WHERE 
@@ -11104,7 +10916,7 @@ AS
 	), 
 	core AS ( 
 		SELECT 
-			@LocalServerName [server],
+			@localServerName [server],
             lj.[name],
             lj.[enabled],
             lj.[description],
@@ -11120,7 +10932,7 @@ AS
 			lj.[name] IN (SELECT [name] FROM names)
 
 		UNION SELECT 
-			@RemoteServerName [server],
+			@remoteServerName [server],
             rj.[name],
             rj.[enabled],
             rj.[description],
@@ -11154,7 +10966,6 @@ AS
 
 	RETURN 0;
 GO
-
 
 
 -----------------------------------
@@ -11232,12 +11043,12 @@ AS
 		master.sys.availability_groups AS ag
 		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
 		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
-		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON AR.replica_id = arstates.replica_id AND arstates.is_local = 1
+		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON ar.replica_id = arstates.replica_id AND arstates.is_local = 1
 		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
 		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
 		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name
 	ORDER BY
-		AG.name ASC,
+		ag.name ASC,
 		dbcs.database_name;
 
 	-- process:
@@ -11469,6 +11280,8 @@ CREATE PROC dbo.verify_job_states
 AS 
 	SET NOCOUNT ON;
 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
 		IF ISNULL(@OperatorName, '') IS NULL BEGIN
@@ -11673,6 +11486,8 @@ CREATE PROC [dbo].[verify_job_synchronization]
 	@PrintOnly				bit						= 0					-- output only to console - don't email alerts (for debugging/manual execution, etc.)
 AS 
 	SET NOCOUNT ON;
+
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Validation Checks: 
@@ -12360,6 +12175,8 @@ CREATE PROC dbo.verify_server_synchronization
 	@PrintOnly							bit		= 0						-- output only to console if @PrintOnly = 1
 AS
 	SET NOCOUNT ON; 
+
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- if we're not manually running this, make sure the server is the primary:
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -13121,6 +12938,8 @@ CREATE PROC dbo.verify_data_synchronization
 AS
 	SET NOCOUNT ON;
 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	---------------------------------------------
 	-- Validation Checks: 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -13459,7 +13278,7 @@ REPORTING:
 			EXEC msdb..sp_notify_operator 
 				@profile_name = @MailProfileName, 
 				@name = @OperatorName, 
-				@subject = @Subject, 
+				@subject = @subject, 
 				@body = @errorMessage;	
 		END;
 	END;
@@ -13482,14 +13301,25 @@ IF OBJECT_ID('dbo.generate_audit_signature','P') IS NOT NULL
 	DROP PROC dbo.generate_audit_signature;
 GO
 
+
 CREATE PROC dbo.generate_audit_signature 
+	@AuditName					sysname, 
+	@IncludeGuidInHash			bit			= 1, 
+	@AuditSignature				bigint		= NULL OUTPUT
+AS
+	
+	RAISERROR('Sorry. The S4 stored procedure dbo.generate_audit_signature is NOT supported on SQL Server 2008/2008R2 instances.', 16, 1);
+	RETURN -100;
+GO
+
+DECLARE @generate_audit_signature nvarchar(MAX) = N'ALTER PROC dbo.generate_audit_signature 
 	@AuditName					sysname, 
 	@IncludeGuidInHash			bit			= 1, 
 	@AuditSignature				bigint		= NULL OUTPUT
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -13503,7 +13333,7 @@ AS
 		[name] = @AuditName;
 
 	IF @auditID IS NULL BEGIN 
-		SET @errorMessage = N'Specified Server Audit Name: [' + @AuditName + N'] does NOT exist. Please check your input and try again.';
+		SET @errorMessage = N''Specified Server Audit Name: ['' + @AuditName + N''] does NOT exist. Please check your input and try again.'';
 		RAISERROR(@errorMessage, 16, 1);
 		RETURN -1;
 	END;
@@ -13521,7 +13351,7 @@ AS
 	VALUES (@hash);
 
 	-- hash storage details (if file log storage is used):
-	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = 'FL') BEGIN
+	IF EXISTS (SELECT NULL FROM sys.[server_audits] WHERE [name] = @AuditName AND [type] = ''FL'') BEGIN
 		SELECT 
 			@hash = CHECKSUM(max_file_size, max_files, reserve_disk_space, log_file_path) 
 		FROM 
@@ -13539,8 +13369,11 @@ AS
 		SELECT @AuditSignature = SUM(hash) FROM @hashes;
 
 	RETURN 0;
-GO
 
+ ';
+
+IF (SELECT dbo.get_engine_version())> 10.5 
+	EXEC sp_executesql @generate_audit_signature;
 
 -----------------------------------
 USE [admindb];
@@ -13558,7 +13391,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -13733,7 +13566,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -13821,7 +13654,7 @@ ALERTS:
 			EXEC msdb.dbo.sp_notify_operator 
 				@profile_name = @MailProfileName, 
 				@name = @OperatorName, 
-				@subject = @Subject, 
+				@subject = @subject, 
 				@body = @errorMessage;	
 		END;
 	END;
@@ -13851,7 +13684,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.6.2831.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v5.7.2835.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -13981,7 +13814,7 @@ ALERTS:
 			EXEC msdb.dbo.sp_notify_operator 
 				@profile_name = @MailProfileName, 
 				@name = @OperatorName, 
-				@subject = @Subject, 
+				@subject = @subject, 
 				@body = @errorMessage;	
 		END;
 	END;
@@ -13993,8 +13826,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.6.2831.1';
-DECLARE @VersionDescription nvarchar(200) = N'Documentation Revamp + natural-language interval-specifier support for @Vectors';
+DECLARE @CurrentVersion varchar(20) = N'5.7.2835.1';
+DECLARE @VersionDescription nvarchar(200) = N'Conditional support for SQL Server 2008/R2 instances + Case-Sensitive Servers';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
