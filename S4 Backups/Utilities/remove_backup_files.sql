@@ -6,7 +6,8 @@
 		- Requires dbo.get_time_vector - for time calculation logic/etc. 
 		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
 		- Requires dbo.check_paths - sproc to verify that paths are valid. 
-		- Requires dbo.load_databases - sproc that centralizes handling of which dbs/folders to process.
+		- Requires dbo.load_backup_database_names - sproc that pulls potential db-names from backup folders/path.
+		- Requires dbo.list_databases - sproc that centralizes handling of which dbs/folders to process.
 		- Requires dbo.split_string - udf to parse the above.
 		- Requires that xp_cmdshell must be enabled.
 
@@ -85,8 +86,13 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.load_backup_database_names', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.load_backup_database_names not defined - unable to continue.', 16, 1);
+		RETURN -1;
+	END;
+
+	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN;
+		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -239,13 +245,38 @@ AS
 	IF @BackupType = N'LOG'
 		SET @excludeSimple = 1;
 
-	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_databases
-	    @Targets = @DatabasesToProcess,
-	    @Exclusions = @DatabasesToExclude,
-		@ExcludeSimpleRecovery = @excludeSimple,
-		@TargetDirectory = @TargetDirectory,
-		@Output = @serialized OUTPUT;
+	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+		DECLARE @databases xml = '';
+		DECLARE @serialized nvarchar(MAX) = '';
+
+		EXEC dbo.[load_backup_database_names]
+		    @TargetDirectory = @TargetDirectory,
+		    @SerializedOutput = @databases OUTPUT;
+
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value('@id[1]', 'int') [row_id], 
+				[data].[row].value('.[1]', 'sysname') [database_name]
+			FROM 
+				@databases.nodes('//database') [data]([row])
+		) 
+
+		SELECT 
+			@serialized = @serialized + [database_name] + N','
+		FROM 
+			shredded 
+		ORDER BY 
+			row_id;
+
+		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
+
+		EXEC dbo.load_backup_database_names
+			@TargetDirectory = @TargetDirectory, 
+			@SerializedOutput = @databases OUTPUT;
+
+		SET @DatabasesToProcess = REPLACE(@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]', @serialized); 
+	END;
 
 	DECLARE @targetDirectories table (
         [entry_id] int IDENTITY(1,1) NOT NULL, 
@@ -253,7 +284,10 @@ AS
     ); 
 
 	INSERT INTO @targetDirectories ([directory_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER By row_id;
+	EXEC dbo.list_databases
+	    @Targets = @DatabasesToProcess,
+	    @Exclusions = @DatabasesToExclude,
+		@ExcludeSimpleRecovery = @excludeSimple;
 
 	-----------------------------------------------------------------------------
 	-- Account for backups of system databases with the server-name in the path:  

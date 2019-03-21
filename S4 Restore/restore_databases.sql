@@ -316,6 +316,10 @@ AS
 		DECLARE @databases xml = '';
 		DECLARE @serialized nvarchar(MAX) = '';
 
+		EXEC dbo.[load_backup_database_names]
+		    @TargetDirectory = @BackupsRootPath,
+		    @SerializedOutput = @databases OUTPUT;
+
 		WITH shredded AS ( 
 			SELECT 
 				[data].[row].value('@id[1]', 'int') [row_id], 
