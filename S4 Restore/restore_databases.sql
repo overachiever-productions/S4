@@ -14,7 +14,8 @@
 
     DEPENDENCIES:
         - Requires dbo.restore_log - to log information about restore operations AND failures. 
-        - Requires dbo.load_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
+		- Requires dbo.list_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
+        - Requires dbo.load_backup_database_names - sproc used to load names of potential databases from a backups directory.
 		- Requires dbo.load_backup_files - sproc used to extract (in re-usable form) lists of available backup files at a specified path.
 		- Requires dbo.load_header_details - sproc used to pull meta-data about backups from backup files. 
         - Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
@@ -100,6 +101,21 @@ AS
         RETURN -1;
     END;
 
+	IF OBJECT_ID('dbo.count_matches', 'FN') IS NULL BEGIN 
+		RAISERROR('S4 Scalar UDF dbo.count_matches not defined - unable to continue.', 16, 1);
+        RETURN -1;
+	END; 
+
+    IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+        RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
+    IF (OBJECT_ID('dbo.load_backup_database_names', 'P') IS NULL) AND ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+        RAISERROR('S4 Stored Procedure dbo.load_backup_database_names not defined - unable to continue.', 16, 1);
+        RETURN -1;
+    END;
+
 	IF OBJECT_ID('dbo.load_backup_files', 'P') IS NULL BEGIN 
 		RAISERROR('S4 Stored Procedure dbo.load_backup_files not defined - unable to continue.', 16, 1);
         RETURN -1;
@@ -109,11 +125,6 @@ AS
 		RAISERROR('S4 Stored Procedure dbo.load_header_details not defined - unable to continue.', 16, 1);
         RETURN -1;
 	END; 
-
-    IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
 
     IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
         RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
@@ -295,8 +306,42 @@ AS
 
     -----------------------------------------------------------------------------
     -- Construct list of databases to restore:
-    DECLARE @serialized nvarchar(MAX);
-    EXEC dbo.load_databases
+    DECLARE @dbsToRestore table (
+        [entry_id] int IDENTITY(1,1) NOT NULL, 
+        [database_name] sysname NOT NULL
+    ); 
+
+	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+		DECLARE @databases xml = '';
+		DECLARE @serialized nvarchar(MAX) = '';
+
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value('@id[1]', 'int') [row_id], 
+				[data].[row].value('.[1]', 'sysname') [database_name]
+			FROM 
+				@databases.nodes('//database') [data]([row])
+		) 
+
+		SELECT 
+			@serialized = @serialized + [database_name] + N','
+		FROM 
+			shredded 
+		ORDER BY 
+			row_id;
+
+		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
+
+		EXEC dbo.load_backup_database_names
+			@TargetDirectory = @BackupsRootPath, 
+			@SerializedOutput = @databases OUTPUT;
+
+		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]', @serialized); 
+	END;
+    
+    INSERT INTO @dbsToRestore ([database_name])
+    EXEC dbo.list_databases
         @Targets = @DatabasesToRestore,         
         @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
         @Priorities = @Priorities,
@@ -304,18 +349,7 @@ AS
 		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
 		@ExcludeRestoring = 0,
 		@ExcludeRecovering = 0,	
-		@ExcludeOffline = 0,		
-
-        @TargetDirectory = @BackupsRootPath, 
-        @Output = @serialized OUTPUT;
-
-    DECLARE @dbsToRestore table (
-        [entry_id] int IDENTITY(1,1) NOT NULL, 
-        [database_name] sysname NOT NULL
-    ); 
-
-    INSERT INTO @dbsToRestore ([database_name])
-    SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
+		@ExcludeOffline = 0;
 
     IF NOT EXISTS (SELECT NULL FROM @dbsToRestore) BEGIN
         RAISERROR('No Databases Specified to Restore. Please Check inputs for @DatabasesToRestore + @DatabasesToExclude and retry.', 16, 1);
