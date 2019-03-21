@@ -84,8 +84,8 @@ AS
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 
-	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.list_logfile_sizes', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.list_logfile_sizes not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 	

@@ -142,18 +142,21 @@ AS
 	DECLARE @command nvarchar(MAX);
 	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 
-	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[load_databases]
+	DECLARE @dbsToWalk table ( 
+		row_id int IDENTITY(1,1) NOT NULL,
+		[database_name] sysname NOT NULL
+	); 
+
+	INSERT INTO @dbsToWalk ([database_name])
+	EXEC admindb.dbo.[list_databases]
 		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@ExcludeSecondaries = 1,
 		@ExcludeOffline = 1,
-		@Priorities = @DatabasePriorities,
-		@Output = @dbNames OUTPUT;
+		@Priorities = @DatabasePriorities;
 
 	DECLARE db_walker CURSOR LOCAL FAST_FORWARD FOR 
-	SELECT [result] 
-	FROM admindb.dbo.[split_string](@dbNames, N',', 1) ORDER BY row_id;
+	SELECT [database_name] FROM @dbsToWalk ORDER BY [row_id]; 
 
 	OPEN [db_walker];
 	FETCH NEXT FROM [db_walker] INTO @currentDatabase;
@@ -228,18 +231,22 @@ AS
 				PRIMARY KEY CLUSTERED ([sid], [database]) -- WITH (IGNORE_DUP_KEY = ON) -- looks like an EXCEPT might be faster: https://dba.stackexchange.com/a/90003/6100
 			);
 
-			DECLARE @AllDbNames nvarchar(MAX); 
-			EXEC admindb.dbo.[load_databases]
+			DECLARE @allDbsToWalk table ( 
+				row_id int IDENTITY(1,1) NOT NULL, 
+				[database_name] sysname NOT NULL
+			);
+
+			INSERT INTO @allDbsToWalk ([database_name])
+			EXEC admindb.dbo.[list_databases]
 				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
-				@ExcludeOffline = 1,
-				@Output = @AllDbNames OUTPUT;
+				@ExcludeOffline = 1;
 
 			DECLARE @sidTemplate nvarchar(MAX) = N'SELECT [sid], N''{0}'' [database] FROM [{0}].sys.database_principals WHERE [sid] IS NOT NULL;';
 			DECLARE @sql nvarchar(MAX);
 
 			DECLARE looper CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT [result] FROM dbo.[split_string](@AllDbNames, N',', 1) ORDER BY row_id;
+			SELECT [database_name] FROM @allDbsToWalk ORDER BY [row_id];
 
 			DECLARE @dbName sysname; 
 

@@ -195,15 +195,11 @@ AS
 		execution_id uniqueidentifier NOT NULL
 	);
 
-	DECLARE @dbNames nvarchar(MAX); 
-	EXEC admindb.dbo.[load_databases]
+	INSERT INTO [#targetDatabases] ([database_name])
+	EXEC admindb.dbo.[list_databases]
 		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
-		@Priorities = @Priorities,
-		@Output = @dbNames OUTPUT;
-
-	INSERT INTO [#targetDatabases] ([database_name])
-	SELECT [result] FROM dbo.[split_string](@dbNames, N',', 1);
+		@Priorities = @Priorities;
 
 	IF UPPER(@Scope) = N'LATEST'
 		INSERT INTO [#executionIDs] ([execution_id])

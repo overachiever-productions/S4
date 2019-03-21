@@ -63,15 +63,17 @@ AS
 	ELSE BEGIN 
 		
 		-- Make sure the target database exists:
-		DECLARE @targetOutput nvarchar(max);
+		DECLARE @databases table (
+			[database_name] sysname NOT NULL
+		); 
 
-		EXEC dbo.load_databases
-			@Targets = @Target,
-			@ExcludeDev = 1,
-			@Output = @targetOutput OUTPUT;
+		INSERT INTO @databases([database_name])
+		EXEC dbo.list_databases
+			@Targets = @Target, 
+			@ExcludeDev = 1;
 
-		IF LEN(ISNULL(@targetOutput,'')) < 1 BEGIN
-			SET @errorMessage = N'ERROR: Specified @Target database [' + @Target + N'] does not exist. Please check your input and try again.';
+		IF NOT EXISTS (SELECT NULL FROM @databases WHERE LOWER([database_name]) = LOWER(@Target)) BEGIN
+			SET @errorMessage = N'Specified @Target database [' + @Target + N'] does not exist. Please check your input and try again.';
 			INSERT INTO @errors([error]) VALUES (@errorMessage);
 			GOTO ALERTS;
 		END;
