@@ -5,21 +5,76 @@
 
 	NOTES:
 		
-	TESTS: 
-			-- expect exception:
-			EXEC load_backup_database_names
-				@TargetDirectory = NULL;
-		
-			EXEC load_backup_database_names; 
-			GO
+	EXAMPLES: 
 
-			DECLARE @databases xml = '';
-			EXEC load_backup_database_names
-				@TargetDirectory = N'D:\SQLBackups', 
-				@SerializedOutput = @databases OUTPUT;
+			---------------------------------------
+			-- expect exception:
+				EXEC load_backup_database_names
+					@TargetDirectory = NULL;
 			
-			SELECT @databases;
-			GO
+			---------------------------------------
+				EXEC load_backup_database_names; 
+				GO
+
+			---------------------------------------
+				DECLARE @databases xml = '';
+				EXEC load_backup_database_names
+					@TargetDirectory = N'D:\SQLBackups', 
+					@SerializedOutput = @databases OUTPUT;
+			
+				SELECT @databases;
+				GO
+
+
+			---------------------------------------
+				DECLARE @databases xml = '';
+				EXEC load_backup_database_names
+					@TargetDirectory = N'D:\SQLBackups', 
+					@SerializedOutput = @databases OUTPUT;
+			
+				WITH shredded AS ( 
+					SELECT 
+						[data].[row].value('@id[1]', 'int') [row_id], 
+						[data].[row].value('.[1]', 'sysname') [database_name]
+					FROM 
+						@databases.nodes('//database') [data]([row])
+				) 
+
+				SELECT 
+					[database_name]
+				FROM 
+					shredded 
+				ORDER BY 
+					row_id;
+				GO
+
+			---------------------------------------
+				DECLARE @databases xml = '';
+				EXEC load_backup_database_names
+					@TargetDirectory = N'D:\SQLBackups', 
+					@SerializedOutput = @databases OUTPUT;
+			
+				DECLARE @serialized nvarchar(MAX) = N'';
+				WITH shredded AS ( 
+					SELECT 
+						[data].[row].value('@id[1]', 'int') [row_id], 
+						[data].[row].value('.[1]', 'sysname') [database_name]
+					FROM 
+						@databases.nodes('//database') [data]([row])
+				) 
+
+				SELECT 
+					@serialized = @serialized + [database_name] + N','
+				FROM 
+					shredded 
+				ORDER BY 
+					row_id;
+
+				SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
+				SELECT @serialized;
+				GO
+
+
 
 */
 
