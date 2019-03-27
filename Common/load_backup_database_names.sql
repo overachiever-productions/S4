@@ -146,8 +146,6 @@ AS
 	--		In this sproc we WILL list any 'folders' for system databases found (i.e., we're LISTING databases - not getting the actual backups or paths). 
 	--		However, in dbo.restore_databases if the @TargetPath + N'\' + @dbToRestore doesn't find any files, and @dbToRestore is a SystemDB, we'll look in @TargetPath + '\' + @ServerName + '\' + @dbToRestore for <backup_type>_<db_name>*.bak/.trn etc.)... 
 
-
-
 	IF @SerializedOutput IS NOT NULL BEGIN 
 		SELECT @SerializedOutput = (SELECT 
 			[row_id] [database/@id],
