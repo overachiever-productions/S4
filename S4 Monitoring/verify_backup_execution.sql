@@ -66,8 +66,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+		RAISERROR('Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -115,32 +115,16 @@ AS
 		[name] sysname NOT NULL
 	);
 
-	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_databases 
-		@Targets = @DatabasesToCheck,
-		@Exclusions = @DatabasesToExclude, 
-		-- no exclusions - we're checking for all dbs... 
-		@Output = @serialized OUTPUT;
-
-	INSERT INTO @databaseToCheckForFullBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
-
-
-	-- TODO: If these are somehow in the @Exclusions list... then... don't add them. 
 	INSERT INTO @databaseToCheckForFullBackups ([name])
-	VALUES ('master'),('msdb');
+	EXEC dbo.list_databases 
+		@Targets = @DatabasesToCheck,
+		@Exclusions = @DatabasesToExclude; 
 
-	EXEC dbo.load_databases 
+	INSERT INTO @databaseToCheckForLogBackups ([name])
+	EXEC dbo.list_databases 
 		@Targets = @DatabasesToCheck,
 		@Exclusions = @DatabasesToExclude, 
-		@ExcludeSimpleRecovery = 1,
-		@Output = @serialized OUTPUT;
-
-	INSERT INTO @databaseToCheckForLogBackups 
-	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
-
-
-	-- Verify that there are backups to check:
+		@ExcludeSimpleRecovery = 1;
 
 	-----------------------------------------------------------------------------
 	-- Determine which jobs to check:

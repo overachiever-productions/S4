@@ -48,8 +48,8 @@ AS
 		RETURN -1;
 	END;
 
-	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -86,18 +86,14 @@ AS
 	DECLARE @serverVersion int;
 	SET @serverVersion = (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) * 10;
 
-	DECLARE @serialized nvarchar(MAX);
 	DECLARE @databasesToCheck table (
 		[name] sysname
 	);
 	
-	EXEC dbo.load_databases 
-		@Targets = N'[USER]',
-		@Exclusions = @DatabasesToExclude, 
-		@Output = @serialized OUTPUT;
-
 	INSERT INTO @databasesToCheck ([name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
+	EXEC dbo.list_databases 
+		@Targets = N'[USER]',
+		@Exclusions = @DatabasesToExclude;
 
 	DECLARE @excludedComptabilityDatabases table ( 
 		[name] sysname NOT NULL
