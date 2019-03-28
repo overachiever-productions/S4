@@ -610,34 +610,40 @@ GO
 --##INCLUDE: Common\get_engine_version.sql
 
 -----------------------------------
---##INCLUDE: Common\check_paths.sql
+--##INCLUDE: Common\split_string.sql
 
 -----------------------------------
---##INCLUDE: Common\load_default_path.sql
+--##INCLUDE: Common\Internal\check_paths.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\load_default_path.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\shred_resources.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\is_system_database.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\translate_vector.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\translate_vector_delay.sql
+
+-----------------------------------
+--##INCLUDE: Common\list_databases_matching_token.sql
+
+-----------------------------------
+--##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
 --##INCLUDE: Common\format_timespan.sql
-
------------------------------------
---##INCLUDE: Common\shred_resources.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\is_job_running.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\count_matches.sql
-
------------------------------------
---##INCLUDE: Common\is_system_database.sql
-
------------------------------------
---##INCLUDE: Common\split_string.sql
-
------------------------------------
---##INCLUDE: Common\translate_vector.sql
-
------------------------------------
---##INCLUDE: Common\translate_vector_delay.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
@@ -649,7 +655,7 @@ GO
 --##INCLUDE: Common\execute_command.sql
 
 -----------------------------------
---##INCLUDE: Common\load_databases.sql
+--##INCLUDE: Common\Internal\load_backup_database_names.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\shred_string.sql
@@ -700,7 +706,7 @@ GO
 --##INCLUDE: S4 Restore\Tools\copy_database.sql
 
 -----------------------------------
---##INCLUDE: S4 Restore\Utilities\apply_logs.sql
+--##INCLUDE: S4 Restore\apply_logs.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
