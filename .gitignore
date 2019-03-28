@@ -1,10 +1,9 @@
-## empty for now... 
-/S4 Restore/~~test cases for LSNs and TLog restore errors.sql
-/S4 Restore/~~ spelunking for added reliability to restore operations.sql
-/S4 Restore/~~ inital attempt at dbo.load_backup_files.sql
-/S4 Restore/~~ extract FILE HEADERONLY info from backups - initial testing and dev.sql
-/S4 Restore/~~ restore_databases - resiliency version (in progress).sql
+## exclusions... 
 /Deployment/__build/build.log.txt
 /Common/Types/__UDTT Notes.txt
 /Common/Types/enumeration.sql
 /Common/Types/extraction_mapping.sql
+.scratch
+*~~*
+S4 Maintenance/Automated Log Shrinking/__old*
+__Misc Ideas*
