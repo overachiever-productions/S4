@@ -655,7 +655,7 @@ GO
 --##INCLUDE: Common\execute_command.sql
 
 -----------------------------------
---##INCLUDE: Common\Internal\load_databases.sql
+--##INCLUDE: Common\Internal\load_backup_database_names.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\shred_string.sql
@@ -706,7 +706,7 @@ GO
 --##INCLUDE: S4 Restore\Tools\copy_database.sql
 
 -----------------------------------
---##INCLUDE: S4 Restore\Utilities\apply_logs.sql
+--##INCLUDE: S4 Restore\apply_logs.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
