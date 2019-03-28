@@ -184,21 +184,56 @@ AS
 		target_database_name sysname NOT NULL
 	);
 
-	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_databases 
+	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+		DECLARE @databases xml = '';
+		DECLARE @serialized nvarchar(MAX) = '';
+
+		EXEC dbo.[load_backup_database_names]
+		    @TargetDirectory = @BackupsRootPath,
+		    @SerializedOutput = @databases OUTPUT;
+
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value('@id[1]', 'int') [row_id], 
+				[data].[row].value('.[1]', 'sysname') [database_name]
+			FROM 
+				@databases.nodes('//database') [data]([row])
+		) 
+
+		SELECT 
+			@serialized = @serialized + [database_name] + N','
+		FROM 
+			shredded 
+		ORDER BY 
+			row_id;
+
+		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
+
+		EXEC dbo.load_backup_database_names
+			@TargetDirectory = @BackupsRootPath, 
+			@SerializedOutput = @databases OUTPUT;
+
+		SET @SourceDatabases = REPLACE(@SourceDatabases, N'[READ_FROM_FILESYSTEM]', @serialized); 
+	END;
+
+	DECLARE @possibleDatabases table ( 
+		row_id int IDENTITY(1,1) NOT NULL, 
+		[database_name] sysname NOT NULL
+	); 
+
+	INSERT INTO @possibleDatabases ([database_name])
+	EXEC dbo.list_databases 
         @Targets = @SourceDatabases,         
         @Exclusions = @Exclusions,		
         @Priorities = @Priorities,
 
 		@ExcludeSimpleRecovery = 1, 
 		@ExcludeRestoring = 0, -- we're explicitly targetting just these in fact... 
-		@ExcludeRecovering = 1, -- yeah, we don't want these... 
-
-        @TargetDirectory = @BackupsRootPath, 
-        @Output = @serialized OUTPUT;
+		@ExcludeRecovering = 1; -- we don't want these... (they're 'too far gone')
 
 	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
-	SELECT [result] [source_database_name], REPLACE(@TargetDbMappingPattern, N'{0}', [result]) [target_database_name] FROM dbo.[split_string](@serialized, N',', 1) ORDER BY [row_id];
+	SELECT [database_name] [source_database_name], REPLACE(@TargetDbMappingPattern, N'{0}', [database_name]) [target_database_name] FROM @possibleDatabases ORDER BY [row_id];
 
     IF NOT EXISTS (SELECT NULL FROM @applicableDatabases) BEGIN
         SET @earlyTermination = N'Databases specified for apply_logs operation: [' + @SourceDatabases + ']. However, none of the databases specified can have T-LOGs applied - as there are no databases in STANDBY or NORECOVERY mode.';

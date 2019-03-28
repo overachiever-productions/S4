@@ -50,8 +50,8 @@ AS
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 
-	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END
 
@@ -71,14 +71,6 @@ AS
 
 	-----------------------------------------------------------------------------
 	
-	DECLARE @serialized nvarchar(MAX);
-	EXEC [admindb].dbo.[load_databases]
-	    @Targets = @TargetDatabases, 
-	    @Exclusions = @DatabasesToExclude, 
-	    @Priorities = @Priorities, 
-	    @ExcludeSimpleRecovery = @ExcludeSimpleRecoveryDatabases, 
-	    @Output = @serialized OUTPUT;
-
 	CREATE TABLE #targetDatabases ( 
 		row_id int NOT NULL, 
 		[database_name] sysname NOT NULL, 
@@ -87,7 +79,11 @@ AS
 	);
 
 	INSERT INTO [#targetDatabases] ( [row_id], [database_name])
-	SELECT [row_id], [result] FROM [admindb].dbo.[split_string](@serialized, N',', 1);
+	EXEC dbo.list_databases
+		@Targets = @TargetDatabases, 
+		@Exclusions = @DatabasesToExclude, 
+		@Priorities = @Priorities, 
+		@ExcludeSimpleRecovery = @ExcludeSimpleRecoveryDatabases;
 
 	CREATE TABLE #logSizes (
 		[row_id] int IDENTITY(1,1) NOT NULL,

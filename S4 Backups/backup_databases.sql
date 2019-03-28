@@ -33,7 +33,7 @@
 	DEPENDENCIES:
 		- Requires dbo.backup_log (logging table to keep details about errors (and successful executions if @LogSuccessfulOutcomes = 1). 
 		- Requires dbo.split_string - to parse results from dba_LoadDatabases.
-		- Requires dbo.load_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
+		- Requires dbo.list_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
 		- Requires dbo.execute_uncatchable_command - sproc used to execute backup and other compands in order to be able to CAPTURE exception
 			details and error details (due to bug/problem with TRY/CATCH in T-SQL). 
 		- Requires that xp_cmdshell is ENABLED before execution can/will complete (but the sproc CAN be created without xp_cmdshell enabled).
@@ -149,8 +149,8 @@ AS
 		RETURN -1;
 	END
 
-	IF OBJECT_ID('dbo.load_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.load_databases not defined - unable to continue.', 16, 1);
+	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
+		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -324,22 +324,18 @@ AS
 		SET @excludeSimple = 1;
 
 	-- Determine which databases to backup:
-	DECLARE @serialized nvarchar(MAX);
-	EXEC dbo.load_databases
-	    @Targets = @DatabasesToBackup,
-	    @Exclusions = @DatabasesToExclude,
-		@Priorities = @Priorities,
-		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
-		@ExcludeSimpleRecovery = @excludeSimple,
-		@Output = @serialized OUTPUT;
-
 	DECLARE @targetDatabases table (
         [entry_id] int IDENTITY(1,1) NOT NULL, 
         [database_name] sysname NOT NULL
     ); 
 
 	INSERT INTO @targetDatabases ([database_name])
-	SELECT [result] FROM dbo.split_string(@serialized, N',', 1) ORDER BY row_id;
+	EXEC dbo.list_databases
+	    @Targets = @DatabasesToBackup,
+	    @Exclusions = @DatabasesToExclude,
+		@Priorities = @Priorities,
+		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
+		@ExcludeSimpleRecovery = @excludeSimple;
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
@@ -416,7 +412,7 @@ AS
 		SET @currentOperationID = NULL;
 
 -- TODO: Full details here: https://overachieverllc.atlassian.net/browse/S4-107
--- TODO: this logic is duplicated in dbo.load_databases. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
+-- TODO: this logic is duplicated in dbo.list_databases. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
 		DECLARE @synchronized table ([database_name] sysname NOT NULL);
 		INSERT INTO @synchronized ([database_name])
