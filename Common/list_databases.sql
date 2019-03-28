@@ -1,18 +1,7 @@
 /*
 
 
-	-- TODO: 
-		- verify that if I do the following: 
-			1. dbo.load_databases '[READ_FROM_FILESYSTEM]' to get a list of dbnames - like: 'oldDbBackupWhereDbIsn'tOnTheServerAnymoreButBackupIs, etc, blah, yada';
-			2. dbo.list_databases??? (i.e., prioritize and such...) 
-					that oldDbBackupWhereDbIsn'tOnTheServerAnymoreButBackupIs
-						isn't stripped from the list of options/outputs simply because it's NOT in sys.databases... 
-
-				AND... I think the 'fix' there is to set @ExcludOffline = 0... so that we don't exclude 'non-active' databases... 
-
-
-
-	TESTS: 
+	SIGNATURES: 
 
 			-- expect exception:
 			EXEC dbo.list_databases 
@@ -46,6 +35,22 @@
 			GO
 
 			EXEC dbo.list_databases 
+				@Targets = N'[USER]', 
+				@Exclusions = N'[DEV]';
+			GO
+
+			EXEC dbo.list_databases 
+				@Targets = N'[USER]', 
+				@Exclusions = N'[DEV]', 
+				@Priorities = N'Billing,*,'
+			GO
+
+			EXEC dbo.list_databases 
+				@Targets = N'[USER]', 
+				@Priorities = N'Billing,*,[DEV]'
+			GO
+
+			EXEC dbo.list_databases 
 				@Targets = N'[USER]';
 			GO
 
@@ -53,6 +58,9 @@
 				@Targets = N'[ALL]', 
 				@Exclusions = N'BayCar%';
 			GO
+
+			EXEC dbo.list_databases 
+				@Targets = N'[SYSTEM], [DEV]';
 
 			EXEC dbo.list_databases 
 				@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing';
@@ -67,13 +75,8 @@
 				@ExcludeReadOnly = 1;
 			GO
 
-			-- expect exception (for now)
-			EXEC dbo.list_databases 
-				@ExcludeDev = 1;
+			EXEC dbo.list_databases N'[DEV]';
 
-			-- expect exception (for now)
-			EXEC dbo.list_databases 
-				@ExcludeTest = 1;
 
 */
 
@@ -94,9 +97,8 @@ CREATE PROC dbo.list_databases
 	@ExcludeReadOnly						bit				= 0,			
 	@ExcludeRestoring						bit				= 1,			-- explicitly removes databases in RESTORING and 'STANDBY' modes... 
 	@ExcludeRecovering						bit				= 1,			-- explicitly removes databases in RECOVERY, RECOVERY_PENDING, and SUSPECT modes.
-	@ExcludeOffline							bit				= 1,			-- removes ANY state other than ONLINE.
-	@ExcludeDev								bit				= 0,			-- not yet implemented
-	@ExcludeTest							bit				= 0				-- not yet implemented
+	@ExcludeOffline							bit				= 1				-- removes ANY state other than ONLINE.
+
 AS 
 	SET NOCOUNT ON; 
 
@@ -108,6 +110,11 @@ AS
 		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
+
+	IF ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) AND (UPPER(@Targets) <> N'[ALL]') BEGIN
+		RAISERROR(N'When the Token [ALL] is specified for @Targets, no ADDITIONAL db-names or tokens may be specified.', 16, 1);
+		RETURN -1;
+	END;
 
 	IF (SELECT dbo.[count_matches](@Exclusions, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
 		RAISERROR(N'The [READ_FROM_FILESYSTEM] is NOT a valid exclusion token.', 16, 1);
@@ -152,43 +159,38 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-    DECLARE @system_databases TABLE ( 
-        [entry_id] int IDENTITY(1,1) NOT NULL, 
-        [database_name] sysname NOT NULL
-    ); 
+	DECLARE @system_databases TABLE ( 
+		[entry_id] int IDENTITY(1,1) NOT NULL, 
+		[database_name] sysname NOT NULL
+	); 	
 
-	-- define system databases - we'll potentially need this in a number of different cases...
+	-- load system databases - we'll (potentially) need these in a few evaluations (and avoid nested insert exec): 
+	DECLARE @serializedOutput xml = '';
+	EXEC dbo.[list_databases_matching_token]
+	    @Token = N'[SYSTEM]',
+	    @SerializedOutput = @serializedOutput OUTPUT;
+	
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('@id[1]', 'int') [row_id], 
+			[data].[row].value('.[1]', 'sysname') [database_name]
+		FROM 
+			@serializedOutput.nodes('//database') [data]([row])
+	)
+	 
 	INSERT INTO @system_databases ([database_name])
-    SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
-
-	-- Treat admindb as [SYSTEM] if defined as system... : 
-	IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
-		INSERT INTO @system_databases ([database_name])
-		VALUES ('admindb');
-	END;
-
-	-- same with distribution database - but only if present:
-	IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'distribution') BEGIN
-		IF (SELECT dbo.is_system_database('distribution')) = 1  BEGIN
-			INSERT INTO @system_databases ([database_name])
-			VALUES ('distribution');
-		END;
-	END;
-
+	SELECT [database_name] FROM [shredded] ORDER BY [row_id];
+	
 	-----------------------------------------------------------------------------
-	-- Load Targets:
-	IF UPPER(@Targets) IN (N'[ALL]', N'[SYSTEM]') BEGIN 
-		INSERT INTO @target_databases ([database_name])
-		SELECT [database_name] FROM @system_databases; 
-	END; 
-
-	IF UPPER(@Targets) IN (N'[ALL]', N'[USER]') BEGIN 
-		INSERT INTO @target_databases ([database_name])
-		SELECT [name] FROM sys.databases
-		WHERE [name] NOT IN (SELECT [database_name] FROM @system_databases)
-			AND LOWER([name]) <> N'tempdb'
-		ORDER BY [name];
-	 END; 
+	-- Account for tokens: 
+	DECLARE @replacedOutput nvarchar(MAX);
+	IF @Targets LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
+		EXEC dbo.replace_dbname_tokens 
+			@Input = @Targets, 
+			@Output = @replacedOutput OUTPUT;
+		
+		SET @Targets = @replacedOutput;
+	END;
 
 	 -- If not a token, then try comma delimitied: 
 	 IF NOT EXISTS (SELECT NULL FROM @target_databases) BEGIN
@@ -264,47 +266,41 @@ AS
 		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
 	END;
 
-	IF @ExcludeDev = 1 OR @ExcludeTest = 1 BEGIN 
-		RAISERROR('Dev and Test Exclusions have not YET been implemented.', 16, 1);
-		RETURN - 100; 
-
-		-- NOTE: RATHER than doing @ExcludeX explicitly... 
-		--		PROBABLY makes way more sense to have [DEV] [TEST] tokens - they work the SAME way (lookups to dbo.settings)... but end up being WAY more versatile...
-
-		-- TODO: Implement. for each type, there will be an option to drop in a setting/key that defines what dev or test dbs look like... 
-		--			as in ... a setting that effectively equates all dev or test with '%_dev' or 'test_%' - whatever an org's format is. 
-		--					AND, also needs to enable one-off additions to these as well, e.g., 'ImportStaging' or 'Blah' could be marked a test or dev.
-	END; 
-
 	-- Exclude explicit exclusions: 
 	IF NULLIF(@Exclusions, '') IS NOT NULL BEGIN;
 		
 		DELETE FROM @deserialized;
 
-		IF (SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0 BEGIN
-			INSERT INTO @deserialized ([row_id], [result])
-			SELECT 1 [fake_row_id], [database_name] FROM @system_databases;	
-
-			-- account for distribution (and note that it can/will only be EXCLUDED (i.e., IF it was found and IF it's marked as 'system', we won't restore it)).
-			IF (SELECT dbo.is_system_database('distribution')) = 1  BEGIN
-				INSERT INTO @deserialized ([row_id], [result])
-				VALUES (99, 'distribution');
-			END;
-
-			SET @Exclusions = REPLACE(@Exclusions, N'[SYSTEM]', N'');
+		-- Account for tokens: 
+		IF @Exclusions LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
+			EXEC dbo.replace_dbname_tokens 
+				@Input = @Exclusions, 
+				@Output = @replacedOutput OUTPUT;
+		
+			SET @Exclusions = @replacedOutput;
 		END;
 
 		INSERT INTO @deserialized ([row_id], [result])
 		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Exclusions, N',', 1);
 
+		-- note: delete on = and LIKE... 
 		DELETE t 
 		FROM @target_databases t
-		INNER JOIN @deserialized d ON t.[database_name] LIKE d.[result];
+		INNER JOIN @deserialized d ON (t.[database_name] = d.[result]) OR (t.[database_name] LIKE d.[result]);
 	END;
 
 	-----------------------------------------------------------------------------
 	-- Prioritize:
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
+
+		-- Account for tokens: 
+		IF @Priorities LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
+			EXEC dbo.replace_dbname_tokens 
+				@Input = @Priorities, 
+				@Output = @replacedOutput OUTPUT;
+		
+			SET @Priorities = @replacedOutput;
+		END;		
 
 		DECLARE @prioritized table (
 			priority_id int IDENTITY(1,1) NOT NULL, 

@@ -54,6 +54,9 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 
+
+	-----------------------------------------------------------------------------
+	-- processing: 
 	IF NULLIF(@AllowedTokens, N'') IS NULL BEGIN
 
 		SET @AllowedTokens = N'';
@@ -61,16 +64,23 @@ AS
 		WITH aggregated AS (
 			SELECT 
 				UPPER(setting_key) [token], 
-				COUNT(*) [definitions_count]
+				COUNT(*) [ranking]
 			FROM 
 				dbo.[settings] 
 			WHERE 
 				[setting_key] LIKE '~[%~]' ESCAPE N'~'
 			GROUP BY 
 				[setting_key]
+
+			UNION 
+			
+			SELECT 
+				[token], 
+				[ranking] 
+			FROM (VALUES (N'[ALL]', 1000), (N'[SYSTEM]', 999), (N'[USER]', 998)) [x]([token], [ranking])
 		) 
 
-		SELECT @AllowedTokens = @AllowedTokens + [token] + N',' FROM [aggregated] ORDER BY [definitions_count] DESC;
+		SELECT @AllowedTokens = @AllowedTokens + [token] + N',' FROM [aggregated] ORDER BY [ranking] DESC;
 
 		-- short-circuite: there are no tokens defined in 
 		IF @AllowedTokens = N'' BEGIN
@@ -80,11 +90,8 @@ AS
 
 		SET @AllowedTokens = LEFT(@AllowedTokens, LEN(@AllowedTokens) - 1);
 	END;
-	
-	-----------------------------------------------------------------------------
-	-- processing: 
-	DECLARE @intermediateResults nvarchar(MAX) = @Input;
 
+	DECLARE @intermediateResults nvarchar(MAX) = @Input;
 	DECLARE @tokensToProcess table (
 		row_id int IDENTITY(1,1) NOT NULL, 
 		token sysname NOT NULL
