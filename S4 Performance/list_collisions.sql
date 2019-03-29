@@ -116,15 +116,20 @@ AS
 	END;
 
 	IF @TargetDatabases <> N'[ALL]' BEGIN
-		DECLARE @dbnames nvarchar(max);
-		EXEC dbo.load_databases 
+		
+		DECLARE @dbNames table ( 
+			[database_name] sysname NOT NULL 
+		); 
+		
+		INSERT INTO @dbNames ([database_name])
+		EXEC dbo.list_databases 
 			@Targets = @TargetDatabases, 
-			@ExcludeSecondaries = 1,
-			@Output = @dbnames OUTPUT; 
+			@ExcludeSecondaries = 1, 
+			@ExcludeReadOnly = 1;
 
 		DELETE FROM #core 
 		WHERE 
-			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [result] FROM dbo.split_string(@dbnames, N',', 1)));
+			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [database_name] FROM @dbNames));
 	END; 
 
 	IF NOT EXISTS(SELECT NULL FROM [#core]) BEGIN

@@ -634,6 +634,9 @@ GO
 --##INCLUDE: Common\list_databases_matching_token.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\replace_dbname_tokens.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
