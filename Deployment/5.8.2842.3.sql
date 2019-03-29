@@ -14150,7 +14150,7 @@ GO
 -- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 DECLARE @CurrentVersion varchar(20) = N'5.8.2842.3';
-DECLARE @VersionDescription nvarchar(200) = N'Added Feature: ability to specify 'arbitrary' db-name tokens, e.g., [DEV], etc.';
+DECLARE @VersionDescription nvarchar(200) = N'Added Feature: ability to specify ''arbitrary'' db-name tokens, e.g., [DEV], etc.';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
