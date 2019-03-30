@@ -473,7 +473,7 @@ AS
     );
 
     -- SQL Server 2016 adds SnapshotURL of nvarchar(360) for azure stuff:
-	IF (SELECT admindb.dbo.get_engine_version()) >= 13.0 BEGIN
+	IF (SELECT dbo.get_engine_version()) >= 13.0 BEGIN
         ALTER TABLE #FileList ADD SnapshotURL nvarchar(360) NULL;
     END;
 
@@ -1058,7 +1058,7 @@ NextDatabase:
 
         -- Check-up on total number of 'failed drops':
 		IF @DropDatabasesAfterRestore = 1 BEGIN 
-			SELECT @failedDropCount = COUNT(*) FROM admindb.dbo.[restore_log] WHERE [execution_id] = @executionID AND [dropped] IN ('ATTEMPTED', 'ERROR');
+			SELECT @failedDropCount = COUNT(*) FROM dbo.[restore_log] WHERE [execution_id] = @executionID AND [dropped] IN ('ATTEMPTED', 'ERROR');
 
 			IF @failedDropCount >= @MaxNumberOfFailedDrops BEGIN 
 				-- we're done - no more processing (don't want to risk running out of space with too many restore operations.

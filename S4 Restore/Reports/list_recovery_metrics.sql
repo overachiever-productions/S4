@@ -196,7 +196,7 @@ AS
 	);
 
 	INSERT INTO [#targetDatabases] ([database_name])
-	EXEC admindb.dbo.[list_databases]
+	EXEC dbo.[list_databases]
 		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@Priorities = @Priorities;

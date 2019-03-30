@@ -112,7 +112,7 @@ AS
 	DELETE FROM @synchronizingDatabases WHERE [sync_type] = N'MIRRORED' AND [role] = N'MIRROR';
 
 	-- We're also not interested in any dbs we've been explicitly instructed to ignore: 
-	DELETE FROM @synchronizingDatabases WHERE [database_name] IN (SELECT [result] FROM admindb.dbo.[split_string](@IgnoredDatabases, N',', 1));
+	DELETE FROM @synchronizingDatabases WHERE [database_name] IN (SELECT [result] FROM dbo.[split_string](@IgnoredDatabases, N',', 1));
 
 	IF NOT EXISTS (SELECT NULL FROM @synchronizingDatabases) BEGIN 
 		PRINT 'Server is not currently the Primary for any (monitored) synchronizing databases. Execution terminating (but will continue on primary).';

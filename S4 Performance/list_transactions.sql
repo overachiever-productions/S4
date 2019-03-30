@@ -294,7 +294,7 @@ CAST((
 			--/statement
 
 			-- waits
-				admindb.dbo.format_timespan(h2.wait_time) [transaction/waits/@wait_time], 
+				dbo.format_timespan(h2.wait_time) [transaction/waits/@wait_time], 
 				h2.wait_resource [transaction/waits/wait_resource], 
 				h2.wait_type [transaction/waits/wait_type], 
 				h2.last_wait_type [transaction/waits/last_wait_type],
@@ -308,10 +308,10 @@ CAST((
 		--/transaction 
 
 		-- time 
-			admindb.dbo.format_timespan(h2.cpu_time) [time/cpu_time], 
-			admindb.dbo.format_timespan(h2.wait_time) [time/wait_time], 
-			admindb.dbo.format_timespan(c2.duration) [time/duration], 
-			admindb.dbo.format_timespan(DATEDIFF(MILLISECOND, des2.last_request_start_time, GETDATE())) [time/time_since_last_request_start], 
+			dbo.format_timespan(h2.cpu_time) [time/cpu_time], 
+			dbo.format_timespan(h2.wait_time) [time/wait_time], 
+			dbo.format_timespan(c2.duration) [time/duration], 
+			dbo.format_timespan(DATEDIFF(MILLISECOND, des2.last_request_start_time, GETDATE())) [time/time_since_last_request_start], 
 			ISNULL(CONVERT(sysname, des2.[last_request_start_time], 121), '''') [time/last_request_start]
 		--/time
 	FROM 
@@ -437,7 +437,7 @@ CAST((
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{dtc}', N'');
 	END;
 
---EXEC admindb.dbo.[print_string] @Input = @projectionSQL;
+--EXEC dbo.[print_string] @Input = @projectionSQL;
 --RETURN;
 
 	-- final output:

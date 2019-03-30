@@ -196,7 +196,7 @@ AS
 	 IF NOT EXISTS (SELECT NULL FROM @target_databases) BEGIN
 	
 		INSERT INTO @deserialized ([row_id], [result])
-		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Targets, N',', 1);
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM dbo.[split_string](@Targets, N',', 1);
 
 		IF EXISTS (SELECT NULL FROM @deserialized) BEGIN 
 			INSERT INTO @target_databases ([database_name])
@@ -225,7 +225,7 @@ AS
 		WHERE UPPER(dm.[mirroring_role_desc]) <> N'PRINCIPAL';
 
 		-- dynamically account for any AG'd databases:
-		IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN		
+		IF (SELECT dbo.get_engine_version()) >= 11.0 BEGIN		
 			CREATE TABLE #hadr_names ([name] sysname NOT NULL);
 			EXEC sp_executesql N'INSERT INTO #hadr_names ([name]) SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
 
@@ -281,7 +281,7 @@ AS
 		END;
 
 		INSERT INTO @deserialized ([row_id], [result])
-		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Exclusions, N',', 1);
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM dbo.[split_string](@Exclusions, N',', 1);
 
 		-- note: delete on = and LIKE... 
 		DELETE t 

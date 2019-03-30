@@ -209,7 +209,7 @@ AS
 FROM 
 	sys.dm_server_services;';	
 
-	IF ((SELECT admindb.dbo.get_engine_version()) >= 13.00) -- ifi added to 2016+
+	IF ((SELECT dbo.get_engine_version()) >= 13.00) -- ifi added to 2016+
 		SET @command = REPLACE(@command, N'{0}', 'instant_file_initialization_enabled');
 	ELSE 
 		SET @command = REPLACE(@command, N'{0}', '''?''');

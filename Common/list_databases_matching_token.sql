@@ -120,7 +120,7 @@ AS
 			[setting_id];
 
 		IF NOT EXISTS (SELECT NULL FROM @tokenDefs) BEGIN 
-			DECLARE @errorMessage nvarchar(2000) = N'No filter definitions were defined for token: ' + @Token + '. Please check admindb.dbo.settings for ' + @Token + N' settings_key(s) and/or create as needed.';
+			DECLARE @errorMessage nvarchar(2000) = N'No filter definitions were defined for token: ' + @Token + '. Please check dbo.settings for ' + @Token + N' settings_key(s) and/or create as needed.';
 			RAISERROR(@errorMessage, 16, 1);
 			RETURN -1;
 		END;

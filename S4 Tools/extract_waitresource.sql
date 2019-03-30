@@ -166,7 +166,7 @@ AS
 
 	IF NULLIF(@DatabaseMappings, N'') IS NOT NULL BEGIN
 		INSERT INTO #ExtractionMapping ([row_id], [database_id], [mapped_name], [metadata_name])
-		EXEC admindb.dbo.[shred_string] 
+		EXEC dbo.[shred_string] 
 		    @Input = @DatabaseMappings, 
 		    @RowDelimiter = N',',
 		    @ColumnDelimiter = N'|'
@@ -176,7 +176,7 @@ AS
 	DECLARE @parts table (row_id int, part nvarchar(200));
 
 	INSERT INTO @parts (row_id, part) 
-	SELECT [row_id], [result] FROM admindb.dbo.[split_string](@WaitResource, N':', 1);
+	SELECT [row_id], [result] FROM dbo.[split_string](@WaitResource, N':', 1);
 
 	BEGIN TRY 
 		DECLARE @waittype sysname, @part2 bigint, @part3 bigint, @part4 sysname, @part5 sysname;

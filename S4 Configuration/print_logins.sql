@@ -120,18 +120,18 @@ AS
 	DECLARE @info nvarchar(MAX);
 
 	INSERT INTO @ignoredDatabases ([database_name])
-	SELECT [result] [database_name] FROM admindb.dbo.[split_string](@ExcludedDatabases, N',', 1) ORDER BY row_id;
+	SELECT [result] [database_name] FROM dbo.[split_string](@ExcludedDatabases, N',', 1) ORDER BY row_id;
 
 	INSERT INTO @ingnoredLogins ([login_name])
-	SELECT [result] [login_name] FROM [admindb].dbo.[split_string](@ExcludedLogins, N',', 1) ORDER BY row_id;
+	SELECT [result] [login_name] FROM dbo.[split_string](@ExcludedLogins, N',', 1) ORDER BY row_id;
 
 	IF @ExcludeMSAndServiceLogins = 1 BEGIN
 		INSERT INTO @ingnoredLogins ([login_name])
-		SELECT [result] [login_name] FROM [admindb].dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',', 1) ORDER BY row_id;		
+		SELECT [result] [login_name] FROM dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',', 1) ORDER BY row_id;		
 	END;
 
 	INSERT INTO @ingoredUsers ([user_name])
-	SELECT [result] [user_name] FROM [admindb].dbo.[split_string](@ExcludedUsers, N',', 1) ORDER BY row_id;
+	SELECT [result] [user_name] FROM dbo.[split_string](@ExcludedUsers, N',', 1) ORDER BY row_id;
 
 	-- remove ignored logins:
 	DELETE l 
@@ -148,7 +148,7 @@ AS
 	); 
 
 	INSERT INTO @dbsToWalk ([database_name])
-	EXEC admindb.dbo.[list_databases]
+	EXEC dbo.[list_databases]
 		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
 		@ExcludeSecondaries = 1,
@@ -237,7 +237,7 @@ AS
 			);
 
 			INSERT INTO @allDbsToWalk ([database_name])
-			EXEC admindb.dbo.[list_databases]
+			EXEC dbo.[list_databases]
 				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1;
