@@ -1,5 +1,3 @@
-
-
 /*
 
 -- TODO: thread count is off/wrong... 
@@ -22,14 +20,11 @@ FODDER
 
 -- TODO: verify that aliased column ORDER BY operations work in versions of SQL Server prior to 2016... 
 
--- vNEXT: batch vs statement plans/text (i.e., offsets and the likes). 
 -- vNEXT: detailed blocking info... (blocking chains if @DetailedBlockingInfo = 1 (expressed as xml)... 
 --			Andy Mallon has a great article on this stuff: https://am2.co/2017/10/finding-leader-blocker/
 
 
 -- vNEXT: tempdb info (spills, usage, overhead, etc). as an optional parameter (i.e., @includetempdbmetrics)
--- vNEXT: exclude service broker tasks (background tasks)... i..e, where Command = BRKR TASK and last_wait_type = 'sleep_task' and elapsed_time < 0 (i.e., huge negative #s) and ... text = NULL... 
--- other wait types and so on... 
 
 -- vNEXT: @Formatter sysname ... a udf that can be used as an additional column to watch for any specific details a given org might want to grab.. 
 --			give it the sql statement? and... maybe the plan? dunno...   (this'd let me grab the "/* ReportID: xxxx; OrgID: yyyyy */ if needed.. and give other people similar details. 
@@ -64,17 +59,15 @@ GO
 CREATE PROC dbo.list_processes 
 	@TopNRows								int			=	-1,		-- TOP is only used if @TopNRows > 0. 
 	@OrderBy								sysname		= N'CPU',	-- CPU | DURATION | READS | WRITES | MEMORY
-	@ExcludeMirroringWaits					bit			= 1,		-- optional 'ignore' wait types/families.
+	@ExcludeMirroringProcesses				bit			= 1,		-- optional 'ignore' wait types/families.
 	@ExcludeNegativeDurations				bit			= 1,		-- exclude service broker and some other system-level operations/etc. 
+	@ExcludeBrokerProcesses					bit			= 1,		-- need to document that it does NOT block ALL broker waits (and, that it ONLY blocks broker WAITs - i.e., that's currently the ONLY way it excludes broker processes - by waits).
 	-- vNEXT				--@ExcludeSOmeOtherSetOfWaitTypes		bit			= 1			-- ditto... 
 	@ExcludeFTSDaemonProcesses				bit			= 1,
 	@ExcludeSystemProcesses					bit			= 1,			-- spids < 50... 
 	@ExcludeSelf							bit			= 1,	
-	@IncludePlanHandle						bit			= 1,	
+	@IncludePlanHandle						bit			= 0,	
 	@IncludeIsolationLevel					bit			= 0,
-	@ExcludeBrokerProcesses					bit			= 1,		-- need to document that it does NOT block ALL broker waits (and, that it ONLY blocks broker WAITs - i.e., that's currently the ONLY way it excludes broker processes - by waits).
-	-- vNEXT				--@ShowBatchStatement					bit			= 0,		-- show outer statement if possible...
-	-- vNEXT				--@ShowBatchPlan						bit			= 0,		-- grab a parent plan if there is one... 	
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
 	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
 	@IncludeExtendedDetails					bit			= 1,
@@ -88,6 +81,7 @@ AS
 	CREATE TABLE #ranked (
 		[row_number] int IDENTITY(1,1) NOT NULL,
 		[session_id] smallint NOT NULL,
+		[blocked_by] smallint NOT NULL,
 		[cpu] int NOT NULL,
 		[reads] bigint NOT NULL,
 		[writes] bigint NOT NULL,
@@ -98,6 +92,7 @@ AS
 	DECLARE @topSQL nvarchar(MAX) = N'
 	SELECT {TOP}
 		r.[session_id], 
+		r.[blocking_session_id] [blocked_by],
 		r.[cpu_time] [cpu], 
 		r.[reads], 
 		r.[writes], 
@@ -133,7 +128,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSystemProcesses}', N'');
 	END;
 
-	IF @ExcludeMirroringWaits = 1 BEGIN
+	IF @ExcludeMirroringProcesses = 1 BEGIN
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeMirroringWaits}', N',''DBMIRRORING_CMD'',''DBMIRROR_EVENTS_QUEUE'', ''DBMIRROR_WORKER_QUEUE''');
 	  END;
 	ELSE BEGIN
@@ -170,11 +165,51 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N'');
 	END;
 
+PRINT @topSQL;
 
---PRINT @topSQL;
-
-	INSERT INTO [#ranked] ([session_id], [cpu], [reads], [writes], [duration], [memory])
+	INSERT INTO [#ranked] ([session_id], [blocked_by], [cpu], [reads], [writes], [duration], [memory])
 	EXEC sys.[sp_executesql] @topSQL; 
+
+--MKC: S4-61. $100 says that I've already SOLVED this crap in dbo.list_collisions... or... maybe in dbo.list_transactions? 
+-- grab any sessions that are BLOCKING the 'top' sessions listed above: 
+INSERT INTO #ranked ([session_id], [blocked_by], [cpu], [reads], [writes], [duration], [memory])
+SELECT
+	r.[session_id], 
+	r.[blocking_session_id] [blocked_by],
+	r.[cpu_time] [cpu], 
+	r.[reads],
+	r.[writes], 
+	r.[total_elapsed_time] [duration],
+	ISNULL(CAST((g.granted_memory_kb / 1024.0) as decimal(20,2)),0) AS [memory]
+FROM 
+	#ranked x 
+	INNER JOIN sys.dm_exec_requests r ON x.blocked_by = r.session_id 
+	LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
+WHERE 
+	r.session_id NOT IN(SELECT session_id FROM #ranked);
+
+	---- and... what if the request is STALLED? 
+	--INSERT INTO #ranked ([session_id], [blocked_by], [cpu], [reads], [writes], [duration], [memory])
+	--SELECT 
+	--	s.[session_id], 
+	--	-1, 
+	--	-1,
+	--	-1,
+	--	-1,
+	--	-1,
+	--	-1
+	--FROM 
+	--	[#ranked] x 
+	--	INNER JOIN sys.dm_exec_sessions s ON x.[blocked_by] = s.[session_id] 
+	--WHERE 
+	--	s.[session_id] NOT IN (SELECT session_id FROM #ranked);
+		
+
+
+	IF NOT EXISTS (SELECT NULL FROM [#ranked]) BEGIN 
+		-- short-circuit - there's nothing to see here... 
+		RETURN 0; 
+	END;
 
 	CREATE TABLE #detail (
 		[row_number] int NOT NULL,
@@ -201,11 +236,14 @@ AS
 		[open_tran] int NOT NULL,
 		[sql_handle] varbinary(64) NULL,
 		[plan_handle] varbinary(64) NULL, 
+		[statement_start_offset] int NULL, 
+		[statement_end_offset] int NULL,
 		[statement_source] sysname NOT NULL DEFAULT N'REQUEST'
 	);
 
 	INSERT INTO [#detail] ([row_number], [session_id], [blocked_by], [isolation_level], [status], [last_wait_type], [command], [granted_mb], [requested_mb], [ideal_mb], 
-		 [cpu_time], [reads], [writes], [elapsed_time], [wait_time], [db_name], [login_name], [program_name], [host_name], [percent_complete], [open_tran], [sql_handle], [plan_handle])
+		 [cpu_time], [reads], [writes], [elapsed_time], [wait_time], [db_name], [login_name], [program_name], [host_name], [percent_complete], [open_tran], 
+		 [sql_handle], [plan_handle], [statement_start_offset], [statement_end_offset])
 	SELECT
 		x.[row_number],
 		r.session_id, 
@@ -237,7 +275,9 @@ AS
 		r.percent_complete,
 		r.open_transaction_count [open_tran],
 		r.[sql_handle],
-		r.plan_handle
+		r.[plan_handle],
+		r.[statement_start_offset], 
+		r.[statement_end_offset]
 	FROM 
 		[#ranked] x
 		INNER JOIN sys.dm_exec_requests r ON x.[session_id] = r.[session_id]
@@ -247,18 +287,19 @@ AS
 	-- populate sql_handles for sessions without current requests: 
 	UPDATE x 
 	SET 
-		x.[sql_handle] = CAST(p.[sql_handle] AS varbinary(64)), 
-		x.[statement_source] = N'SESSION'
+		x.[sql_handle] = c.[most_recent_sql_handle],
+		x.[statement_source] = N'CONNECTION'
 	FROM 
 		[#detail] x 
-		INNER JOIN sys.sysprocesses p ON x.[session_id] = p.[spid]
+		INNER JOIN sys.[dm_exec_connections] c ON x.[session_id] = c.[most_recent_session_id]
 	WHERE 
 		x.[sql_handle] IS NULL;
 
 	-- load statements: 
 	SELECT 
 		d.[session_id], 
-		t.[text] [statement]
+		t.[text] [batch_text], 
+		SUBSTRING(t.[text], (d.[statement_start_offset]/2) + 1, ((CASE WHEN d.[statement_end_offset] = -1 THEN DATALENGTH(t.[text]) ELSE d.[statement_end_offset] END - d.[statement_start_offset])/2) + 1) [statement_text]
 	INTO 
 		#statements 
 	FROM 
@@ -326,6 +367,16 @@ AS
 		[#detail] d 
 		OUTER APPLY sys.dm_exec_query_plan(d.plan_handle) p
 
+	SELECT 
+		d.session_id, 
+		TRY_CAST(x.[query_plan] AS xml) [statement_plan]
+	INTO 
+		#statement_plans
+	FROM 
+		[#detail] d 
+		OUTER APPLY sys.dm_exec_text_query_plan(d.[plan_handle], d.statement_start_offset, d.statement_end_offset) x
+
+
 	IF @ExtractCost = 1 BEGIN
         
         WITH XMLNAMESPACES (DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
@@ -338,7 +389,6 @@ AS
             [#plans] p;
     END;
 
-
 	DECLARE @projectionSQL nvarchar(MAX) = N'
 	SELECT 
 		d.[session_id],
@@ -347,8 +397,8 @@ AS
 		{isolation_level}
 		d.[command], 
 		d.[last_wait_type],
-		t.[statement],  -- statement_text?
-		--{batch_text} ???
+		t.[batch_text],  
+		t.[statement_text],
 		d.[status], 
 		{extractCost}
 		d.[cpu_time],
@@ -362,12 +412,13 @@ AS
 		d.[host_name],
 		{plan_handle}
 		{extended_details}
-		--,{statement_plan} -- if i can get this working... 
-		p.[batch_plan]
+		p.[batch_plan], 
+		sp.[statement_plan]
 	FROM 
 		[#detail] d
 		INNER JOIN #statements t ON d.session_id = t.session_id
 		INNER JOIN #plans p ON d.session_id = p.session_id
+		INNER JOIN #statement_plans sp ON d.session_id = sp.session_id
 		{extractJoin}
 	ORDER BY
 		[row_number];'
@@ -408,9 +459,6 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'');
 	END;
-
-
---PRINT @projectionSQL;
 
 	-- final output:
 	EXEC sys.[sp_executesql] @projectionSQL;

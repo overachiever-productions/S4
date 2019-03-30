@@ -137,19 +137,19 @@ AS
 		RETURN 0; -- short-circuit.
 	END;
 
-	--------------------------------------------------------
-	-- Extract Statements: 
-
+	-- populate sql_handles for sessions without current requests: 
 	UPDATE c 
 	SET 
-		c.statement_handle = CAST(p.[sql_handle] AS varbinary(64)),
-		c.statement_source = N'SESSION'
+		c.statement_handle = x.[most_recent_sql_handle],
+		c.statement_source = N'CONNECTION'
 	FROM 
 		#core c 
-		LEFT OUTER JOIN sys.sysprocesses p ON c.session_id = p.spid
+		LEFT OUTER JOIN sys.[dm_exec_connections] x ON c.session_id = x.[most_recent_session_id]
 	WHERE 
 		c.statement_handle IS NULL;
 
+	--------------------------------------------------------
+	-- Extract Statements: 
 	SELECT 
 		c.[session_id], 
 		c.[statement_source], 
