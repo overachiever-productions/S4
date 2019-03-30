@@ -208,7 +208,7 @@ AS
 	-- Remove Exclusions: 
 	IF @ExcludeClones = 1 BEGIN 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NOT NULL);		
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE source_database_id IS NOT NULL);		
 	END;
 
 	IF @ExcludeSecondaries = 1 BEGIN 
@@ -240,30 +240,30 @@ AS
 
 	IF @ExcludeSimpleRecovery = 1 BEGIN 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([recovery_model_desc]) = 'SIMPLE');
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([recovery_model_desc]) = 'SIMPLE');
 	END; 
 
 	IF @ExcludeReadOnly = 1 BEGIN
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_read_only] = 1)
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE [is_read_only] = 1)
 	END;
 
 	IF @ExcludeRestoring = 1 BEGIN
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) = 'RESTORING');		
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) = 'RESTORING');		
 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1);
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE [is_in_standby] = 1);
 	END; 
 
 	IF @ExcludeRecovering = 1 BEGIN 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
 	END;
 	 
 	IF @ExcludeOffline = 1 BEGIN -- all states OTHER than online... 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
 	END;
 
 	-- Exclude explicit exclusions: 

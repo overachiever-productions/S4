@@ -95,7 +95,7 @@ AS
 		IF UPPER(@Token) IN (N'[ALL]', N'[USER]') BEGIN 
 			INSERT INTO @tokenMatches ([database_name])
 			SELECT [name] FROM sys.databases
-			WHERE [name] NOT IN (SELECT [database_name] FROM @system_databases)
+			WHERE [name] NOT IN (SELECT [database_name] COLLATE SQL_Latin1_General_CP1_CI_AS  FROM @system_databases)
 				AND LOWER([name]) <> N'tempdb'
 			ORDER BY [name];
 		 END; 
@@ -127,10 +127,10 @@ AS
 	
 		INSERT INTO @tokenMatches ([database_name])
 		SELECT 
-			d.[name] [database_name]
+			d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS [database_name]
 		FROM 
 			sys.databases d
-			INNER JOIN @tokenDefs f ON d.[name] LIKE f.[pattern] 
+			INNER JOIN @tokenDefs f ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS LIKE f.[pattern] 
 		ORDER BY 
 			f.row_id, d.[name];
 	END;

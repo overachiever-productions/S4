@@ -1,3 +1,5 @@
+
+
 /*
 
 */
@@ -122,15 +124,15 @@ AS
 			UNION 
 
 			SELECT 
-				[server],
-                [name],
+				[server] COLLATE SQL_Latin1_General_CP1_CI_AS,
+                [name] COLLATE SQL_Latin1_General_CP1_CI_AS,
                 [enabled],
-                [description],
+                [description] COLLATE SQL_Latin1_General_CP1_CI_AS,
                 start_step_id,
                 owner_sid,
                 notify_level_email,
-                operator_name,
-                category_name,
+                operator_name COLLATE SQL_Latin1_General_CP1_CI_AS,
+                category_name COLLATE SQL_Latin1_General_CP1_CI_AS,
                 job_step_count
 			FROM 
 				@remoteJob
@@ -185,12 +187,12 @@ AS
 			SELECT 
 				step_id, 
 				@localServerName [server],
-				step_name, 
-				subsystem, 
-				command, 
+				step_name COLLATE Latin1_General_BIN [step_name], 
+				subsystem COLLATE Latin1_General_BIN [subsystem], 
+				command COLLATE Latin1_General_BIN [command], 
 				on_success_action, 
 				on_fail_action, 
-				[database_name]
+				[database_name] COLLATE Latin1_General_BIN [database_name]
 			FROM 
 				msdb.dbo.sysjobsteps l
 			WHERE 
@@ -268,7 +270,7 @@ AS
 
 			SELECT 
 				@localServerName [server],
-				ss.[name],
+				ss.[name] COLLATE Latin1_General_BIN [name],
 				ss.[enabled], 
 				ss.freq_type, 
 				ss.freq_interval, 

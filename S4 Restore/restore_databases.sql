@@ -414,7 +414,7 @@ AS
     FROM dbo.restore_log 
     WHERE execution_id = @LatestBatch
         AND [dropped] = 'NOT-DROPPED'
-        AND [restored_as] IN (SELECT name FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
+        AND [restored_as] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
 
     IF @CheckConsistency = 1 BEGIN
         IF OBJECT_ID('tempdb..#DBCC_OUTPUT') IS NOT NULL 

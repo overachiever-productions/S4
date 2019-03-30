@@ -129,8 +129,8 @@ AS
 		N'Database Compatibility successfully set to ' + CAST(@serverVersion AS sysname) + N'.'  [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
-		LEFT OUTER JOIN @excludedComptabilityDatabases e ON d.[name] LIKE e.[name] -- allow LIKE %wildcard% exclusions
+		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		LEFT OUTER JOIN @excludedComptabilityDatabases e ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS LIKE e.[name] -- allow LIKE %wildcard% exclusions
 	WHERE 
 		d.[compatibility_level] <> CAST(@serverVersion AS tinyint)
 		AND e.[name] IS  NULL -- only include non-exclusions
@@ -146,7 +146,7 @@ AS
 		N'Page Verify successfully set to CHECKSUM.' [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
+		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 	WHERE 
 		page_verify_option_desc <> N'CHECKSUM'
 	ORDER BY 
@@ -162,7 +162,7 @@ AS
 			N'Database owndership successfully transferred to 0x01 (SysAdmin).' [success_message]
 		FROM 
 			sys.databases d
-			INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
+			INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 		WHERE 
 			owner_sid <> 0x01;
 	END;
@@ -176,7 +176,7 @@ AS
 		N'AUTO_CLOSE successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
+		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 	WHERE 
 		[is_auto_close_on] = 1
 	ORDER BY 
@@ -191,7 +191,7 @@ AS
 		N'AUTO_SHRINK successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] = x.[name]
+		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 	WHERE 
 		[is_auto_shrink_on] = 1
 	ORDER BY 

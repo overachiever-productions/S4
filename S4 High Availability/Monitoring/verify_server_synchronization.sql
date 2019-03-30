@@ -340,11 +340,11 @@ AS
 		N'Linked Server exists on ' + @localServerName + N' only.'
 	FROM 
 		sys.servers [local]
-		LEFT OUTER JOIN @remoteLinkedServers [remote] ON [local].[name] = [remote].[name]
+		LEFT OUTER JOIN @remoteLinkedServers [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE 
 		[local].server_id > 0 
 		AND [local].[name] <> 'PARTNER'
-		AND [local].[name] NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
 		AND [remote].[name] IS NULL;
 
 	-- remote only:
@@ -354,11 +354,11 @@ AS
 		N'Linked Server exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteLinkedServers [remote]
-		LEFT OUTER JOIN master.sys.servers [local] ON [local].[name] = [remote].[name]
+		LEFT OUTER JOIN master.sys.servers [local] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE 
 		[remote].server_id > 0 
 		AND [remote].[name] <> 'PARTNER'
-		AND [remote].[name] NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
+		AND [remote].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
 		AND [local].[name] IS NULL;
 
 	
@@ -368,28 +368,28 @@ AS
 		N'Linkded server definitions are different between servers.'
 	FROM 
 		sys.servers [local]
-		INNER JOIN @remoteLinkedServers [remote] ON [local].[name] = [remote].[name]
+		INNER JOIN @remoteLinkedServers [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE 
-		[local].[name] NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
 		AND ( 
-			[local].product <> [remote].product
-			OR [local].[provider] <> [remote].[provider]
+			[local].product COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].product
+			OR [local].[provider] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[provider]
 			-- Sadly, PARTNER is a bit of a pain/problem - it has to exist on both servers - but with slightly different versions:
 			OR (
 				CASE 
-					WHEN [local].[name] = 'PARTNER' AND [local].[data_source] <> [remote].[data_source] THEN 0 -- non-true (i.e., non-'different' or non-problematic)
+					WHEN [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = 'PARTNER' AND [local].[data_source] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[data_source] THEN 0 -- non-true (i.e., non-'different' or non-problematic)
 					ELSE 1  -- there's a problem (because data sources are different, but the name is NOT 'Partner'
 				END 
 				 = 1  
 			)
-			OR [local].[location] <> [remote].[location]
-			OR [local].provider_string <> [remote].provider_string
-			OR [local].[catalog] <> [remote].[catalog]
+			OR [local].[location] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[location]
+			OR [local].provider_string COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].provider_string
+			OR [local].[catalog] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[catalog]
 			OR [local].is_remote_login_enabled <> [remote].is_remote_login_enabled
 			OR [local].is_rpc_out_enabled <> [remote].is_rpc_out_enabled
 			OR [local].is_collation_compatible <> [remote].is_collation_compatible
 			OR [local].uses_remote_collation <> [remote].uses_remote_collation
-			OR [local].collation_name <> [remote].collation_name
+			OR [local].collation_name COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].collation_name
 			OR [local].connect_timeout <> [remote].connect_timeout
 			OR [local].query_timeout <> [remote].query_timeout
 			OR [local].is_remote_proc_transaction_promotion_enabled <> [remote].is_remote_proc_transaction_promotion_enabled
@@ -429,14 +429,14 @@ AS
 	-- local only:
 	INSERT INTO #Divergence ([name], [description])
 	SELECT 
-		N'Login: ' + [local].[name], 
+		N'Login: ' + [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS, 
 		N'Login exists on ' + @localServerName + N' only.'
 	FROM 
 		sys.server_principals [local]
 	WHERE 
 		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [local].[name] NOT IN (SELECT [name] FROM @remotePrincipals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [local].[name] NOT IN (SELECT [name] FROM @ignoredLoginName);
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @remotePrincipals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredLoginName);
 
 	-- remote only:
 	INSERT INTO #Divergence (name, [description])
@@ -447,20 +447,20 @@ AS
 		@remotePrincipals [remote]
 	WHERE 
 		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [remote].[name] NOT IN (SELECT [name] FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
+		AND [remote].[name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
 		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredLoginName);
 
 	-- differences
 	INSERT INTO #Divergence ([name], [description])
 	SELECT
-		N'Login: ' + [local].[name], 
+		N'Login: ' + [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS, 
 		N'Login is different between servers. (Check SID, disabled, or password_hash (for SQL Logins).)'
 	FROM 
 		(SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM sys.server_principals p LEFT OUTER JOIN sys.sql_logins l ON p.[name] = l.[name]) [local]
-		INNER JOIN (SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM @remotePrincipals p LEFT OUTER JOIN @remoteLogins l ON p.[name] = l.[name]) [remote] ON [local].[name] = [remote].[name]
+		INNER JOIN (SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM @remotePrincipals p LEFT OUTER JOIN @remoteLogins l ON p.[name] = l.[name] COLLATE SQL_Latin1_General_CP1_CI_AS) [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE
-		[local].[name] NOT IN (SELECT [name] FROM @ignoredLoginName)
-		AND [local].[name] NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredLoginName)
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
 		AND (
 			[local].[sid] <> [remote].[sid]
 			--OR [local].password_hash <> [remote].password_hash  -- sadly, these are ALWAYS going to be different because of master keys/encryption details. So we can't use it for comparison purposes.
@@ -503,7 +503,7 @@ AS
 		N'Operator exists on ' + @localServerName + N' only.'
 	FROM 
 		msdb.dbo.sysoperators [local]
-		LEFT OUTER JOIN @remoteOperators [remote] ON [local].[name] = [remote].[name]
+		LEFT OUTER JOIN @remoteOperators [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE 
 		[remote].[name] IS NULL;
 
@@ -514,9 +514,9 @@ AS
 		N'Operator exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteOperators [remote]
-		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].[name] = [local].[name]
+		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].[name] = [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS
 	WHERE 
-		[local].[name] IS NULL;
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS IS NULL;
 
 	-- differences (just checking email address in this particular config):
 	INSERT INTO #Divergence (name, [description])
@@ -525,10 +525,10 @@ AS
 		N'Operator definition is different between servers. (Check email address(es) and enabled.)'
 	FROM 
 		msdb.dbo.sysoperators [local]
-		INNER JOIN @remoteOperators [remote] ON [local].[name] = [remote].[name]
+		INNER JOIN @remoteOperators [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE 
 		[local].[enabled] <> [remote].[enabled]
-		OR [local].[email_address] <> [remote].[email_address];
+		OR [local].[email_address] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[email_address];
 
 	---------------------------------------
 	-- Alerts:
@@ -567,10 +567,10 @@ AS
 		N'Alert exists on ' + @localServerName + N' only.'
 	FROM 
 		msdb.dbo.sysalerts [local]
-		LEFT OUTER JOIN @remoteAlerts [remote] ON [local].[name] = [remote].[name]
+		LEFT OUTER JOIN @remoteAlerts [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE
 		[remote].[name] IS NULL
-		AND [local].[name] NOT IN (SELECT [name] FROM @ignoredAlertName);
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredAlertName);
 
 	INSERT INTO #Divergence (name, [description])
 	SELECT 
@@ -578,9 +578,9 @@ AS
 		N'Alert exists on ' + @remoteServerName + N' only.'
 	FROM 
 		@remoteAlerts [remote]
-		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].[name] = [local].[name]
+		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].[name] = [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS
 	WHERE
-		[local].[name] IS NULL
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS IS NULL
 		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredAlertName);
 
 	-- differences:
@@ -590,18 +590,18 @@ AS
 		N'Alert definition is different between servers.'
 	FROM	
 		msdb.dbo.sysalerts [local]
-		INNER JOIN @remoteAlerts [remote] ON [local].[name] = [remote].[name]
+		INNER JOIN @remoteAlerts [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
 	WHERE 
-		[local].[name] NOT IN (SELECT [name] FROM @ignoredAlertName)
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredAlertName)
 		AND (
 		[local].message_id <> [remote].message_id
 		OR [local].severity <> [remote].severity
 		OR [local].[enabled] <> [remote].[enabled]
 		OR [local].delay_between_responses <> [remote].delay_between_responses
-		OR [local].notification_message <> [remote].notification_message
+		OR [local].notification_message COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].notification_message
 		OR [local].include_event_description <> [remote].include_event_description
-		OR [local].[database_name] <> [remote].[database_name]
-		OR [local].event_description_keyword <> [remote].event_description_keyword
+		OR [local].[database_name] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[database_name]
+		OR [local].event_description_keyword COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].event_description_keyword
 		-- JobID is problematic. If we have a job set to respond, it'll undoubtedly have a diff ID from one server to the other. So... we just need to make sure ID <> 'empty' on one server, while not on the other, etc. 
 		OR (
 			CASE 
@@ -613,7 +613,7 @@ AS
 			= 1
 		)
 		OR [local].has_notification <> [remote].has_notification
-		OR [local].performance_condition <> [remote].performance_condition
+		OR [local].performance_condition COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].performance_condition
 		OR [local].category_id <> [remote].category_id
 		);
 
@@ -632,7 +632,7 @@ AS
 	SELECT [result] [name] FROM dbo.split_string(@IgnoredMasterDbObjects, N',', 1);
 
 	INSERT INTO @localMasterObjects ([object_name])
-	SELECT [name] FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] NOT IN (SELECT [name] FROM @ignoredMasterObjects);
+	SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM master.sys.objects WHERE [type] IN ('U','V','P','FN','IF','TF') AND is_ms_shipped = 0 AND [name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredMasterObjects);
 	
 	DECLARE @remoteMasterObjects TABLE (
 		[object_name] sysname NOT NULL
@@ -690,7 +690,7 @@ AS
 	FROM 
 		master.sys.objects o
 		LEFT OUTER JOIN master.sys.sql_modules sm ON o.[object_id] = sm.[object_id]
-		INNER JOIN @localMasterObjects x ON o.[name] = x.[object_name];
+		INNER JOIN @localMasterObjects x ON o.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[object_name];
 
 	DECLARE localtabler CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT [object_name] FROM #Definitions WHERE [type] = 'U' AND [location] = 'local';
