@@ -70,7 +70,7 @@ AS
 			WHEN 2 THEN 'Read-Only'
 			WHEN 3 THEN 'System'
 			WHEN 4 THEN 'Distributed'
-					ELSE '#Unknown#'
+			ELSE '#Unknown#'
 		END [transaction_scope],		
 		CASE [dtat].[transaction_state]
 			WHEN 0 THEN 'Initializing'
@@ -133,7 +133,6 @@ AS
 	END; 
 
 	IF NOT EXISTS(SELECT NULL FROM [#core]) BEGIN
-		-- SELECT 'no collisions' [outcome];  -- TODO: if this isn't running 'unattended' then... have it spit out the select/outcome... 
 		RETURN 0; -- short-circuit.
 	END;
 

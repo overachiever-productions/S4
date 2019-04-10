@@ -69,6 +69,7 @@ CREATE PROC dbo.list_processes
 	@IncludePlanHandle						bit			= 0,	
 	@IncludeIsolationLevel					bit			= 0,
 	-- vNEXT				--@DetailedBlockingInfo					bit			= 0,		-- xml 'blocking chain' and stuff... 
+	@IncludeBlockingSessions				bit			= 1,		-- 'forces' inclusion of spids CAUSING blocking even if they would not 'naturally' be pulled back by TOP N, etc. 
 	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
 	@IncludeExtendedDetails					bit			= 1,
 	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
@@ -165,51 +166,46 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N'');
 	END;
 
-PRINT @topSQL;
-
 	INSERT INTO [#ranked] ([session_id], [blocked_by], [cpu], [reads], [writes], [duration], [memory])
 	EXEC sys.[sp_executesql] @topSQL; 
 
---MKC: S4-61. $100 says that I've already SOLVED this crap in dbo.list_collisions... or... maybe in dbo.list_transactions? 
--- grab any sessions that are BLOCKING the 'top' sessions listed above: 
-INSERT INTO #ranked ([session_id], [blocked_by], [cpu], [reads], [writes], [duration], [memory])
-SELECT
-	r.[session_id], 
-	r.[blocking_session_id] [blocked_by],
-	r.[cpu_time] [cpu], 
-	r.[reads],
-	r.[writes], 
-	r.[total_elapsed_time] [duration],
-	ISNULL(CAST((g.granted_memory_kb / 1024.0) as decimal(20,2)),0) AS [memory]
-FROM 
-	#ranked x 
-	INNER JOIN sys.dm_exec_requests r ON x.blocked_by = r.session_id 
-	LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
-WHERE 
-	r.session_id NOT IN(SELECT session_id FROM #ranked);
+	IF NOT EXISTS (SELECT NULL FROM [#ranked]) BEGIN 
+		RETURN 0; -- short-circuit - there's nothing to see here... 
+	END;
 
-	---- and... what if the request is STALLED? 
-	--INSERT INTO #ranked ([session_id], [blocked_by], [cpu], [reads], [writes], [duration], [memory])
-	--SELECT 
-	--	s.[session_id], 
-	--	-1, 
-	--	-1,
-	--	-1,
-	--	-1,
-	--	-1,
-	--	-1
-	--FROM 
-	--	[#ranked] x 
-	--	INNER JOIN sys.dm_exec_sessions s ON x.[blocked_by] = s.[session_id] 
-	--WHERE 
-	--	s.[session_id] NOT IN (SELECT session_id FROM #ranked);
+	IF @IncludeBlockingSessions = 1 BEGIN
+
+		INSERT INTO #ranked(session_id, blocked_by, cpu, reads, writes, duration, memory)
+		SELECT 
+			x.session_id,
+			x.[blocked_by], 
+			x.cpu, 
+			x.reads, 
+			x.writes, 
+			x.duration, 
+			x.memory
+		FROM 
+			#ranked r
+			INNER JOIN (
+				SELECT 
+					s.session_id, 
+					ISNULL(r.blocking_session_id, 0) [blocked_by],
+					ISNULL(r.cpu_time, 0 - s.cpu_time) [cpu],
+					ISNULL(r.reads, 0 - s.reads) [reads],
+					ISNULL(r.writes, 0 - s.writes) [writes], 
+					ISNULL(r.total_elapsed_time, 0 - s.total_elapsed_time) [duration],
+					CAST((g.granted_memory_kb / 1024.0) as decimal(20,2)) [memory]
+				FROM 
+					sys.dm_exec_sessions s 
+					LEFT OUTER JOIN sys.dm_exec_requests r ON s.session_id = r.session_id 
+					LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON s.session_id = g.session_id
+			) x ON r.blocked_by = x.session_id
+		WHERE 
+			x.session_id NOT IN (SELECT session_id FROM #ranked);
+
+	END;
 		
 
-
-	IF NOT EXISTS (SELECT NULL FROM [#ranked]) BEGIN 
-		-- short-circuit - there's nothing to see here... 
-		RETURN 0; 
-	END;
 
 	CREATE TABLE #detail (
 		[row_number] int NOT NULL,
@@ -217,23 +213,23 @@ WHERE
 		[blocked_by] smallint NULL,
 		[isolation_level] varchar(14) NULL,
 		[status] nvarchar(30) NOT NULL,
-		[last_wait_type] nvarchar(60) NOT NULL,
-		[command] nvarchar(32) NOT NULL,
-		[granted_mb] decimal(20,2) NOT NULL,
-		[requested_mb] decimal(20,2) NOT NULL,
-		[ideal_mb] decimal(20,2) NOT NULL,
+		[last_wait_type] nvarchar(60) NULL,
+		[command] nvarchar(32) NULL,
+		[granted_mb] decimal(20,2) NULL,
+		[requested_mb] decimal(20,2) NULL,
+		[ideal_mb] decimal(20,2) NULL,
 		[text] nvarchar(max) NULL,
 		[cpu_time] int NOT NULL,
 		[reads] bigint NOT NULL,
 		[writes] bigint NOT NULL,
 		[elapsed_time] int NOT NULL,
-		[wait_time] int NOT NULL,
+		[wait_time] int NULL,
 		[db_name] sysname NULL,
 		[login_name] sysname NULL,
 		[program_name] sysname NULL,
 		[host_name] sysname NULL,
-		[percent_complete] real NOT NULL,
-		[open_tran] int NOT NULL,
+		[percent_complete] real NULL,
+		[open_tran] int NULL,
 		[sql_handle] varbinary(64) NULL,
 		[plan_handle] varbinary(64) NULL, 
 		[statement_start_offset] int NULL, 
@@ -246,7 +242,7 @@ WHERE
 		 [sql_handle], [plan_handle], [statement_start_offset], [statement_end_offset])
 	SELECT
 		x.[row_number],
-		r.session_id, 
+		s.session_id, 
 		r.blocking_session_id [blocked_by],
 		CASE s.transaction_isolation_level 
 			WHEN 0 THEN 'Unspecified' 
@@ -256,7 +252,7 @@ WHERE
 	        WHEN 4 THEN 'Serializable' 
 	        WHEN 5 THEN 'Snapshot' 
 		END isolation_level,
-		r.[status],
+		ISNULL(r.[status], N'connected') [status],
 		r.last_wait_type,
 		r.command, 
 		x.[memory] [granted_mb],
@@ -280,8 +276,8 @@ WHERE
 		r.[statement_end_offset]
 	FROM 
 		[#ranked] x
-		INNER JOIN sys.dm_exec_requests r ON x.[session_id] = r.[session_id]
-		INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+		INNER JOIN sys.dm_exec_sessions s ON x.session_id = s.session_id
+		LEFT OUTER JOIN sys.dm_exec_requests r ON x.[session_id] = r.[session_id]
 		LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id;
 
 	-- populate sql_handles for sessions without current requests: 
