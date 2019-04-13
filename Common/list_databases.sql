@@ -122,7 +122,7 @@ AS
 	END;
 
 	IF (SELECT dbo.[count_matches](@Targets, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
-		RAISERROR(N'@Targets may NOT be set to (or containt) [READ_FROM_FILESYSTEM]. The [READ_FROM_FILESYSTEM] token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
+		RAISERROR(N'@Targets may NOT be set to (or contain) [READ_FROM_FILESYSTEM]. The [READ_FROM_FILESYSTEM] token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
 		RETURN -3;
 	END;
 
@@ -183,12 +183,15 @@ AS
 	
 	-----------------------------------------------------------------------------
 	-- Account for tokens: 
+	DECLARE @tokenReplacementOutcome int;
 	DECLARE @replacedOutput nvarchar(MAX);
-	IF @Targets LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
-		EXEC dbo.replace_dbname_tokens 
+	IF @Targets LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+		EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 			@Input = @Targets, 
 			@Output = @replacedOutput OUTPUT;
 		
+		IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
+
 		SET @Targets = @replacedOutput;
 	END;
 
@@ -272,18 +275,20 @@ AS
 		DELETE FROM @deserialized;
 
 		-- Account for tokens: 
-		IF @Exclusions LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
-			EXEC dbo.replace_dbname_tokens 
+		IF @Exclusions LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Exclusions, 
 				@Output = @replacedOutput OUTPUT;
-		
+			
+			IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
+
 			SET @Exclusions = @replacedOutput;
 		END;
 
 		INSERT INTO @deserialized ([row_id], [result])
 		SELECT [row_id], CAST([result] AS sysname) [result] FROM dbo.[split_string](@Exclusions, N',', 1);
 
-		-- note: delete on = and LIKE... 
+		-- note: delete on BOTH = and LIKE... 
 		DELETE t 
 		FROM @target_databases t
 		INNER JOIN @deserialized d ON (t.[database_name] = d.[result]) OR (t.[database_name] LIKE d.[result]);
@@ -294,10 +299,12 @@ AS
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
 
 		-- Account for tokens: 
-		IF @Priorities LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
-			EXEC dbo.replace_dbname_tokens 
+		IF @Priorities LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Priorities, 
 				@Output = @replacedOutput OUTPUT;
+
+			IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
 		
 			SET @Priorities = @replacedOutput;
 		END;		
@@ -358,4 +365,7 @@ AS
 		[entry_id];
 
 	RETURN 0;
+
+ErrorCondition:
+	RETURN -1;
 GO
