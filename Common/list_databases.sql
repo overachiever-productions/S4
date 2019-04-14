@@ -122,7 +122,7 @@ AS
 	END;
 
 	IF (SELECT dbo.[count_matches](@Targets, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
-		RAISERROR(N'@Targets may NOT be set to (or containt) [READ_FROM_FILESYSTEM]. The [READ_FROM_FILESYSTEM] token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
+		RAISERROR(N'@Targets may NOT be set to (or contain) [READ_FROM_FILESYSTEM]. The [READ_FROM_FILESYSTEM] token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
 		RETURN -3;
 	END;
 
@@ -183,12 +183,15 @@ AS
 	
 	-----------------------------------------------------------------------------
 	-- Account for tokens: 
+	DECLARE @tokenReplacementOutcome int;
 	DECLARE @replacedOutput nvarchar(MAX);
-	IF @Targets LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
-		EXEC dbo.replace_dbname_tokens 
+	IF @Targets LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+		EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 			@Input = @Targets, 
 			@Output = @replacedOutput OUTPUT;
 		
+		IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
+
 		SET @Targets = @replacedOutput;
 	END;
 
@@ -196,7 +199,7 @@ AS
 	 IF NOT EXISTS (SELECT NULL FROM @target_databases) BEGIN
 	
 		INSERT INTO @deserialized ([row_id], [result])
-		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Targets, N',', 1);
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM dbo.[split_string](@Targets, N',', 1);
 
 		IF EXISTS (SELECT NULL FROM @deserialized) BEGIN 
 			INSERT INTO @target_databases ([database_name])
@@ -208,7 +211,7 @@ AS
 	-- Remove Exclusions: 
 	IF @ExcludeClones = 1 BEGIN 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE source_database_id IS NOT NULL);		
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE source_database_id IS NOT NULL);		
 	END;
 
 	IF @ExcludeSecondaries = 1 BEGIN 
@@ -225,7 +228,7 @@ AS
 		WHERE UPPER(dm.[mirroring_role_desc]) <> N'PRINCIPAL';
 
 		-- dynamically account for any AG'd databases:
-		IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN		
+		IF (SELECT dbo.get_engine_version()) >= 11.0 BEGIN		
 			CREATE TABLE #hadr_names ([name] sysname NOT NULL);
 			EXEC sp_executesql N'INSERT INTO #hadr_names ([name]) SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc <> ''PRIMARY'';'	
 
@@ -240,30 +243,30 @@ AS
 
 	IF @ExcludeSimpleRecovery = 1 BEGIN 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([recovery_model_desc]) = 'SIMPLE');
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([recovery_model_desc]) = 'SIMPLE');
 	END; 
 
 	IF @ExcludeReadOnly = 1 BEGIN
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_read_only] = 1)
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE [is_read_only] = 1)
 	END;
 
 	IF @ExcludeRestoring = 1 BEGIN
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) = 'RESTORING');		
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) = 'RESTORING');		
 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE [is_in_standby] = 1);
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE [is_in_standby] = 1);
 	END; 
 
 	IF @ExcludeRecovering = 1 BEGIN 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) IN (N'RECOVERY', N'RECOVERY_PENDING', N'SUSPECT'));
 	END;
 	 
 	IF @ExcludeOffline = 1 BEGIN -- all states OTHER than online... 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
 	END;
 
 	-- Exclude explicit exclusions: 
@@ -272,18 +275,20 @@ AS
 		DELETE FROM @deserialized;
 
 		-- Account for tokens: 
-		IF @Exclusions LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
-			EXEC dbo.replace_dbname_tokens 
+		IF @Exclusions LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Exclusions, 
 				@Output = @replacedOutput OUTPUT;
-		
+			
+			IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
+
 			SET @Exclusions = @replacedOutput;
 		END;
 
 		INSERT INTO @deserialized ([row_id], [result])
-		SELECT [row_id], CAST([result] AS sysname) [result] FROM [admindb].dbo.[split_string](@Exclusions, N',', 1);
+		SELECT [row_id], CAST([result] AS sysname) [result] FROM dbo.[split_string](@Exclusions, N',', 1);
 
-		-- note: delete on = and LIKE... 
+		-- note: delete on BOTH = and LIKE... 
 		DELETE t 
 		FROM @target_databases t
 		INNER JOIN @deserialized d ON (t.[database_name] = d.[result]) OR (t.[database_name] LIKE d.[result]);
@@ -294,10 +299,12 @@ AS
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
 
 		-- Account for tokens: 
-		IF @Priorities LIKE N'%~[%~]' ESCAPE N'~' BEGIN 
-			EXEC dbo.replace_dbname_tokens 
+		IF @Priorities LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Priorities, 
 				@Output = @replacedOutput OUTPUT;
+
+			IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
 		
 			SET @Priorities = @replacedOutput;
 		END;		
@@ -358,4 +365,7 @@ AS
 		[entry_id];
 
 	RETURN 0;
+
+ErrorCondition:
+	RETURN -1;
 GO

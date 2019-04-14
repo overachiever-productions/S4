@@ -209,7 +209,7 @@ AS
 FROM 
 	sys.dm_server_services;';	
 
-	IF ((SELECT admindb.dbo.get_engine_version()) >= 13.00) -- ifi added to 2016+
+	IF ((SELECT dbo.get_engine_version()) >= 13.00) -- ifi added to 2016+
 		SET @command = REPLACE(@command, N'{0}', 'instant_file_initialization_enabled');
 	ELSE 
 		SET @command = REPLACE(@command, N'{0}', '''?''');
@@ -377,7 +377,7 @@ FROM
 		+ @tab + @tab + N'VALUE_IN_USE: ' +  CAST(c.[value_in_use] AS sysname) + @crlf
 		+ @tab + @tab + N'VALUE: ' + CAST(c.[value] AS sysname) + @crlf + @crlf
 	FROM sys.configurations c 
-	INNER JOIN @config_defaults d ON c.name = d.name
+	INNER JOIN @config_defaults d ON c.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = d.[name]
 	WHERE
 		c.value <> c.value_in_use
 		OR c.value_in_use <> d.default_value;

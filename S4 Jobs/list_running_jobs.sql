@@ -1,5 +1,3 @@
-
-
 /*
 
 
@@ -140,7 +138,7 @@ AS
 	END;
 
 	-- Exclude any jobs specified: 
-	DELETE FROM [#RunningJobs] WHERE [job_name] IN (SELECT [result] FROM admindb.dbo.[split_string](@ExcludedJobs, N',', 1));
+	DELETE FROM [#RunningJobs] WHERE [job_name] IN (SELECT [result] FROM dbo.[split_string](@ExcludedJobs, N',', 1));
     
 	-- TODO: are there any expansions/details we want to join from the Jobs themselves at this point? (or any other history info?) 
 	

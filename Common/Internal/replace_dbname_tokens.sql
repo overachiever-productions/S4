@@ -10,8 +10,11 @@
 	SIGNATURES: 
 	
 		-----------------------------------------------------------------
-				-- expected exception (for now):
-			
+			DECLARE @replaced nvarchar(max);
+			EXEC dbo.replace_dbname_tokens
+				@Input = N'[DEV3],billing,triage', -- doesn't exist
+				@Output = @replaced OUTPUT;
+			SELECT @replaced [output];
 
 		-----------------------------------------------------------------
 			DECLARE @replaced nvarchar(max);
@@ -82,16 +85,9 @@ AS
 
 		SELECT @AllowedTokens = @AllowedTokens + [token] + N',' FROM [aggregated] ORDER BY [ranking] DESC;
 
-		-- short-circuite: there are no tokens defined in 
-		IF @AllowedTokens = N'' BEGIN
-			SET @Output = @Input;
-			RETURN 0;
-		END;
-
 		SET @AllowedTokens = LEFT(@AllowedTokens, LEN(@AllowedTokens) - 1);
 	END;
 
-	DECLARE @intermediateResults nvarchar(MAX) = @Input;
 	DECLARE @tokensToProcess table (
 		row_id int IDENTITY(1,1) NOT NULL, 
 		token sysname NOT NULL
@@ -100,6 +96,20 @@ AS
 	INSERT INTO @tokensToProcess ([token])
 	SELECT [result] FROM dbo.[split_string](@AllowedTokens, N',', 1) ORDER BY [row_id];
 
+	-- now that allowed tokens are defined, make sure any tokens specified within @Input are defined in @AllowedTokens: 
+	DECLARE @possibleTokens table (
+		token sysname NOT NULL
+	);
+
+	INSERT INTO @possibleTokens ([token])
+	SELECT [result] FROM dbo.[split_string](@Input, N',', 1) WHERE [result] LIKE N'%~[%~]' ESCAPE N'~' ORDER BY [row_id];
+
+	IF EXISTS (SELECT NULL FROM @possibleTokens WHERE [token] NOT IN (SELECT [token] FROM @tokensToProcess)) BEGIN
+		RAISERROR('Undefined database-name token specified in @Input. Please ensure that custom database-name tokens are defined in dbo.settings.', 16, 1);
+		RETURN -1;
+	END;
+
+	DECLARE @intermediateResults nvarchar(MAX) = @Input;
 	DECLARE @currentToken sysname;
 	DECLARE @databases xml;
 	DECLARE @serialized nvarchar(MAX);

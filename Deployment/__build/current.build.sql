@@ -421,7 +421,7 @@ IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN
 		[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start]),
 		[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end])
 	WHERE 
-		[restore_test_id] > 0;
+		[restore_id] > 0;
 	';
 
 	EXEC sp_executesql 
@@ -632,6 +632,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\replace_dbname_tokens.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases.sql

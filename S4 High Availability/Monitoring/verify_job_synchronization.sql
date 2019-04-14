@@ -168,7 +168,7 @@ AS
 	-- if there are NO mirrored/AG'd dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
 	IF @firstSyncedDB IS NOT NULL BEGIN 
 		-- Check to see if we're on the primary or not. 
-		IF (SELECT admindb.dbo.is_primary_database(@firstSyncedDB)) = 0 BEGIN 
+		IF (SELECT dbo.is_primary_database(@firstSyncedDB)) = 0 BEGIN 
 			PRINT 'Server is Not Primary. Execution Terminating (but will continue on Primary).'
 			RETURN 0; -- tests/checks are now done on the secondary
 		END
@@ -550,7 +550,7 @@ FROM
 		--		c) job.categoryname = 'a synchronizing db name' and job.enabled != to what should be set for the current role (i.e., enabled on PRIMARY and disabled on SECONDARY). 
 		--			only local variant of scenario c = scenario a, and the remote/partner variant of c = scenario b. 
 
-		IF (SELECT admindb.dbo.is_primary_database(@currentMirroredDB)) = 1 BEGIN 
+		IF (SELECT dbo.is_primary_database(@currentMirroredDB)) = 1 BEGIN 
 			-- report on any mirroring jobs that are disabled on the primary:
 			INSERT INTO #Divergence ([name], [description])
 			SELECT 

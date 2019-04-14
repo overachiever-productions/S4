@@ -282,7 +282,7 @@ AS
 		);
 
 		INSERT INTO @allDirectives ([row_id], [directive_type], [logical_name])
-		EXEC admindb.dbo.[shred_string]
+		EXEC dbo.[shred_string]
 			@input = @Directives, 
 			@rowDelimiter = N',', 
 			@columnDelimiter = N':';

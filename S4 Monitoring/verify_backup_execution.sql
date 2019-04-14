@@ -146,7 +146,7 @@ AS
 		j.job_id [jobid]
 	FROM 
 		@specifiedJobs s
-		LEFT OUTER JOIN msdb..sysjobs j ON s.jobname = j.[name];
+		LEFT OUTER JOIN msdb..sysjobs j ON s.jobname COLLATE SQL_Latin1_General_CP1_CI_AS = j.[name];
 
 	-----------------------------------------------------------------------------
 	-- backup checks:
@@ -163,8 +163,8 @@ AS
 
 		WITH core AS (
 			SELECT 
-				b.[database_name],
-				CASE b.[type]	
+				b.[database_name] COLLATE SQL_Latin1_General_CP1_CI_AS [database_name],
+				CASE b.[type] COLLATE SQL_Latin1_General_CP1_CI_AS	
 					WHEN 'D' THEN 'FULL'
 					WHEN 'I' THEN 'DIFF'
 					WHEN 'L' THEN 'LOG'
@@ -173,14 +173,14 @@ AS
 				MAX(b.backup_finish_date) [last_completion]
 			FROM 
 				@databaseToCheckForFullBackups x
-				INNER JOIN msdb.dbo.backupset b ON x.[name] = b.[database_name]
+				INNER JOIN msdb.dbo.backupset b ON x.[name] = b.[database_name] COLLATE SQL_Latin1_General_CP1_CI_AS
 			WHERE
 				b.is_damaged = 0
 				AND b.has_incomplete_metadata = 0
 				AND b.is_copy_only = 0
 			GROUP BY 
-				b.[database_name], 
-				b.[type]
+				b.[database_name]  COLLATE SQL_Latin1_General_CP1_CI_AS, 
+				b.[type]  COLLATE SQL_Latin1_General_CP1_CI_AS
 		) 
 	
 		INSERT INTO @backupStatuses ([database_name], backup_type, minutes_since_last_backup)
@@ -199,7 +199,7 @@ AS
 		);
 
 		INSERT INTO @phantoms ([name])
-		SELECT [name] FROM @databaseToCheckForFullBackups WHERE [name] NOT IN (SELECT [name] FROM master.sys.databases WHERE state_desc = 'ONLINE');
+		SELECT [name] FROM @databaseToCheckForFullBackups WHERE [name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM master.sys.databases WHERE state_desc = 'ONLINE');
 
 		-- Remove non-accessible secondaries (Mirrored or AG'd) as needed/specified:
 		IF @AllowNonAccessibleSecondaries = 1 BEGIN

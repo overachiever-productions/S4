@@ -140,7 +140,7 @@ AS
 
 	IF @PrintOnly = 1 BEGIN
 		-- just process the sproc that prints outputs/details: 
-		EXEC admindb.dbo.[print_logins]
+		EXEC dbo.[print_logins]
 		    @TargetDatabases = @TargetDatabases, 
 		    @ExcludedDatabases = @ExcludedDatabases, 
 		    @DatabasePriorities = @DatabasePriorities, 
