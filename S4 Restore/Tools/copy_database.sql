@@ -86,7 +86,7 @@ AS
 	DECLARE @errorMessage nvarchar(MAX); 
 
 	BEGIN TRY 
-		EXEC admindb.dbo.restore_databases
+		EXEC dbo.restore_databases
 			@DatabasesToRestore = @SourceDatabaseName,
 			@BackupsRootPath = @BackupsRootDirectory,
 			@RestoredRootDataPath = @DataPath,
@@ -132,7 +132,7 @@ AS
 	IF @restored = 1 BEGIN
 		
 		BEGIN TRY
-			EXEC admindb.dbo.backup_databases
+			EXEC dbo.backup_databases
 				@BackupType = N'FULL',
 				@DatabasesToBackup = @TargetDatabaseName,
 				@BackupDirectory = @BackupsRootDirectory,

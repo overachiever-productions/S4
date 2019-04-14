@@ -106,7 +106,7 @@ AS
 	IF @PrintOnly = 1 BEGIN 
 		
 		-- just execute the sproc that prints info to the screen: 
-		EXEC admindb.dbo.print_configuration;
+		EXEC dbo.print_configuration;
 
 		RETURN 0;
 	END; 

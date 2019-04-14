@@ -98,7 +98,7 @@ AS
 	DECLARE @error nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
-	EXEC [admindb].dbo.[translate_vector]
+	EXEC dbo.[translate_vector]
 	    @Vector = @MaxTimeToWaitForLogBackups,
 	    @ValidationParameterName = N'@MaxTimeToWaitForLogBackups',
 		@ProhibitedIntervals = N'MILLISECOND, DAY, WEEK, MONTH, QUARTER, YEAR',
@@ -112,7 +112,7 @@ AS
 	END; 
 
 	DECLARE @waitDuration sysname;
-	EXEC admindb.dbo.[translate_vector_delay]
+	EXEC dbo.[translate_vector_delay]
 	    @Vector = @LogBackupCheckPollingInterval,
 	    @ParameterName = N'@LogBackupCheckPollingInterval',
 	    @Output = @waitDuration OUTPUT,
@@ -152,7 +152,7 @@ AS
 	);
 
 	DECLARE @SerializedOutput xml = '';
-	EXEC [admindb].dbo.[list_logfile_sizes]
+	EXEC dbo.[list_logfile_sizes]
 	    @TargetDatabases = @TargetDatabases,
 	    @DatabasesToExclude = @DatabasesToExclude,
 	    @Priorities = @Priorities,
@@ -286,7 +286,7 @@ AS
 				PRINT @command;
 			ELSE BEGIN 
 			
-				EXEC @returnValue = [admindb].dbo.[execute_command]
+				EXEC @returnValue = dbo.[execute_command]
 					@Command = @command,
 					@ExecutionType = N'SHELL',
 					@ExecutionRetryCount = 1, 
@@ -399,7 +399,7 @@ ShrinkLogFile:
 				  END;
 				ELSE BEGIN
 					
-					EXEC @returnValue = [admindb].dbo.[execute_command]
+					EXEC @returnValue = dbo.[execute_command]
 					    @Command = @command, 
 					    @ExecutionType = N'SHELL', 
 					    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS]', 
@@ -436,7 +436,7 @@ ShrinkLogFile:
 	-- otherwise... spit out whatever form of output/report would make sense at this point... where... we can bind #operations up as XML ... as a set of details about what happened here... 
 
 	SET @SerializedOutput = '';
-	EXEC [admindb].dbo.[list_logfile_sizes]
+	EXEC dbo.[list_logfile_sizes]
 	    @TargetDatabases = @TargetDatabases,
 	    @DatabasesToExclude = @DatabasesToExclude,
 	    @Priorities = @Priorities,

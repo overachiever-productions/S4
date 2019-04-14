@@ -39,7 +39,7 @@ AS
 	--		make sure file/path exists... 
 
 	DECLARE @executingServerVersion decimal(4,2);
-	SELECT @executingServerVersion = (SELECT admindb.dbo.get_engine_version());
+	SELECT @executingServerVersion = (SELECT dbo.get_engine_version());
 
 	IF NULLIF(@SourceVersion, 0) IS NULL SET @SourceVersion = @executingServerVersion;
 

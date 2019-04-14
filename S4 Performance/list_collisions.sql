@@ -70,7 +70,7 @@ AS
 			WHEN 2 THEN 'Read-Only'
 			WHEN 3 THEN 'System'
 			WHEN 4 THEN 'Distributed'
-					ELSE '#Unknown#'
+			ELSE '#Unknown#'
 		END [transaction_scope],		
 		CASE [dtat].[transaction_state]
 			WHEN 0 THEN 'Initializing'
@@ -116,35 +116,39 @@ AS
 	END;
 
 	IF @TargetDatabases <> N'[ALL]' BEGIN
-		DECLARE @dbnames nvarchar(max);
-		EXEC dbo.load_databases 
+		
+		DECLARE @dbNames table ( 
+			[database_name] sysname NOT NULL 
+		); 
+		
+		INSERT INTO @dbNames ([database_name])
+		EXEC dbo.list_databases 
 			@Targets = @TargetDatabases, 
-			@ExcludeSecondaries = 1,
-			@Output = @dbnames OUTPUT; 
+			@ExcludeSecondaries = 1, 
+			@ExcludeReadOnly = 1;
 
 		DELETE FROM #core 
 		WHERE 
-			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [result] FROM dbo.split_string(@dbnames, N',', 1)));
+			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [database_name] FROM @dbNames));
 	END; 
 
 	IF NOT EXISTS(SELECT NULL FROM [#core]) BEGIN
-		-- SELECT 'no collisions' [outcome];  -- TODO: if this isn't running 'unattended' then... have it spit out the select/outcome... 
 		RETURN 0; -- short-circuit.
 	END;
 
-	--------------------------------------------------------
-	-- Extract Statements: 
-
+	-- populate sql_handles for sessions without current requests: 
 	UPDATE c 
 	SET 
-		c.statement_handle = CAST(p.[sql_handle] AS varbinary(64)),
-		c.statement_source = N'SESSION'
+		c.statement_handle = x.[most_recent_sql_handle],
+		c.statement_source = N'CONNECTION'
 	FROM 
 		#core c 
-		LEFT OUTER JOIN sys.sysprocesses p ON c.session_id = p.spid
+		LEFT OUTER JOIN sys.[dm_exec_connections] x ON c.session_id = x.[most_recent_session_id]
 	WHERE 
 		c.statement_handle IS NULL;
 
+	--------------------------------------------------------
+	-- Extract Statements: 
 	SELECT 
 		c.[session_id], 
 		c.[statement_source], 

@@ -134,7 +134,7 @@ LoadShutDownTime:
 
 	-- Extract Job Execution Details: 
 	DECLARE @output xml = N'';
-	EXEC admindb.dbo.list_running_jobs 
+	EXEC dbo.list_running_jobs 
 		@StartTime = @serviceShutDownTime, 
 		@EndTime = @serviceStartupTime,
 		@ExcludedJobs = @ExcludedJobs,

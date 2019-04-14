@@ -16,6 +16,14 @@
 				NOTE: You do NOT need the SAME master key cert on 'this' box as your 'source' box. Instead, you just need 'a' master key in place
 					to handle certificate signing needs at the server level.
 
+	NOTE:
+		the _NAME_ of the certificate does NOT have to be an exact match. 
+		Specifically,
+			- you can create a cert called EncryptedBackupsCert on ServerXyz for production usage/etc. 
+			- then back that cert up as EncryptedBackupsCert.cer + .key etc... (and, obviously, file names don't need to match cert names). 
+			- then RESTORE the EncryptedBackupsCert as, say: [ServerXyzProd_EncryptedBackupsThingy] on a smoke and rubble/failover server and you'll be 'just fine' (in the sense that you'll be able to restore backups on this other/secondary server without issues). 
+		ALL of that said, it's recommended to use the SAME name for this important piece of infrastructure across ALL machines in your topology/environment.
+
 	INSTRUCTIONS
 		1. copy the .cer and .key files associated with your certificate export/backup to a location (path) accessible to the target server. 
 		2. CTRL+SHIFT+M to replace all parameters in the following script - including: 

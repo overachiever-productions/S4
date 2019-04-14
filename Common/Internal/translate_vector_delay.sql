@@ -26,7 +26,7 @@ AS
 
 	DECLARE @difference int;
 
-	EXEC admindb.dbo.translate_vector 
+	EXEC dbo.translate_vector 
 		@Vector = @Vector, 
 		@ValidationParameterName = @ParameterName,
 		@ProhibitedIntervals = 'DAY,WEEK,MONTH,QUARTER,YEAR',  -- days are overkill for any sort of WAITFOR delay specifier (that said, 38 HOURS would work... )  
@@ -39,7 +39,7 @@ AS
 		RETURN -5;
 	END;
 	
-	SELECT @Output = RIGHT([admindb].dbo.[format_timespan](@difference), 12);
+	SELECT @Output = RIGHT(dbo.[format_timespan](@difference), 12);
 
 	RETURN 0;
 GO
