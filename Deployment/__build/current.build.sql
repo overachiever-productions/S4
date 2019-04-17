@@ -12,10 +12,6 @@
 		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
-	vNEXT: 
-		- If xp_cmdshell ends up being enabled, drop a link to S4 documentation on what it is, why it's needed, and why it's not the security risk some folks on interwebs make it out to be. 
-
-
 	Deployment Steps/Overview: 
 		1. Enable xp_cmdshell if not enabled. 
 		2. Create admindb if not already present.
@@ -374,7 +370,7 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 
 		UPDATE dbo.[restore_log] 
 		SET 
-			dropped = 'LEFT-ONLINE'
+			[dropped] = 'LEFT-ONLINE'
 		WHERE 
 			[dropped] = 'LEFT ONLINE';
 	COMMIT; 
@@ -772,6 +768,12 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\list_synchronizing_databases.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\is_primary_server.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\is_primary_database.sql
