@@ -45,7 +45,7 @@ GO
 
 CREATE PROC dbo.verify_data_synchronization 
 	@IgnoredDatabases						nvarchar(MAX)		= NULL,
-	@SyncCheckSpanMinutes					int					= 10,  --MKC: might rename this @ExecutionFrequencyMinutes or... soemthing... 
+	@SyncCheckSpanMinutes					int					= 10,  --MKC: Remove (see S4-155)
 	@TransactionDelayThresholdMS			int					= 8600,
 	@AvgerageSyncDelayThresholdMS			int					= 2800,
 	@EmailSubjectPrefix						nvarchar(50)		= N'[Data Synchronization Problems] ',
@@ -82,8 +82,17 @@ AS
 		END; 
 	END;
 
+	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
+		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
+		RETURN -5;
+	END;
+
 	----------------------------------------------
 	-- Determine which server to run checks on. 
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -91,33 +100,26 @@ AS
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
-		server_name sysname, 
-		sync_type sysname,
+		[server_name] sysname, 
+		[sync_type] sysname,
 		[database_name] sysname, 
 		[role] sysname
 	);
 
-	-- Mirrored DBs:
-	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name], [role])
-	SELECT @localServerName [server_name], N'MIRRORED' sync_type, d.[name] [database_name], m.[mirroring_role_desc] FROM sys.databases d INNER JOIN sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL;
-
-	-- AG'd DBs (2012 + only):
-	IF EXISTS (SELECT NULL FROM (SELECT SERVERPROPERTY('ProductMajorVersion') AS [ProductMajorVersion]) x WHERE CAST(x.ProductMajorVersion AS int) >= '11') BEGIN
-		INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name], [role])
-		EXEC master.sys.[sp_executesql] N'SELECT @localServerName [server_name], N''AG'' [sync_type], d.[name] [database_name], hars.role_desc FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id;', N'@localServerName sysname', @localServerName = @localServerName;
-	END;
-
-	-- We're only interested in databases _on this server_ that are in a 'primary' state:
-	DELETE FROM @synchronizingDatabases WHERE [sync_type] = N'AG' AND [role] = N'SECONDARY';
-	DELETE FROM @synchronizingDatabases WHERE [sync_type] = N'MIRRORED' AND [role] = N'MIRROR';
-
-	-- We're also not interested in any dbs we've been explicitly instructed to ignore: 
-	DELETE FROM @synchronizingDatabases WHERE [database_name] IN (SELECT [result] FROM dbo.[split_string](@IgnoredDatabases, N',', 1));
-
-	IF NOT EXISTS (SELECT NULL FROM @synchronizingDatabases) BEGIN 
-		PRINT 'Server is not currently the Primary for any (monitored) synchronizing databases. Execution terminating (but will continue on primary).';
-		RETURN 0; -- successful execution (on the secondary) completed.
-	END;
+	-- grab a list of SYNCHRONIZING (primary) databases (excluding any we're instructed to NOT watch/care about):
+	INSERT INTO @synchronizingDatabases (
+	    [server_name],
+	    [sync_type],
+	    [database_name], 
+		[role]
+	)
+	SELECT 
+	    [server_name],
+	    [sync_type],
+	    [database_name], 
+		[role]
+	FROM 
+		dbo.list_synchronizing_databases(@IgnoredDatabases, 1);
 
 	----------------------------------------------
 	DECLARE @errors TABLE (

@@ -35,6 +35,18 @@ BUILD DIRECTIVES HANDLED BY S4Build(Prototype).exe:
 					(currently it says "not supported in 2008" but I need to tweak this so that the RAISERORR content is 
 						passed along in the form of this syntax:  --##CONDITIONAL_SUPPORT(< 10.5)[This is the OPTIONAL RaiseError message - otherwise there will be a default placeholder of "sorry, not supported".]
 
+	--##CONDITIONAL_VERSION(xxx) 
+		where xxx is the condition to be satisfied 
+			and where anything that FOLLOWS this directive will be an ALTER script - i.e., DEFINED as an ALTER SPROC/FUNC whatever... that modifies
+			the definition 'up' to a newer version or whatever. 
+				i.e., if/when run on a newer instances of SQL Server, the CONTENTS of the .sql file - when run 'normally' will... just
+					a) DROP
+					b) CREATE (dumber/older version)
+					c) ALTER... 
+
+				the ONLY difference here is that the ALTER WOULD BREAK on older versions... (i.e., it'd fail syntax checks)
+					so... the 'guts' of that alter are GRABBED and then put into an @variable instead... 
+
 	##{{S4version}}
 		token, which will be replaced by Maj.Min.Id.BuildID whenever the build file is running and processing
 		include'd .sql files. 

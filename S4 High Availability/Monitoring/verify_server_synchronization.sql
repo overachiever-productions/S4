@@ -96,7 +96,7 @@ AS
 	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
 		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
 		RETURN -5;
-	END 
+	END; 
 
 	IF OBJECT_ID('admindb.dbo.server_trace_flags', 'U') IS NULL BEGIN 
 		RAISERROR('Table dbo.server_trace_flags is not present in master. Synchronization check can not be processed.', 16, 1);
@@ -109,18 +109,10 @@ AS
 	INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
 	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
 
-	-- Figure out which server this should be running on (and then, from this point forward, only run on the Primary);
-	DECLARE @firstMirroredDB sysname; 
-	SET @firstMirroredDB = (SELECT TOP 1 d.[name] FROM sys.databases d INNER JOIN sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL ORDER BY d.[name]); 
-
-	-- if there are NO mirrored dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
-	IF @firstMirroredDB IS NOT NULL BEGIN 
-		-- Check to see if we're on the primary or not. 
-		IF (SELECT dbo.is_primary_database(@firstMirroredDB)) = 0 BEGIN 
-			PRINT 'Server is Not Primary.'
-			RETURN 0; -- tests/checks are now done on the secondary
-		END
-	END 
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 

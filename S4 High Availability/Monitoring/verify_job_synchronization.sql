@@ -136,43 +136,62 @@ AS
 		END; 
 	END;
 
-	----------------------------------------------
-	-- Determine which server to run checks on. 
+	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
+		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
+		RETURN -5;
+	END;
+
+	---------------------------------------------
+	-- processing
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
+	----------------------------------------------
+	-- Determine which server to run checks on:
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;	 
+
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
 		server_name sysname, 
 		sync_type sysname,
-		[database_name] sysname
+		[database_name] sysname, 
+		[role] sysname
+	);
+
+	-- grab a list of all synchronizing LOCAL databases:
+	INSERT INTO @synchronizingDatabases (
+	    [server_name],
+	    [sync_type],
+	    [database_name], 
+		[role]
 	)
+	SELECT 
+	    [server_name],
+	    [sync_type],
+	    [database_name], 
+		[role]
+	FROM 
+		dbo.list_synchronizing_databases(NULL, 0);
 
-	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
-	SELECT @localServerName [server_name], N'MIRRORED' sync_type, d.[name] [database_name] FROM sys.databases d INNER JOIN sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL;
-
-	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
-	SELECT @localServerName [server_name], N'AG' [sync_type], d.[name] [database_name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_cluster_states hars ON d.replica_id = hars.replica_id;
-
-	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
-	EXEC master.sys.sp_executesql N'SELECT @remoteServerName [server_name], N''MIRRORED'' sync_type, d.[name] [database_name] FROM sys.databases d INNER JOIN sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL;', N'@remoteServerName sysname', @remoteServerName = @remoteServerName;
-
-	INSERT INTO @synchronizingDatabases (server_name, sync_type, [database_name])
-	EXEC master.sys.sp_executesql N'SELECT @remoteServerName [server_name], N''AG'' [sync_type], d.[name] [database_name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_cluster_states hars ON d.replica_id = hars.replica_id;', N'@remoteServerName sysname', @remoteServerName = @remoteServerName;
-
-	DECLARE @firstSyncedDB sysname; 
-	SELECT @firstSyncedDB = (SELECT TOP (1) [database_name] FROM @synchronizingDatabases ORDER BY [database_name], server_name);
-
-	-- if there are NO mirrored/AG'd dbs, then this job will run on BOTH servers at the same time (which seems weird, but if someone sets this up without mirrored dbs, no sense NOT letting this run). 
-	IF @firstSyncedDB IS NOT NULL BEGIN 
-		-- Check to see if we're on the primary or not. 
-		IF (SELECT dbo.is_primary_database(@firstSyncedDB)) = 0 BEGIN 
-			PRINT 'Server is Not Primary. Execution Terminating (but will continue on Primary).'
-			RETURN 0; -- tests/checks are now done on the secondary
-		END
-	END 
+	-- we also need a list of synchronizing/able databases on the 'secondary' server:
+	INSERT INTO @synchronizingDatabases (
+	    [server_name],
+	    [sync_type],
+	    [database_name], 
+		[role]
+	)
+	SELECT 
+	    [server_name],
+	    [sync_type],
+	    [database_name], 
+		[role]
+	FROM 
+		OPENQUERY([PARTNER], 'SELECT * FROM [admindb].dbo.[list_synchronizing_databases](NULL, 0)');
 
 	----------------------------------------------
 	-- establish which jobs to ignore (if any):
@@ -190,7 +209,6 @@ AS
 		[name] nvarchar(100) NOT NULL, 
 		[description] nvarchar(300) NOT NULL
 	);
-
 
 	---------------------------------------------------------------------------------------------
 	-- Process server-level jobs (jobs that aren't mapped to a Mirrored/AG'd database). 
