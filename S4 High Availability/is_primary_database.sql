@@ -20,8 +20,10 @@
 		password: simple
 
 
+	SELECT dbo.is_primary_database('Billing');
+
 	TODO:
-		- evaluate if this is needed anymore: 
+		- create a version of this ... i.e., not by DB_name - but by AG name... 
 
 					CREATE FUNCTION dbo.fn_is_ag_primary_replica (@AGName sysname)
 					RETURNS bit 
@@ -54,10 +56,11 @@ IF OBJECT_ID('dbo.is_primary_database','FN') IS NOT NULL
 	DROP FUNCTION dbo.is_primary_database;
 GO
 
+--##NOTE: Conditional BUILD... 
+
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-
 	-- {copyright}
 
 	BEGIN 
@@ -74,7 +77,33 @@ AS
 		IF @description = 'PRINCIPAL'
 			RETURN 1;
 
-		-- Check for AG'd state:
+		-- if no matches, return 0
+		RETURN 0;
+	END;
+GO
+
+--##CONDITIONAL_VERSION(> 10.5) 
+
+ALTER FUNCTION dbo.is_primary_database(@DatabaseName sysname)
+RETURNS bit
+AS
+	-- {copyright}
+
+	BEGIN 
+		DECLARE @description sysname;
+				
+		-- Check for Mirrored Status First: 
+		SELECT 
+			@description = mirroring_role_desc
+		FROM 
+			sys.database_mirroring 
+		WHERE
+			database_id = DB_ID(@DatabaseName);
+	
+		IF @description = 'PRINCIPAL'
+			RETURN 1;
+
+		-- Check for AG''d state:
 		SELECT 
 			@description = 	hars.role_desc
 		FROM 
