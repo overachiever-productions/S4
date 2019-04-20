@@ -351,6 +351,7 @@ AS
         @Priorities = @Priorities,
 
 		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
+		@ExcludeSecondaries = 0,
 		@ExcludeRestoring = 0,
 		@ExcludeRecovering = 0,	
 		@ExcludeOffline = 0;
