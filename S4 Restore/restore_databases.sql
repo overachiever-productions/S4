@@ -76,7 +76,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(10)	= N'24h',			-- Only evaluated if non-NULL. 
+	@RpoWarningThreshold			nvarchar(10)	= N'24 hours',		-- Only evaluated if non-NULL. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
     @Directives						nvarchar(400)	= NULL,				-- { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
@@ -335,11 +335,12 @@ AS
 		ORDER BY 
 			row_id;
 
-		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
-
-		EXEC dbo.load_backup_database_names
-			@TargetDirectory = @BackupsRootPath, 
-			@SerializedOutput = @databases OUTPUT;
+		IF @serialized = N'' BEGIN
+			RAISERROR(N'No sub-folders (potential database backups) found at path specified by @BackupsRootPath. Please double-check your input.', 16, 1);
+			RETURN -30;
+		  END;
+		ELSE
+			SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
 		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]', @serialized); 
 	END;
@@ -961,7 +962,7 @@ NextDatabase:
 		);
 
 		IF @PrintOnly = 1
-			PRINT @fileListXml; 
+			PRINT N'-- ' + @fileListXml; 
 		ELSE BEGIN
 			UPDATE dbo.[restore_log] 
 			SET 
