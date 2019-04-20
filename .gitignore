@@ -7,3 +7,10 @@
 *~~*
 S4 Maintenance/Automated Log Shrinking/__old*
 __Misc Ideas*
+/S4 Audits/__fodder/High Level Notes and Ideas.sql
+/S4 Backups/Utilities/dba_SynchronizeBackups.sql
+/S4 Extended Event Sessions/High Level Notes and Fodder - 'Epic'.sql
+/S4 High Availability/Misc/OPENQUERY tests.sql
+/S4 Monitoring/__fodder and notes/rough_notes_on_perf_baseline_captures_and_functionality.sql
+/S4 Extended Event Sessions/Extraction/extract_blockedprocesses_trace.sql
+/S4 Extended Event Sessions/Extraction/extract_deadlock_trace.sql
