@@ -334,7 +334,7 @@ AS
 	    @Targets = @DatabasesToBackup,
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
-		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
+		-- NOTE: @ExcludeSecondaries, @ExcludeRecovering, @ExcludeRestoring, @ExcludeOffline ALL default to 1 - meaning that, for backups, we want the default (we CAN'T back those databases up no matter how much we want). (Well, except for secondaries...hmm).
 		@ExcludeSimpleRecovery = @excludeSimple;
 
 	-- verify that we've got something: 
