@@ -54,10 +54,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-
-	-- split_string
-	-- get_vector_dealy
-	
+	EXEC dbo.verify_advanced_capabilities;	
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -92,7 +89,6 @@ AS
 		filter_text varchar(2000) NOT NULL
 	); 
 	
-
 	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[USE_DB_SUCCESS]', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 

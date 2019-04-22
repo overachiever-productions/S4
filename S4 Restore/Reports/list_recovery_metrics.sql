@@ -178,10 +178,6 @@ AS
 	-- {copyright} 
 
     -----------------------------------------------------------------------------
-    -- Dependencies Validation:
-	-- TODO: validate dependencies (restore_log + version xx or > )
-
-    -----------------------------------------------------------------------------
     -- Validate Inputs: 
 	-- TODO: validate inputs.... 
 
@@ -322,7 +318,7 @@ AS
 				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N'' days'' 
 				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
 			END [rpo_gap], 
-			ISNULL(f.[error_details], N'') [error_details]
+			ISNULL(f.[error_details], N'''') [error_details]
 		FROM 
 			#facts f
 		ORDER BY 

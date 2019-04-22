@@ -1,6 +1,3 @@
-
-
-
 /*
 
 
@@ -18,8 +15,6 @@
 		SELECT dbo.load_default_path('LOG');
 
 */
-
-
 
 USE [admindb];
 GO

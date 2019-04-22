@@ -266,7 +266,7 @@ AS
 	 
 	IF @ExcludeOffline = 1 BEGIN -- all states OTHER than online... 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) = N'OFFLINE');
 	END;
 
 	-- Exclude explicit exclusions: 

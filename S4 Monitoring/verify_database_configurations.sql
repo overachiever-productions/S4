@@ -42,18 +42,6 @@ AS
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	IF @PrintOnly = 0 BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 		

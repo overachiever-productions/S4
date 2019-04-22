@@ -19,37 +19,14 @@
 			Acceptable Values: the name of any Database Mail profiler that is created/accessible to the SQL Server Agent (and which you'd like used as the 'default' profile (i.e., when no profile has been explicitly defined).
 			DEFAULT: When not present, defaults to the value of 'General' (by convention).
 
+		- KEY: advanced_s4_error_handling
+			Acceptable Values: N'0' or N'1'.
+			DEFAULT: when not present or not explicitly set to 1, then the default is N'0' (not enabled). 
+				When NOT enabled, then advanced functionality (i.e., advanced error handling) needed for execution of backups, restore-tests, and so on is NOT available.
 
 		- KEY: [DEV]
 
 		- KEY: [TEST]
-
-
-
-
-
-
-INSERT INTO [dbo].[settings] (
-    [setting_type],
-    [setting_key],
-    [setting_value],
-    [comments]
-)
-VALUES (
-           N'COMBINED', -- setting_type - sysname
-           N'[DEV]', -- setting_key - sysname
-           N'%login', -- setting_value - sysname
-           N'' -- comments - nvarchar(200)
-       ), 
-
-	   (
-
-		N'COMBINED', 
-		N'[DEV]', 
-		N'IdentityDB', 
-		N''
-		)
-
 
 
 
