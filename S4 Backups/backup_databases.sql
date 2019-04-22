@@ -30,15 +30,6 @@
 
 /*
 
-	DEPENDENCIES:
-		- Requires dbo.backup_log (logging table to keep details about errors (and successful executions if @LogSuccessfulOutcomes = 1). 
-		- Requires dbo.split_string - to parse results from dba_LoadDatabases.
-		- Requires dbo.list_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
-		- Requires dbo.execute_uncatchable_command - sproc used to execute backup and other compands in order to be able to CAPTURE exception
-			details and error details (due to bug/problem with TRY/CATCH in T-SQL). 
-		- Requires that xp_cmdshell is ENABLED before execution can/will complete (but the sproc CAN be created without xp_cmdshell enabled).
-		- Requires a configured Database Mail Profile + SQL Server Agent Operator. 
-
 	NOTES:
 		- There's a serious bug/problem with T-SQL and how it handles TRY/CATCH (or other error-handling) operations:
 			https://connect.microsoft.com/SQLServer/feedback/details/746979/try-catch-construct-catches-last-error-only
@@ -130,40 +121,14 @@ CREATE PROC dbo.backup_databases
 AS
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
-		RAISERROR('S4 Table dbo.backup_log not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
+	EXEC dbo.verify_advanced_capabilities;
 
-	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
-		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
+	-----------------------------------------------------------------------------
+	-- Validate Inputs: 
 	DECLARE @Edition sysname;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -182,13 +147,6 @@ AS
 		RETURN -2;
 	END;
 
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs: 
 	IF (@PrintOnly = 0) AND (@Edition != 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 
 		-- Operator Checks:

@@ -33,7 +33,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
 	IF UPPER(HOST_NAME()) = UPPER(@HostName) BEGIN 
-		RAISERROR('Invalid HostName - You can''t KILL spids owned by the connection running this stored procedure.', 16, 1);
+		RAISERROR('Invalid HostName - You can''t KILL spids owned by the host running this stored procedure.', 16, 1);
 		RETURN -1;
 	END;
 

@@ -68,19 +68,14 @@ CREATE PROC dbo.script_server_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
-		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-	
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
+	EXEC dbo.verify_advanced_capabilities;
+
+	-----------------------------------------------------------------------------
+	-- Input Validation:
 
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
@@ -98,11 +93,6 @@ AS
 	IF @edition IS NULL BEGIN
 		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
 		RETURN -2;
-	END;
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
 	END;
 
 	IF (@PrintOnly = 0) AND (@edition <> 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 

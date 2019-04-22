@@ -82,16 +82,6 @@ AS
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-
-	IF OBJECT_ID('dbo.list_logfile_sizes', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_logfile_sizes not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-	
-	-- get_vector
-
-	-----------------------------------------------------------------------------
 	-- Validate Inputs:
 
 	DECLARE @maxSecondsToWaitForLogFileBackups int; 

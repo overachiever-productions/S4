@@ -178,10 +178,6 @@ AS
 	-- {copyright} 
 
     -----------------------------------------------------------------------------
-    -- Dependencies Validation:
-	-- TODO: validate dependencies (restore_log + version xx or > )
-
-    -----------------------------------------------------------------------------
     -- Validate Inputs: 
 	-- TODO: validate inputs.... 
 

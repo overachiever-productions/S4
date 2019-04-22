@@ -95,15 +95,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
+	-- EXEC dbo.verify_advanced_capabilities;	
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 

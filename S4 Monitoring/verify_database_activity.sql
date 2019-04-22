@@ -110,20 +110,11 @@ CREATE PROC dbo.verify_database_activity
 AS 
 	SET NOCOUNT ON; 
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
+	-- Validate Inputs: 
+	
 	DECLARE @Edition sysname;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -141,14 +132,7 @@ AS
 		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
 		RETURN -2;
 	END;
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs: 
+	
 	IF (@SendNotifications = 1) BEGIN
 		IF (@PrintOnly = 0) AND (@Edition != 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 
