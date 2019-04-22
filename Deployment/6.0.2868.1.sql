@@ -1,4 +1,3 @@
-
 /*
 
 	REFERENCE:
@@ -6,55 +5,21 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 5.9.2863.1 or upgrade a PREVIOUSLY deployed version of S4 to 5.9.2863.1.
-		- This script will enable xp_cmdshell if it is not currently enabled. 
+		- This script will either install/deploy S4 version 6.0.2868.1 or upgrade a PREVIOUSLY deployed version of S4 to 6.0.2868.1.
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
 	Deployment Steps/Overview: 
-		1. Enable xp_cmdshell if not enabled. 
-		2. Create admindb if not already present.
-		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
-		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
-		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version 5.9.2863.1 code to admindb (overwriting any previous versions). 
-		7. Reporting on current + any previous versions of S4 installed. 
+		1. Create admindb if not already present.
+		2. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
+		3. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
+		4. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
+		5. Deploy S4 version 6.0.2868.1 code to admindb (overwriting any previous versions). 
+		6. Reporting on current + any previous versions of S4 installed. 
 
 */
 
-
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 1. Enable xp_cmdshell if/as needed: 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-USE [master];
-GO
-
-IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND value_in_use = 0) BEGIN;
-
-	SELECT 'Enabling xp_cmdshell for use by SysAdmin role-members only.' [NOTE: Server Configuration Change Made (xp_cmdshell)];
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = 'show advanced options' AND value_in_use = 0) BEGIN
-
-		EXEC sp_configure 'show advanced options', 1;
-		RECONFIGURE;
-
-		EXEC sp_configure 'xp_cmdshell', 1;
-		RECONFIGURE;
-
-		-- switch BACK to not-showing advanced options:
-		EXEC sp_configure 'show advanced options', 1;
-		RECONFIGURE;
-
-	  END;
-	ELSE BEGIN
-		EXEC sp_configure 'xp_cmdshell', 1;
-		RECONFIGURE;
-	END;
-END;
-GO
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 2. Create admindb if/as needed: 
+-- 1. Create admindb if/as needed: 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
@@ -70,7 +35,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
+-- 2. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -95,7 +60,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'5.9.2863.1';
+DECLARE @CurrentVersion varchar(20) = N'6.0.2868.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -113,7 +78,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 4. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
+-- 3. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -432,8 +397,27 @@ IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
 	DROP PROC dbo.load_database_names;
 GO
 
+-- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
+IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
+
+	IF NOT EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+		INSERT INTO dbo.[settings] (
+			[setting_type],
+			[setting_key],
+			[setting_value],
+			[comments]
+		)
+		VALUES (
+			N'UNIQUE', 
+			N'advanced_s4_error_handling', 
+			N'1', 
+			N'Legacy Enabled (i.e., pre-v6 install upgraded to 6/6+)' 
+		);
+	END;
+END;
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 5. Cleanup and remove objects from previous versions
+-- 4. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
@@ -580,7 +564,7 @@ IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 6. Deploy new/updated code.
+-- 5. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -695,7 +679,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output decimal(4,2);
@@ -733,7 +717,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -804,7 +788,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -838,7 +822,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -925,7 +909,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -953,7 +937,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 	RETURNS bit
 AS 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output bit = 0;
@@ -1006,7 +990,7 @@ CREATE PROC dbo.translate_vector
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -1108,7 +1092,7 @@ CREATE PROC dbo.translate_vector_delay
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @difference int;
 
@@ -1146,7 +1130,7 @@ AS
 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1275,7 +1259,7 @@ CREATE PROC dbo.replace_dbname_tokens
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1571,7 +1555,7 @@ AS
 	 
 	IF @ExcludeOffline = 1 BEGIN -- all states OTHER than online... 
 		DELETE FROM @target_databases 
-		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) <> N'ONLINE');
+		WHERE [database_name] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER([state_desc]) = N'OFFLINE');
 	END;
 
 	-- Exclude explicit exclusions: 
@@ -1687,7 +1671,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -1722,7 +1706,7 @@ RETURNS bit
 	WITH RETURNS NULL ON NULL INPUT
 AS 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN;
 		
@@ -1761,7 +1745,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output int = 0;
@@ -1806,12 +1790,12 @@ CREATE PROC dbo.kill_connections_by_hostname
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
 	IF UPPER(HOST_NAME()) = UPPER(@HostName) BEGIN 
-		RAISERROR('Invalid HostName - You can''t KILL spids owned by the connection running this stored procedure.', 16, 1);
+		RAISERROR('Invalid HostName - You can''t KILL spids owned by the host running this stored procedure.', 16, 1);
 		RETURN -1;
 	END;
 
@@ -1883,7 +1867,14 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	-----------------------------------------------------------------------------
+	-- Validate Dependencies:
+	EXEC dbo.verify_advanced_capabilities;	
+
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
 
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
@@ -1992,14 +1983,11 @@ CREATE PROC dbo.execute_command
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-
-	-- split_string
-	-- get_vector_dealy
-	
+	EXEC dbo.verify_advanced_capabilities;	
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -2034,7 +2022,6 @@ AS
 		filter_text varchar(2000) NOT NULL
 	); 
 	
-
 	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[USE_DB_SUCCESS]', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
@@ -2212,19 +2199,11 @@ CREATE PROC dbo.load_backup_database_names
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
+	-- EXEC dbo.verify_advanced_capabilities;	
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -2312,7 +2291,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -2440,35 +2419,14 @@ CREATE PROC [dbo].[remove_backup_files]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
+	EXEC dbo.verify_advanced_capabilities;
 
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN;
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.load_backup_database_names', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.load_backup_database_names not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.translate_vector', 'P') IS NULL BEGIN;
-		RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
+	-----------------------------------------------------------------------------
+	-- Validate Inputs: 
 	DECLARE @Edition sysname;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -2486,14 +2444,7 @@ AS
 		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
 		RETURN -2;
 	END;
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN;
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs: 
+	
 	IF ((@PrintOnly = 0) OR (@Output IS NULL)) AND (@Edition != 'EXPRESS') BEGIN; -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 
 		-- Operator Checks:
@@ -3040,40 +2991,14 @@ CREATE PROC dbo.backup_databases
 AS
 	SET NOCOUNT ON;
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
-		RAISERROR('S4 Table dbo.backup_log not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
+	EXEC dbo.verify_advanced_capabilities;
 
-	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
-		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF OBJECT_ID('dbo.execute_uncatchable_command', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
+	-----------------------------------------------------------------------------
+	-- Validate Inputs: 
 	DECLARE @Edition sysname;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -3092,13 +3017,6 @@ AS
 		RETURN -2;
 	END;
 
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs: 
 	IF (@PrintOnly = 0) AND (@Edition != 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 
 		-- Operator Checks:
@@ -3244,7 +3162,7 @@ AS
 	    @Targets = @DatabasesToBackup,
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
-		@ExcludeSecondaries = @AllowNonAccessibleSecondaries,  -- if true, then we exclude, otherwise...nope... 
+		-- NOTE: @ExcludeSecondaries, @ExcludeRecovering, @ExcludeRestoring, @ExcludeOffline ALL default to 1 - meaning that, for backups, we want the default (we CAN'T back those databases up no matter how much we want). (Well, except for secondaries...hmm).
 		@ExcludeSimpleRecovery = @excludeSimple;
 
 	-- verify that we've got something: 
@@ -3796,7 +3714,7 @@ CREATE PROC dbo.print_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases,'') IS NULL BEGIN
 		RAISERROR('Parameter @TargetDatabases cannot be NULL or empty.', 16, 1)
@@ -4098,19 +4016,14 @@ CREATE PROC dbo.script_server_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
-		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-	
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
+	EXEC dbo.verify_advanced_capabilities;
+
+	-----------------------------------------------------------------------------
+	-- Input Validation:
 
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
@@ -4128,11 +4041,6 @@ AS
 	IF @edition IS NULL BEGIN
 		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
 		RETURN -2;
-	END;
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
 	END;
 
 	IF (@PrintOnly = 0) AND (@edition <> 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
@@ -4357,7 +4265,7 @@ CREATE PROC dbo.print_configuration
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 
@@ -4790,20 +4698,10 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-    IF OBJECT_ID('dbo.get_engine_version', 'FN') IS NULL BEGIN
-        RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
+    EXEC dbo.verify_advanced_capabilities;
 
-	IF OBJECT_ID('dbo.load_default_path', 'FN') IS NULL BEGIN
-		RAISERROR('S4 User Defined Function dbo.load_default_path not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-	
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('S4 Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
+	-----------------------------------------------------------------------------
+	-- Input Validation:
 
 	DECLARE @edition sysname;
 	SELECT @edition = CASE SERVERPROPERTY('EngineEdition')
@@ -4821,11 +4719,6 @@ AS
 	IF @edition IS NULL BEGIN
 		RAISERROR('Unsupported SQL Server Edition detected. This script is only supported on Express, Web, Standard, and Enterprise (including Evaluation and Developer) Editions.', 16, 1);
 		RETURN -2;
-	END;
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
 	END;
 
 	IF (@PrintOnly = 0) AND (@edition <> 'EXPRESS') BEGIN -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
@@ -5031,7 +4924,11 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+    -----------------------------------------------------------------------------
+    -- Dependencies Validation:
+	EXEC dbo.verify_advanced_capabilities;
 
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
@@ -5117,7 +5014,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -5245,7 +5142,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(10)	= N'24h',			-- Only evaluated if non-NULL. 
+	@RpoWarningThreshold			nvarchar(10)	= N'24 hours',		-- Only evaluated if non-NULL. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
     @Directives						nvarchar(400)	= NULL,				-- { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
@@ -5256,64 +5153,11 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
-    IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
-        RAISERROR('S4 Table dbo.restore_log not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-    
-    IF OBJECT_ID('dbo.get_engine_version', 'FN') IS NULL BEGIN
-        RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-	IF OBJECT_ID('dbo.count_matches', 'FN') IS NULL BEGIN 
-		RAISERROR('S4 Scalar UDF dbo.count_matches not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-    IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF (OBJECT_ID('dbo.load_backup_database_names', 'P') IS NULL) AND ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_backup_database_names not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-	IF OBJECT_ID('dbo.load_backup_files', 'P') IS NULL BEGIN 
-		RAISERROR('S4 Stored Procedure dbo.load_backup_files not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-	IF OBJECT_ID('dbo.load_header_details', 'P') IS NULL BEGIN 
-		RAISERROR('S4 Stored Procedure dbo.load_header_details not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-    IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.translate_vector','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.execute_uncatchable_command','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-        RAISERROR('xp_cmdshell is not currently enabled.', 16, 1);
-        RETURN -1;
-    END;
+    EXEC dbo.verify_advanced_capabilities;
 
 	-----------------------------------------------------------------------------
     -- Set Defaults:
@@ -5504,11 +5348,12 @@ AS
 		ORDER BY 
 			row_id;
 
-		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
-
-		EXEC dbo.load_backup_database_names
-			@TargetDirectory = @BackupsRootPath, 
-			@SerializedOutput = @databases OUTPUT;
+		IF @serialized = N'' BEGIN
+			RAISERROR(N'No sub-folders (potential database backups) found at path specified by @BackupsRootPath. Please double-check your input.', 16, 1);
+			RETURN -30;
+		  END;
+		ELSE
+			SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
 		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]', @serialized); 
 	END;
@@ -5520,6 +5365,7 @@ AS
         @Priorities = @Priorities,
 
 		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
+		@ExcludeSecondaries = 0,
 		@ExcludeRestoring = 0,
 		@ExcludeRecovering = 0,	
 		@ExcludeOffline = 0;
@@ -6129,7 +5975,7 @@ NextDatabase:
 		);
 
 		IF @PrintOnly = 1
-			PRINT @fileListXml; 
+			PRINT N'-- ' + @fileListXml; 
 		ELSE BEGIN
 			UPDATE dbo.[restore_log] 
 			SET 
@@ -6393,7 +6239,7 @@ CREATE PROC dbo.copy_database
 AS
 	SET NOCOUNT ON; 
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@SourceDatabaseName,'') IS NULL BEGIN
 		RAISERROR('@SourceDatabaseName cannot be Empty/NULL. Please specify the name of the database you wish to copy (from).', 16, 1);
@@ -6536,49 +6382,11 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
-    IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
-        RAISERROR('S4 Table dbo.restore_log not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-    
-	IF OBJECT_ID('dbo.load_backup_files', 'P') IS NULL BEGIN 
-		RAISERROR('S4 Stored Procedure dbo.load_backup_files not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-	IF OBJECT_ID('dbo.load_header_details', 'P') IS NULL BEGIN 
-		RAISERROR('S4 Stored Procedure dbo.load_header_details not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-    IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.translate_vector','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.execute_uncatchable_command','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-        RAISERROR('xp_cmdshell is not currently enabled.', 16, 1);
-        RETURN -1;
-    END;
+    EXEC dbo.verify_advanced_capabilities;;
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -7142,10 +6950,6 @@ AS
 	-- {copyright} 
 
     -----------------------------------------------------------------------------
-    -- Dependencies Validation:
-	-- TODO: validate dependencies (restore_log + version xx or > )
-
-    -----------------------------------------------------------------------------
     -- Validate Inputs: 
 	-- TODO: validate inputs.... 
 
@@ -7286,7 +7090,7 @@ AS
 				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N'' days'' 
 				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
 			END [rpo_gap], 
-			ISNULL(f.[error_details], N'') [error_details]
+			ISNULL(f.[error_details], N'''') [error_details]
 		FROM 
 			#facts f
 		ORDER BY 
@@ -7498,7 +7302,7 @@ AS
 		RETURN -1;
 	END;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_source] sysname NOT NULL,
@@ -7988,7 +7792,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -8411,7 +8215,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -8439,7 +8243,7 @@ AS
 
 	SELECT 
 		s.session_id, 
-		r.database_id,	--MKC: S4-1: 2008/R2 don't have s.database_id - so I 'dumbed this down' to use r(equest). But my original intention in using s.database_id was to cast a 'wide' net relative to which db the SPID is (or WAS) in. 
+		ISNULL(r.database_id, (SELECT [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	--MKC: S4-1. Pre-2012, s.database_id didn't exist. I MAY want to define this dynamically (based on version..) but that would require the entire statement to be 'dynamicized'.
 		r.wait_time, 
 		ISNULL(r.blocking_session_id, 0) blocking_session_id, 
 		s.session_id [blocked_session_id],
@@ -8447,6 +8251,7 @@ AS
 		ISNULL(r.[status], 'connected') [status],
 		ISNULL(r.[total_elapsed_time], DATEDIFF(MILLISECOND, s.last_request_start_time, GETDATE())) [duration],
 		ISNULL(r.wait_resource, '') wait_resource,
+		r.[last_wait_type] [wait_type],
 		CASE [dtat].[transaction_type]
 			WHEN 1 THEN 'Read/Write'
 			WHEN 2 THEN 'Read-Only'
@@ -8477,7 +8282,7 @@ AS
 		END [isolation_level],
 		CASE WHEN dtst.is_user_transaction = 1 THEN 'EXPLICIT' ELSE 'IMPLICIT' END [transaction_type], 
 		(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
-		N'REQUEST' [statement_source],
+		CAST(N'REQUEST' AS sysname) [statement_source],
 		r.sql_handle [statement_handle], 
 		r.plan_handle, 
 		r.statement_start_offset, 
@@ -8683,8 +8488,10 @@ AS
         [c].[status],
         RTRIM(LTRIM([s].[statement])) [statement],
 		[c].[wait_time],
+		[c].[wait_type],
+		[c].[wait_resource],
 	[c].[duration],		-- some sort of a bug here... 
-        [c].[wait_resource],
+        
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
         [c].[isolation_level],
@@ -8747,19 +8554,7 @@ CREATE PROC dbo.verify_backup_execution
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9176,19 +8971,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-	IF OBJECT_ID('dbo.split_string', 'TF') IS NULL BEGIN
-		RAISERROR('Table-Valued Function dbo.split_string not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
-
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END;
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9481,7 +9264,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9588,7 +9371,7 @@ CREATE PROC dbo.process_alerts
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
@@ -9685,7 +9468,7 @@ DECLARE @monitor_transaction_durations nvarchar(MAX) = N'ALTER PROC dbo.monitor_
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -10017,20 +9800,11 @@ CREATE PROC dbo.list_logfile_sizes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 
-	IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-		RAISERROR('xp_cmdshell is not currently enabled.', 16,1);
-		RETURN -3;
-	END;
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -10232,17 +10006,11 @@ CREATE PROC dbo.shrink_logfiles
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-
-	IF OBJECT_ID('dbo.list_logfile_sizes', 'P') IS NULL BEGIN
-		RAISERROR('S4 Stored Procedure dbo.list_logfile_sizes not defined - unable to continue.', 16, 1);
-		RETURN -1;
-	END
-	
-	-- get_vector
+	-- Validate Dependencies:
+	EXEC dbo.verify_advanced_capabilities;	
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -10672,7 +10440,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -10776,7 +10544,7 @@ CREATE PROC dbo.extract_statement
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @sql nvarchar(2000) = N'
 SELECT 
@@ -10815,7 +10583,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -11018,7 +10786,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN;
 
@@ -11054,7 +10822,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	 
 	BEGIN;
 
@@ -11096,7 +10864,7 @@ GO
 CREATE FUNCTION dbo.is_primary_server()
 RETURNS bit
 AS 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN
 		DECLARE @output bit = 0;
@@ -11132,7 +10900,7 @@ GO
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -11158,7 +10926,7 @@ DECLARE @is_primary_database nvarchar(MAX) = N'
 ALTER FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -11230,7 +10998,7 @@ CREATE PROC dbo.compare_jobs
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -12017,7 +11785,7 @@ CREATE PROC dbo.verify_job_states
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
@@ -12224,7 +11992,7 @@ CREATE PROC [dbo].[verify_job_synchronization]
 AS 
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Validation Checks: 
@@ -12256,6 +12024,13 @@ AS
 		RETURN -5;
 	END;
 
+	----------------------------------------------
+	-- Determine which server to run checks on:
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;	 
+
 	---------------------------------------------
 	-- processing
 
@@ -12263,12 +12038,6 @@ AS
 	DECLARE @remoteServerName sysname; 
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
-	----------------------------------------------
-	-- Determine which server to run checks on:
-	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
-	END;	 
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
@@ -12294,19 +12063,22 @@ AS
 		dbo.list_synchronizing_databases(NULL, 0);
 
 	-- we also need a list of synchronizing/able databases on the 'secondary' server:
+	DECLARE @delayedSyntaxCheckHack nvarchar(max) = N'
+		SELECT 
+			[server_name],
+			[sync_type],
+			[database_name], 
+			[role]
+		FROM 
+			OPENQUERY([PARTNER], ''SELECT * FROM [admindb].dbo.[list_synchronizing_databases](NULL, 0)'');';
+
 	INSERT INTO @synchronizingDatabases (
-	    [server_name],
-	    [sync_type],
-	    [database_name], 
+		[server_name],
+		[sync_type],
+		[database_name], 
 		[role]
 	)
-	SELECT 
-	    [server_name],
-	    [sync_type],
-	    [database_name], 
-		[role]
-	FROM 
-		OPENQUERY([PARTNER], 'SELECT * FROM [admindb].dbo.[list_synchronizing_databases](NULL, 0)');
+	EXEC sp_executesql @delayedSyntaxCheckHack;	
 
 	----------------------------------------------
 	-- establish which jobs to ignore (if any):
@@ -12910,7 +12682,6 @@ FROM
 GO
 
 
-
 -----------------------------------
 USE [admindb];
 GO
@@ -12931,7 +12702,7 @@ CREATE PROC dbo.verify_server_synchronization
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- if we're not manually running this, make sure the server is the primary:
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -13685,7 +13456,7 @@ CREATE PROC dbo.verify_data_synchronization
 AS
 	SET NOCOUNT ON;
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Validation Checks: 
@@ -14068,7 +13839,7 @@ DECLARE @generate_audit_signature nvarchar(MAX) = N'ALTER PROC dbo.generate_audi
 AS
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -14140,7 +13911,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -14317,7 +14088,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -14435,7 +14206,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v5.9.2863.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -14576,11 +14347,236 @@ ALERTS:
 GO	
 
 
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Advanced S4 Error-Handling Capabilities:
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.enable_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.enable_advanced_capabilities;
+GO
+
+CREATE PROC dbo.enable_advanced_capabilities
+
+AS 
+	SET NOCOUNT ON; 
+
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	DECLARE @xpCmdShellValue bit; 
+	DECLARE @xpCmdShellInUse bit;
+	DECLARE @advancedS4 bit = 0;
+	
+	SELECT 
+		@xpCmdShellValue = CAST([value] AS bit), 
+		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
+	FROM 
+		sys.configurations 
+	WHERE 
+		[name] = 'xp_cmdshell';
+
+	IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN 
+		SELECT 
+			@advancedS4 = CAST([setting_value] AS bit) 
+		FROM 
+			dbo.[settings] 
+		WHERE 
+			[setting_key] = N'advanced_s4_error_handling';
+	END;
+
+	-- check to see if enabled first: 
+	IF @advancedS4 = 1 AND @xpCmdShellInUse = 1 BEGIN
+		PRINT 'Advanced S4 error handling (ability to use xp_cmdshell) already/previously enabled.';
+		GOTO termination;
+	END;
+
+	IF @xpCmdShellValue = 1 AND @xpCmdShellInUse = 0 BEGIN 
+		RECONFIGURE;
+		SET @xpCmdShellInUse = 1;
+	END;
+
+	IF @xpCmdShellValue = 0 BEGIN
+		EXEC sp_configure 'xp_cmdshell', 1; 
+		RECONFIGURE;
+
+		SELECT @xpCmdShellValue = 1, @xpCmdShellInUse = 1;
+	END;
+
+	IF @advancedS4 = 0 BEGIN 
+		IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+			UPDATE dbo.[settings] 
+			SET 
+				[setting_value] = N'1', 
+				[comments] = N'Manually enabled on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.'  
+			WHERE 
+				[setting_key] = N'advanced_s4_error_handling';
+		  END;
+		ELSE BEGIN 
+			INSERT INTO dbo.[settings] (
+				[setting_type],
+				[setting_key],
+				[setting_value],
+				[comments]
+			)
+			VALUES (
+				N'UNIQUE', 
+				N'advanced_s4_error_handling', 
+				N'1', 
+				N'Manually enabled on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
+			);
+		END;
+		SET @advancedS4 = 1;
+	END;
+
+termination: 
+	SELECT 
+		@xpCmdShellValue [xp_cmdshell.value], 
+		@xpCmdShellInUse [xp_cmdshell.value_in_use],
+		@advancedS4 [advanced_s4_error_handling.value];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.disable_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.disable_advanced_capabilities
+GO
+
+CREATE PROC dbo.disable_advanced_capabilities
+
+AS 
+	SET NOCOUNT ON;
+
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	DECLARE @xpCmdShellValue bit; 
+	DECLARE @xpCmdShellInUse bit;
+	DECLARE @advancedS4 bit = 0;
+	DECLARE @errorMessage nvarchar(MAX);
+		
+	SELECT 
+		@xpCmdShellValue = CAST([value] AS bit), 
+		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
+	FROM 
+		sys.configurations 
+	WHERE 
+		[name] = 'xp_cmdshell';
+
+	IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN 
+
+		SELECT 
+			@advancedS4 = CAST([setting_value] AS bit) 
+		FROM 
+			dbo.[settings] 
+		WHERE 
+			[setting_key] = N'advanced_s4_error_handling';
+	END;
+
+	BEGIN TRY 
+		IF @xpCmdShellValue = 1 OR @xpCmdShellInUse = 1 BEGIN
+			EXEC sp_configure 'xp_cmdshell', 0; 
+			RECONFIGURE;	
+			
+			SELECT @xpCmdShellValue = 0, @xpCmdShellInUse = 0;
+		END;
+
+		IF EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+			IF @advancedS4 = 1 BEGIN 
+				UPDATE dbo.[settings]
+				SET 
+					[setting_value] = N'0', 
+					[comments] = N'Manually DISABLED on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
+				WHERE 
+					[setting_key] = N'advanced_s4_error_handling';
+			  END;
+			ELSE BEGIN
+				INSERT INTO dbo.[settings] (
+					[setting_type],
+					[setting_key],
+					[setting_value],
+					[comments]
+				)
+				VALUES (
+					N'UNIQUE', 
+					N'advanced_s4_error_handling', 
+					N'1', 
+					N'Manually DISABLED on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
+				);
+			END;
+			SET @advancedS4 = 0;
+		END;
+
+	END TRY
+	BEGIN CATCH 
+		SELECT @errorMessage = N'Unhandled Exception: ' + CAST(ERROR_NUMBER() AS sysname) + N': ' + ERROR_MESSAGE();
+		RAISERROR(@errorMessage, 16, 1);
+		RETURN -1;
+	END CATCH
+
+	SELECT 
+		@xpCmdShellValue [xp_cmdshell.value], 
+		@xpCmdShellInUse [xp_cmdshell.value_in_use],
+		@advancedS4 [advanced_s4_error_handling.value];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.verify_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.verify_advanced_capabilities;
+GO
+
+CREATE PROC dbo.verify_advanced_capabilities
+	--@ErrorMessage				nvarchar(1000)		OUTPUT
+AS
+	SET NOCOUNT ON; 
+
+	-- [v6.0.2868.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	DECLARE @xpCmdShellInUse bit;
+	DECLARE @advancedS4 bit;
+	DECLARE @errorMessage nvarchar(1000);
+	
+	SELECT 
+		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
+	FROM 
+		sys.configurations 
+	WHERE 
+		[name] = 'xp_cmdshell';
+
+	SELECT 
+		@advancedS4 = CAST([setting_value] AS bit) 
+	FROM 
+		dbo.[settings] 
+	WHERE 
+		[setting_key] = N'advanced_s4_error_handling';
+
+	IF @xpCmdShellInUse = 1 AND ISNULL(@advancedS4, 0) = 1
+		RETURN 0;
+	
+	RAISERROR(N'Advanced S4 error handling capabilities are NOT enabled. Please consult S4 setup documentation and execute admindb.dbo.enabled_advanced_capabilities;', 16, 1);
+	RETURN -1;
+GO
+
+
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
+-- 6. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'5.9.2863.1';
-DECLARE @VersionDescription nvarchar(200) = N'Hot-Fix: S4-153 - standardize is_primary server logic';
+DECLARE @CurrentVersion varchar(20) = N'6.0.2868.1';
+DECLARE @VersionDescription nvarchar(200) = N'MVP of S4-112 - removal of xp_cmdshell (auto) setup during installation + bug fixes';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)

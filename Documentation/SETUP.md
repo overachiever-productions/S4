@@ -57,6 +57,16 @@ Once S4 has been deployed, keeping it updated is simple:
 [Return to Setup Table of Contents](#toc)
 
 ## <a name="advanced"></a>Enabling Advanced Features 
+
+Once S4 has been deployed (i.e., after the admindb has been created), to deploy advanced error-handling features, simply run the following: 
+
+```sql
+EXEC [admindb].dbo.[enable_advanced_capabilities];
+GO
+```
+
+[And to undo, execute dbo.disable_advanced_capabilities. Likewise to view/verify whether capabilities are on or not: EXEC dbo.verifiy_advanced_capabilities.]
+
 *[-- TODO: document this fully as part of the v6.0 release (as that's where enabling xp _cmdshell will be removed from normal installation/deployment and become an OPTIONAL feature that can be enabled within the admindb itself (well, via the admindb - cuz it'll enable xp _cmdshell across the server if/as needed.)
 v6.0 is where xp_cmdshell enabling will be 'split' out from the main deployment process into a sproc that'll report on the current setting, provide some info/docs/"don't panic details", and enable sp _ configure functionality.]*
 

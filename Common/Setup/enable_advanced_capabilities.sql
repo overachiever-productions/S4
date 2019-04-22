@@ -7,11 +7,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.enable_advanced_s4','P') IS NOT NULL
-	DROP PROC dbo.enable_advanced_s4;
+IF OBJECT_ID('dbo.enable_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.enable_advanced_capabilities;
 GO
 
-CREATE PROC dbo.enable_advanced_s4
+CREATE PROC dbo.enable_advanced_capabilities
 
 AS 
 	SET NOCOUNT ON; 

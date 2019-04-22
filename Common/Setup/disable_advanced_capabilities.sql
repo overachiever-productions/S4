@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.disable_advanced_s4','P') IS NOT NULL
-	DROP PROC dbo.disable_advanced_s4
+IF OBJECT_ID('dbo.disable_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.disable_advanced_capabilities
 GO
 
-CREATE PROC dbo.disable_advanced_s4
+CREATE PROC dbo.disable_advanced_capabilities
 
 AS 
 	SET NOCOUNT ON;
