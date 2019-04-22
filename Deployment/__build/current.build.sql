@@ -1,6 +1,5 @@
 --##OUTPUT: \\Deployment
 --##NOTE: This is a build file only (i.e., it stores upgade/install directives + place-holders for code to drop into admindb, etc.
-
 /*
 
 	REFERENCE:
@@ -9,54 +8,20 @@
 
 	NOTES:
 		- This script will either install/deploy S4 version ##{{S4version}} or upgrade a PREVIOUSLY deployed version of S4 to ##{{S4version}}.
-		- This script will enable xp_cmdshell if it is not currently enabled. 
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
 	Deployment Steps/Overview: 
-		1. Enable xp_cmdshell if not enabled. 
-		2. Create admindb if not already present.
-		3. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
-		4. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
-		5. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		6. Deploy S4 version ##{{S4version}} code to admindb (overwriting any previous versions). 
-		7. Reporting on current + any previous versions of S4 installed. 
+		1. Create admindb if not already present.
+		2. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
+		3. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
+		4. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
+		5. Deploy S4 version ##{{S4version}} code to admindb (overwriting any previous versions). 
+		6. Reporting on current + any previous versions of S4 installed. 
 
 */
 
-
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 1. Enable xp_cmdshell if/as needed: 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-USE [master];
-GO
-
-IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = N'xp_cmdshell' AND value_in_use = 0) BEGIN;
-
-	SELECT 'Enabling xp_cmdshell for use by SysAdmin role-members only.' [NOTE: Server Configuration Change Made (xp_cmdshell)];
-
-	IF EXISTS (SELECT NULL FROM sys.configurations WHERE [name] = 'show advanced options' AND value_in_use = 0) BEGIN
-
-		EXEC sp_configure 'show advanced options', 1;
-		RECONFIGURE;
-
-		EXEC sp_configure 'xp_cmdshell', 1;
-		RECONFIGURE;
-
-		-- switch BACK to not-showing advanced options:
-		EXEC sp_configure 'show advanced options', 1;
-		RECONFIGURE;
-
-	  END;
-	ELSE BEGIN
-		EXEC sp_configure 'xp_cmdshell', 1;
-		RECONFIGURE;
-	END;
-END;
-GO
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 2. Create admindb if/as needed: 
+-- 1. Create admindb if/as needed: 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
@@ -72,7 +37,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
+-- 2. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -115,7 +80,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 4. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
+-- 3. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -434,8 +399,27 @@ IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
 	DROP PROC dbo.load_database_names;
 GO
 
+-- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
+IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
+
+	IF NOT EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+		INSERT INTO dbo.[settings] (
+			[setting_type],
+			[setting_key],
+			[setting_value],
+			[comments]
+		)
+		VALUES (
+			N'UNIQUE', 
+			N'advanced_s4_error_handling', 
+			N'1', 
+			N'Legacy Enabled (i.e., pre-v6 install upgraded to 6/6+)' 
+		);
+	END;
+END;
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 5. Cleanup and remove objects from previous versions
+-- 4. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
@@ -582,7 +566,7 @@ IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 6. Deploy new/updated code.
+-- 5. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -817,7 +801,7 @@ GO
 --##INCLUDE: S4 Audits\Monitoring\verify_specification_configuration.sql
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 7. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
+-- 6. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 DECLARE @CurrentVersion varchar(20) = N'##{{S4version}}';
 DECLARE @VersionDescription nvarchar(200) = N'##{{S4version_summary}}';
