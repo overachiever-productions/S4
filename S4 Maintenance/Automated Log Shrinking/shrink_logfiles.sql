@@ -82,6 +82,10 @@ AS
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
+	-- Validate Dependencies:
+	EXEC dbo.verify_advanced_capabilities;	
+
+	-----------------------------------------------------------------------------
 	-- Validate Inputs:
 
 	DECLARE @maxSecondsToWaitForLogFileBackups int; 
