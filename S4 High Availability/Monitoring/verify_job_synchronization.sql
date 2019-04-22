@@ -141,6 +141,13 @@ AS
 		RETURN -5;
 	END;
 
+	----------------------------------------------
+	-- Determine which server to run checks on:
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;	 
+
 	---------------------------------------------
 	-- processing
 
@@ -148,12 +155,6 @@ AS
 	DECLARE @remoteServerName sysname; 
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
-	----------------------------------------------
-	-- Determine which server to run checks on:
-	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
-	END;	 
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
@@ -179,19 +180,22 @@ AS
 		dbo.list_synchronizing_databases(NULL, 0);
 
 	-- we also need a list of synchronizing/able databases on the 'secondary' server:
+	DECLARE @delayedSyntaxCheckHack nvarchar(max) = N'
+		SELECT 
+			[server_name],
+			[sync_type],
+			[database_name], 
+			[role]
+		FROM 
+			OPENQUERY([PARTNER], ''SELECT * FROM [admindb].dbo.[list_synchronizing_databases](NULL, 0)'');';
+
 	INSERT INTO @synchronizingDatabases (
-	    [server_name],
-	    [sync_type],
-	    [database_name], 
+		[server_name],
+		[sync_type],
+		[database_name], 
 		[role]
 	)
-	SELECT 
-	    [server_name],
-	    [sync_type],
-	    [database_name], 
-		[role]
-	FROM 
-		OPENQUERY([PARTNER], 'SELECT * FROM [admindb].dbo.[list_synchronizing_databases](NULL, 0)');
+	EXEC sp_executesql @delayedSyntaxCheckHack;	
 
 	----------------------------------------------
 	-- establish which jobs to ignore (if any):
@@ -793,4 +797,3 @@ FROM
 
 	RETURN 0;
 GO
-

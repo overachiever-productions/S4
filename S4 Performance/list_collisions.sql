@@ -57,7 +57,7 @@ AS
 
 	SELECT 
 		s.session_id, 
-		r.database_id,	--MKC: S4-1: 2008/R2 don't have s.database_id - so I 'dumbed this down' to use r(equest). But my original intention in using s.database_id was to cast a 'wide' net relative to which db the SPID is (or WAS) in. 
+		ISNULL(r.database_id, (SELECT [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	--MKC: S4-1. Pre-2012, s.database_id didn't exist. I MAY want to define this dynamically (based on version..) but that would require the entire statement to be 'dynamicized'.
 		r.wait_time, 
 		ISNULL(r.blocking_session_id, 0) blocking_session_id, 
 		s.session_id [blocked_session_id],
@@ -65,6 +65,7 @@ AS
 		ISNULL(r.[status], 'connected') [status],
 		ISNULL(r.[total_elapsed_time], DATEDIFF(MILLISECOND, s.last_request_start_time, GETDATE())) [duration],
 		ISNULL(r.wait_resource, '') wait_resource,
+		r.[last_wait_type] [wait_type],
 		CASE [dtat].[transaction_type]
 			WHEN 1 THEN 'Read/Write'
 			WHEN 2 THEN 'Read-Only'
@@ -95,7 +96,7 @@ AS
 		END [isolation_level],
 		CASE WHEN dtst.is_user_transaction = 1 THEN 'EXPLICIT' ELSE 'IMPLICIT' END [transaction_type], 
 		(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
-		N'REQUEST' [statement_source],
+		CAST(N'REQUEST' AS sysname) [statement_source],
 		r.sql_handle [statement_handle], 
 		r.plan_handle, 
 		r.statement_start_offset, 
@@ -301,8 +302,10 @@ AS
         [c].[status],
         RTRIM(LTRIM([s].[statement])) [statement],
 		[c].[wait_time],
+		[c].[wait_type],
+		[c].[wait_resource],
 	[c].[duration],		-- some sort of a bug here... 
-        [c].[wait_resource],
+        
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
         [c].[isolation_level],

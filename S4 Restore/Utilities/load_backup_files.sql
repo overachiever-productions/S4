@@ -50,6 +50,10 @@ AS
 
 	-- {copyright}
 
+    -----------------------------------------------------------------------------
+    -- Dependencies Validation:
+	EXEC dbo.verify_advanced_capabilities;
+
 	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
 		SET @Output = NULL;

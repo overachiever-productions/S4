@@ -76,7 +76,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(10)	= N'24h',			-- Only evaluated if non-NULL. 
+	@RpoWarningThreshold			nvarchar(10)	= N'24 hours',		-- Only evaluated if non-NULL. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
     @Directives						nvarchar(400)	= NULL,				-- { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
@@ -91,60 +91,7 @@ AS
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
-    IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
-        RAISERROR('S4 Table dbo.restore_log not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-    
-    IF OBJECT_ID('dbo.get_engine_version', 'FN') IS NULL BEGIN
-        RAISERROR('S4 UDF dbo.get_engine_version not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-	IF OBJECT_ID('dbo.count_matches', 'FN') IS NULL BEGIN 
-		RAISERROR('S4 Scalar UDF dbo.count_matches not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-    IF OBJECT_ID('dbo.list_databases', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.list_databases not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF (OBJECT_ID('dbo.load_backup_database_names', 'P') IS NULL) AND ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
-        RAISERROR('S4 Stored Procedure dbo.load_backup_database_names not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-	IF OBJECT_ID('dbo.load_backup_files', 'P') IS NULL BEGIN 
-		RAISERROR('S4 Stored Procedure dbo.load_backup_files not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-	IF OBJECT_ID('dbo.load_header_details', 'P') IS NULL BEGIN 
-		RAISERROR('S4 Stored Procedure dbo.load_header_details not defined - unable to continue.', 16, 1);
-        RETURN -1;
-	END; 
-
-    IF OBJECT_ID('dbo.check_paths', 'P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.check_paths not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.translate_vector','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.translate_vector not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF OBJECT_ID('dbo.execute_uncatchable_command','P') IS NULL BEGIN
-        RAISERROR('S4 Stored Procedure dbo.execute_uncatchable_command not defined - unable to continue.', 16, 1);
-        RETURN -1;
-    END;
-
-    IF EXISTS (SELECT NULL FROM sys.configurations WHERE name = 'xp_cmdshell' AND value_in_use = 0) BEGIN
-        RAISERROR('xp_cmdshell is not currently enabled.', 16, 1);
-        RETURN -1;
-    END;
+    EXEC dbo.verify_advanced_capabilities;
 
 	-----------------------------------------------------------------------------
     -- Set Defaults:
@@ -335,11 +282,12 @@ AS
 		ORDER BY 
 			row_id;
 
-		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
-
-		EXEC dbo.load_backup_database_names
-			@TargetDirectory = @BackupsRootPath, 
-			@SerializedOutput = @databases OUTPUT;
+		IF @serialized = N'' BEGIN
+			RAISERROR(N'No sub-folders (potential database backups) found at path specified by @BackupsRootPath. Please double-check your input.', 16, 1);
+			RETURN -30;
+		  END;
+		ELSE
+			SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
 		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]', @serialized); 
 	END;
@@ -351,6 +299,7 @@ AS
         @Priorities = @Priorities,
 
 		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
+		@ExcludeSecondaries = 0,
 		@ExcludeRestoring = 0,
 		@ExcludeRecovering = 0,	
 		@ExcludeOffline = 0;
@@ -960,7 +909,7 @@ NextDatabase:
 		);
 
 		IF @PrintOnly = 1
-			PRINT @fileListXml; 
+			PRINT N'-- ' + @fileListXml; 
 		ELSE BEGIN
 			UPDATE dbo.[restore_log] 
 			SET 

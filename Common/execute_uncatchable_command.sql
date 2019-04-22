@@ -65,6 +65,13 @@ AS
 
 	-- {copyright}
 
+	-----------------------------------------------------------------------------
+	-- Validate Dependencies:
+	EXEC dbo.verify_advanced_capabilities;	
+
+	-----------------------------------------------------------------------------
+	-- Validate Inputs:
+
 	IF @FilterType NOT IN (N'BACKUP',N'RESTORE',N'CREATEDIR',N'ALTER',N'DROP',N'DELETEFILE', N'UN-STANDBY') BEGIN;
 		RAISERROR('Configuration Error: Invalid @FilterType specified.', 16, 1);
 		SET @Result = 'Configuration Problem with dbo.execute_uncatchable_command.';
