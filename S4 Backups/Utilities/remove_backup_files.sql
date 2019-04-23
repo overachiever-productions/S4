@@ -167,6 +167,7 @@ AS
 			RETURN -25;
 		END;
 
+		SET @retentionType = 'b';
 	  END;
 	ELSE BEGIN 
 
