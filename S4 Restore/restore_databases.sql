@@ -13,14 +13,6 @@
 
 
     DEPENDENCIES:
-        - Requires dbo.restore_log - to log information about restore operations AND failures. 
-		- Requires dbo.list_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
-        - Requires dbo.load_backup_database_names - sproc used to load names of potential databases from a backups directory.
-		- Requires dbo.load_backup_files - sproc used to extract (in re-usable form) lists of available backup files at a specified path.
-		- Requires dbo.load_header_details - sproc used to pull meta-data about backups from backup files. 
-        - Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
-		- Requires dbo.get_engine_version() - to validate version-level features/capabilities.
-        - Requires dbo.execute_uncatchable_command - to address problems with TRY/CATCH error handling within SQL Server. 
         - Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
         - Requires a configured Database Mail Profile + SQL Server Agent Operator. 
 
@@ -476,7 +468,9 @@ AS
 				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
 					BEGIN TRY 
-						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
+						SET @command = N'USE ' + QUOTENAME(@restoredName) + N';' + @crlf
+							+ N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
+							+ N'USE [master];';
 
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
