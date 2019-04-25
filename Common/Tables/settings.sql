@@ -29,6 +29,16 @@
 		- KEY: [TEST]
 
 
+		- KEY: Data Restore Path for [dbname] to [dbname_test]
+			under consideration. The idea though, being that i could 
+				a) define this for a database using RestoreNamePattern 'stuff' in the form of {0} (source) and {0}N  (target).. 			
+				b) use a token for @DataRootPath of sometghing like [SETTINGS]... 
+				and ... this'd go look things up by the KEY matching the convention defined above... 
+
+
+		- KEY: Log Restore Path for [dbname] to [dbname_test]
+			under consideration - same as above though. 
+
 
 */
 
