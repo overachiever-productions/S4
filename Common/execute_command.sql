@@ -139,6 +139,14 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[RESTORE]', N'');
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[SINGLE_USER]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('SINGLE_USER', 'Nonqualified transactions are being rolled back. Estimated rollback completion%');
+					
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[SINGLE_USER]', N'');
+	END;
+
 	INSERT INTO @filters ([filter_type], [filter_text])
 	SELECT 'CUSTOM', [result] FROM dbo.[split_string](@IgnoredResults, N',', 1) WHERE LEN([result]) > 0;
 

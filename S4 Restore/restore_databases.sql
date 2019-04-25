@@ -312,12 +312,16 @@ AS
     DECLARE @move nvarchar(MAX);
     DECLARE @restoreLogId int;
     DECLARE @sourcePath nvarchar(500);
-    DECLARE @statusDetail nvarchar(500);
+    DECLARE @statusDetail nvarchar(MAX);
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
 	DECLARE @fileList nvarchar(MAX); 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
+
+	-- dbo.execute_command variables: 
+	DECLARE @execOutcome bit;
+	DECLARE @execResults xml;
 
 	DECLARE @ignoredLogFiles int = 0;
 
@@ -468,43 +472,32 @@ AS
 				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
 					BEGIN TRY 
-						SET @command = N'USE ' + QUOTENAME(@restoredName) + N';' + @crlf
-							+ N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
-							+ N'USE [master];';
-
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
+							+ N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';' + @crlf + @crlf;
+							
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
 						  END;
 						ELSE BEGIN
-							SET @outcome = NULL;
-							EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
-							SET @statusDetail = @outcome;
-						END;
+							
+							DECLARE @Results xml;
+							EXEC @execOutcome = dbo.[execute_command]
+							    @Command = @command, 
+							    @DelayBetweenAttempts = N'8 seconds',
+							    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
+							    @Results = @execResults OUTPUT;
 
-						-- give things just a second to 'die down':
-						WAITFOR DELAY '00:00:02';
+							IF @execOutcome <> 0 
+								SET @statusDetail = N'Error with SINGLE_USER > DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 
 					END TRY
 					BEGIN CATCH
-						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode and/or attempting to DROP target database for explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 					END CATCH
 
 					IF @statusDetail IS NOT NULL
 						GOTO NextDatabase;
-				END;
-
-				-- Now DROP the target db: 
-				SET @command = N'DROP DATABASE [' + @restoredName + N'];';
-                
-				IF @PrintOnly = 1 BEGIN
-						PRINT N'-- ' + @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
-					END;
-				ELSE BEGIN
-					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
-					SET @statusDetail = @outcome;
-				END;
-				IF @statusDetail IS NOT NULL BEGIN
-					GOTO NextDatabase;
 				END;
 
 			  END;
