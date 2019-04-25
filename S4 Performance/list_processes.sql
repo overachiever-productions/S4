@@ -382,57 +382,6 @@ AS
 		[#core] x 
 		OUTER APPLY sys.[dm_exec_sql_text](x.[sql_handle]) t;
 
---TODO: Implement this (i.e., as per dbo.list_collisions ... but ... here - so'z we can get statements if/when they're not in the request itself..).
-	--IF @UseInputBuffer = 1 BEGIN
-		
-	--	DECLARE @sql nvarchar(MAX); 
-
-	--	DECLARE filler CURSOR LOCAL FAST_FORWARD READ_ONLY FOR 
-	--	SELECT 
-	--		session_id 
-	--	FROM 
-	--		[#statements] 
-	--	WHERE 
-	--		[statement] IS NULL; 
-
-	--	DECLARE @spid int; 
-	--	DECLARE @bufferStatement nvarchar(MAX);
-
-	--	CREATE TABLE #inputbuffer (EventType nvarchar(30), Params smallint, EventInfo nvarchar(4000))
-
-	--	OPEN filler; 
-	--	FETCH NEXT FROM filler INTO @spid;
-
-	--	WHILE @@FETCH_STATUS = 0 BEGIN 
-	--		TRUNCATE TABLE [#inputbuffer];
-
-	--		SET @sql = N'EXEC DBCC INPUTBUFFER(' + STR(@spid) + N');';
-			
-	--		BEGIN TRY 
-	--			INSERT INTO [#inputbuffer]
-	--			EXEC @sql;
-
-	--			SET @bufferStatement = (SELECT TOP (1) EventInfo FROM [#inputbuffer]);
-	--		END TRY 
-	--		BEGIN CATCH 
-	--			SET @bufferStatement = N'#Error Extracting Statement from DBCC INPUTBUFFER();';
-	--		END CATCH
-
-	--		UPDATE [#statements] 
-	--		SET 
-	--			[statement_source] = N'BUFFER', 
-	--			[statement] = @bufferStatement 
-	--		WHERE 
-	--			[session_id] = @spid;
-
-	--		FETCH NEXT FROM filler INTO @spid;
-	--	END;
-		
-	--	CLOSE filler; 
-	--	DEALLOCATE filler;
-
-	--END;
-
 	-- load plans: 
 	SELECT 
 		x.[session_id], 
@@ -443,14 +392,17 @@ AS
 		[#core] x 
 		OUTER APPLY sys.dm_exec_query_plan(x.plan_handle) p
 
+	DECLARE @loadPlans nvarchar(MAX) = N'
 	SELECT 
 		x.session_id, 
-		TRY_CAST(q.[query_plan] AS xml) [statement_plan]
+		' + CASE WHEN (SELECT dbo.[get_engine_version]()) > 10.5 THEN N'TRY_CAST' ELSE N'CAST' END + N'(q.[query_plan] AS xml) [statement_plan]
 	INTO 
 		#statement_plans
 	FROM 
 		[#core] x 
-		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q
+		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q ';
+
+	EXEC [sys].[sp_executesql] @loadPlans;
 
 	IF @ExtractCost = 1 BEGIN
         
@@ -480,9 +432,9 @@ AS
 		c.[reads],
 		c.[writes],
 		{memory}
-		ISNULL(c.[program_name], '''') [program_name],
 		dbo.format_timespan(c.[duration]) [elapsed_time], 
 		dbo.format_timespan(c.[wait_time]) [wait_time],
+		ISNULL(c.[program_name], '''') [program_name],
 		c.[login_name],
 		c.[host_name],
 		{plan_handle}
