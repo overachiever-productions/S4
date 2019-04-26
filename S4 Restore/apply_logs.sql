@@ -92,29 +92,23 @@ AS
         RETURN -22;
     END;
 
-	DECLARE @rpoCutoff datetime; 
-	DECLARE @latestApplied datetime;
-
 	DECLARE @vectorError nvarchar(MAX);
 	DECLARE @vector bigint;  -- represents # of MILLISECONDS that a 'restore' operation is allowed to be stale
-	
 
 	IF NULLIF(@StaleAlertThreshold, N'') IS NOT NULL BEGIN
 
 		EXEC [dbo].[translate_vector]
-		    @Vector = @StaleAlertThreshold, 
-		    @ValidationParameterName = N'@StaleAlertThreshold', 
-		    @ProhibitedIntervals = NULL, 
-		    @TranslationInterval = N'MILLISECOND', 
-		    @Output = @vector OUTPUT, 
-		    @Error = @vectorError OUTPUT;
+			@Vector = @StaleAlertThreshold, 
+			@ValidationParameterName = N'@StaleAlertThreshold', 
+			@ProhibitedIntervals = NULL, 
+			@TranslationDatePart = N'SECOND', 
+			@Output = @vector OUTPUT, 
+			@Error = @vectorError OUTPUT;
 
 		IF @vectorError IS NOT NULL BEGIN
 			RAISERROR(@vectorError, 16, 1); 
 			RETURN -30;
 		END;
-
-		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
 	END;
 
 	-----------------------------------------------------------------------------
@@ -459,6 +453,7 @@ ALTER DATABASE ' + QUOTENAME(@targetDbName) + N' SET MULTI_USER;';
 NextDatabase:
 
 		-- Execute Stale Checks if configured/defined: 
+		DECLARE @latestApplied datetime;
 		IF NULLIF(@StaleAlertThreshold, N'') IS NOT NULL BEGIN
 
 			IF @logsWereApplied = 1 BEGIN 
@@ -476,7 +471,7 @@ NextDatabase:
 				SELECT @latestApplied = @restoredFiles.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime')
 			END;
 
-			IF DATEDIFF(MILLISECOND, @latestApplied, GETDATE()) > @vector BEGIN 
+			IF DATEDIFF(SECOND, @latestApplied, GETDATE()) > @vector BEGIN 
 				INSERT INTO @warnings ([warning])
 				VALUES ('Database ' + QUOTENAME(@targetDbName) + N' has exceeded the amount of time allowed since successfully restoring live data to the applied/target database. Specified threshold: ' + @StaleAlertThreshold + N', CreationTime of Last live backup: ' + CONVERT(sysname, @latestApplied, 121) + N'.');
 			END;

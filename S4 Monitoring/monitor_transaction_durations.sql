@@ -41,22 +41,18 @@ AS
 	DECLARE @transactionCutoffTime datetime; 
 
 	DECLARE @vectorError nvarchar(MAX); 
-	DECLARE @vectorMilliseconds bigint;
 
-	EXEC [dbo].[translate_vector]
-	    @Vector = @AlertThreshold, 
-	    @ValidationParameterName = N'@AlertThreshold', 
-	    @ProhibitedIntervals = N'WEEK, MONTH, QUARTER, YEAR', 
-	    @TranslationInterval = N'MILLISECOND', 
-	    @Output = @vectorMilliseconds OUTPUT, 
-	    @Error = @vectorError OUTPUT;
-
+	EXEC dbo.[translate_vector_timestamp]
+	    @Vector = @AlertThreshold,
+	    @ValidationParameterName = N'@AlertThreshold',
+	    @ProhibitedIntervals = N'WEEK, MONTH, QUARTER, YEAR',
+	    @Output = @transactionCutoffTime OUTPUT,
+	    @Error = @vectorError OUTPUT
+	
 	IF @vectorError IS NOT NULL BEGIN 
 		RAISERROR(@vectorError, 16, 1); 
 		RETURN -10;
 	END;
-
-	SET @transactionCutoffTime = DATEADD(MILLISECOND, @vectorMilliseconds, GETDATE());
 
 	SELECT 
 		[dtat].[transaction_id],

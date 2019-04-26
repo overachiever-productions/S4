@@ -170,7 +170,7 @@ AS
 		EXEC [dbo].[translate_vector]
 		    @Vector = @RpoWarningThreshold, 
 		    @ValidationParameterName = N'@RpoWarningThreshold', 
-		    @TranslationInterval = N'MILLISECOND', 
+		    @TranslationDatePart = N'SECOND', 
 		    @Output = @vector OUTPUT, 
 		    @Error = @vectorError OUTPUT;
 
@@ -1029,7 +1029,7 @@ FINALIZE:
 	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
 		
-		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector));
+		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector * 1000));
 		DECLARE @rpoMessage nvarchar(MAX) = N'';
 
 		SELECT 

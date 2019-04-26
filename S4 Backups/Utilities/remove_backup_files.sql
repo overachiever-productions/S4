@@ -147,6 +147,7 @@ AS
 		END;
 
 		BEGIN TRY
+
 			SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
 		END TRY
 		BEGIN CATCH
@@ -162,20 +163,18 @@ AS
 	  END;
 	ELSE BEGIN 
 
-		EXEC [dbo].[translate_vector]
-		    @Vector = @Retention,
-		    @ValidationParameterName = N'@Retention',
-		    @ProhibitedIntervals = N'MILLISECOND',
-		    @TranslationInterval = N'MINUTE',
-		    @Output = @retentionValue OUTPUT,
+		EXEC dbo.[translate_vector_datetime]
+		    @Vector = @Retention, 
+		    @Operation = N'SUBTRACT', 
+		    @ValidationParameterName = N'@Retention', 
+		    @ProhibitedIntervals = N'BACKUP', 
+		    @Output = @retentionCutoffTime OUTPUT, 
 		    @Error = @retentionError OUTPUT;
 
 		IF @retentionError IS NOT NULL BEGIN 
 			RAISERROR(@retentionError, 16, 1);
 			RETURN -26;
 		END;
-
-		SET @retentionCutoffTime = DATEADD(MINUTE, 0 - @retentionValue, GETDATE());
 	END;
 
 	IF @PrintOnly = 1 BEGIN
