@@ -2,15 +2,6 @@
 
 
 /*
-	DEPENDENCIES:
-		- Requires dbo.get_time_vector - for time calculation logic/etc. 
-		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
-		- Requires dbo.check_paths - sproc to verify that paths are valid. 
-		- Requires dbo.load_backup_database_names - sproc that pulls potential db-names from backup folders/path.
-		- Requires dbo.list_databases - sproc that centralizes handling of which dbs/folders to process.
-		- Requires dbo.split_string - udf to parse the above.
-		- Requires that xp_cmdshell must be enabled.
-
 	NOTES:
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
 
@@ -175,7 +166,7 @@ AS
 		    @Vector = @Retention,
 		    @ValidationParameterName = N'@Retention',
 		    @ProhibitedIntervals = N'MILLISECOND',
-		    @TranslationInterval = N'MILLISECOND',
+		    @TranslationInterval = N'MINUTE',
 		    @Output = @retentionValue OUTPUT,
 		    @Error = @retentionError OUTPUT;
 
@@ -184,7 +175,7 @@ AS
 			RETURN -26;
 		END;
 
-		SET @retentionCutoffTime = DATEADD(MILLISECOND, 0 - @retentionValue, GETDATE());
+		SET @retentionCutoffTime = DATEADD(MINUTE, 0 - @retentionValue, GETDATE());
 	END;
 
 	IF @PrintOnly = 1 BEGIN
