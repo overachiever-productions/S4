@@ -1,18 +1,4 @@
-
 /*
-
-	TODO:
-		- This is actually MISSING a key bit of functionality - if this db is going to be a COPY... then ... 
-			the logical file-names of the files need to change... 
-				er... well, maybe they don't.... 
-					but... that should be an OPTION - i.e., @RenameLogicalFileNames - when 0 don't... just let them 'inherit'... when 1, then a) grab the logical file names and IDs from the SOURCE db BEFORE we start doing any processing and b) apply those AFTER the new db has been restored but before the backup kicks off.... 
-
-			AND... arguably, push this option down into dbo.restore_databases cuz... that's where it really needs to be... 
-
-
-		-  ALSO... 
-				@PrintOnly - need that as a standard across most all sprocs (except 'print' sprocs of course).
-
 
 
 	NOTES:
@@ -22,25 +8,24 @@
 
 */
 
-
-
-USE admindb;
+USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.copy_database','P') IS NOT NULL
 	DROP PROC dbo.copy_database;
 GO
 
 CREATE PROC dbo.copy_database 
-	@SourceDatabaseName			sysname, 
-	@TargetDatabaseName			sysname, 
-	@BackupsRootDirectory		nvarchar(2000)	= N'[DEFAULT]', 
-	@CopyToBackupDirectory		nvarchar(2000)	= NULL,
-	@DataPath					sysname			= N'[DEFAULT]', 
-	@LogPath					sysname			= N'[DEFAULT]',
-	@OperatorName				sysname			= N'Alerts',
-	@MailProfileName			sysname			= N'General'
+	@SourceDatabaseName					sysname, 
+	@TargetDatabaseName					sysname, 
+	@BackupsRootPath					nvarchar(2000)	= N'[DEFAULT]', 
+	@CopyToBackupPath					nvarchar(2000)	= NULL,
+	@DataPath							sysname			= N'[DEFAULT]', 
+	@LogPath							sysname			= N'[DEFAULT]',
+	@RenameLogicalFileNames				bit				= 1, 
+	@OperatorName						sysname			= N'Alerts',
+	@MailProfileName					sysname			= N'General', 
+	@PrintOnly							bit				= 0
 AS
 	SET NOCOUNT ON; 
 
@@ -63,8 +48,8 @@ AS
 	END;
 
 	-- Allow for default paths:
-	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
-		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
+	IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+		SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
 	END;
 
 	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
@@ -77,10 +62,10 @@ AS
 
 	DECLARE @retention nvarchar(10) = N'110w'; -- if we're creating/copying a new db, there shouldn't be ANY backups. Just in case, give it a very wide berth... 
 	DECLARE @copyToRetention nvarchar(10) = NULL;
-	IF @CopyToBackupDirectory IS NOT NULL 
+	IF @CopyToBackupPath IS NOT NULL 
 		SET @copyToRetention = @retention;
 
-	PRINT N'Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
+	PRINT N'-- Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
 	
 	DECLARE @restored bit = 0;
 	DECLARE @errorMessage nvarchar(MAX); 
@@ -88,7 +73,7 @@ AS
 	BEGIN TRY 
 		EXEC dbo.restore_databases
 			@DatabasesToRestore = @SourceDatabaseName,
-			@BackupsRootPath = @BackupsRootDirectory,
+			@BackupsRootPath = @BackupsRootPath,
 			@RestoredRootDataPath = @DataPath,
 			@RestoredRootLogPath = @LogPath,
 			@RestoredDbNamePattern = @TargetDatabaseName,
@@ -97,7 +82,8 @@ AS
 			@DropDatabasesAfterRestore = 0,
 			@OperatorName = @OperatorName, 
 			@MailProfileName = @MailProfileName, 
-			@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+			@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ', 
+			@PrintOnly = @PrintOnly;
 
 	END TRY
 	BEGIN CATCH
@@ -105,20 +91,22 @@ AS
 	END CATCH
 
 	-- 'sadly', restore_databases does a great job of handling most exceptions during execution - meaning that if we didn't get errors, that doesn't mean there weren't problems. So, let's check up: 
-	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName AND state_desc = N'ONLINE')
+	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName AND state_desc = N'ONLINE') OR (@PrintOnly = 1)
 		SET @restored = 1; -- success (the db wasn't there at the start of this sproc, and now it is (and it's online). 
 	ELSE BEGIN 
 		-- then we need to grab the latest error: 
 		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_id = (
 			SELECT MAX(restore_id) FROM dbo.restore_log WHERE operation_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
 
-		IF @errorMessage IS NULL -- hmmm weird:
+		IF @errorMessage IS NULL BEGIN -- hmmm weird:
 			SET @errorMessage = N'Unknown error with restore operation - execution did NOT complete as expected. Please Check Email for additional details/insights.';
+			RETURN -20;
+		END;
 
 	END
 
 	IF @errorMessage IS NULL
-		PRINT N'Restore Complete. Kicking off backup [' + @TargetDatabaseName + N'].';
+		PRINT N'-- Restore Complete. Kicking off backup [' + @TargetDatabaseName + N'].';
 	ELSE BEGIN
 		PRINT @errorMessage;
 		RETURN -10;
@@ -126,7 +114,45 @@ AS
 	
 	-- Make sure the DB owner is set correctly: 
 	DECLARE @sql nvarchar(MAX) = N'ALTER AUTHORIZATION ON DATABASE::[' + @TargetDatabaseName + N'] TO sa;';
-	EXEC sp_executesql @sql;
+	
+	IF @PrintOnly = 1 
+		PRINT @sql
+	ELSE 
+		EXEC sp_executesql @sql;
+
+	IF @RenameLogicalFileNames = 1 BEGIN
+
+		DECLARE @renameTemplate nvarchar(200) = N'ALTER DATABASE ' + QUOTENAME(@TargetDatabaseName) + N' MODIFY FILE (NAME = {0}, NEWNAME = {1});' + NCHAR(13) + NCHAR(10); 
+		SET @sql = N'';
+		
+		WITH renamed AS ( 
+
+			SELECT 
+				[name] [old_file_name], 
+				REPLACE([name], @SourceDatabaseName, @TargetDatabaseName) [new_file_name], 
+				[file_id]
+			FROM 
+				sys.[master_files] 
+			WHERE 
+				([database_id] = DB_ID(@TargetDatabaseName)) OR 
+				(@PrintOnly = 1 AND [database_id] = DB_ID(@SourceDatabaseName))
+
+		) 
+
+		SELECT 
+			@sql = @sql + REPLACE(REPLACE(@renameTemplate, N'{0}', [old_file_name]), N'{1}', [new_file_name])
+		FROM 
+			renamed
+		ORDER BY 
+			[file_id];
+
+		IF @PrintOnly = 1 
+			PRINT @sql; 
+		ELSE 
+			EXEC sys.sp_executesql @sql;
+
+	END;
+
 
 	DECLARE @backedUp bit = 0;
 	IF @restored = 1 BEGIN
@@ -135,13 +161,14 @@ AS
 			EXEC dbo.backup_databases
 				@BackupType = N'FULL',
 				@DatabasesToBackup = @TargetDatabaseName,
-				@BackupDirectory = @BackupsRootDirectory,
+				@BackupDirectory = @BackupsRootPath,
 				@BackupRetention = @retention,
-				@CopyToBackupDirectory = @CopyToBackupDirectory, 
+				@CopyToBackupDirectory = @CopyToBackupPath, 
 				@CopyToRetention = @copyToRetention,
 				@OperatorName = @OperatorName, 
 				@MailProfileName = @MailProfileName, 
-				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ', 
+				@PrintOnly = @PrintOnly;
 
 			SET @backedUp = 1;
 		END TRY
