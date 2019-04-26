@@ -99,3 +99,22 @@ ELSE BEGIN
 		COMMIT;
 	END;
 END;
+
+-- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
+IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
+
+	IF NOT EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+		INSERT INTO dbo.[settings] (
+			[setting_type],
+			[setting_key],
+			[setting_value],
+			[comments]
+		)
+		VALUES (
+			N'UNIQUE', 
+			N'advanced_s4_error_handling', 
+			N'1', 
+			N'Legacy Enabled (i.e., pre-v6 install upgraded to 6/6+)' 
+		);
+	END;
+END;

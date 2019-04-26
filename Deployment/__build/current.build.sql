@@ -399,25 +399,6 @@ IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
 	DROP PROC dbo.load_database_names;
 GO
 
--- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
-IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
-
-	IF NOT EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
-		INSERT INTO dbo.[settings] (
-			[setting_type],
-			[setting_key],
-			[setting_value],
-			[comments]
-		)
-		VALUES (
-			N'UNIQUE', 
-			N'advanced_s4_error_handling', 
-			N'1', 
-			N'Legacy Enabled (i.e., pre-v6 install upgraded to 6/6+)' 
-		);
-	END;
-END;
-
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -581,6 +562,19 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\tables\alert_responses.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Advanced S4 Error-Handling Capabilities:
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: Common\Setup\enable_advanced_capabilities.sql
+
+-----------------------------------
+--##INCLUDE: Common\Setup\disable_advanced_capabilities.sql
+
+-----------------------------------
+--##INCLUDE: Common\Setup\verify_advanced_capabilities.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Common and Utilities:
@@ -799,21 +793,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Audits\Monitoring\verify_specification_configuration.sql
-
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
--- Advanced S4 Error-Handling Capabilities:
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
---##INCLUDE: Common\Setup\enable_advanced_capabilities.sql
-
------------------------------------
---##INCLUDE: Common\Setup\disable_advanced_capabilities.sql
-
------------------------------------
---##INCLUDE: Common\Setup\verify_advanced_capabilities.sql
-
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 6. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 

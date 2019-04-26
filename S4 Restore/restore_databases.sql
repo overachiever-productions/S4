@@ -1058,8 +1058,8 @@ FINALIZE:
 			c.[database], 
 			c.[most_recent_backup], 
 			c.[restore_end], 
-			DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old], 
-			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) < 20) THEN -1 ELSE (DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) END [days_old], 
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(SECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
 		INTO 
 			#stale 
 		FROM 
@@ -1079,7 +1079,7 @@ FINALIZE:
 				END + @crlf
 		FROM 
 			[#stale] x
-		WHERE 
+		WHERE  
 			(x.[vector] > @vector) OR [x].[days_old] > 20 
 		ORDER BY 
 			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
