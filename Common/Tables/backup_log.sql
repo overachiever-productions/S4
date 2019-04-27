@@ -1,33 +1,19 @@
-
 /*
-	
-	DEPENDENCIES:
-		- None. 
 
 	NOTES:
-		- Each time dbo.dba_BackupDatabases is run, it creates a new 'ExecutionId' (i.e., a GUID) to 'mark' all operations that happen
-			within the same execution. (Granted, time-stamps could be used to more or less figure this out, but the ExecutionId was
-			designed to make this more obvious and easier to figure out. 
-
-	KNOWN ISSUES:
-		- None. 
-
-	CAVEATS:
-		- As currently defined, this script will DROP dbo.dba_DatabaseBackups_Log IF it already exists. 
-
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
+		- Each time dbo.backup_database is run, if there are any errors or problems, they'll be logged into this table. 
+            Otherwise, if @LogSuccessfulOutcomes = 1, then it'll also log details for successful operations as well. 
+                (But the default is to NOT log info on successful backups.) 
+        
+        - Each execution of dbo.backup_databases will defined an execution_id (GUID) to make it more obvious which iteration/generation
+            related operations were handled in... 
 
 */
-
 
 USE [admindb];
 GO
 
--- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+-- {copyright}
 
 IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
 	CREATE TABLE dbo.backup_log  (
@@ -51,4 +37,46 @@ IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
 		error_details nvarchar(MAX) NULL, 
 		CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
 	);	
+END;
+
+---------------------------------------------------------------------------
+-- Copy previous log data (v3 and below) if this is a new v4 install. 
+---------------------------------------------------------------------------
+
+DECLARE @objectId int;
+SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = N'dba_DatabaseBackups_Log';
+
+IF @objectId IS NOT NULL BEGIN 
+		
+	DECLARE @loadSQL nvarchar(MAX) = N'
+    SELECT 
+		BackupId,
+        ExecutionId,
+        BackupDate,
+        [Database],
+        BackupType,
+        BackupPath,
+        CopyToPath,
+        BackupStart,
+        BackupEnd,
+        BackupSucceeded,
+        VerificationCheckStart,
+        VerificationCheckEnd,
+        VerificationCheckSucceeded,
+        CopyDetails,
+		0,     --FailedCopyAttempts,
+        ErrorDetails
+	FROM 
+		master.dbo.dba_DatabaseBackups_Log
+	WHERE 
+		BackupId NOT IN (SELECT backup_id FROM dbo.backup_log); ';
+
+
+	SET IDENTITY_INSERT dbo.backup_log ON;
+
+	    INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
+		    verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
+	    EXEC sp_executesql @loadSQL;
+
+	SET IDENTITY_INSERT dbo.backup_log OFF;
 END;
