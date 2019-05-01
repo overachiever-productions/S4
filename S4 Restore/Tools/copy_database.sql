@@ -18,8 +18,8 @@ GO
 CREATE PROC dbo.copy_database 
 	@SourceDatabaseName					sysname, 
 	@TargetDatabaseName					sysname, 
-	@BackupsRootPath					nvarchar(2000)	= N'[DEFAULT]', 
-	@CopyToBackupPath					nvarchar(2000)	= NULL,
+	@BackupsRootDirectory				nvarchar(2000)	= N'[DEFAULT]', 
+	@CopyToBackupDirectory					nvarchar(2000)	= NULL,
 	@DataPath							sysname			= N'[DEFAULT]', 
 	@LogPath							sysname			= N'[DEFAULT]',
 	@RenameLogicalFileNames				bit				= 1, 
@@ -48,8 +48,8 @@ AS
 	END;
 
 	-- Allow for default paths:
-	IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
-		SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
+	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
+		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
 	END;
 
 	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
@@ -62,7 +62,7 @@ AS
 
 	DECLARE @retention nvarchar(10) = N'110w'; -- if we're creating/copying a new db, there shouldn't be ANY backups. Just in case, give it a very wide berth... 
 	DECLARE @copyToRetention nvarchar(10) = NULL;
-	IF @CopyToBackupPath IS NOT NULL 
+	IF @CopyToBackupDirectory IS NOT NULL 
 		SET @copyToRetention = @retention;
 
 	PRINT N'-- Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
@@ -73,7 +73,7 @@ AS
 	BEGIN TRY 
 		EXEC dbo.restore_databases
 			@DatabasesToRestore = @SourceDatabaseName,
-			@BackupsRootPath = @BackupsRootPath,
+			@BackupsRootDirectory = @BackupsRootDirectory,
 			@RestoredRootDataPath = @DataPath,
 			@RestoredRootLogPath = @LogPath,
 			@RestoredDbNamePattern = @TargetDatabaseName,
@@ -161,9 +161,9 @@ AS
 			EXEC dbo.backup_databases
 				@BackupType = N'FULL',
 				@DatabasesToBackup = @TargetDatabaseName,
-				@BackupDirectory = @BackupsRootPath,
+				@BackupDirectory = @BackupsRootDirectory,
 				@BackupRetention = @retention,
-				@CopyToBackupDirectory = @CopyToBackupPath, 
+				@CopyToBackupDirectory = @CopyToBackupDirectory, 
 				@CopyToRetention = @copyToRetention,
 				@OperatorName = @OperatorName, 
 				@MailProfileName = @MailProfileName, 

@@ -96,7 +96,7 @@ AS
 	    @Vector = @MaxTimeToWaitForLogBackups,
 	    @ValidationParameterName = N'@MaxTimeToWaitForLogBackups',
 		@ProhibitedIntervals = N'MILLISECOND, DAY, WEEK, MONTH, QUARTER, YEAR',
-	    @TranslationInterval = N'SECOND',
+	    @TranslationDatePart = N'SECOND',
 	    @Output = @maxSecondsToWaitForLogFileBackups OUTPUT,
 	    @Error = @error OUTPUT;
 	
