@@ -296,10 +296,16 @@ GO
 --##INCLUDE: Common\Internal\is_system_database.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\parse_vector.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\translate_vector.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\translate_vector_delay.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\translate_vector_datetime.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
@@ -380,9 +386,6 @@ GO
 --##INCLUDE: S4 Restore\Tools\copy_database.sql
 
 -----------------------------------
---##INCLUDE: S4 Restore\Tools\print_long_string.sql
-
------------------------------------
 --##INCLUDE: S4 Restore\apply_logs.sql
 
 -----------------------------------
@@ -442,6 +445,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Tools\extract_waitresource.sql
+
+-----------------------------------
+--##INCLUDE: S4 Tools\print_long_string.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):

@@ -42,7 +42,7 @@ AS
 
 	DECLARE @vectorError nvarchar(MAX); 
 
-	EXEC dbo.[translate_vector_timestamp]
+	EXEC dbo.[translate_vector_datetime]
 	    @Vector = @AlertThreshold,
 	    @ValidationParameterName = N'@AlertThreshold',
 	    @ProhibitedIntervals = N'WEEK, MONTH, QUARTER, YEAR',

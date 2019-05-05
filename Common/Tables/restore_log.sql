@@ -283,5 +283,5 @@ END;
 -- may have 'escaped' previous update/mod logic... 
 IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
 	ALTER TABLE dbo.restore_log
-		DROP CONSTRAINT DF_restore_log_operation_date;
+		DROP CONSTRAINT DF_restore_log_test_date;
 END
