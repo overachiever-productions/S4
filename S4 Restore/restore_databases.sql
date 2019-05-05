@@ -301,9 +301,10 @@ AS
         RETURN -20;
     END;
 
-    IF @PrintOnly = 1 BEGIN;
-        PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
-    END;
+    -- TODO: @serialized no longer contains a legit list of targets... (@dbsToRestore does).
+    --IF @PrintOnly = 1 BEGIN;
+    --    PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
+    --END;
 
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
@@ -480,7 +481,6 @@ AS
 						  END;
 						ELSE BEGIN
 							
-							DECLARE @Results xml;
 							EXEC @execOutcome = dbo.[execute_command]
 							    @Command = @command, 
 							    @DelayBetweenAttempts = N'8 seconds',
@@ -512,7 +512,7 @@ AS
 		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
 		
 		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
-			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] found in "' + @sourcePath + N'".';
+			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
 			GOTO NextDatabase;	
 		END;
 
@@ -765,6 +765,8 @@ AS
 				  END;
 				ELSE BEGIN
 					SET @outcome = NULL;
+
+                    -- TODO: do I want to specify a DIFFERENT (subset/set) of 'filters' for RESTORE and RECOVERY? (don't really think so, unless there are ever problems with 'overlap' and/or confusion.
 					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
 					SET @statusDetail = @outcome;

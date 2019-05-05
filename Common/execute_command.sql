@@ -1,6 +1,13 @@
 
 /*
 
+    vNEXT: 
+        -- Hmmm. All of this 'hard-coded' stuff is all fine. 
+            but... what if there were a table for command_results or something like that - i.e. key value entries for things to ignore? 
+                along with a number of DEFAULT (S4) entries to ignore... 
+                and... the ability to add 'custom' ignore thingies... 
+
+
 
 	INTERPRETING OUTPUT:
 		- command outcome/success will be indicated by the RETURN value of dbo.execute_command. 
@@ -134,7 +141,8 @@ AS
 			('RESTORE', 'Processed % pages for database %'),
 			('RESTORE', 'Converting database % from version % to the current version %'),    -- whenever there's a patch or upgrade... 
 			('RESTORE', 'Database % running the upgrade step from version % to version %.'),	-- whenever there's a patch or upgrade... 
-			('RESTORE', 'RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).');  -- partial recovery operations... 
+			('RESTORE', 'RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).'),  -- partial recovery operations... 
+            ('RESTORE', 'DBCC execution completed. If DBCC printed error messages, contact your system administrator.');  -- if CDC was enabled on source (even if we don't issue KEEP_CDC), some sort of DBCC command fires during RECOVERY.
 		
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[RESTORE]', N'');
 	END;
