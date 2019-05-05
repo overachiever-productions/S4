@@ -252,7 +252,7 @@ AS
 
 		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) = N'COPY_ONLY') BEGIN 
 			IF UPPER(@BackupType) = N'DIFF' BEGIN
-				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're a logical 'fault' - hence the S4 warning. Fodder: https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-2017
+				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're a logical 'fault' - hence the S4 warning: https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-2017
 				RAISERROR(N'Invalid @Directives value specified. COPY_ONLY can NOT be specified when @BackupType = DIFF. Only FULL and LOG backups may be COPY_ONLY (and should be used only for one-off testing or other specialized needs.', 16, 1);
 				RETURN -21;
 			END; 

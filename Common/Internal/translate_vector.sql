@@ -11,6 +11,11 @@
 					- ValidationParameterName
 
 
+		an interval is 2 things: 
+			- a number/value
+			- an interval (i.e., similar to a date part - OR 'backup')
+
+
 */
 
 USE [admindb];
@@ -23,8 +28,8 @@ GO
 CREATE PROC dbo.translate_vector
 	@Vector									sysname						= NULL, 
 	@ValidationParameterName				sysname						= NULL, 
-	@ProhibitedIntervals					sysname						= NULL,								-- By default, ALL intervals are allowed. 
-	@TranslationInterval					sysname						= N'MS',							-- { MILLISECONDS | SECONDS | MINUTES | HOURS | DAYS | WEEKS | MONTHS | YEARS }
+	@ProhibitedIntervals					sysname						= NULL,								
+	@TranslationDatePart					sysname						= N'MILLISECOND',					-- The 'DATEPART' value you want to convert BY/TO. Allowed Values: { MILLISECONDS | SECONDS | MINUTES | HOURS | DAYS | WEEKS | MONTHS | YEARS }
 	@Output									bigint						= NULL		OUT, 
 	@Error									nvarchar(MAX)				= NULL		OUT
 AS
@@ -33,64 +38,34 @@ AS
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
-	-- Validate Inputs:
-	SET @ValidationParameterName = ISNULL(NULLIF(@ValidationParameterName, N''), N'@Vector');
-	IF @ValidationParameterName LIKE N'@%'
-		SET @ValidationParameterName = REPLACE(@ValidationParameterName, N'@', N'');
 
-	DECLARE @intervals table ( 
-		[key] sysname NOT NULL, 
-		[interval] sysname NOT NULL
-	);
-
-	INSERT INTO @intervals ([key],[interval]) 
-	SELECT [key], [interval] 
-	FROM (VALUES (
-			'MILLISECOND', 'MILLISECOND'), ('MS', 'MILLISECOND'), ('SECOND', 'SECOND'), ('S', 'SECOND'),('MINUTE', 'MINUTE'), ('M', 'MINUTE'), 
-			('N', 'MINUTE'), ('HOUR', 'HOUR'), ('H', 'HOUR'), ('DAY', 'DAY'), ('D', 'DAY'), ('WEEK', 'WEEK'), ('W', 'WEEK'),
-			 ('MONTH', 'MONTH'), ('MO', 'MONTH'), ('QUARTER', 'QUARTER'), ('Q', 'QUARTER'), ('YEAR', 'YEAR'), ('Y', 'YEAR')
-	) x ([key], [interval]);
-
-	SET @Vector = LTRIM(RTRIM(UPPER(REPLACE(@Vector, N' ', N''))));
-	DECLARE @boundary int, @duration sysname, @interval sysname;
-	SET @boundary = PATINDEX(N'%[^0-9]%', @Vector) - 1;
-
-	IF @boundary < 1 BEGIN 
-		SET @Error = N'Invalid Vector format specified for parameter @' + @ValidationParameterName + N'. Format must be in ''XX nn'' or ''XXnn'' format - where XX is an ''integer'' duration (e.g., 72) and nn is an interval-specifier (e.g., HOUR, HOURS, H, or h).';
-		RETURN -1;
-	END;
-
-	SET @duration = LEFT(@Vector, @boundary);
-	SET @interval = UPPER(REPLACE(@Vector, @duration, N''));
-
-	IF @interval LIKE '%S' AND @interval NOT IN ('S', 'MS')
-		SET @interval = LEFT(@interval, LEN(@interval) - 1); 
-
-	IF NOT @interval IN (SELECT [key] FROM @intervals) BEGIN
-		SET @Error = N'Invalid interval specifier defined for @' + @ValidationParameterName + N'. Valid interval specifiers are { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [QUARTER(S)|Q] | [YEAR(S)|Y] }';
-		RETURN -10;
-	END;
-
-	-- convert @TranslationInterval to a sanitized version of itself:
-	SELECT @TranslationInterval = [interval] FROM @intervals WHERE [key] = @TranslationInterval;
-	IF @TranslationInterval IS NULL OR @TranslationInterval NOT IN ('MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH', 'YEAR') BEGIN 
-		SET @Error = N'Invalid @TranslationInterval value specified. Allowed values are: { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [YEAR(S)|Y] }.';
+	-- convert @TranslationDatePart to a sanitized version of itself:
+	IF @TranslationDatePart IS NULL OR @TranslationDatePart NOT IN ('MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH', 'YEAR') BEGIN 
+		SET @Error = N'Invalid @TranslationDatePart value specified. Allowed values are: { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [YEAR(S)|Y] }.';
 		RETURN -12;
 	END;
 
-	--  convert @interval to a sanitized version of itself:
-	SELECT @interval = [interval] FROM @intervals WHERE [key] = @interval;
+	IF @ProhibitedIntervals IS NULL
+		SET @ProhibitedIntervals = N'BACKUP';
 
-	-- allow for prohibited intervals: 
-	IF NULLIF(@ProhibitedIntervals, N'') IS NOT NULL BEGIN 
+	IF dbo.[count_matches](@ProhibitedIntervals, N'BACKUP') < 1
+		SET @ProhibitedIntervals = @ProhibitedIntervals + N', BACKUP';
 
-		-- delete INTERVALS based on keys - e.g., if ms is prohibited, we don't want to simply delete the MS entry - we want to get all 'forms' of it (i.e., MS, MILLISECOND, etc.)
-		DELETE FROM @intervals WHERE [interval] IN (SELECT [interval] FROM @intervals WHERE [key] IN (SELECT [result] FROM dbo.[split_string](@ProhibitedIntervals, N',', 1)));
-		
-		IF @interval NOT IN (SELECT [interval] FROM @intervals) BEGIN
-			SET @Error = N'The interval-specifier [' + @interval + N'] is not permitted in this operation type. Prohibited intervals for this operation are: [' + @ProhibitedIntervals + N'].';
-			RETURN -30;
-		END;
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @interval sysname;
+	DECLARE @duration bigint;
+
+	EXEC dbo.parse_vector 
+		@Vector = @Vector, 
+		@ValidationParameterName  = @ValidationParameterName, 
+		@ProhibitedIntervals = @ProhibitedIntervals, 
+		@IntervalType = @interval OUTPUT, 
+		@Value = @duration OUTPUT, 
+		@Error = @errorMessage OUTPUT; 
+
+	IF @errorMessage IS NOT NULL BEGIN 
+		SET @Error = @errorMessage;
+		RETURN -10;
 	END;
 
 	-----------------------------------------------------------------------------
@@ -99,10 +74,10 @@ AS
 	
 	BEGIN TRY 
 
-		DECLARE @command nvarchar(400) = N'SELECT @difference = DATEDIFF(' + @TranslationInterval + N', @now, (DATEADD(' + @interval + N', ' + @duration + N', @now)));'
+		DECLARE @command nvarchar(400) = N'SELECT @difference = DATEDIFF(' + @TranslationDatePart + N', @now, (DATEADD(' + @interval + N', ' + CAST(@duration AS sysname) + N', @now)));'
 		EXEC sp_executesql 
 			@command, 
-			N'@now datetime, @difference int OUTPUT', 
+			N'@now datetime, @difference bigint OUTPUT', 
 			@now = @now, 
 			@difference = @Output OUTPUT;
 

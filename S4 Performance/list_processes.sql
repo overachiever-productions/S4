@@ -86,7 +86,8 @@ AS
 		[blocked_by] smallint NULL,
 		[isolation_level] smallint NULL,
 		[status] nvarchar(30) NOT NULL,
-		[last_wait_type] nvarchar(60) NULL,
+		[wait_type] nvarchar(60) NULL,
+        [wait_resource] nvarchar(256) NOT NULL,
 		[command] nvarchar(32) NULL,
 		[granted_memory] bigint NULL,
 		[requested_memory] bigint NULL,
@@ -119,7 +120,8 @@ AS
 			r.[blocking_session_id] [blocked_by],
 			s.[transaction_isolation_level] [isolation_level],
 			r.[status],
-			r.[last_wait_type],
+			r.[wait_type],
+            r.[wait_resource],
 			r.[command],
 			g.[granted_memory_kb],
 			g.[requested_memory_kb],
@@ -145,7 +147,7 @@ AS
 			LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
 		WHERE
 			-- TODO: if wait_types to exclude gets ''stupid large'', then instead of using an IN()... go ahead and create a CTE/derived-table/whatever and do a JOIN instead... 
-			r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
+			r.wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
 			{ExcludeSystemProcesses}
 			{ExcludeSelf}
 			{ExcludeNegative}
@@ -159,7 +161,8 @@ AS
 		[blocked_by],
 		[isolation_level],
 		[status],
-		[last_wait_type],
+		[wait_type],
+        [wait_resource],
 		[command],
 		[granted_memory_kb],
 		[requested_memory_kb],
@@ -194,7 +197,8 @@ AS
 			ISNULL([r].[blocking_session_id], x.[blocked]) [blocked_by],
 			[s].[transaction_isolation_level] [isolation_level],
 			[s].[status],
-			ISNULL([r].[last_wait_type], x.[lastwaittype]) [last_wait_type],
+			ISNULL([r].[wait_type], x.[lastwaittype]) [wait_type],
+            ISNULL([r].[wait_resource], N'''') [wait_resource],
 			ISNULL([r].[command], x.[cmd]) [command],
 			ISNULL([g].[granted_memory_kb],	(x.[memusage] * 8096)) [granted_memory_kb],
 			ISNULL([g].[requested_memory_kb], -1) [requested_memory_kb],
@@ -236,7 +240,8 @@ AS
 		[blocked_by],
 		[isolation_level],
 		[status],
-		[last_wait_type],
+		[wait_type],
+        [wait_resource],
 		[command],
 		[granted_memory_kb],
 		[requested_memory_kb],
@@ -333,7 +338,8 @@ AS
 		[blocked_by],
 		[isolation_level],
 		[status],
-		[last_wait_type],
+		[wait_type],
+        [wait_resource],
 		[command],
 		[granted_memory],
 		[requested_memory],
@@ -382,57 +388,6 @@ AS
 		[#core] x 
 		OUTER APPLY sys.[dm_exec_sql_text](x.[sql_handle]) t;
 
---TODO: Implement this (i.e., as per dbo.list_collisions ... but ... here - so'z we can get statements if/when they're not in the request itself..).
-	--IF @UseInputBuffer = 1 BEGIN
-		
-	--	DECLARE @sql nvarchar(MAX); 
-
-	--	DECLARE filler CURSOR LOCAL FAST_FORWARD READ_ONLY FOR 
-	--	SELECT 
-	--		session_id 
-	--	FROM 
-	--		[#statements] 
-	--	WHERE 
-	--		[statement] IS NULL; 
-
-	--	DECLARE @spid int; 
-	--	DECLARE @bufferStatement nvarchar(MAX);
-
-	--	CREATE TABLE #inputbuffer (EventType nvarchar(30), Params smallint, EventInfo nvarchar(4000))
-
-	--	OPEN filler; 
-	--	FETCH NEXT FROM filler INTO @spid;
-
-	--	WHILE @@FETCH_STATUS = 0 BEGIN 
-	--		TRUNCATE TABLE [#inputbuffer];
-
-	--		SET @sql = N'EXEC DBCC INPUTBUFFER(' + STR(@spid) + N');';
-			
-	--		BEGIN TRY 
-	--			INSERT INTO [#inputbuffer]
-	--			EXEC @sql;
-
-	--			SET @bufferStatement = (SELECT TOP (1) EventInfo FROM [#inputbuffer]);
-	--		END TRY 
-	--		BEGIN CATCH 
-	--			SET @bufferStatement = N'#Error Extracting Statement from DBCC INPUTBUFFER();';
-	--		END CATCH
-
-	--		UPDATE [#statements] 
-	--		SET 
-	--			[statement_source] = N'BUFFER', 
-	--			[statement] = @bufferStatement 
-	--		WHERE 
-	--			[session_id] = @spid;
-
-	--		FETCH NEXT FROM filler INTO @spid;
-	--	END;
-		
-	--	CLOSE filler; 
-	--	DEALLOCATE filler;
-
-	--END;
-
 	-- load plans: 
 	SELECT 
 		x.[session_id], 
@@ -443,14 +398,24 @@ AS
 		[#core] x 
 		OUTER APPLY sys.dm_exec_query_plan(x.plan_handle) p
 
+    CREATE TABLE #statementPlans (
+        session_id int NOT NULL, 
+        [statement_plan] xml 
+    );
+
+	DECLARE @loadPlans nvarchar(MAX) = N'
 	SELECT 
 		x.session_id, 
-		TRY_CAST(q.[query_plan] AS xml) [statement_plan]
-	INTO 
-		#statement_plans
+		' + CASE WHEN (SELECT dbo.[get_engine_version]()) > 10.5 THEN N'TRY_CAST' ELSE N'CAST' END + N'(q.[query_plan] AS xml) [statement_plan]
 	FROM 
 		[#core] x 
-		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q
+		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q ';
+
+    INSERT INTO [#statementPlans] (
+        [session_id],
+        [statement_plan]
+    )
+	EXEC [sys].[sp_executesql] @loadPlans;
 
 	IF @ExtractCost = 1 BEGIN
         
@@ -471,29 +436,30 @@ AS
 		CASE WHEN c.[database_id] = 0 THEN ''resourcedb'' ELSE DB_NAME(c.database_id) END [db_name],
 		{isolation_level}
 		c.[command], 
-		c.[last_wait_type],
-		t.[batch_text],  
+        c.[status], 
+		c.[wait_type],
+        c.[wait_resource],
+		--t.[batch_text],  
 		t.[statement_text],
-		c.[status], 
 		{extractCost}
 		c.[cpu],
 		c.[reads],
 		c.[writes],
 		{memory}
-		ISNULL(c.[program_name], '''') [program_name],
 		dbo.format_timespan(c.[duration]) [elapsed_time], 
 		dbo.format_timespan(c.[wait_time]) [wait_time],
+		ISNULL(c.[program_name], '''') [program_name],
 		c.[login_name],
 		c.[host_name],
 		{plan_handle}
 		{extended_details}
-		p.[batch_plan], 
-		sp.[statement_plan]
+		sp.[statement_plan],
+        p.[batch_plan]
 	FROM 
 		[#core] c
 		INNER JOIN #statements t ON c.session_id = t.session_id
 		INNER JOIN #plans p ON c.session_id = p.session_id
-		INNER JOIN #statement_plans sp ON c.session_id = sp.session_id
+		INNER JOIN #statementPlans sp ON c.session_id = sp.session_id
 		{extractJoin}
 	ORDER BY
 		[row_number];'
@@ -536,7 +502,8 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'');
 	END;
 
-PRINT @projectionSQL;
+--EXEC dbo.print_long_string @projectionSQL;
+--RETURN 0;
 
 	-- final output:
 	EXEC sys.[sp_executesql] @projectionSQL;

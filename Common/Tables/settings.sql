@@ -29,6 +29,16 @@
 		- KEY: [TEST]
 
 
+		- KEY: Data Restore Path for [dbname] to [dbname_test]
+			under consideration. The idea though, being that i could 
+				a) define this for a database using RestoreNamePattern 'stuff' in the form of {0} (source) and {0}N  (target).. 			
+				b) use a token for @DataRootPath of sometghing like [SETTINGS]... 
+				and ... this'd go look things up by the KEY matching the convention defined above... 
+
+
+		- KEY: Log Restore Path for [dbname] to [dbname_test]
+			under consideration - same as above though. 
+
 
 */
 
@@ -87,5 +97,24 @@ ELSE BEGIN
 
 			CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
 		COMMIT;
+	END;
+END;
+
+-- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
+IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
+
+	IF NOT EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+		INSERT INTO dbo.[settings] (
+			[setting_type],
+			[setting_key],
+			[setting_value],
+			[comments]
+		)
+		VALUES (
+			N'UNIQUE', 
+			N'advanced_s4_error_handling', 
+			N'1', 
+			N'Legacy Enabled (i.e., pre-v6 install upgraded to 6/6+)' 
+		);
 	END;
 END;

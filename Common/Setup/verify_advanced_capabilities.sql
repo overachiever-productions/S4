@@ -12,7 +12,6 @@ IF OBJECT_ID('dbo.verify_advanced_capabilities','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_advanced_capabilities
-	--@ErrorMessage				nvarchar(1000)		OUTPUT
 AS
 	SET NOCOUNT ON; 
 

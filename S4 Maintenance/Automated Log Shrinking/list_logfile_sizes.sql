@@ -48,14 +48,7 @@ AS
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-
-
-	-----------------------------------------------------------------------------
 	-- Validate Inputs:
-
-
-
 
 
 
@@ -63,13 +56,13 @@ AS
 	-----------------------------------------------------------------------------
 	
 	CREATE TABLE #targetDatabases ( 
-		row_id int NOT NULL, 
+		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[database_name] sysname NOT NULL, 
 		[vlf_count] int NULL, 
 		[mimimum_allowable_log_size_gb] decimal(20,2) NULL
 	);
 
-	INSERT INTO [#targetDatabases] ( [row_id], [database_name])
+	INSERT INTO [#targetDatabases] ([database_name])
 	EXEC dbo.list_databases
 		@Targets = @TargetDatabases, 
 		@Exclusions = @DatabasesToExclude, 
@@ -169,7 +162,16 @@ AS
 			) sizes ON db.database_id = sizes.database_id		
 	) 
 
-	INSERT INTO [#logSizes] ([database_name], [recovery_model], [database_size_gb], [log_size_gb], [log_percent_used], [vlf_count], [log_as_percent_of_db_size], [mimimum_allowable_log_size_gb])
+	INSERT INTO [#logSizes] (
+        [database_name], 
+        [recovery_model], 
+        [database_size_gb], 
+        [log_size_gb], 
+        [log_percent_used], 
+        [vlf_count], 
+        [log_as_percent_of_db_size], 
+        [mimimum_allowable_log_size_gb]
+    )
 	SELECT 
         [database_name],
         [recovery_model],
