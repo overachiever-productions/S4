@@ -380,6 +380,9 @@ GO
 --##INCLUDE: S4 Restore\Tools\copy_database.sql
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Tools\print_long_string.sql
+
+-----------------------------------
 --##INCLUDE: S4 Restore\apply_logs.sql
 
 -----------------------------------
