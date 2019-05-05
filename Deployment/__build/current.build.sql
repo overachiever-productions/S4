@@ -12,11 +12,10 @@
 
 	Deployment Steps/Overview: 
 		1. Create admindb if not already present.
-		2. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
-		3. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
-		4. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		5. Deploy S4 version ##{{S4version}} code to admindb (overwriting any previous versions). 
-		6. Reporting on current + any previous versions of S4 installed. 
+		2. Create core S4 tables (and/or ALTER as needed + import data from any previous versions as needed). 
+		3. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
+		4. Deploy S4 version ##{{S4version}} code to admindb (overwriting any previous versions). 
+		5. Report on current + any previous versions of S4 installed. 
 
 */
 
@@ -37,7 +36,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 2. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
+-- 2. Core Tables:
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -79,348 +78,26 @@ IF NULLIF(@version,'') IS NOT NULL BEGIN
 END;
 GO
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------
+--##INCLUDE: Common\tables\backup_log.sql
 
-USE [admindb];
-GO
+-----------------------------------
+--##INCLUDE: Common\tables\restore_log.sql
 
-IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
+-----------------------------------
+--##INCLUDE: Common\tables\settings.sql
 
-		CREATE TABLE dbo.backup_log  (
-			backup_id int IDENTITY(1,1) NOT NULL,
-			execution_id uniqueidentifier NOT NULL,
-			backup_date date NOT NULL CONSTRAINT DF_backup_log_log_date DEFAULT (GETDATE()),
-			[database] sysname NOT NULL, 
-			backup_type sysname NOT NULL,
-			backup_path nvarchar(1000) NOT NULL, 
-			copy_path nvarchar(1000) NULL, 
-			backup_start datetime NOT NULL, 
-			backup_end datetime NULL, 
-			backup_succeeded bit NOT NULL CONSTRAINT DF_backup_log_backup_succeeded DEFAULT (0), 
-			verification_start datetime NULL, 
-			verification_end datetime NULL, 
-			verification_succeeded bit NULL, 
-			copy_succeeded bit NULL, 
-			copy_seconds int NULL, 
-			failed_copy_attempts int NULL, 
-			copy_details nvarchar(MAX) NULL,
-			error_details nvarchar(MAX) NULL, 
-			CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
-		);	
-END;
+-----------------------------------
+--##INCLUDE: Common\tables\alert_responses.sql
 
-IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
-
-	CREATE TABLE dbo.restore_log  (
-		restore_id int IDENTITY(1,1) NOT NULL,
-		execution_id uniqueidentifier NOT NULL,
-		operation_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
-		operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),  -- v.4.9.2630
-		[database] sysname NOT NULL, 
-		restored_as sysname NOT NULL, 
-		restore_start datetime NOT NULL, 
-		restore_end datetime NULL, 
-		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
-		restored_files xml NULL, -- added v4.7.0.16942
-		[recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),   -- v.4.9.2630
-		consistency_start datetime NULL, 
-		consistency_end datetime NULL, 
-		consistency_succeeded bit NULL, 
-		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
-		error_details nvarchar(MAX) NULL, 
-		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_id)
-	);
-
-END;
-GO
-
----------------------------------------------------------------------------
--- Copy previous log data (v3 and below) if this is a new v4 install. 
----------------------------------------------------------------------------
-
-DECLARE @objectId int;
-SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = N'dba_DatabaseBackups_Log';
-
-IF @objectId IS NOT NULL BEGIN 
-		
-	PRINT 'Importing Previous Data from backup log....';
-	SET IDENTITY_INSERT dbo.backup_log ON;
-
-	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
-		verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
-	SELECT 
-		BackupId,
-        ExecutionId,
-        BackupDate,
-        [Database],
-        BackupType,
-        BackupPath,
-        CopyToPath,
-        BackupStart,
-        BackupEnd,
-        BackupSucceeded,
-        VerificationCheckStart,
-        VerificationCheckEnd,
-        VerificationCheckSucceeded,
-        CopyDetails,
-		0,     --FailedCopyAttempts,
-        ErrorDetails
-	FROM 
-		master.dbo.dba_DatabaseBackups_Log
-	WHERE 
-		BackupId NOT IN (SELECT backup_id FROM dbo.backup_log);
-
-	SET IDENTITY_INSERT dbo.backup_log OFF;
-END;
-
-SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
-IF @objectId IS NOT NULL BEGIN;
-
-	PRINT 'Importing Previous Data from restore log.... ';
-	SET IDENTITY_INSERT dbo.restore_log ON;
-
-	INSERT INTO dbo.restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
-		consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-	SELECT 
-		RestorationTestId,
-        ExecutionId,
-        TestDate,
-        [Database],
-        RestoredAs,
-        RestoreStart,
-		RestoreEnd,
-        RestoreSucceeded,
-        ConsistencyCheckStart,
-        ConsistencyCheckEnd,
-        ConsistencyCheckSucceeded,
-        Dropped,
-        ErrorDetails
-	FROM 
-		master.dbo.dba_DatabaseRestore_Log
-	WHERE 
-		RestorationTestId NOT IN (SELECT restore_test_id FROM dbo.restore_log);
-
-	SET IDENTITY_INSERT dbo.restore_log OFF;
-
-END;
-GO
-
----------------------------------------------------------------------------
--- Make sure the admindb.dbo.restore_log.restored_files column exists ... 
----------------------------------------------------------------------------
-
-USE [admindb];
-GO
-
-IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
-
-	BEGIN TRANSACTION
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_test_date;
-
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_restore_succeeded;
-			
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_dropped;
-			
-		CREATE TABLE dbo.Tmp_restore_log
-			(
-			restore_test_id int NOT NULL IDENTITY (1, 1),
-			execution_id uniqueidentifier NOT NULL,
-			test_date date NOT NULL,
-			[database] sysname NOT NULL,
-			restored_as sysname NOT NULL,
-			restore_start datetime NOT NULL,
-			restore_end datetime NULL,
-			restore_succeeded bit NOT NULL,
-			restored_files xml NULL,
-			consistency_start datetime NULL,
-			consistency_end datetime NULL,
-			consistency_succeeded bit NULL,
-			dropped varchar(20) NOT NULL,
-			error_details nvarchar(MAX) NULL
-			)  ON [PRIMARY];
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_test_date DEFAULT (getdate()) FOR test_date;
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
-			
-		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
-			
-				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-				SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
-			
-		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
-			
-		DROP TABLE dbo.restore_log;
-			
-		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
-			
-		ALTER TABLE dbo.restore_log ADD CONSTRAINT
-			PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id) ON [PRIMARY];
-			
-	COMMIT;
-END;
-GO
-
--- 4.9.2630 +
-IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery') BEGIN 
-
-	BEGIN TRANSACTION;
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_test_date;
-
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_restore_succeeded;
-			
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_dropped;
-
-		CREATE TABLE dbo.Tmp_restore_log
-			(
-			restore_id int NOT NULL IDENTITY (1, 1),
-			execution_id uniqueidentifier NOT NULL,
-			operation_date date NOT NULL,
-			operation_type varchar(20) NOT NULL, 
-			[database] sysname NOT NULL,
-			restored_as sysname NOT NULL,
-			restore_start datetime NOT NULL,
-			restore_end datetime NULL,
-			restore_succeeded bit NOT NULL,
-			restored_files xml NULL,
-			[recovery] varchar(10) NOT NULL, 
-			consistency_start datetime NULL,
-			consistency_end datetime NULL,
-			consistency_succeeded bit NULL,
-			dropped varchar(20) NOT NULL,
-			error_details nvarchar(MAX) NULL
-			)  ON [PRIMARY];
-
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_test_date DEFAULT (getdate()) FOR operation_date;
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
-		
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_operation_type DEFAULT ('RESTORE-TEST') FOR [operation_type];
-
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_recovery DEFAULT ('RECOVERED') FOR [recovery];
-
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
-
-		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
-			
-				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-				SELECT restore_test_id [restore_id], execution_id, test_date [operation_date], [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
-			
-		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
-			
-		DROP TABLE dbo.restore_log;
-			
-		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
-
-		ALTER TABLE dbo.restore_log ADD CONSTRAINT
-			PK_restore_log PRIMARY KEY CLUSTERED (restore_id) ON [PRIMARY];
-
-		UPDATE dbo.[restore_log] 
-		SET 
-			[dropped] = 'LEFT-ONLINE'
-		WHERE 
-			[dropped] = 'LEFT ONLINE';
-	COMMIT; 
-END;
-GO
-
--- 5.0.2754 - expand dbo.restore_log.[recovery]. S4-86.
-IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery' AND [max_length] = 10) BEGIN
-	BEGIN TRAN;
-
-		ALTER TABLE dbo.[restore_log]
-			ALTER COLUMN [recovery] varchar(15) NOT NULL; 
-
-		ALTER TABLE dbo.[restore_log]
-			DROP CONSTRAINT [DF_restore_log_recovery];
-
-		ALTER TABLE dbo.[restore_log]
-			ADD CONSTRAINT [DF_restore_log_recovery] DEFAULT ('NON-RECOVERED') FOR [recovery];
-
-	COMMIT;
-END;
-
-
----------------------------------------------------------------------------
--- Process UTC to local time change (v4.7). 
----------------------------------------------------------------------------
-
-USE [admindb];
-GO
-
-DECLARE @currentVersion decimal(2,1); 
-SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
-
-IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN 
-
-	DECLARE @hoursDiff int; 
-	SELECT @hoursDiff = DATEDIFF(HOUR, GETDATE(), GETUTCDATE());
-
-	DECLARE @command nvarchar(MAX) = N'
-	UPDATE dbo.[restore_log]
-	SET 
-		[restore_start] = DATEADD(HOUR, 0 - @hoursDiff, [restore_start]), 
-		[restore_end] = DATEADD(HOUR, 0 - @hoursDiff, [restore_end]),
-		[consistency_start] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_start]),
-		[consistency_end] = DATEADD(HOUR, 0 - @hoursDiff, [consistency_end])
-	WHERE 
-		[restore_id] > 0;
-	';
-
-	EXEC sp_executesql 
-		@stmt = @command, 
-		@params = N'@hoursDiff int', 
-		@hoursDiff = @hoursDiff;
-
-	PRINT 'Updated dbo.restore_log.... (UTC shift)';
-END;
-GO
-
--- 5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
-IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
-	DROP PROC dbo.load_database_names;
-GO
-
--- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
-IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
-
-	IF NOT EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
-		INSERT INTO dbo.[settings] (
-			[setting_type],
-			[setting_key],
-			[setting_value],
-			[comments]
-		)
-		VALUES (
-			N'UNIQUE', 
-			N'advanced_s4_error_handling', 
-			N'1', 
-			N'Legacy Enabled (i.e., pre-v6 install upgraded to 6/6+)' 
-		);
-	END;
-END;
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 4. Cleanup and remove objects from previous versions
+-- 3. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- master db objects:
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
 GO
@@ -517,11 +194,14 @@ IF OBJECT_ID('dbo.dba_drivespace_checks','P') IS NOT NULL BEGIN
 END;
 GO
 
--------------------------------------------------------------
--- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- admindb objects:
+------------------------------------------------------------------------------------------------------------------------------------------------------
 USE [admindb];
 GO
 
+--------------------------------------------------------------
+-- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
 IF OBJECT_ID('dbo.server_synchronization_checks', 'P') IS NOT NULL BEGIN
 	
 	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%server_synchronization_checks%')
@@ -547,6 +227,12 @@ IF OBJECT_ID('dbo.data_synchronization_checks', 'P') IS NOT NULL BEGIN
 END;
 
 --------------------------------------------------------------
+-- v5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
+IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
+	DROP PROC dbo.load_database_names;
+GO
+
+--------------------------------------------------------------
 -- v5.6 Vector Standardization (cleanup):
 IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
 	DROP PROC dbo.get_time_vector;
@@ -560,27 +246,32 @@ IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
 	DROP PROC dbo.get_vector_delay;
 GO
 
--- 5.8 refactor/changes: 
+--------------------------------------------------------------
+-- v5.8 refactor/changes: 
 IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 	DROP PROC dbo.load_databases;
 GO
 
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 5. Deploy new/updated code.
+-- 4. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
 GO
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
--- Common Tables:
+-- Advanced S4 Error-Handling Capabilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: Common\tables\settings.sql
+--##INCLUDE: Common\Setup\enable_advanced_capabilities.sql
 
 -----------------------------------
---##INCLUDE: Common\tables\alert_responses.sql
+--##INCLUDE: Common\Setup\disable_advanced_capabilities.sql
+
+-----------------------------------
+--##INCLUDE: Common\Setup\verify_advanced_capabilities.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Common and Utilities:
@@ -605,10 +296,16 @@ GO
 --##INCLUDE: Common\Internal\is_system_database.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\parse_vector.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\translate_vector.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\translate_vector_delay.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\translate_vector_datetime.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
@@ -749,6 +446,9 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Tools\extract_waitresource.sql
 
+-----------------------------------
+--##INCLUDE: S4 Tools\print_long_string.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -800,23 +500,8 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Audits\Monitoring\verify_specification_configuration.sql
 
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
--- Advanced S4 Error-Handling Capabilities:
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
---##INCLUDE: Common\Setup\enable_advanced_capabilities.sql
-
------------------------------------
---##INCLUDE: Common\Setup\disable_advanced_capabilities.sql
-
------------------------------------
---##INCLUDE: Common\Setup\verify_advanced_capabilities.sql
-
-
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 6. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
+-- 5. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 DECLARE @CurrentVersion varchar(20) = N'##{{S4version}}';
 DECLARE @VersionDescription nvarchar(200) = N'##{{S4version_summary}}';

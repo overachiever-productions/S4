@@ -31,10 +31,11 @@ GO
 CREATE PROC dbo.list_transactions 
 	@TopNRows						int			= -1, 
 	@OrderBy						sysname		= N'DURATION',  -- DURATION | LOG_COUNT | LOG_SIZE   
-	@ExcludeSystemProcesses			bit			= 0, 
+	@ExcludeSystemProcesses			bit			= 0,            -- USUALLY, if we're looking at Transactions, we want to see EVERYTHING that's holding a resource - system or otherwise. 
+    @ExcludeSchemaLocksOnly         bit         = 1,            -- in the vast majority of cases... don't want to see who has a connection into the db (ONLY)... sp_who/sp_who2 would do a fine job of that... 
 	@ExcludeSelf					bit			= 1, 
 	@IncludeContext					bit			= 1,	
-	@IncludeStatements				bit			= 0, 
+	@IncludeStatements				bit			= 1, 
 	@IncludePlans					bit			= 0, 
 	@IncludeBoundSessions			bit			= 0, -- seriously, i bet .00x% of transactions would ever even use this - IF that ... 
 	@IncludeDTCDetails				bit			= 0, 
@@ -62,7 +63,7 @@ AS
 		[is_bound] bit NOT NULL,
 		[open_transaction_count] int NOT NULL,
 		[log_record_count] bigint NULL,
-		[log_bytes_used] bigint NOT NULL
+		[log_bytes_used] bigint NULL
 	);
 
 	DECLARE @topSQL nvarchar(MAX) = N'
@@ -101,7 +102,7 @@ AS
 		[dtdt].[log_bytes_used]
 	FROM 
 		sys.[dm_tran_active_transactions] dtat WITH(NOLOCK)
-		LEFT OUTER JOIN sys.[dm_tran_session_transactions] dtst WITH(NOLOCK) ON [dtat].[transaction_id] = [dtst].[transaction_id]
+		INNER JOIN sys.[dm_tran_session_transactions] dtst WITH(NOLOCK) ON [dtat].[transaction_id] = [dtst].[transaction_id]
 		LEFT OUTER JOIN ( 
 			SELECT 
 				x.transaction_id,
@@ -116,6 +117,7 @@ AS
 			GROUP BY 
 				x.transaction_id
 		) dtdt ON [dtat].[transaction_id] = [dtdt].[transaction_id]
+        {ExcludeSchemaLocksOnly}
 	WHERE 
 		1 = 1 
 		{ExcludeSystemProcesses}
@@ -149,6 +151,14 @@ AS
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'');
 	END; 
+
+    IF @ExcludeSchemaLocksOnly = 1 BEGIN 
+        SET @topSQL = REPLACE(@topSQL, N'{ExcludeSchemaLocksOnly}', N'INNER JOIN (SELECT request_session_id [session_id] FROM sys.dm_tran_locks GROUP BY request_session_id HAVING COUNT(*) > 1) [schema_only] ON [dtst].session_id = [schema_only].[session_id]');
+      END;
+    ELSE BEGIN
+        SET @topSQL = REPLACE(@topSQL, N'{ExcludeSchemaLocksOnly}', N'');
+    END;
+
 
 	INSERT INTO [#core] ([session_id], [transaction_id], [database_id], [duration], [enlisted_db_count], [tempdb_enlisted], [transaction_type], [transaction_state], [enlist_count], 
 		[is_user_transaction], [is_local], [is_enlisted], [is_bound], [open_transaction_count], [log_record_count], [log_bytes_used])
@@ -187,7 +197,7 @@ AS
 		c.[session_id], 
 		r.[sql_handle] [statement_handle], 
 		r.[plan_handle], 
-		ISNULL(r.[status], N'Inactive'), 
+		ISNULL(r.[status], N'sleeping'), 
 		CASE r.transaction_isolation_level 
 			WHEN 0 THEN 'Unspecified' 
 	        WHEN 1 THEN 'ReadUncomitted' 
@@ -242,24 +252,53 @@ AS
 			OUTER APPLY sys.[dm_exec_query_plan](h.[plan_handle]) p
 	END
 
+    IF @IncludeLockedResources = 1 BEGIN 
+        SELECT 
+            dtl.[request_session_id] [session_id], 
+            dtl.[resource_type],
+            dtl.[resource_subtype], 
+            dtl.[request_mode], 
+            dtl.[request_status], 
+            dtl.[request_reference_count], 
+            dtl.[request_owner_type], 
+            dtl.[request_owner_id], 
+            dtl.[resource_associated_entity_id],
+            dtl.[resource_database_id], 
+            dtl.[resource_lock_partition],
+            x.[waiting_task_address], 
+            x.[wait_duration_ms], 
+            x.[wait_type], 
+            x.[blocking_session_id], 
+            x.[blocking_task_address], 
+            x.[resource_description]
+        INTO 
+            #lockedResources
+        FROM 
+            [#core] c
+            INNER JOIN sys.[dm_tran_locks] dtl ON c.[session_id] = dtl.[request_session_id]
+            LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x WITH(NOLOCK) ON x.[session_id] = c.[session_id]
+    END;
+
 	-- correlated sub-query:
 	DECLARE @lockedResourcesSQL nvarchar(MAX) = N'
 		CAST((SELECT 
-			--dtl.[resource_type] [@resource_type],
-			--dtl.[request_session_id] [@owning_session_id],
-			--DB_NAME(dtl.[resource_database_id]) [@database],
-			RTRIM(dtl.[resource_type] + N'': '' + CAST(dtl.[resource_database_id] AS sysname) + N'':'' + CASE WHEN dtl.[resource_type] = N''PAGE'' THEN CAST(dtl.[resource_description] AS sysname) ELSE CAST(dtl.[resource_associated_entity_id] AS sysname) END
-				+ CASE WHEN dtl.[resource_type] = N''KEY'' THEN N'' '' + CAST(dtl.[resource_description] AS sysname) ELSE '''' END
-				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' 
-				END) [resource_identifier], 
-			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
-			dtl.[resource_subtype] [@resource_subtype],
-			--dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
-			dtl.[request_mode] [transaction/@request_mode], 
-			dtl.[request_status] [transaction/@request_status],
-			dtl.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
-			dtl.[request_owner_type] [transaction/@owner_type],
-			dtl.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
+			--x.[resource_type] [@resource_type],
+			--x.[request_session_id] [@owning_session_id],
+			--DB_NAME(x.[resource_database_id]) [@database],
+			CASE WHEN x.[resource_subtype] IS NOT NULL THEN x.[resource_subtype] ELSE NULL END [@resource_subtype],
+            
+            CASE WHEN x.resource_type = N''PAGE'' THEN x.[resource_associated_entity_id] ELSE NULL END [identifier/@associated_hobt_id],
+            RTRIM(x.[resource_type] + N'': '' + CAST(x.[resource_database_id] AS sysname) + N'':'' + CASE WHEN x.[resource_type] = N''PAGE'' THEN CAST(x.[resource_description] AS sysname) ELSE CAST(x.[resource_associated_entity_id] AS sysname) END
+				+ CASE WHEN x.[resource_type] = N''KEY'' THEN N'' '' + CAST(x.[resource_description] AS sysname) ELSE '''' END
+				+ CASE WHEN x.[resource_type] = N''OBJECT'' AND x.[resource_lock_partition] <> 0 THEN N'':'' + CAST(x.[resource_lock_partition] AS sysname) ELSE '''' 
+				END) [identifier], 
+			
+			--x.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
+			x.[request_mode] [transaction/@request_mode], 
+			x.[request_status] [transaction/@request_status],
+			x.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
+			x.[request_owner_type] [transaction/@owner_type],
+			x.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
 			x.[waiting_task_address] [waits/waiting_task_address],
 			x.[wait_duration_ms] [waits/wait_duration_ms], 
 			x.[wait_type] [waits/wait_type],
@@ -267,10 +306,9 @@ AS
 			x.[blocking_task_address] [waits/blocking/blocking_task_address], 
 			x.[resource_description] [waits/blocking/resource_description]
 		FROM 
-			sys.[dm_tran_locks] dtl WITH(NOLOCK)
-			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x WITH(NOLOCK) ON dtl.[lock_owner_address] = x.[resource_address]
+            #lockedResources x
 		WHERE 
-			dtl.[request_session_id] = c.session_id
+			x.[session_id] = c.session_id
 		FOR XML PATH (''resource''), ROOT(''locked_resources'')) AS xml) [locked_resources],	';
 	
 	DECLARE @contextSQL nvarchar(MAX) = N'
@@ -359,6 +397,7 @@ CAST((
 	SELECT 
         [c].[session_id],
 		ISNULL([h].blocking_session_id, 0) [blocked_by],
+        {lockedResourceCount}
         DB_NAME([c].[database_id]) [database],
         dbo.format_timespan([c].[duration]) [duration],
 		h.[status],
@@ -411,9 +450,11 @@ CAST((
 
 	IF @IncludeLockedResources = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{lockedResourceCount}', N'ISNULL((SELECT COUNT(*) FROM #lockedResources x WHERE x.session_id = c.session_id), 0) [lock_count], ');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{lockedResourceCount}', N'');
 	END;
 
 	IF @IncludeVersionStoreDetails = 1 BEGIN 

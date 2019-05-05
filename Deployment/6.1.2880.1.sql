@@ -5,16 +5,15 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 6.0.2868.2 or upgrade a PREVIOUSLY deployed version of S4 to 6.0.2868.2.
+		- This script will either install/deploy S4 version 6.1.2880.1 or upgrade a PREVIOUSLY deployed version of S4 to 6.1.2880.1.
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
 	Deployment Steps/Overview: 
 		1. Create admindb if not already present.
-		2. Create admindb.dbo.version_history + Determine and process version info (i.e., from previous versions if present). 
-		3. Create admindb.dbo.backup_log and admindb.dbo.restore_log + other files needed for backups, restore-testing, and other needs/metrics. + import any log data from pre v4 deployments. 
-		4. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		5. Deploy S4 version 6.0.2868.2 code to admindb (overwriting any previous versions). 
-		6. Reporting on current + any previous versions of S4 installed. 
+		2. Create core S4 tables (and/or ALTER as needed + import data from any previous versions as needed). 
+		3. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
+		4. Deploy S4 version 6.1.2880.1 code to admindb (overwriting any previous versions). 
+		5. Report on current + any previous versions of S4 installed. 
 
 */
 
@@ -35,7 +34,7 @@ END;
 GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 2. Create admindb.dbo.version_history if needed - and populate as necessary (i.e., this version and any previous version if this is a 'new' install).
+-- 2. Core Tables:
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
@@ -60,7 +59,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'6.0.2868.2';
+DECLARE @CurrentVersion varchar(20) = N'6.1.2880.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -77,62 +76,35 @@ IF NULLIF(@version,'') IS NOT NULL BEGIN
 END;
 GO
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Create and/or modify dbo.backup_log and dbo.restore_log + populate with previous data from non v4 versions that may have been deployed. 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
+-----------------------------------
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.backup_log', 'U') IS NULL BEGIN
+-- {copyright}
 
-		CREATE TABLE dbo.backup_log  (
-			backup_id int IDENTITY(1,1) NOT NULL,
-			execution_id uniqueidentifier NOT NULL,
-			backup_date date NOT NULL CONSTRAINT DF_backup_log_log_date DEFAULT (GETDATE()),
-			[database] sysname NOT NULL, 
-			backup_type sysname NOT NULL,
-			backup_path nvarchar(1000) NOT NULL, 
-			copy_path nvarchar(1000) NULL, 
-			backup_start datetime NOT NULL, 
-			backup_end datetime NULL, 
-			backup_succeeded bit NOT NULL CONSTRAINT DF_backup_log_backup_succeeded DEFAULT (0), 
-			verification_start datetime NULL, 
-			verification_end datetime NULL, 
-			verification_succeeded bit NULL, 
-			copy_succeeded bit NULL, 
-			copy_seconds int NULL, 
-			failed_copy_attempts int NULL, 
-			copy_details nvarchar(MAX) NULL,
-			error_details nvarchar(MAX) NULL, 
-			CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
-		);	
-END;
-
-IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
-
-	CREATE TABLE dbo.restore_log  (
-		restore_id int IDENTITY(1,1) NOT NULL,
+IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
+	CREATE TABLE dbo.backup_log  (
+		backup_id int IDENTITY(1,1) NOT NULL,
 		execution_id uniqueidentifier NOT NULL,
-		operation_date date NOT NULL CONSTRAINT DF_restore_log_test_date DEFAULT (GETDATE()),
-		operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),  -- v.4.9.2630
+		backup_date date NOT NULL CONSTRAINT DF_backup_log_log_date DEFAULT (GETDATE()),
 		[database] sysname NOT NULL, 
-		restored_as sysname NOT NULL, 
-		restore_start datetime NOT NULL, 
-		restore_end datetime NULL, 
-		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
-		restored_files xml NULL, -- added v4.7.0.16942
-		[recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),   -- v.4.9.2630
-		consistency_start datetime NULL, 
-		consistency_end datetime NULL, 
-		consistency_succeeded bit NULL, 
-		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
+		backup_type sysname NOT NULL,
+		backup_path nvarchar(1000) NOT NULL, 
+		copy_path nvarchar(1000) NULL, 
+		backup_start datetime NOT NULL, 
+		backup_end datetime NULL, 
+		backup_succeeded bit NOT NULL CONSTRAINT DF_backup_log_backup_succeeded DEFAULT (0), 
+		verification_start datetime NULL, 
+		verification_end datetime NULL, 
+		verification_succeeded bit NULL, 
+		copy_succeeded bit NULL, 
+		copy_seconds int NULL, 
+		failed_copy_attempts int NULL, 
+		copy_details nvarchar(MAX) NULL,
 		error_details nvarchar(MAX) NULL, 
-		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_id)
-	);
-
+		CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
+	);	
 END;
-GO
 
 ---------------------------------------------------------------------------
 -- Copy previous log data (v3 and below) if this is a new v4 install. 
@@ -143,12 +115,8 @@ SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = N'dba_Data
 
 IF @objectId IS NOT NULL BEGIN 
 		
-	PRINT 'Importing Previous Data from backup log....';
-	SET IDENTITY_INSERT dbo.backup_log ON;
-
-	INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
-		verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
-	SELECT 
+	DECLARE @loadSQL nvarchar(MAX) = N'
+    SELECT 
 		BackupId,
         ExecutionId,
         BackupDate,
@@ -168,202 +136,166 @@ IF @objectId IS NOT NULL BEGIN
 	FROM 
 		master.dbo.dba_DatabaseBackups_Log
 	WHERE 
-		BackupId NOT IN (SELECT backup_id FROM dbo.backup_log);
+		BackupId NOT IN (SELECT backup_id FROM dbo.backup_log); ';
+
+
+	SET IDENTITY_INSERT dbo.backup_log ON;
+
+	    INSERT INTO dbo.backup_log (backup_id, execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, verification_start,  
+		    verification_end, verification_succeeded, copy_details, failed_copy_attempts, error_details)
+	    EXEC sp_executesql @loadSQL;
 
 	SET IDENTITY_INSERT dbo.backup_log OFF;
 END;
 
-SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
-IF @objectId IS NOT NULL BEGIN;
 
-	PRINT 'Importing Previous Data from restore log.... ';
-	SET IDENTITY_INSERT dbo.restore_log ON;
+-----------------------------------
+USE [admindb];
+GO
 
-	INSERT INTO dbo.restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
-		consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-	SELECT 
-		RestorationTestId,
-        ExecutionId,
-        TestDate,
-        [Database],
-        RestoredAs,
-        RestoreStart,
-		RestoreEnd,
-        RestoreSucceeded,
-        ConsistencyCheckStart,
-        ConsistencyCheckEnd,
-        ConsistencyCheckSucceeded,
-        Dropped,
-        ErrorDetails
-	FROM 
-		master.dbo.dba_DatabaseRestore_Log
-	WHERE 
-		RestorationTestId NOT IN (SELECT restore_test_id FROM dbo.restore_log);
+-- {copyright}
 
-	SET IDENTITY_INSERT dbo.restore_log OFF;
+IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
+
+	CREATE TABLE dbo.restore_log  (
+		restore_id int IDENTITY(1,1) NOT NULL,                                                                      -- restore_test_id until v.9                         
+		execution_id uniqueidentifier NOT NULL,                                                                     -- restore_id until v 4.9            
+		operation_date date NOT NULL CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()),
+		operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),      -- added v 4.9
+		[database] sysname NOT NULL, 
+		restored_as sysname NOT NULL, 
+		restore_start datetime NOT NULL,                                                                            -- UTC until v 4.7
+		restore_end datetime NULL,                                                                                  -- UTC until v 4.7
+		restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
+		restored_files xml NULL,                                                                                    -- added v 4.6.9
+		[recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),                   -- added v 4.9
+		consistency_start datetime NULL,                                                                            -- UTC until v 4.7
+		consistency_end datetime NULL,                                                                              -- UTC until v 4.7
+		consistency_succeeded bit NULL, 
+		dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
+		error_details nvarchar(MAX) NULL, 
+		CONSTRAINT PK_restore_log PRIMARY KEY CLUSTERED (restore_id)
+	);
+
+    -- Copy previous log data (v3 and below) if this is a new (> v4) install... 
+    DECLARE @objectId int;
+    SELECT @objectId = [object_id] FROM master.sys.objects WHERE [name] = 'dba_DatabaseRestore_Log';
+    IF @objectId IS NOT NULL BEGIN;
+
+        DECLARE @importSQL nvarchar(MAX) = N'
+	    SELECT 
+		    RestorationTestId,
+            ExecutionId,
+            TestDate,
+            [Database],
+            RestoredAs,
+            RestoreStart,
+		    RestoreEnd,
+            RestoreSucceeded,
+            ConsistencyCheckStart,
+            ConsistencyCheckEnd,
+            ConsistencyCheckSucceeded,
+            Dropped,
+            ErrorDetails
+	    FROM 
+		    master.dbo.dba_DatabaseRestore_Log
+	    WHERE 
+		    RestorationTestId NOT IN (SELECT restore_test_id FROM dbo.restore_log); ';
+
+
+	    PRINT 'Importing Previous Data from restore log.... ';
+	    SET IDENTITY_INSERT dbo.restore_log ON;
+
+	        INSERT INTO dbo.restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
+		        consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+
+            EXEC sys.[sp_executesql] @importSQL;
+
+	    SET IDENTITY_INSERT dbo.restore_log OFF;
+
+    END;
 
 END;
 GO
 
 ---------------------------------------------------------------------------
--- Make sure the admindb.dbo.restore_log.restored_files column exists ... 
+-- v 4.6 Make sure the admindb.dbo.restore_log.restored_files column exists ... 
 ---------------------------------------------------------------------------
-
-USE [admindb];
-GO
-
 IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
 
 	BEGIN TRANSACTION
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_test_date;
+        
+        IF OBJECT_ID(N'DF_restore_log_operation_date') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_operation_date;
+        END
 
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_restore_succeeded;
-			
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_dropped;
-			
-		CREATE TABLE dbo.Tmp_restore_log
-			(
-			restore_test_id int NOT NULL IDENTITY (1, 1),
-			execution_id uniqueidentifier NOT NULL,
-			test_date date NOT NULL,
-			[database] sysname NOT NULL,
-			restored_as sysname NOT NULL,
-			restore_start datetime NOT NULL,
-			restore_end datetime NULL,
-			restore_succeeded bit NOT NULL,
-			restored_files xml NULL,
-			consistency_start datetime NULL,
-			consistency_end datetime NULL,
-			consistency_succeeded bit NULL,
-			dropped varchar(20) NOT NULL,
-			error_details nvarchar(MAX) NULL
-			)  ON [PRIMARY];
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_test_date DEFAULT (getdate()) FOR test_date;
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
-			
-		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
-			
-				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-				SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
-			
-		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
-			
-		DROP TABLE dbo.restore_log;
-			
-		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
-			
-		ALTER TABLE dbo.restore_log ADD CONSTRAINT
-			PK_restore_log PRIMARY KEY CLUSTERED (restore_test_id) ON [PRIMARY];
-			
-	COMMIT;
-END;
-GO
+        IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_test_date;       -- old/former name... 
+        END
 
--- 4.9.2630 +
-IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery') BEGIN 
+        IF OBJECT_ID(N'DF_restore_log_operation_type') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_operation_type;
+        END
 
-	BEGIN TRANSACTION;
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_test_date;
+        IF OBJECT_ID(N'DF_restore_log_restore_succeeded') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_restore_succeeded;
+        END;
 
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_restore_succeeded;
-			
-		ALTER TABLE dbo.restore_log
-			DROP CONSTRAINT DF_restore_log_dropped;
-
-		CREATE TABLE dbo.Tmp_restore_log
-			(
-			restore_id int NOT NULL IDENTITY (1, 1),
-			execution_id uniqueidentifier NOT NULL,
-			operation_date date NOT NULL,
-			operation_type varchar(20) NOT NULL, 
-			[database] sysname NOT NULL,
-			restored_as sysname NOT NULL,
-			restore_start datetime NOT NULL,
-			restore_end datetime NULL,
-			restore_succeeded bit NOT NULL,
-			restored_files xml NULL,
-			[recovery] varchar(10) NOT NULL, 
-			consistency_start datetime NULL,
-			consistency_end datetime NULL,
-			consistency_succeeded bit NULL,
-			dropped varchar(20) NOT NULL,
-			error_details nvarchar(MAX) NULL
-			)  ON [PRIMARY];
-
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_test_date DEFAULT (getdate()) FOR operation_date;
-			
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_restore_succeeded DEFAULT ((0)) FOR restore_succeeded;
+        IF OBJECT_ID(N'DF_restore_log_recovery') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_recovery;
+        END;
 		
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_operation_type DEFAULT ('RESTORE-TEST') FOR [operation_type];
-
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_recovery DEFAULT ('RECOVERED') FOR [recovery];
-
-		ALTER TABLE dbo.Tmp_restore_log ADD CONSTRAINT
-			DF_restore_log_dropped DEFAULT ('NOT-DROPPED') FOR dropped;
-
+        IF OBJECT_ID(N'DF_restore_log_dropped') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_dropped;
+        END;
+			
+		CREATE TABLE dbo.Tmp_restore_log (
+		    restore_id int IDENTITY(1,1) NOT NULL,                                                                      -- restore_test_id until v.9                         
+		    execution_id uniqueidentifier NOT NULL,                                                                     -- restore_id until v 4.9            
+		    operation_date date NOT NULL CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()),
+		    operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),      -- added v 4.9
+		    [database] sysname NOT NULL, 
+		    restored_as sysname NOT NULL, 
+		    restore_start datetime NOT NULL,                                                                            -- UTC until v 4.7
+		    restore_end datetime NULL,                                                                                  -- UTC until v 4.7
+		    restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
+		    restored_files xml NULL,                                                                                    -- added v 4.6.9
+		    [recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),                   -- added v 4.9
+		    consistency_start datetime NULL,                                                                            -- UTC until v 4.7
+		    consistency_end datetime NULL,                                                                              -- UTC until v 4.7
+		    consistency_succeeded bit NULL, 
+		    dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
+		    error_details nvarchar(MAX) NULL, 
+		);
+			
 		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
 			
-				EXEC('INSERT INTO dbo.Tmp_restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
-				SELECT restore_test_id [restore_id], execution_id, test_date [operation_date], [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log WITH (HOLDLOCK TABLOCKX)')
+				INSERT INTO dbo.Tmp_restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+                EXEC sp_executesql N'SELECT restore_test_id, execution_id, test_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log;';
 			
 		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
 			
 		DROP TABLE dbo.restore_log;
 			
 		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
-
+			
 		ALTER TABLE dbo.restore_log ADD CONSTRAINT
 			PK_restore_log PRIMARY KEY CLUSTERED (restore_id) ON [PRIMARY];
-
-		UPDATE dbo.[restore_log] 
-		SET 
-			[dropped] = 'LEFT-ONLINE'
-		WHERE 
-			[dropped] = 'LEFT ONLINE';
-	COMMIT; 
-END;
-GO
-
--- 5.0.2754 - expand dbo.restore_log.[recovery]. S4-86.
-IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery' AND [max_length] = 10) BEGIN
-	BEGIN TRAN;
-
-		ALTER TABLE dbo.[restore_log]
-			ALTER COLUMN [recovery] varchar(15) NOT NULL; 
-
-		ALTER TABLE dbo.[restore_log]
-			DROP CONSTRAINT [DF_restore_log_recovery];
-
-		ALTER TABLE dbo.[restore_log]
-			ADD CONSTRAINT [DF_restore_log_recovery] DEFAULT ('NON-RECOVERED') FOR [recovery];
-
+			
 	COMMIT;
 END;
-
-
----------------------------------------------------------------------------
--- Process UTC to local time change (v4.7). 
----------------------------------------------------------------------------
-
-USE [admindb];
 GO
 
+
+---------------------------------------------------------------------------
+-- v 4.7 Process UTC to local time change 
+---------------------------------------------------------------------------
 DECLARE @currentVersion decimal(2,1); 
 SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
 
@@ -392,10 +324,171 @@ IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN
 END;
 GO
 
--- 5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
-IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
-	DROP PROC dbo.load_database_names;
+---------------------------------------------------------------------------
+-- v 4.9 Add recovery column + rename first two table columns:
+---------------------------------------------------------------------------
+IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery') BEGIN 
+
+	BEGIN TRANSACTION;
+
+        IF OBJECT_ID(N'DF_restore_log_operation_date') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_operation_date;
+        END
+
+        IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_test_date;       -- old/former name... 
+        END
+
+        IF OBJECT_ID(N'DF_restore_log_operation_type') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_operation_type;
+        END
+
+        IF OBJECT_ID(N'DF_restore_log_restore_succeeded') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_restore_succeeded;
+        END;
+
+        IF OBJECT_ID(N'DF_restore_log_recovery') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_recovery;
+        END;
+		
+        IF OBJECT_ID(N'DF_restore_log_dropped') IS NOT NULL BEGIN
+		    ALTER TABLE dbo.restore_log
+			    DROP CONSTRAINT DF_restore_log_dropped;
+        END;
+
+
+		CREATE TABLE dbo.Tmp_restore_log (
+		    restore_id int IDENTITY(1,1) NOT NULL,                                                                      -- restore_test_id until v.9                         
+		    execution_id uniqueidentifier NOT NULL,                                                                     -- restore_id until v 4.9            
+		    operation_date date NOT NULL CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()),
+		    operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),      -- added v 4.9
+		    [database] sysname NOT NULL, 
+		    restored_as sysname NOT NULL, 
+		    restore_start datetime NOT NULL,                                                                            -- UTC until v 4.7
+		    restore_end datetime NULL,                                                                                  -- UTC until v 4.7
+		    restore_succeeded bit NOT NULL CONSTRAINT DF_restore_log_restore_succeeded DEFAULT (0), 
+		    restored_files xml NULL,                                                                                    -- added v 4.6.9
+		    [recovery] varchar(10) NOT NULL CONSTRAINT DF_restore_log_recovery DEFAULT ('RECOVERED'),                   -- added v 4.9
+		    consistency_start datetime NULL,                                                                            -- UTC until v 4.7
+		    consistency_end datetime NULL,                                                                              -- UTC until v 4.7
+		    consistency_succeeded bit NULL, 
+		    dropped varchar(20) NOT NULL CONSTRAINT DF_restore_log_dropped DEFAULT 'NOT-DROPPED',   -- Options: NOT-DROPPED, ERROR, ATTEMPTED, DROPPED
+		    error_details nvarchar(MAX) NULL, 
+		);
+
+		SET IDENTITY_INSERT dbo.Tmp_restore_log ON;
+			
+				INSERT INTO dbo.Tmp_restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+                EXEC sp_executesql N'SELECT restore_test_id [restore_id], execution_id, test_date [operation_date], [database], restored_as, restore_start, restore_end, restore_succeeded, consistency_start, consistency_end, consistency_succeeded, dropped, error_details FROM dbo.restore_log';
+			
+		SET IDENTITY_INSERT dbo.Tmp_restore_log OFF;
+			
+		DROP TABLE dbo.restore_log;
+			
+		EXECUTE sp_rename N'dbo.Tmp_restore_log', N'restore_log', 'OBJECT' ;
+
+		ALTER TABLE dbo.restore_log ADD CONSTRAINT
+			PK_restore_log PRIMARY KEY CLUSTERED (restore_id) ON [PRIMARY];
+
+	COMMIT; 
+END;
 GO
+
+-- v 4.9 (standardize/cleanup):
+UPDATE dbo.[restore_log] 
+SET 
+	[dropped] = 'LEFT-ONLINE'
+WHERE 
+	[dropped] = 'LEFT ONLINE';
+
+---------------------------------------------------------------------------
+-- 5.0 - expand dbo.restore_log.[recovery]. S4-86.
+---------------------------------------------------------------------------
+IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery' AND [max_length] = 10) BEGIN
+	BEGIN TRAN;
+
+		ALTER TABLE dbo.[restore_log]
+			ALTER COLUMN [recovery] varchar(15) NOT NULL; 
+
+		ALTER TABLE dbo.[restore_log]
+			DROP CONSTRAINT [DF_restore_log_recovery];
+
+		ALTER TABLE dbo.[restore_log]
+			ADD CONSTRAINT [DF_restore_log_recovery] DEFAULT ('NON-RECOVERED') FOR [recovery];
+
+	COMMIT;
+END;
+
+-- may have 'escaped' previous update/mod logic... 
+IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
+	ALTER TABLE dbo.restore_log
+		DROP CONSTRAINT DF_restore_log_test_date;
+END
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.settings','U') IS NULL BEGIN
+
+	CREATE TABLE dbo.settings (
+		setting_id int IDENTITY(1,1) NOT NULL,
+		setting_type sysname NOT NULL CONSTRAINT CK_settings_setting_type CHECK ([setting_type] IN (N'UNIQUE', N'COMBINED')),
+		setting_key sysname NOT NULL, 
+		setting_value sysname NOT NULL,
+		comments nvarchar(200) NULL,
+		CONSTRAINT PK_settings PRIMARY KEY NONCLUSTERED (setting_id)
+	);
+
+	CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
+  END;
+ELSE BEGIN 
+
+	IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.settings') AND [name] = N'setting_id') BEGIN 
+
+		BEGIN TRAN
+			SELECT 
+				IDENTITY(int, 1, 1) [row_id], 
+				setting_key, 
+				setting_value 
+			INTO 
+				#settings
+			FROM 
+				dbo.[settings];
+
+			DROP TABLE dbo.[settings];
+
+			CREATE TABLE dbo.settings (
+				setting_id int IDENTITY(1,1) NOT NULL,
+				setting_type sysname NOT NULL CONSTRAINT CK_settings_setting_type CHECK ([setting_type] IN (N'UNIQUE', N'COMBINED')),
+				setting_key sysname NOT NULL, 
+				setting_value sysname NOT NULL,
+				comments nvarchar(200) NULL,
+				CONSTRAINT PK_settings PRIMARY KEY NONCLUSTERED (setting_id)
+			);
+
+			INSERT INTO dbo.settings (setting_type, setting_key, setting_value) 
+			SELECT 
+				N'UNIQUE' [setting_type], 
+				[setting_key], 
+				[setting_value]
+			FROM 
+				[#settings]
+			ORDER BY 
+				[row_id];
+
+
+			CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
+		COMMIT;
+	END;
+END;
 
 -- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
 IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
@@ -416,9 +509,45 @@ IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
 	END;
 END;
 
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.alert_responses','U') IS NULL BEGIN
+
+	CREATE TABLE dbo.alert_responses (
+		alert_id int IDENTITY(1,1) NOT NULL, 
+		message_id int NOT NULL, 
+		response nvarchar(2000) NOT NULL, 
+		is_s4_response bit NOT NULL CONSTRAINT DF_alert_responses_s4_response DEFAULT (0),
+		is_enabled bit NOT NULL CONSTRAINT DF_alert_responses_is_enabled DEFAULT (1),
+		notes nvarchar(1000) NULL, 
+		CONSTRAINT PK_alert_responses PRIMARY KEY NONCLUSTERED ([alert_id])
+	);
+
+	CREATE CLUSTERED INDEX CLIX_alert_responses_by_message_id ON dbo.[alert_responses] ([message_id]);
+
+	SET NOCOUNT ON;
+
+	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [notes])
+	VALUES 
+	(7886, N'[IGNORE]', 1, N'A read operation on a large object failed while sending data to the client. Example of a common-ish error you MAY wish to ignore, etc. '), 
+	(17806, N'[IGNORE]', 1, N'SSPI handshake failure '),  -- TODO: configure for '[ALLOW # in (span)]'
+	(18056, N'[IGNORE]', 1, N'The client was unable to reuse a session with SPID ###, which had been reset for connection pooling. The failure ID is 8. ');			-- TODO: configure for '[ALLOW # in (span)]'
+
+END;
+GO
+
+
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 4. Cleanup and remove objects from previous versions
+-- 3. Cleanup and remove objects from previous versions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- master db objects:
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [master];
 GO
@@ -515,11 +644,14 @@ IF OBJECT_ID('dbo.dba_drivespace_checks','P') IS NOT NULL BEGIN
 END;
 GO
 
--------------------------------------------------------------
--- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- admindb objects:
+------------------------------------------------------------------------------------------------------------------------------------------------------
 USE [admindb];
 GO
 
+--------------------------------------------------------------
+-- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
 IF OBJECT_ID('dbo.server_synchronization_checks', 'P') IS NOT NULL BEGIN
 	
 	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%server_synchronization_checks%')
@@ -545,6 +677,12 @@ IF OBJECT_ID('dbo.data_synchronization_checks', 'P') IS NOT NULL BEGIN
 END;
 
 --------------------------------------------------------------
+-- v5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
+IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
+	DROP PROC dbo.load_database_names;
+GO
+
+--------------------------------------------------------------
 -- v5.6 Vector Standardization (cleanup):
 IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
 	DROP PROC dbo.get_time_vector;
@@ -558,109 +696,239 @@ IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
 	DROP PROC dbo.get_vector_delay;
 GO
 
--- 5.8 refactor/changes: 
+--------------------------------------------------------------
+-- v5.8 refactor/changes: 
 IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
 	DROP PROC dbo.load_databases;
 GO
 
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 5. Deploy new/updated code.
+-- 4. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 USE [admindb];
 GO
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
--- Common Tables:
+-- Advanced S4 Error-Handling Capabilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
 USE [admindb];
 GO
 
+IF OBJECT_ID('dbo.enable_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.enable_advanced_capabilities;
+GO
 
-IF OBJECT_ID('dbo.settings','U') IS NULL BEGIN
+CREATE PROC dbo.enable_advanced_capabilities
 
-	CREATE TABLE dbo.settings (
-		setting_id int IDENTITY(1,1) NOT NULL,
-		setting_type sysname NOT NULL CONSTRAINT CK_settings_setting_type CHECK ([setting_type] IN (N'UNIQUE', N'COMBINED')),
-		setting_key sysname NOT NULL, 
-		setting_value sysname NOT NULL,
-		comments nvarchar(200) NULL,
-		CONSTRAINT PK_settings PRIMARY KEY NONCLUSTERED (setting_id)
-	);
+AS 
+	SET NOCOUNT ON; 
 
-	CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
-  END;
-ELSE BEGIN 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
-	IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.settings') AND [name] = N'setting_id') BEGIN 
+	DECLARE @xpCmdShellValue bit; 
+	DECLARE @xpCmdShellInUse bit;
+	DECLARE @advancedS4 bit = 0;
+	
+	SELECT 
+		@xpCmdShellValue = CAST([value] AS bit), 
+		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
+	FROM 
+		sys.configurations 
+	WHERE 
+		[name] = 'xp_cmdshell';
 
-		BEGIN TRAN
-			SELECT 
-				IDENTITY(int, 1, 1) [row_id], 
-				setting_key, 
-				setting_value 
-			INTO 
-				#settings
-			FROM 
-				dbo.[settings];
-
-			DROP TABLE dbo.[settings];
-
-			CREATE TABLE dbo.settings (
-				setting_id int IDENTITY(1,1) NOT NULL,
-				setting_type sysname NOT NULL CONSTRAINT CK_settings_setting_type CHECK ([setting_type] IN (N'UNIQUE', N'COMBINED')),
-				setting_key sysname NOT NULL, 
-				setting_value sysname NOT NULL,
-				comments nvarchar(200) NULL,
-				CONSTRAINT PK_settings PRIMARY KEY NONCLUSTERED (setting_id)
-			);
-
-			INSERT INTO dbo.settings (setting_type, setting_key, setting_value) 
-			SELECT 
-				N'UNIQUE' [setting_type], 
-				[setting_key], 
-				[setting_value]
-			FROM 
-				[#settings]
-			ORDER BY 
-				[row_id];
-
-
-			CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
-		COMMIT;
+	IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN 
+		SELECT 
+			@advancedS4 = CAST([setting_value] AS bit) 
+		FROM 
+			dbo.[settings] 
+		WHERE 
+			[setting_key] = N'advanced_s4_error_handling';
 	END;
-END;
+
+	-- check to see if enabled first: 
+	IF @advancedS4 = 1 AND @xpCmdShellInUse = 1 BEGIN
+		PRINT 'Advanced S4 error handling (ability to use xp_cmdshell) already/previously enabled.';
+		GOTO termination;
+	END;
+
+	IF @xpCmdShellValue = 1 AND @xpCmdShellInUse = 0 BEGIN 
+		RECONFIGURE;
+		SET @xpCmdShellInUse = 1;
+	END;
+
+	IF @xpCmdShellValue = 0 BEGIN
+		EXEC sp_configure 'xp_cmdshell', 1; 
+		RECONFIGURE;
+
+		SELECT @xpCmdShellValue = 1, @xpCmdShellInUse = 1;
+	END;
+
+	IF @advancedS4 = 0 BEGIN 
+		IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+			UPDATE dbo.[settings] 
+			SET 
+				[setting_value] = N'1', 
+				[comments] = N'Manually enabled on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.'  
+			WHERE 
+				[setting_key] = N'advanced_s4_error_handling';
+		  END;
+		ELSE BEGIN 
+			INSERT INTO dbo.[settings] (
+				[setting_type],
+				[setting_key],
+				[setting_value],
+				[comments]
+			)
+			VALUES (
+				N'UNIQUE', 
+				N'advanced_s4_error_handling', 
+				N'1', 
+				N'Manually enabled on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
+			);
+		END;
+		SET @advancedS4 = 1;
+	END;
+
+termination: 
+	SELECT 
+		@xpCmdShellValue [xp_cmdshell.value], 
+		@xpCmdShellInUse [xp_cmdshell.value_in_use],
+		@advancedS4 [advanced_s4_error_handling.value];
+
+	RETURN 0;
+GO
 
 
 -----------------------------------
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.alert_responses','U') IS NULL BEGIN
+IF OBJECT_ID('dbo.disable_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.disable_advanced_capabilities
+GO
 
-	CREATE TABLE dbo.alert_responses (
-		alert_id int IDENTITY(1,1) NOT NULL, 
-		message_id int NOT NULL, 
-		response nvarchar(2000) NOT NULL, 
-		is_s4_response bit NOT NULL CONSTRAINT DF_alert_responses_s4_response DEFAULT (0),
-		is_enabled bit NOT NULL CONSTRAINT DF_alert_responses_is_enabled DEFAULT (1),
-		notes nvarchar(1000) NULL, 
-		CONSTRAINT PK_alert_responses PRIMARY KEY NONCLUSTERED ([alert_id])
-	);
+CREATE PROC dbo.disable_advanced_capabilities
 
-	CREATE CLUSTERED INDEX CLIX_alert_responses_by_message_id ON dbo.[alert_responses] ([message_id]);
-
+AS 
 	SET NOCOUNT ON;
 
-	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [notes])
-	VALUES 
-	(7886, N'[IGNORE]', 1, N'A read operation on a large object failed while sending data to the client. Example of a common-ish error you MAY wish to ignore, etc. '), 
-	(17806, N'[IGNORE]', 1, N'SSPI handshake failure '),  -- TODO: configure for '[ALLOW # in (span)]'
-	(18056, N'[IGNORE]', 1, N'The client was unable to reuse a session with SPID ###, which had been reset for connection pooling. The failure ID is 8. ');			-- TODO: configure for '[ALLOW # in (span)]'
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
-END;
+	DECLARE @xpCmdShellValue bit; 
+	DECLARE @xpCmdShellInUse bit;
+	DECLARE @advancedS4 bit = 0;
+	DECLARE @errorMessage nvarchar(MAX);
+		
+	SELECT 
+		@xpCmdShellValue = CAST([value] AS bit), 
+		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
+	FROM 
+		sys.configurations 
+	WHERE 
+		[name] = 'xp_cmdshell';
+
+	IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN 
+
+		SELECT 
+			@advancedS4 = CAST([setting_value] AS bit) 
+		FROM 
+			dbo.[settings] 
+		WHERE 
+			[setting_key] = N'advanced_s4_error_handling';
+	END;
+
+	BEGIN TRY 
+		IF @xpCmdShellValue = 1 OR @xpCmdShellInUse = 1 BEGIN
+			EXEC sp_configure 'xp_cmdshell', 0; 
+			RECONFIGURE;	
+			
+			SELECT @xpCmdShellValue = 0, @xpCmdShellInUse = 0;
+		END;
+
+		IF EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
+			IF @advancedS4 = 1 BEGIN 
+				UPDATE dbo.[settings]
+				SET 
+					[setting_value] = N'0', 
+					[comments] = N'Manually DISABLED on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
+				WHERE 
+					[setting_key] = N'advanced_s4_error_handling';
+			  END;
+			ELSE BEGIN
+				INSERT INTO dbo.[settings] (
+					[setting_type],
+					[setting_key],
+					[setting_value],
+					[comments]
+				)
+				VALUES (
+					N'UNIQUE', 
+					N'advanced_s4_error_handling', 
+					N'1', 
+					N'Manually DISABLED on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
+				);
+			END;
+			SET @advancedS4 = 0;
+		END;
+
+	END TRY
+	BEGIN CATCH 
+		SELECT @errorMessage = N'Unhandled Exception: ' + CAST(ERROR_NUMBER() AS sysname) + N': ' + ERROR_MESSAGE();
+		RAISERROR(@errorMessage, 16, 1);
+		RETURN -1;
+	END CATCH
+
+	SELECT 
+		@xpCmdShellValue [xp_cmdshell.value], 
+		@xpCmdShellInUse [xp_cmdshell.value_in_use],
+		@advancedS4 [advanced_s4_error_handling.value];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.verify_advanced_capabilities','P') IS NOT NULL
+	DROP PROC dbo.verify_advanced_capabilities;
+GO
+
+CREATE PROC dbo.verify_advanced_capabilities
+AS
+	SET NOCOUNT ON; 
+
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	DECLARE @xpCmdShellInUse bit;
+	DECLARE @advancedS4 bit;
+	DECLARE @errorMessage nvarchar(1000);
+	
+	SELECT 
+		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
+	FROM 
+		sys.configurations 
+	WHERE 
+		[name] = 'xp_cmdshell';
+
+	SELECT 
+		@advancedS4 = CAST([setting_value] AS bit) 
+	FROM 
+		dbo.[settings] 
+	WHERE 
+		[setting_key] = N'advanced_s4_error_handling';
+
+	IF @xpCmdShellInUse = 1 AND ISNULL(@advancedS4, 0) = 1
+		RETURN 0;
+	
+	RAISERROR(N'Advanced S4 error handling capabilities are NOT enabled. Please consult S4 setup documentation and execute admindb.dbo.enabled_advanced_capabilities;', 16, 1);
+	RETURN -1;
 GO
 
 
@@ -679,7 +947,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output decimal(4,2);
@@ -717,7 +985,7 @@ RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
 AS 
 	BEGIN
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -788,7 +1056,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -822,7 +1090,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -909,7 +1177,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -937,7 +1205,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 	RETURNS bit
 AS 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output bit = 0;
@@ -976,24 +1244,22 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.translate_vector','P') IS NOT NULL
-	DROP PROC dbo.translate_vector;
+IF OBJECT_ID('dbo.parse_vector','P') IS NOT NULL
+	DROP PROC dbo.parse_vector;
 GO
 
-CREATE PROC dbo.translate_vector
-	@Vector									sysname						= NULL, 
-	@ValidationParameterName				sysname						= NULL, 
-	@ProhibitedIntervals					sysname						= NULL,								-- By default, ALL intervals are allowed. 
-	@TranslationInterval					sysname						= N'MS',							-- { MILLISECONDS | SECONDS | MINUTES | HOURS | DAYS | WEEKS | MONTHS | YEARS }
-	@Output									bigint						= NULL		OUT, 
-	@Error									nvarchar(MAX)				= NULL		OUT
-AS
+CREATE PROC dbo.parse_vector
+	@Vector									sysname					, 
+	@ValidationParameterName				sysname					= NULL,
+	@ProhibitedIntervals					sysname					= NULL,				-- by default, ALL intervals are allowed... 
+	@IntervalType							sysname					OUT, 
+	@Value									bigint					OUT, 
+	@Error									nvarchar(MAX)			OUT
+AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs:
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	
 	SET @ValidationParameterName = ISNULL(NULLIF(@ValidationParameterName, N''), N'@Vector');
 	IF @ValidationParameterName LIKE N'@%'
 		SET @ValidationParameterName = REPLACE(@ValidationParameterName, N'@', N'');
@@ -1005,14 +1271,15 @@ AS
 
 	INSERT INTO @intervals ([key],[interval]) 
 	SELECT [key], [interval] 
-	FROM (VALUES (
-			'MILLISECOND', 'MILLISECOND'), ('MS', 'MILLISECOND'), ('SECOND', 'SECOND'), ('S', 'SECOND'),('MINUTE', 'MINUTE'), ('M', 'MINUTE'), 
-			('N', 'MINUTE'), ('HOUR', 'HOUR'), ('H', 'HOUR'), ('DAY', 'DAY'), ('D', 'DAY'), ('WEEK', 'WEEK'), ('W', 'WEEK'),
-			 ('MONTH', 'MONTH'), ('MO', 'MONTH'), ('QUARTER', 'QUARTER'), ('Q', 'QUARTER'), ('YEAR', 'YEAR'), ('Y', 'YEAR')
+	FROM (VALUES 
+			(N'B', N'BACKUP'), (N'BACKUP', N'BACKUP'),
+			(N'MILLISECOND', N'MILLISECOND'), (N'MS', N'MILLISECOND'), (N'SECOND', N'SECOND'), (N'S', N'SECOND'),(N'MINUTE', N'MINUTE'), (N'M', N'MINUTE'), 
+			(N'N', N'MINUTE'), (N'HOUR', N'HOUR'), (N'H', 'HOUR'), (N'DAY', N'DAY'), (N'D', N'DAY'), (N'WEEK', N'WEEK'), (N'W', N'WEEK'),
+			(N'MONTH', N'MONTH'), (N'MO', N'MONTH'), (N'QUARTER', N'QUARTER'), (N'Q', N'QUARTER'), (N'YEAR', N'YEAR'), (N'Y', N'YEAR')
 	) x ([key], [interval]);
 
 	SET @Vector = LTRIM(RTRIM(UPPER(REPLACE(@Vector, N' ', N''))));
-	DECLARE @boundary int, @duration sysname, @interval sysname;
+	DECLARE @boundary int, @intervalValue sysname, @interval sysname;
 	SET @boundary = PATINDEX(N'%[^0-9]%', @Vector) - 1;
 
 	IF @boundary < 1 BEGIN 
@@ -1020,8 +1287,8 @@ AS
 		RETURN -1;
 	END;
 
-	SET @duration = LEFT(@Vector, @boundary);
-	SET @interval = UPPER(REPLACE(@Vector, @duration, N''));
+	SET @intervalValue = LEFT(@Vector, @boundary);
+	SET @interval = UPPER(REPLACE(@Vector, @intervalValue, N''));
 
 	IF @interval LIKE '%S' AND @interval NOT IN ('S', 'MS')
 		SET @interval = LEFT(@interval, LEN(@interval) - 1); 
@@ -1031,26 +1298,77 @@ AS
 		RETURN -10;
 	END;
 
-	-- convert @TranslationInterval to a sanitized version of itself:
-	SELECT @TranslationInterval = [interval] FROM @intervals WHERE [key] = @TranslationInterval;
-	IF @TranslationInterval IS NULL OR @TranslationInterval NOT IN ('MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH', 'YEAR') BEGIN 
-		SET @Error = N'Invalid @TranslationInterval value specified. Allowed values are: { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [YEAR(S)|Y] }.';
-		RETURN -12;
-	END;
-
 	--  convert @interval to a sanitized version of itself:
 	SELECT @interval = [interval] FROM @intervals WHERE [key] = @interval;
 
-	-- allow for prohibited intervals: 
+	-- check for prohibited intervals: 
 	IF NULLIF(@ProhibitedIntervals, N'') IS NOT NULL BEGIN 
-
 		-- delete INTERVALS based on keys - e.g., if ms is prohibited, we don't want to simply delete the MS entry - we want to get all 'forms' of it (i.e., MS, MILLISECOND, etc.)
 		DELETE FROM @intervals WHERE [interval] IN (SELECT [interval] FROM @intervals WHERE [key] IN (SELECT [result] FROM dbo.[split_string](@ProhibitedIntervals, N',', 1)));
 		
 		IF @interval NOT IN (SELECT [interval] FROM @intervals) BEGIN
-			SET @Error = N'The interval-specifier [' + @interval + N'] is not permitted in this operation type. Prohibited intervals for this operation are: [' + @ProhibitedIntervals + N'].';
+			SET @Error = N'The interval-specifier [' + @interval + N'] is not permitted in this operation type. Prohibited intervals for this operation are: ' + @ProhibitedIntervals + N'.';
 			RETURN -30;
 		END;
+	END;
+
+	SELECT 
+		@IntervalType = @interval, 
+		@Value = CAST(@intervalValue AS bigint);
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.translate_vector','P') IS NOT NULL
+	DROP PROC dbo.translate_vector;
+GO
+
+CREATE PROC dbo.translate_vector
+	@Vector									sysname						= NULL, 
+	@ValidationParameterName				sysname						= NULL, 
+	@ProhibitedIntervals					sysname						= NULL,								
+	@TranslationDatePart					sysname						= N'MILLISECOND',					-- The 'DATEPART' value you want to convert BY/TO. Allowed Values: { MILLISECONDS | SECONDS | MINUTES | HOURS | DAYS | WEEKS | MONTHS | YEARS }
+	@Output									bigint						= NULL		OUT, 
+	@Error									nvarchar(MAX)				= NULL		OUT
+AS
+	SET NOCOUNT ON; 
+
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	-----------------------------------------------------------------------------
+
+	-- convert @TranslationDatePart to a sanitized version of itself:
+	IF @TranslationDatePart IS NULL OR @TranslationDatePart NOT IN ('MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH', 'YEAR') BEGIN 
+		SET @Error = N'Invalid @TranslationDatePart value specified. Allowed values are: { [MILLISECOND(S)|MS] | [SECOND(S)|S] | [MINUTE(S)|M|N] | [HOUR(S)|H] | [DAY(S)|D] | [WEEK(S)|W] | [MONTH(S)|MO] | [YEAR(S)|Y] }.';
+		RETURN -12;
+	END;
+
+	IF @ProhibitedIntervals IS NULL
+		SET @ProhibitedIntervals = N'BACKUP';
+
+	IF dbo.[count_matches](@ProhibitedIntervals, N'BACKUP') < 1
+		SET @ProhibitedIntervals = @ProhibitedIntervals + N', BACKUP';
+
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @interval sysname;
+	DECLARE @duration bigint;
+
+	EXEC dbo.parse_vector 
+		@Vector = @Vector, 
+		@ValidationParameterName  = @ValidationParameterName, 
+		@ProhibitedIntervals = @ProhibitedIntervals, 
+		@IntervalType = @interval OUTPUT, 
+		@Value = @duration OUTPUT, 
+		@Error = @errorMessage OUTPUT; 
+
+	IF @errorMessage IS NOT NULL BEGIN 
+		SET @Error = @errorMessage;
+		RETURN -10;
 	END;
 
 	-----------------------------------------------------------------------------
@@ -1059,10 +1377,10 @@ AS
 	
 	BEGIN TRY 
 
-		DECLARE @command nvarchar(400) = N'SELECT @difference = DATEDIFF(' + @TranslationInterval + N', @now, (DATEADD(' + @interval + N', ' + @duration + N', @now)));'
+		DECLARE @command nvarchar(400) = N'SELECT @difference = DATEDIFF(' + @TranslationDatePart + N', @now, (DATEADD(' + @interval + N', ' + CAST(@duration AS sysname) + N', @now)));'
 		EXEC sp_executesql 
 			@command, 
-			N'@now datetime, @difference int OUTPUT', 
+			N'@now datetime, @difference bigint OUTPUT', 
 			@now = @now, 
 			@difference = @Output OUTPUT;
 
@@ -1085,14 +1403,14 @@ IF OBJECT_ID('dbo.translate_vector_delay','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.translate_vector_delay
-	@Vector					nvarchar(10)	= NULL, 
-	@ParameterName			sysname			= NULL, 
-	@Output					sysname			= NULL		OUT, 
-	@Error					nvarchar(MAX)	= NULL		OUT
+	@Vector								nvarchar(10)	= NULL, 
+	@ParameterName						sysname			= NULL, 
+	@Output								sysname			= NULL		OUT, 
+	@Error								nvarchar(MAX)	= NULL		OUT
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @difference int;
 
@@ -1104,12 +1422,96 @@ AS
 		@Output = @difference OUTPUT, 
 		@Error = @Error OUTPUT;
 
+	IF @difference > 350 BEGIN 
+		RAISERROR(N'@Vector can not be > 350 Hours (i.e., 2+ weeks) when defining a DELAY value.', 16, 1);
+		RETURN -2;
+	END; 
+
 	IF @Error IS NOT NULL BEGIN 
 		RAISERROR(@Error, 16, 1); 
 		RETURN -5;
 	END;
 	
 	SELECT @Output = RIGHT(dbo.[format_timespan](@difference), 12);
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO 
+
+IF OBJECT_ID('dbo.translate_vector_datetime','P') IS NOT NULL
+	DROP PROC dbo.translate_vector_datetime;
+GO
+
+CREATE PROC dbo.translate_vector_datetime
+	@Vector									sysname						= NULL, 
+	@Operation								sysname						= N'ADD',		-- Allowed Values are { ADD | SUBTRACT }
+	@ValidationParameterName				sysname						= NULL, 
+	@ProhibitedIntervals					sysname						= NULL,	
+	@Output									datetime					OUT, 
+	@Error									nvarchar(MAX)				OUT
+AS
+	SET NOCOUNT ON; 
+
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	-----------------------------------------------------------------------------
+	IF UPPER(@Operation) NOT IN (N'ADD', N'SUBTRACT') BEGIN 
+		RAISERROR('Valid operations (values for @Operation) are { ADD | SUBTRACT }.', 16, 1);
+		RETURN -1;
+	END;
+
+	IF @ProhibitedIntervals IS NULL
+		SET @ProhibitedIntervals = N'BACKUP';
+
+	IF dbo.[count_matches](@ProhibitedIntervals, N'BACKUP') < 1
+		SET @ProhibitedIntervals = @ProhibitedIntervals + N', BACKUP';
+
+	DECLARE @errorMessage nvarchar(MAX);
+	DECLARE @interval sysname;
+	DECLARE @duration bigint;
+
+	EXEC dbo.parse_vector 
+		@Vector = @Vector, 
+		@ValidationParameterName  = @ValidationParameterName, 
+		@ProhibitedIntervals = @ProhibitedIntervals, 
+		@IntervalType = @interval OUTPUT, 
+		@Value = @duration OUTPUT, 
+		@Error = @errorMessage OUTPUT; 
+
+	IF @errorMessage IS NOT NULL BEGIN 
+		SET @Error = @errorMessage;
+		RETURN -10;
+	END;
+
+	DECLARE @sql nvarchar(2000) = N'SELECT @timestamp = DATEADD({0}, {2}{1}, GETDATE());';
+	SET @sql = REPLACE(@sql, N'{0}', @interval);
+	SET @sql = REPLACE(@sql, N'{1}', @duration);
+
+	IF UPPER(@Operation) = N'ADD'
+		SET @sql = REPLACE(@sql, N'{2}', N'');
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{2}', N'0 - ');
+
+	DECLARE @ts datetime;
+
+	BEGIN TRY 
+		
+		EXEC sys.[sp_executesql]
+			@sql, 
+			N'@timestamp datetime OUT', 
+			@timestamp = @ts OUTPUT;
+
+	END TRY
+	BEGIN CATCH 
+		SELECT @Error = N'EXCEPTION: ' + CAST(ERROR_MESSAGE() AS sysname) + N' - ' + ERROR_MESSAGE();
+		RETURN -30;
+	END CATCH
+
+	SET @Output = @ts;
 
 	RETURN 0;
 GO
@@ -1130,7 +1532,7 @@ AS
 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1259,7 +1661,7 @@ CREATE PROC dbo.replace_dbname_tokens
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1671,7 +2073,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -1706,7 +2108,7 @@ RETURNS bit
 	WITH RETURNS NULL ON NULL INPUT
 AS 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN;
 		
@@ -1745,7 +2147,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output int = 0;
@@ -1790,7 +2192,7 @@ CREATE PROC dbo.kill_connections_by_hostname
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -1867,7 +2269,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Dependencies:
@@ -1901,6 +2303,8 @@ AS
 	('RESTORE DATABASE successfully processed % pages in %', 'RESTORE'),
 	('RESTORE LOG successfully processed % pages in %', 'RESTORE'),
 	('Processed % pages for database %', 'RESTORE'),
+    ('DBCC execution completed. If DBCC printed error messages, contact your system administrator.', 'RESTORE'),  --  if CDC has been enabled (even if we're NOT running KEEP_CDC), recovery will throw in some sort of DBCC operation... 
+
 		-- whenever there's a patch or upgrade...
 	('Converting database % from version % to the current version %', 'RESTORE'), 
 	('RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).', N'RESTORE'),  -- partial recovery operations... 
@@ -1983,7 +2387,7 @@ CREATE PROC dbo.execute_command
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -2067,9 +2471,18 @@ AS
 			('RESTORE', 'Processed % pages for database %'),
 			('RESTORE', 'Converting database % from version % to the current version %'),    -- whenever there's a patch or upgrade... 
 			('RESTORE', 'Database % running the upgrade step from version % to version %.'),	-- whenever there's a patch or upgrade... 
-			('RESTORE', 'RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).');  -- partial recovery operations... 
+			('RESTORE', 'RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).'),  -- partial recovery operations... 
+            ('RESTORE', 'DBCC execution completed. If DBCC printed error messages, contact your system administrator.');  -- if CDC was enabled on source (even if we don't issue KEEP_CDC), some sort of DBCC command fires during RECOVERY.
 		
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[RESTORE]', N'');
+	END;
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[SINGLE_USER]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('SINGLE_USER', 'Nonqualified transactions are being rolled back. Estimated rollback completion%');
+					
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[SINGLE_USER]', N'');
 	END;
 
 	INSERT INTO @filters ([filter_type], [filter_text])
@@ -2199,7 +2612,7 @@ CREATE PROC dbo.load_backup_database_names
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -2291,7 +2704,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -2419,7 +2832,7 @@ CREATE PROC [dbo].[remove_backup_files]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -2503,6 +2916,7 @@ AS
 		END;
 
 		BEGIN TRY
+
 			SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
 		END TRY
 		BEGIN CATCH
@@ -2518,20 +2932,18 @@ AS
 	  END;
 	ELSE BEGIN 
 
-		EXEC [dbo].[translate_vector]
-		    @Vector = @Retention,
-		    @ValidationParameterName = N'@Retention',
-		    @ProhibitedIntervals = N'MILLISECOND',
-		    @TranslationInterval = N'MILLISECOND',
-		    @Output = @retentionValue OUTPUT,
+		EXEC dbo.[translate_vector_datetime]
+		    @Vector = @Retention, 
+		    @Operation = N'SUBTRACT', 
+		    @ValidationParameterName = N'@Retention', 
+		    @ProhibitedIntervals = N'BACKUP', 
+		    @Output = @retentionCutoffTime OUTPUT, 
 		    @Error = @retentionError OUTPUT;
 
 		IF @retentionError IS NOT NULL BEGIN 
 			RAISERROR(@retentionError, 16, 1);
 			RETURN -26;
 		END;
-
-		SET @retentionCutoffTime = DATEADD(MILLISECOND, 0 - @retentionValue, GETDATE());
 	END;
 
 	IF @PrintOnly = 1 BEGIN
@@ -2992,7 +3404,7 @@ CREATE PROC dbo.backup_databases
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -3123,7 +3535,7 @@ AS
 
 		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) = N'COPY_ONLY') BEGIN 
 			IF UPPER(@BackupType) = N'DIFF' BEGIN
-				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're a logical 'fault' - hence the S4 warning. Fodder: https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-2017
+				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're a logical 'fault' - hence the S4 warning: https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-2017
 				RAISERROR(N'Invalid @Directives value specified. COPY_ONLY can NOT be specified when @BackupType = DIFF. Only FULL and LOG backups may be COPY_ONLY (and should be used only for one-off testing or other specialized needs.', 16, 1);
 				RETURN -21;
 			END; 
@@ -3715,7 +4127,7 @@ CREATE PROC dbo.print_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases,'') IS NULL BEGIN
 		RAISERROR('Parameter @TargetDatabases cannot be NULL or empty.', 16, 1)
@@ -4017,7 +4429,7 @@ CREATE PROC dbo.script_server_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -4266,7 +4678,7 @@ CREATE PROC dbo.print_configuration
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 
@@ -4925,7 +5337,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -5015,7 +5427,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -5154,7 +5566,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -5245,7 +5657,7 @@ AS
 		EXEC [dbo].[translate_vector]
 		    @Vector = @RpoWarningThreshold, 
 		    @ValidationParameterName = N'@RpoWarningThreshold', 
-		    @TranslationInterval = N'MILLISECOND', 
+		    @TranslationDatePart = N'SECOND', 
 		    @Output = @vector OUTPUT, 
 		    @Error = @vectorError OUTPUT;
 
@@ -5376,9 +5788,10 @@ AS
         RETURN -20;
     END;
 
-    IF @PrintOnly = 1 BEGIN;
-        PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
-    END;
+    -- TODO: @serialized no longer contains a legit list of targets... (@dbsToRestore does).
+    --IF @PrintOnly = 1 BEGIN;
+    --    PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
+    --END;
 
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
@@ -5387,12 +5800,16 @@ AS
     DECLARE @move nvarchar(MAX);
     DECLARE @restoreLogId int;
     DECLARE @sourcePath nvarchar(500);
-    DECLARE @statusDetail nvarchar(500);
+    DECLARE @statusDetail nvarchar(MAX);
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
 	DECLARE @fileList nvarchar(MAX); 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
+
+	-- dbo.execute_command variables: 
+	DECLARE @execOutcome bit;
+	DECLARE @execResults xml;
 
 	DECLARE @ignoredLogFiles int = 0;
 
@@ -5543,41 +5960,31 @@ AS
 				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
 					BEGIN TRY 
-						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
-
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
+							+ N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';' + @crlf + @crlf;
+							
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
 						  END;
 						ELSE BEGIN
-							SET @outcome = NULL;
-							EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
-							SET @statusDetail = @outcome;
-						END;
+							
+							EXEC @execOutcome = dbo.[execute_command]
+							    @Command = @command, 
+							    @DelayBetweenAttempts = N'8 seconds',
+							    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
+							    @Results = @execResults OUTPUT;
 
-						-- give things just a second to 'die down':
-						WAITFOR DELAY '00:00:02';
+							IF @execOutcome <> 0 
+								SET @statusDetail = N'Error with SINGLE_USER > DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 
 					END TRY
 					BEGIN CATCH
-						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode and/or attempting to DROP target database for explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 					END CATCH
 
 					IF @statusDetail IS NOT NULL
 						GOTO NextDatabase;
-				END;
-
-				-- Now DROP the target db: 
-				SET @command = N'DROP DATABASE [' + @restoredName + N'];';
-                
-				IF @PrintOnly = 1 BEGIN
-						PRINT N'-- ' + @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
-					END;
-				ELSE BEGIN
-					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
-					SET @statusDetail = @outcome;
-				END;
-				IF @statusDetail IS NOT NULL BEGIN
-					GOTO NextDatabase;
 				END;
 
 			  END;
@@ -5592,7 +5999,7 @@ AS
 		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
 		
 		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
-			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] found in "' + @sourcePath + N'".';
+			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
 			GOTO NextDatabase;	
 		END;
 
@@ -5845,6 +6252,8 @@ AS
 				  END;
 				ELSE BEGIN
 					SET @outcome = NULL;
+
+                    -- TODO: do I want to specify a DIFFERENT (subset/set) of 'filters' for RESTORE and RECOVERY? (don't really think so, unless there are ever problems with 'overlap' and/or confusion.
 					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
 					SET @statusDetail = @outcome;
@@ -6109,7 +6518,7 @@ FINALIZE:
 	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
 		
-		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector));
+		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector * 1000));
 		DECLARE @rpoMessage nvarchar(MAX) = N'';
 
 		SELECT 
@@ -6138,8 +6547,8 @@ FINALIZE:
 			c.[database], 
 			c.[most_recent_backup], 
 			c.[restore_end], 
-			DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old], 
-			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) < 20) THEN -1 ELSE (DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) END [days_old], 
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(SECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
 		INTO 
 			#stale 
 		FROM 
@@ -6159,7 +6568,7 @@ FINALIZE:
 				END + @crlf
 		FROM 
 			[#stale] x
-		WHERE 
+		WHERE  
 			(x.[vector] > @vector) OR [x].[days_old] > 20 
 		ORDER BY 
 			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
@@ -6220,27 +6629,28 @@ GO
 
 
 -----------------------------------
-USE admindb;
+USE [admindb];
 GO
-
 
 IF OBJECT_ID('dbo.copy_database','P') IS NOT NULL
 	DROP PROC dbo.copy_database;
 GO
 
 CREATE PROC dbo.copy_database 
-	@SourceDatabaseName			sysname, 
-	@TargetDatabaseName			sysname, 
-	@BackupsRootDirectory		nvarchar(2000)	= N'[DEFAULT]', 
-	@CopyToBackupDirectory		nvarchar(2000)	= NULL,
-	@DataPath					sysname			= N'[DEFAULT]', 
-	@LogPath					sysname			= N'[DEFAULT]',
-	@OperatorName				sysname			= N'Alerts',
-	@MailProfileName			sysname			= N'General'
+	@SourceDatabaseName					sysname, 
+	@TargetDatabaseName					sysname, 
+	@BackupsRootDirectory				nvarchar(2000)	= N'[DEFAULT]', 
+	@CopyToBackupDirectory					nvarchar(2000)	= NULL,
+	@DataPath							sysname			= N'[DEFAULT]', 
+	@LogPath							sysname			= N'[DEFAULT]',
+	@RenameLogicalFileNames				bit				= 1, 
+	@OperatorName						sysname			= N'Alerts',
+	@MailProfileName					sysname			= N'General', 
+	@PrintOnly							bit				= 0
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@SourceDatabaseName,'') IS NULL BEGIN
 		RAISERROR('@SourceDatabaseName cannot be Empty/NULL. Please specify the name of the database you wish to copy (from).', 16, 1);
@@ -6276,7 +6686,7 @@ AS
 	IF @CopyToBackupDirectory IS NOT NULL 
 		SET @copyToRetention = @retention;
 
-	PRINT N'Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
+	PRINT N'-- Attempting to Restore a backup of [' + @SourceDatabaseName + N'] as [' + @TargetDatabaseName + N']';
 	
 	DECLARE @restored bit = 0;
 	DECLARE @errorMessage nvarchar(MAX); 
@@ -6284,7 +6694,7 @@ AS
 	BEGIN TRY 
 		EXEC dbo.restore_databases
 			@DatabasesToRestore = @SourceDatabaseName,
-			@BackupsRootPath = @BackupsRootDirectory,
+			@BackupsRootDirectory = @BackupsRootDirectory,
 			@RestoredRootDataPath = @DataPath,
 			@RestoredRootLogPath = @LogPath,
 			@RestoredDbNamePattern = @TargetDatabaseName,
@@ -6293,7 +6703,8 @@ AS
 			@DropDatabasesAfterRestore = 0,
 			@OperatorName = @OperatorName, 
 			@MailProfileName = @MailProfileName, 
-			@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+			@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ', 
+			@PrintOnly = @PrintOnly;
 
 	END TRY
 	BEGIN CATCH
@@ -6301,20 +6712,22 @@ AS
 	END CATCH
 
 	-- 'sadly', restore_databases does a great job of handling most exceptions during execution - meaning that if we didn't get errors, that doesn't mean there weren't problems. So, let's check up: 
-	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName AND state_desc = N'ONLINE')
+	IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @TargetDatabaseName AND state_desc = N'ONLINE') OR (@PrintOnly = 1)
 		SET @restored = 1; -- success (the db wasn't there at the start of this sproc, and now it is (and it's online). 
 	ELSE BEGIN 
 		-- then we need to grab the latest error: 
 		SELECT @errorMessage = error_details FROM dbo.restore_log WHERE restore_id = (
 			SELECT MAX(restore_id) FROM dbo.restore_log WHERE operation_date = GETDATE() AND [database] = @SourceDatabaseName AND restored_as = @TargetDatabaseName);
 
-		IF @errorMessage IS NULL -- hmmm weird:
+		IF @errorMessage IS NULL BEGIN -- hmmm weird:
 			SET @errorMessage = N'Unknown error with restore operation - execution did NOT complete as expected. Please Check Email for additional details/insights.';
+			RETURN -20;
+		END;
 
 	END
 
 	IF @errorMessage IS NULL
-		PRINT N'Restore Complete. Kicking off backup [' + @TargetDatabaseName + N'].';
+		PRINT N'-- Restore Complete. Kicking off backup [' + @TargetDatabaseName + N'].';
 	ELSE BEGIN
 		PRINT @errorMessage;
 		RETURN -10;
@@ -6322,7 +6735,45 @@ AS
 	
 	-- Make sure the DB owner is set correctly: 
 	DECLARE @sql nvarchar(MAX) = N'ALTER AUTHORIZATION ON DATABASE::[' + @TargetDatabaseName + N'] TO sa;';
-	EXEC sp_executesql @sql;
+	
+	IF @PrintOnly = 1 
+		PRINT @sql
+	ELSE 
+		EXEC sp_executesql @sql;
+
+	IF @RenameLogicalFileNames = 1 BEGIN
+
+		DECLARE @renameTemplate nvarchar(200) = N'ALTER DATABASE ' + QUOTENAME(@TargetDatabaseName) + N' MODIFY FILE (NAME = {0}, NEWNAME = {1});' + NCHAR(13) + NCHAR(10); 
+		SET @sql = N'';
+		
+		WITH renamed AS ( 
+
+			SELECT 
+				[name] [old_file_name], 
+				REPLACE([name], @SourceDatabaseName, @TargetDatabaseName) [new_file_name], 
+				[file_id]
+			FROM 
+				sys.[master_files] 
+			WHERE 
+				([database_id] = DB_ID(@TargetDatabaseName)) OR 
+				(@PrintOnly = 1 AND [database_id] = DB_ID(@SourceDatabaseName))
+
+		) 
+
+		SELECT 
+			@sql = @sql + REPLACE(REPLACE(@renameTemplate, N'{0}', [old_file_name]), N'{1}', [new_file_name])
+		FROM 
+			renamed
+		ORDER BY 
+			[file_id];
+
+		IF @PrintOnly = 1 
+			PRINT @sql; 
+		ELSE 
+			EXEC sys.sp_executesql @sql;
+
+	END;
+
 
 	DECLARE @backedUp bit = 0;
 	IF @restored = 1 BEGIN
@@ -6337,7 +6788,8 @@ AS
 				@CopyToRetention = @copyToRetention,
 				@OperatorName = @OperatorName, 
 				@MailProfileName = @MailProfileName, 
-				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ';
+				@EmailSubjectPrefix = N'[COPY DATABASE OPERATION] : ', 
+				@PrintOnly = @PrintOnly;
 
 			SET @backedUp = 1;
 		END TRY
@@ -6383,7 +6835,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6425,29 +6877,23 @@ AS
         RETURN -22;
     END;
 
-	DECLARE @rpoCutoff datetime; 
-	DECLARE @latestApplied datetime;
-
 	DECLARE @vectorError nvarchar(MAX);
 	DECLARE @vector bigint;  -- represents # of MILLISECONDS that a 'restore' operation is allowed to be stale
-	
 
 	IF NULLIF(@StaleAlertThreshold, N'') IS NOT NULL BEGIN
 
 		EXEC [dbo].[translate_vector]
-		    @Vector = @StaleAlertThreshold, 
-		    @ValidationParameterName = N'@StaleAlertThreshold', 
-		    @ProhibitedIntervals = NULL, 
-		    @TranslationInterval = N'MILLISECOND', 
-		    @Output = @vector OUTPUT, 
-		    @Error = @vectorError OUTPUT;
+			@Vector = @StaleAlertThreshold, 
+			@ValidationParameterName = N'@StaleAlertThreshold', 
+			@ProhibitedIntervals = NULL, 
+			@TranslationDatePart = N'SECOND', 
+			@Output = @vector OUTPUT, 
+			@Error = @vectorError OUTPUT;
 
 		IF @vectorError IS NOT NULL BEGIN
 			RAISERROR(@vectorError, 16, 1); 
 			RETURN -30;
 		END;
-
-		SET @vector = DATEDIFF(MILLISECOND, @rpoCutoff, GETDATE());
 	END;
 
 	-----------------------------------------------------------------------------
@@ -6792,6 +7238,7 @@ ALTER DATABASE ' + QUOTENAME(@targetDbName) + N' SET MULTI_USER;';
 NextDatabase:
 
 		-- Execute Stale Checks if configured/defined: 
+		DECLARE @latestApplied datetime;
 		IF NULLIF(@StaleAlertThreshold, N'') IS NOT NULL BEGIN
 
 			IF @logsWereApplied = 1 BEGIN 
@@ -6809,7 +7256,7 @@ NextDatabase:
 				SELECT @latestApplied = @restoredFiles.value('(/files/file[@id = max(/files/file/@id)]/created)[1]', 'datetime')
 			END;
 
-			IF DATEDIFF(MILLISECOND, @latestApplied, GETDATE()) > @vector BEGIN 
+			IF DATEDIFF(SECOND, @latestApplied, GETDATE()) > @vector BEGIN 
 				INSERT INTO @warnings ([warning])
 				VALUES ('Database ' + QUOTENAME(@targetDbName) + N' has exceeded the amount of time allowed since successfully restoring live data to the applied/target database. Specified threshold: ' + @StaleAlertThreshold + N', CreationTime of Last live backup: ' + CONVERT(sysname, @latestApplied, 121) + N'.');
 			END;
@@ -7303,7 +7750,7 @@ AS
 		RETURN -1;
 	END;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_source] sysname NOT NULL,
@@ -7311,7 +7758,8 @@ AS
 		[blocked_by] smallint NULL,
 		[isolation_level] smallint NULL,
 		[status] nvarchar(30) NOT NULL,
-		[last_wait_type] nvarchar(60) NULL,
+		[wait_type] nvarchar(60) NULL,
+        [wait_resource] nvarchar(256) NOT NULL,
 		[command] nvarchar(32) NULL,
 		[granted_memory] bigint NULL,
 		[requested_memory] bigint NULL,
@@ -7344,7 +7792,8 @@ AS
 			r.[blocking_session_id] [blocked_by],
 			s.[transaction_isolation_level] [isolation_level],
 			r.[status],
-			r.[last_wait_type],
+			r.[wait_type],
+            r.[wait_resource],
 			r.[command],
 			g.[granted_memory_kb],
 			g.[requested_memory_kb],
@@ -7370,7 +7819,7 @@ AS
 			LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
 		WHERE
 			-- TODO: if wait_types to exclude gets ''stupid large'', then instead of using an IN()... go ahead and create a CTE/derived-table/whatever and do a JOIN instead... 
-			r.last_wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
+			r.wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
 			{ExcludeSystemProcesses}
 			{ExcludeSelf}
 			{ExcludeNegative}
@@ -7384,7 +7833,8 @@ AS
 		[blocked_by],
 		[isolation_level],
 		[status],
-		[last_wait_type],
+		[wait_type],
+        [wait_resource],
 		[command],
 		[granted_memory_kb],
 		[requested_memory_kb],
@@ -7419,7 +7869,8 @@ AS
 			ISNULL([r].[blocking_session_id], x.[blocked]) [blocked_by],
 			[s].[transaction_isolation_level] [isolation_level],
 			[s].[status],
-			ISNULL([r].[last_wait_type], x.[lastwaittype]) [last_wait_type],
+			ISNULL([r].[wait_type], x.[lastwaittype]) [wait_type],
+            ISNULL([r].[wait_resource], N'''') [wait_resource],
 			ISNULL([r].[command], x.[cmd]) [command],
 			ISNULL([g].[granted_memory_kb],	(x.[memusage] * 8096)) [granted_memory_kb],
 			ISNULL([g].[requested_memory_kb], -1) [requested_memory_kb],
@@ -7461,7 +7912,8 @@ AS
 		[blocked_by],
 		[isolation_level],
 		[status],
-		[last_wait_type],
+		[wait_type],
+        [wait_resource],
 		[command],
 		[granted_memory_kb],
 		[requested_memory_kb],
@@ -7558,7 +8010,8 @@ AS
 		[blocked_by],
 		[isolation_level],
 		[status],
-		[last_wait_type],
+		[wait_type],
+        [wait_resource],
 		[command],
 		[granted_memory],
 		[requested_memory],
@@ -7607,57 +8060,6 @@ AS
 		[#core] x 
 		OUTER APPLY sys.[dm_exec_sql_text](x.[sql_handle]) t;
 
---TODO: Implement this (i.e., as per dbo.list_collisions ... but ... here - so'z we can get statements if/when they're not in the request itself..).
-	--IF @UseInputBuffer = 1 BEGIN
-		
-	--	DECLARE @sql nvarchar(MAX); 
-
-	--	DECLARE filler CURSOR LOCAL FAST_FORWARD READ_ONLY FOR 
-	--	SELECT 
-	--		session_id 
-	--	FROM 
-	--		[#statements] 
-	--	WHERE 
-	--		[statement] IS NULL; 
-
-	--	DECLARE @spid int; 
-	--	DECLARE @bufferStatement nvarchar(MAX);
-
-	--	CREATE TABLE #inputbuffer (EventType nvarchar(30), Params smallint, EventInfo nvarchar(4000))
-
-	--	OPEN filler; 
-	--	FETCH NEXT FROM filler INTO @spid;
-
-	--	WHILE @@FETCH_STATUS = 0 BEGIN 
-	--		TRUNCATE TABLE [#inputbuffer];
-
-	--		SET @sql = N'EXEC DBCC INPUTBUFFER(' + STR(@spid) + N');';
-			
-	--		BEGIN TRY 
-	--			INSERT INTO [#inputbuffer]
-	--			EXEC @sql;
-
-	--			SET @bufferStatement = (SELECT TOP (1) EventInfo FROM [#inputbuffer]);
-	--		END TRY 
-	--		BEGIN CATCH 
-	--			SET @bufferStatement = N'#Error Extracting Statement from DBCC INPUTBUFFER();';
-	--		END CATCH
-
-	--		UPDATE [#statements] 
-	--		SET 
-	--			[statement_source] = N'BUFFER', 
-	--			[statement] = @bufferStatement 
-	--		WHERE 
-	--			[session_id] = @spid;
-
-	--		FETCH NEXT FROM filler INTO @spid;
-	--	END;
-		
-	--	CLOSE filler; 
-	--	DEALLOCATE filler;
-
-	--END;
-
 	-- load plans: 
 	SELECT 
 		x.[session_id], 
@@ -7668,14 +8070,24 @@ AS
 		[#core] x 
 		OUTER APPLY sys.dm_exec_query_plan(x.plan_handle) p
 
+    CREATE TABLE #statementPlans (
+        session_id int NOT NULL, 
+        [statement_plan] xml 
+    );
+
+	DECLARE @loadPlans nvarchar(MAX) = N'
 	SELECT 
 		x.session_id, 
-		TRY_CAST(q.[query_plan] AS xml) [statement_plan]
-	INTO 
-		#statement_plans
+		' + CASE WHEN (SELECT dbo.[get_engine_version]()) > 10.5 THEN N'TRY_CAST' ELSE N'CAST' END + N'(q.[query_plan] AS xml) [statement_plan]
 	FROM 
 		[#core] x 
-		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q
+		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q ';
+
+    INSERT INTO [#statementPlans] (
+        [session_id],
+        [statement_plan]
+    )
+	EXEC [sys].[sp_executesql] @loadPlans;
 
 	IF @ExtractCost = 1 BEGIN
         
@@ -7696,29 +8108,30 @@ AS
 		CASE WHEN c.[database_id] = 0 THEN ''resourcedb'' ELSE DB_NAME(c.database_id) END [db_name],
 		{isolation_level}
 		c.[command], 
-		c.[last_wait_type],
-		t.[batch_text],  
+        c.[status], 
+		c.[wait_type],
+        c.[wait_resource],
+		--t.[batch_text],  
 		t.[statement_text],
-		c.[status], 
 		{extractCost}
 		c.[cpu],
 		c.[reads],
 		c.[writes],
 		{memory}
-		ISNULL(c.[program_name], '''') [program_name],
 		dbo.format_timespan(c.[duration]) [elapsed_time], 
 		dbo.format_timespan(c.[wait_time]) [wait_time],
+		ISNULL(c.[program_name], '''') [program_name],
 		c.[login_name],
 		c.[host_name],
 		{plan_handle}
 		{extended_details}
-		p.[batch_plan], 
-		sp.[statement_plan]
+		sp.[statement_plan],
+        p.[batch_plan]
 	FROM 
 		[#core] c
 		INNER JOIN #statements t ON c.session_id = t.session_id
 		INNER JOIN #plans p ON c.session_id = p.session_id
-		INNER JOIN #statement_plans sp ON c.session_id = sp.session_id
+		INNER JOIN #statementPlans sp ON c.session_id = sp.session_id
 		{extractJoin}
 	ORDER BY
 		[row_number];'
@@ -7761,7 +8174,8 @@ AS
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'');
 	END;
 
-PRINT @projectionSQL;
+--EXEC dbo.print_long_string @projectionSQL;
+--RETURN 0;
 
 	-- final output:
 	EXEC sys.[sp_executesql] @projectionSQL;
@@ -7781,10 +8195,11 @@ GO
 CREATE PROC dbo.list_transactions 
 	@TopNRows						int			= -1, 
 	@OrderBy						sysname		= N'DURATION',  -- DURATION | LOG_COUNT | LOG_SIZE   
-	@ExcludeSystemProcesses			bit			= 0, 
+	@ExcludeSystemProcesses			bit			= 0,            -- USUALLY, if we're looking at Transactions, we want to see EVERYTHING that's holding a resource - system or otherwise. 
+    @ExcludeSchemaLocksOnly         bit         = 1,            -- in the vast majority of cases... don't want to see who has a connection into the db (ONLY)... sp_who/sp_who2 would do a fine job of that... 
 	@ExcludeSelf					bit			= 1, 
 	@IncludeContext					bit			= 1,	
-	@IncludeStatements				bit			= 0, 
+	@IncludeStatements				bit			= 1, 
 	@IncludePlans					bit			= 0, 
 	@IncludeBoundSessions			bit			= 0, -- seriously, i bet .00x% of transactions would ever even use this - IF that ... 
 	@IncludeDTCDetails				bit			= 0, 
@@ -7793,7 +8208,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -7812,7 +8227,7 @@ AS
 		[is_bound] bit NOT NULL,
 		[open_transaction_count] int NOT NULL,
 		[log_record_count] bigint NULL,
-		[log_bytes_used] bigint NOT NULL
+		[log_bytes_used] bigint NULL
 	);
 
 	DECLARE @topSQL nvarchar(MAX) = N'
@@ -7851,7 +8266,7 @@ AS
 		[dtdt].[log_bytes_used]
 	FROM 
 		sys.[dm_tran_active_transactions] dtat WITH(NOLOCK)
-		LEFT OUTER JOIN sys.[dm_tran_session_transactions] dtst WITH(NOLOCK) ON [dtat].[transaction_id] = [dtst].[transaction_id]
+		INNER JOIN sys.[dm_tran_session_transactions] dtst WITH(NOLOCK) ON [dtat].[transaction_id] = [dtst].[transaction_id]
 		LEFT OUTER JOIN ( 
 			SELECT 
 				x.transaction_id,
@@ -7866,6 +8281,7 @@ AS
 			GROUP BY 
 				x.transaction_id
 		) dtdt ON [dtat].[transaction_id] = [dtdt].[transaction_id]
+        {ExcludeSchemaLocksOnly}
 	WHERE 
 		1 = 1 
 		{ExcludeSystemProcesses}
@@ -7899,6 +8315,14 @@ AS
 	ELSE BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeSelf}', N'');
 	END; 
+
+    IF @ExcludeSchemaLocksOnly = 1 BEGIN 
+        SET @topSQL = REPLACE(@topSQL, N'{ExcludeSchemaLocksOnly}', N'INNER JOIN (SELECT request_session_id [session_id] FROM sys.dm_tran_locks GROUP BY request_session_id HAVING COUNT(*) > 1) [schema_only] ON [dtst].session_id = [schema_only].[session_id]');
+      END;
+    ELSE BEGIN
+        SET @topSQL = REPLACE(@topSQL, N'{ExcludeSchemaLocksOnly}', N'');
+    END;
+
 
 	INSERT INTO [#core] ([session_id], [transaction_id], [database_id], [duration], [enlisted_db_count], [tempdb_enlisted], [transaction_type], [transaction_state], [enlist_count], 
 		[is_user_transaction], [is_local], [is_enlisted], [is_bound], [open_transaction_count], [log_record_count], [log_bytes_used])
@@ -7937,7 +8361,7 @@ AS
 		c.[session_id], 
 		r.[sql_handle] [statement_handle], 
 		r.[plan_handle], 
-		ISNULL(r.[status], N'Inactive'), 
+		ISNULL(r.[status], N'sleeping'), 
 		CASE r.transaction_isolation_level 
 			WHEN 0 THEN 'Unspecified' 
 	        WHEN 1 THEN 'ReadUncomitted' 
@@ -7992,24 +8416,53 @@ AS
 			OUTER APPLY sys.[dm_exec_query_plan](h.[plan_handle]) p
 	END
 
+    IF @IncludeLockedResources = 1 BEGIN 
+        SELECT 
+            dtl.[request_session_id] [session_id], 
+            dtl.[resource_type],
+            dtl.[resource_subtype], 
+            dtl.[request_mode], 
+            dtl.[request_status], 
+            dtl.[request_reference_count], 
+            dtl.[request_owner_type], 
+            dtl.[request_owner_id], 
+            dtl.[resource_associated_entity_id],
+            dtl.[resource_database_id], 
+            dtl.[resource_lock_partition],
+            x.[waiting_task_address], 
+            x.[wait_duration_ms], 
+            x.[wait_type], 
+            x.[blocking_session_id], 
+            x.[blocking_task_address], 
+            x.[resource_description]
+        INTO 
+            #lockedResources
+        FROM 
+            [#core] c
+            INNER JOIN sys.[dm_tran_locks] dtl ON c.[session_id] = dtl.[request_session_id]
+            LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x WITH(NOLOCK) ON x.[session_id] = c.[session_id]
+    END;
+
 	-- correlated sub-query:
 	DECLARE @lockedResourcesSQL nvarchar(MAX) = N'
 		CAST((SELECT 
-			--dtl.[resource_type] [@resource_type],
-			--dtl.[request_session_id] [@owning_session_id],
-			--DB_NAME(dtl.[resource_database_id]) [@database],
-			RTRIM(dtl.[resource_type] + N'': '' + CAST(dtl.[resource_database_id] AS sysname) + N'':'' + CASE WHEN dtl.[resource_type] = N''PAGE'' THEN CAST(dtl.[resource_description] AS sysname) ELSE CAST(dtl.[resource_associated_entity_id] AS sysname) END
-				+ CASE WHEN dtl.[resource_type] = N''KEY'' THEN N'' '' + CAST(dtl.[resource_description] AS sysname) ELSE '''' END
-				+ CASE WHEN dtl.[resource_type] = N''OBJECT'' AND dtl.[resource_lock_partition] <> 0 THEN N'':'' + CAST(dtl.[resource_lock_partition] AS sysname) ELSE '''' 
-				END) [resource_identifier], 
-			CASE WHEN dtl.resource_type = N''PAGE'' THEN dtl.[resource_associated_entity_id] ELSE NULL END [resource_identifier/@associated_hobt_id],
-			dtl.[resource_subtype] [@resource_subtype],
-			--dtl.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
-			dtl.[request_mode] [transaction/@request_mode], 
-			dtl.[request_status] [transaction/@request_status],
-			dtl.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
-			dtl.[request_owner_type] [transaction/@owner_type],
-			dtl.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
+			--x.[resource_type] [@resource_type],
+			--x.[request_session_id] [@owning_session_id],
+			--DB_NAME(x.[resource_database_id]) [@database],
+			CASE WHEN x.[resource_subtype] IS NOT NULL THEN x.[resource_subtype] ELSE NULL END [@resource_subtype],
+            
+            CASE WHEN x.resource_type = N''PAGE'' THEN x.[resource_associated_entity_id] ELSE NULL END [identifier/@associated_hobt_id],
+            RTRIM(x.[resource_type] + N'': '' + CAST(x.[resource_database_id] AS sysname) + N'':'' + CASE WHEN x.[resource_type] = N''PAGE'' THEN CAST(x.[resource_description] AS sysname) ELSE CAST(x.[resource_associated_entity_id] AS sysname) END
+				+ CASE WHEN x.[resource_type] = N''KEY'' THEN N'' '' + CAST(x.[resource_description] AS sysname) ELSE '''' END
+				+ CASE WHEN x.[resource_type] = N''OBJECT'' AND x.[resource_lock_partition] <> 0 THEN N'':'' + CAST(x.[resource_lock_partition] AS sysname) ELSE '''' 
+				END) [identifier], 
+			
+			--x.[request_type] [transaction/@request_type],	-- will ALWAYS be ''LOCK''... 
+			x.[request_mode] [transaction/@request_mode], 
+			x.[request_status] [transaction/@request_status],
+			x.[request_reference_count] [transaction/@reference_count],  -- APPROXIMATE (ont definitive).
+			x.[request_owner_type] [transaction/@owner_type],
+			x.[request_owner_id] [transaction/@transaction_id],		-- transactionID of the owner... can be ''overloaded'' with negative values (-4 = filetable has a db lock, -3 = filetable has a table lock, other options outlined in BOL).
 			x.[waiting_task_address] [waits/waiting_task_address],
 			x.[wait_duration_ms] [waits/wait_duration_ms], 
 			x.[wait_type] [waits/wait_type],
@@ -8017,10 +8470,9 @@ AS
 			x.[blocking_task_address] [waits/blocking/blocking_task_address], 
 			x.[resource_description] [waits/blocking/resource_description]
 		FROM 
-			sys.[dm_tran_locks] dtl WITH(NOLOCK)
-			LEFT OUTER JOIN sys.[dm_os_waiting_tasks] x WITH(NOLOCK) ON dtl.[lock_owner_address] = x.[resource_address]
+            #lockedResources x
 		WHERE 
-			dtl.[request_session_id] = c.session_id
+			x.[session_id] = c.session_id
 		FOR XML PATH (''resource''), ROOT(''locked_resources'')) AS xml) [locked_resources],	';
 	
 	DECLARE @contextSQL nvarchar(MAX) = N'
@@ -8109,6 +8561,7 @@ CAST((
 	SELECT 
         [c].[session_id],
 		ISNULL([h].blocking_session_id, 0) [blocked_by],
+        {lockedResourceCount}
         DB_NAME([c].[database_id]) [database],
         dbo.format_timespan([c].[duration]) [duration],
 		h.[status],
@@ -8161,9 +8614,11 @@ CAST((
 
 	IF @IncludeLockedResources = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', @lockedResourcesSQL);
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{lockedResourceCount}', N'ISNULL((SELECT COUNT(*) FROM #lockedResources x WHERE x.session_id = c.session_id), 0) [lock_count], ');
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{locked_resources}', N'');
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{lockedResourceCount}', N'');
 	END;
 
 	IF @IncludeVersionStoreDetails = 1 BEGIN 
@@ -8216,7 +8671,7 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'[ALL]';
@@ -8555,7 +9010,7 @@ CREATE PROC dbo.verify_backup_execution
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -8972,7 +9427,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9265,7 +9720,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -9372,7 +9827,7 @@ CREATE PROC dbo.process_alerts
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
@@ -9469,7 +9924,7 @@ DECLARE @monitor_transaction_durations nvarchar(MAX) = N'ALTER PROC dbo.monitor_
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -9477,22 +9932,18 @@ AS
 	DECLARE @transactionCutoffTime datetime; 
 
 	DECLARE @vectorError nvarchar(MAX); 
-	DECLARE @vectorMilliseconds bigint;
 
-	EXEC [dbo].[translate_vector]
-	    @Vector = @AlertThreshold, 
-	    @ValidationParameterName = N''@AlertThreshold'', 
-	    @ProhibitedIntervals = N''WEEK, MONTH, QUARTER, YEAR'', 
-	    @TranslationInterval = N''MILLISECOND'', 
-	    @Output = @vectorMilliseconds OUTPUT, 
-	    @Error = @vectorError OUTPUT;
-
+	EXEC dbo.[translate_vector_datetime]
+	    @Vector = @AlertThreshold,
+	    @ValidationParameterName = N''@AlertThreshold'',
+	    @ProhibitedIntervals = N''WEEK, MONTH, QUARTER, YEAR'',
+	    @Output = @transactionCutoffTime OUTPUT,
+	    @Error = @vectorError OUTPUT
+	
 	IF @vectorError IS NOT NULL BEGIN 
 		RAISERROR(@vectorError, 16, 1); 
 		RETURN -10;
 	END;
-
-	SET @transactionCutoffTime = DATEADD(MILLISECOND, @vectorMilliseconds, GETDATE());
 
 	SELECT 
 		[dtat].[transaction_id],
@@ -9801,11 +10252,7 @@ CREATE PROC dbo.list_logfile_sizes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	-----------------------------------------------------------------------------
-	-- Dependencies Validation:
-
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -9813,19 +10260,16 @@ AS
 
 
 
-
-
-
 	-----------------------------------------------------------------------------
 	
 	CREATE TABLE #targetDatabases ( 
-		row_id int NOT NULL, 
+		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[database_name] sysname NOT NULL, 
 		[vlf_count] int NULL, 
 		[mimimum_allowable_log_size_gb] decimal(20,2) NULL
 	);
 
-	INSERT INTO [#targetDatabases] ( [row_id], [database_name])
+	INSERT INTO [#targetDatabases] ([database_name])
 	EXEC dbo.list_databases
 		@Targets = @TargetDatabases, 
 		@Exclusions = @DatabasesToExclude, 
@@ -9925,7 +10369,16 @@ AS
 			) sizes ON db.database_id = sizes.database_id		
 	) 
 
-	INSERT INTO [#logSizes] ([database_name], [recovery_model], [database_size_gb], [log_size_gb], [log_percent_used], [vlf_count], [log_as_percent_of_db_size], [mimimum_allowable_log_size_gb])
+	INSERT INTO [#logSizes] (
+        [database_name], 
+        [recovery_model], 
+        [database_size_gb], 
+        [log_size_gb], 
+        [log_percent_used], 
+        [vlf_count], 
+        [log_as_percent_of_db_size], 
+        [mimimum_allowable_log_size_gb]
+    )
 	SELECT 
         [database_name],
         [recovery_model],
@@ -10007,7 +10460,7 @@ CREATE PROC dbo.shrink_logfiles
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Dependencies:
@@ -10024,7 +10477,7 @@ AS
 	    @Vector = @MaxTimeToWaitForLogBackups,
 	    @ValidationParameterName = N'@MaxTimeToWaitForLogBackups',
 		@ProhibitedIntervals = N'MILLISECOND, DAY, WEEK, MONTH, QUARTER, YEAR',
-	    @TranslationInterval = N'SECOND',
+	    @TranslationDatePart = N'SECOND',
 	    @Output = @maxSecondsToWaitForLogFileBackups OUTPUT,
 	    @Error = @error OUTPUT;
 	
@@ -10441,7 +10894,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -10545,7 +10998,7 @@ CREATE PROC dbo.extract_statement
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @sql nvarchar(2000) = N'
 SELECT 
@@ -10584,7 +11037,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -10763,6 +11216,44 @@ AS
 GO
 
 
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.print_long_string','P') IS NOT NULL
+	DROP PROC dbo.print_long_string;
+GO
+
+CREATE PROC dbo.print_long_string 
+	@Input				nvarchar(MAX)
+AS
+	SET NOCOUNT ON; 
+
+    -- {copyright}
+
+	DECLARE @totalLen int;
+	SELECT @totalLen = LEN(@Input);
+
+	IF @totalLen < 4000 BEGIN 
+		PRINT @Input;
+		RETURN 0; -- done
+	END 
+
+	DECLARE @chunkLocation int = 0;
+	DECLARE @substring nvarchar(4000);
+
+	WHILE @chunkLocation <= @totalLen BEGIN 
+		SET @substring = SUBSTRING(@Input, @chunkLocation, 4000);
+		
+		PRINT @substring;
+
+		SET @chunkLocation += 4000;
+	END;
+
+	RETURN 0;
+GO
+
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -10787,7 +11278,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN;
 
@@ -10823,7 +11314,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	 
 	BEGIN;
 
@@ -10865,7 +11356,7 @@ GO
 CREATE FUNCTION dbo.is_primary_server()
 RETURNS bit
 AS 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN
 		DECLARE @output bit = 0;
@@ -10901,7 +11392,7 @@ GO
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -10927,7 +11418,7 @@ DECLARE @is_primary_database nvarchar(MAX) = N'
 ALTER FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -10999,7 +11490,7 @@ CREATE PROC dbo.compare_jobs
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -11786,7 +12277,7 @@ CREATE PROC dbo.verify_job_states
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
@@ -11993,7 +12484,7 @@ CREATE PROC [dbo].[verify_job_synchronization]
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Validation Checks: 
@@ -12703,7 +13194,7 @@ CREATE PROC dbo.verify_server_synchronization
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- if we're not manually running this, make sure the server is the primary:
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -13457,7 +13948,7 @@ CREATE PROC dbo.verify_data_synchronization
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Validation Checks: 
@@ -13840,7 +14331,7 @@ DECLARE @generate_audit_signature nvarchar(MAX) = N'ALTER PROC dbo.generate_audi
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -13912,7 +14403,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -14089,7 +14580,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -14207,7 +14698,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v6.1.2880.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -14348,236 +14839,11 @@ ALERTS:
 GO	
 
 
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
--- Advanced S4 Error-Handling Capabilities:
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.enable_advanced_capabilities','P') IS NOT NULL
-	DROP PROC dbo.enable_advanced_capabilities;
-GO
-
-CREATE PROC dbo.enable_advanced_capabilities
-
-AS 
-	SET NOCOUNT ON; 
-
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	DECLARE @xpCmdShellValue bit; 
-	DECLARE @xpCmdShellInUse bit;
-	DECLARE @advancedS4 bit = 0;
-	
-	SELECT 
-		@xpCmdShellValue = CAST([value] AS bit), 
-		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
-	FROM 
-		sys.configurations 
-	WHERE 
-		[name] = 'xp_cmdshell';
-
-	IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN 
-		SELECT 
-			@advancedS4 = CAST([setting_value] AS bit) 
-		FROM 
-			dbo.[settings] 
-		WHERE 
-			[setting_key] = N'advanced_s4_error_handling';
-	END;
-
-	-- check to see if enabled first: 
-	IF @advancedS4 = 1 AND @xpCmdShellInUse = 1 BEGIN
-		PRINT 'Advanced S4 error handling (ability to use xp_cmdshell) already/previously enabled.';
-		GOTO termination;
-	END;
-
-	IF @xpCmdShellValue = 1 AND @xpCmdShellInUse = 0 BEGIN 
-		RECONFIGURE;
-		SET @xpCmdShellInUse = 1;
-	END;
-
-	IF @xpCmdShellValue = 0 BEGIN
-		EXEC sp_configure 'xp_cmdshell', 1; 
-		RECONFIGURE;
-
-		SELECT @xpCmdShellValue = 1, @xpCmdShellInUse = 1;
-	END;
-
-	IF @advancedS4 = 0 BEGIN 
-		IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
-			UPDATE dbo.[settings] 
-			SET 
-				[setting_value] = N'1', 
-				[comments] = N'Manually enabled on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.'  
-			WHERE 
-				[setting_key] = N'advanced_s4_error_handling';
-		  END;
-		ELSE BEGIN 
-			INSERT INTO dbo.[settings] (
-				[setting_type],
-				[setting_key],
-				[setting_value],
-				[comments]
-			)
-			VALUES (
-				N'UNIQUE', 
-				N'advanced_s4_error_handling', 
-				N'1', 
-				N'Manually enabled on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
-			);
-		END;
-		SET @advancedS4 = 1;
-	END;
-
-termination: 
-	SELECT 
-		@xpCmdShellValue [xp_cmdshell.value], 
-		@xpCmdShellInUse [xp_cmdshell.value_in_use],
-		@advancedS4 [advanced_s4_error_handling.value];
-
-	RETURN 0;
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.disable_advanced_capabilities','P') IS NOT NULL
-	DROP PROC dbo.disable_advanced_capabilities
-GO
-
-CREATE PROC dbo.disable_advanced_capabilities
-
-AS 
-	SET NOCOUNT ON;
-
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	DECLARE @xpCmdShellValue bit; 
-	DECLARE @xpCmdShellInUse bit;
-	DECLARE @advancedS4 bit = 0;
-	DECLARE @errorMessage nvarchar(MAX);
-		
-	SELECT 
-		@xpCmdShellValue = CAST([value] AS bit), 
-		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
-	FROM 
-		sys.configurations 
-	WHERE 
-		[name] = 'xp_cmdshell';
-
-	IF EXISTS(SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN 
-
-		SELECT 
-			@advancedS4 = CAST([setting_value] AS bit) 
-		FROM 
-			dbo.[settings] 
-		WHERE 
-			[setting_key] = N'advanced_s4_error_handling';
-	END;
-
-	BEGIN TRY 
-		IF @xpCmdShellValue = 1 OR @xpCmdShellInUse = 1 BEGIN
-			EXEC sp_configure 'xp_cmdshell', 0; 
-			RECONFIGURE;	
-			
-			SELECT @xpCmdShellValue = 0, @xpCmdShellInUse = 0;
-		END;
-
-		IF EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling') BEGIN
-			IF @advancedS4 = 1 BEGIN 
-				UPDATE dbo.[settings]
-				SET 
-					[setting_value] = N'0', 
-					[comments] = N'Manually DISABLED on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
-				WHERE 
-					[setting_key] = N'advanced_s4_error_handling';
-			  END;
-			ELSE BEGIN
-				INSERT INTO dbo.[settings] (
-					[setting_type],
-					[setting_key],
-					[setting_value],
-					[comments]
-				)
-				VALUES (
-					N'UNIQUE', 
-					N'advanced_s4_error_handling', 
-					N'1', 
-					N'Manually DISABLED on ' + CONVERT(nvarchar(30), GETDATE(), 120) + N'.' 
-				);
-			END;
-			SET @advancedS4 = 0;
-		END;
-
-	END TRY
-	BEGIN CATCH 
-		SELECT @errorMessage = N'Unhandled Exception: ' + CAST(ERROR_NUMBER() AS sysname) + N': ' + ERROR_MESSAGE();
-		RAISERROR(@errorMessage, 16, 1);
-		RETURN -1;
-	END CATCH
-
-	SELECT 
-		@xpCmdShellValue [xp_cmdshell.value], 
-		@xpCmdShellInUse [xp_cmdshell.value_in_use],
-		@advancedS4 [advanced_s4_error_handling.value];
-
-	RETURN 0;
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.verify_advanced_capabilities','P') IS NOT NULL
-	DROP PROC dbo.verify_advanced_capabilities;
-GO
-
-CREATE PROC dbo.verify_advanced_capabilities
-	--@ErrorMessage				nvarchar(1000)		OUTPUT
-AS
-	SET NOCOUNT ON; 
-
-	-- [v6.0.2868.2.2] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	DECLARE @xpCmdShellInUse bit;
-	DECLARE @advancedS4 bit;
-	DECLARE @errorMessage nvarchar(1000);
-	
-	SELECT 
-		@xpCmdShellInUse = CAST([value_in_use] AS bit) 
-	FROM 
-		sys.configurations 
-	WHERE 
-		[name] = 'xp_cmdshell';
-
-	SELECT 
-		@advancedS4 = CAST([setting_value] AS bit) 
-	FROM 
-		dbo.[settings] 
-	WHERE 
-		[setting_key] = N'advanced_s4_error_handling';
-
-	IF @xpCmdShellInUse = 1 AND ISNULL(@advancedS4, 0) = 1
-		RETURN 0;
-	
-	RAISERROR(N'Advanced S4 error handling capabilities are NOT enabled. Please consult S4 setup documentation and execute admindb.dbo.enabled_advanced_capabilities;', 16, 1);
-	RETURN -1;
-GO
-
-
-
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 6. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
+-- 5. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'6.0.2868.2';
-DECLARE @VersionDescription nvarchar(200) = N'MVP of S4-112 - removal of xp_cmdshell (auto) setup during installation + bug fixes';
+DECLARE @CurrentVersion varchar(20) = N'6.1.2880.1';
+DECLARE @VersionDescription nvarchar(200) = N'Major Bugfixes and improvements (S4-131, S4-133) + build streamlining';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)

@@ -13,14 +13,6 @@
 
 
     DEPENDENCIES:
-        - Requires dbo.restore_log - to log information about restore operations AND failures. 
-		- Requires dbo.list_databases - sproc used to 'parse' or determine which dbs to target based upon inputs.
-        - Requires dbo.load_backup_database_names - sproc used to load names of potential databases from a backups directory.
-		- Requires dbo.load_backup_files - sproc used to extract (in re-usable form) lists of available backup files at a specified path.
-		- Requires dbo.load_header_details - sproc used to pull meta-data about backups from backup files. 
-        - Requires dbo.check_paths - to facilitate validation of specified AND created database backup file paths. 
-		- Requires dbo.get_engine_version() - to validate version-level features/capabilities.
-        - Requires dbo.execute_uncatchable_command - to address problems with TRY/CATCH error handling within SQL Server. 
         - Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
         - Requires a configured Database Mail Profile + SQL Server Agent Operator. 
 
@@ -178,7 +170,7 @@ AS
 		EXEC [dbo].[translate_vector]
 		    @Vector = @RpoWarningThreshold, 
 		    @ValidationParameterName = N'@RpoWarningThreshold', 
-		    @TranslationInterval = N'MILLISECOND', 
+		    @TranslationDatePart = N'SECOND', 
 		    @Output = @vector OUTPUT, 
 		    @Error = @vectorError OUTPUT;
 
@@ -309,9 +301,10 @@ AS
         RETURN -20;
     END;
 
-    IF @PrintOnly = 1 BEGIN;
-        PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
-    END;
+    -- TODO: @serialized no longer contains a legit list of targets... (@dbsToRestore does).
+    --IF @PrintOnly = 1 BEGIN;
+    --    PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
+    --END;
 
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
@@ -320,12 +313,16 @@ AS
     DECLARE @move nvarchar(MAX);
     DECLARE @restoreLogId int;
     DECLARE @sourcePath nvarchar(500);
-    DECLARE @statusDetail nvarchar(500);
+    DECLARE @statusDetail nvarchar(MAX);
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
 	DECLARE @fileList nvarchar(MAX); 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
+
+	-- dbo.execute_command variables: 
+	DECLARE @execOutcome bit;
+	DECLARE @execResults xml;
 
 	DECLARE @ignoredLogFiles int = 0;
 
@@ -476,41 +473,31 @@ AS
 				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
 
 					BEGIN TRY 
-						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;';
-
+						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
+							+ N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';' + @crlf + @crlf;
+							
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
 						  END;
 						ELSE BEGIN
-							SET @outcome = NULL;
-							EXEC dbo.execute_uncatchable_command @command, 'ALTER', @result = @outcome OUTPUT;
-							SET @statusDetail = @outcome;
-						END;
+							
+							EXEC @execOutcome = dbo.[execute_command]
+							    @Command = @command, 
+							    @DelayBetweenAttempts = N'8 seconds',
+							    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
+							    @Results = @execResults OUTPUT;
 
-						-- give things just a second to 'die down':
-						WAITFOR DELAY '00:00:02';
+							IF @execOutcome <> 0 
+								SET @statusDetail = N'Error with SINGLE_USER > DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 
 					END TRY
 					BEGIN CATCH
-						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode to allow explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode and/or attempting to DROP target database for explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 					END CATCH
 
 					IF @statusDetail IS NOT NULL
 						GOTO NextDatabase;
-				END;
-
-				-- Now DROP the target db: 
-				SET @command = N'DROP DATABASE [' + @restoredName + N'];';
-                
-				IF @PrintOnly = 1 BEGIN
-						PRINT N'-- ' + @command + N'   -- dropping target database because it SOMEHOW was not cleaned up during latest operation (immediately prior) to this restore test. (Could be that the db is still restoring...)';
-					END;
-				ELSE BEGIN
-					EXEC dbo.execute_uncatchable_command @command, 'DROP', @result = @outcome OUTPUT;
-					SET @statusDetail = @outcome;
-				END;
-				IF @statusDetail IS NOT NULL BEGIN
-					GOTO NextDatabase;
 				END;
 
 			  END;
@@ -525,7 +512,7 @@ AS
 		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
 		
 		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
-			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] found in "' + @sourcePath + N'".';
+			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
 			GOTO NextDatabase;	
 		END;
 
@@ -778,6 +765,8 @@ AS
 				  END;
 				ELSE BEGIN
 					SET @outcome = NULL;
+
+                    -- TODO: do I want to specify a DIFFERENT (subset/set) of 'filters' for RESTORE and RECOVERY? (don't really think so, unless there are ever problems with 'overlap' and/or confusion.
 					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
 					SET @statusDetail = @outcome;
@@ -1042,7 +1031,7 @@ FINALIZE:
 	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
 		
-		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector));
+		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector * 1000));
 		DECLARE @rpoMessage nvarchar(MAX) = N'';
 
 		SELECT 
@@ -1071,8 +1060,8 @@ FINALIZE:
 			c.[database], 
 			c.[most_recent_backup], 
 			c.[restore_end], 
-			DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end]) [days_old], 
-			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) < 20) THEN -1 ELSE (DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) END [days_old], 
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(SECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
 		INTO 
 			#stale 
 		FROM 
@@ -1092,7 +1081,7 @@ FINALIZE:
 				END + @crlf
 		FROM 
 			[#stale] x
-		WHERE 
+		WHERE  
 			(x.[vector] > @vector) OR [x].[days_old] > 20 
 		ORDER BY 
 			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 

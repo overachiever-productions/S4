@@ -2,15 +2,6 @@
 
 
 /*
-	DEPENDENCIES:
-		- Requires dbo.get_time_vector - for time calculation logic/etc. 
-		- Requires dbo.execute_uncatchable_command - for low-level file-interactions and 'capture' of errors (since try/catch no worky).
-		- Requires dbo.check_paths - sproc to verify that paths are valid. 
-		- Requires dbo.load_backup_database_names - sproc that pulls potential db-names from backup folders/path.
-		- Requires dbo.list_databases - sproc that centralizes handling of which dbs/folders to process.
-		- Requires dbo.split_string - udf to parse the above.
-		- Requires that xp_cmdshell must be enabled.
-
 	NOTES:
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
 
@@ -156,6 +147,7 @@ AS
 		END;
 
 		BEGIN TRY
+
 			SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
 		END TRY
 		BEGIN CATCH
@@ -171,20 +163,18 @@ AS
 	  END;
 	ELSE BEGIN 
 
-		EXEC [dbo].[translate_vector]
-		    @Vector = @Retention,
-		    @ValidationParameterName = N'@Retention',
-		    @ProhibitedIntervals = N'MILLISECOND',
-		    @TranslationInterval = N'MILLISECOND',
-		    @Output = @retentionValue OUTPUT,
+		EXEC dbo.[translate_vector_datetime]
+		    @Vector = @Retention, 
+		    @Operation = N'SUBTRACT', 
+		    @ValidationParameterName = N'@Retention', 
+		    @ProhibitedIntervals = N'BACKUP', 
+		    @Output = @retentionCutoffTime OUTPUT, 
 		    @Error = @retentionError OUTPUT;
 
 		IF @retentionError IS NOT NULL BEGIN 
 			RAISERROR(@retentionError, 16, 1);
 			RETURN -26;
 		END;
-
-		SET @retentionCutoffTime = DATEADD(MILLISECOND, 0 - @retentionValue, GETDATE());
 	END;
 
 	IF @PrintOnly = 1 BEGIN
