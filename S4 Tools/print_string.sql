@@ -1,4 +1,3 @@
-
 /*
 	Obviously, PRINT 'xyz' is how to print. 
 	Only, sometimes you'll need to print something with a LENGTH > 4K characters. 
@@ -10,15 +9,16 @@
 USE [admindb];
 GO
 
-
-IF OBJECT_ID('dbo.print_string','P') IS NOT NULL
-	DROP PROC dbo.print_string;
+IF OBJECT_ID('dbo.print_long_string','P') IS NOT NULL
+	DROP PROC dbo.print_long_string;
 GO
 
-CREATE PROC dbo.print_string 
+CREATE PROC dbo.print_long_string 
 	@Input				nvarchar(MAX)
 AS
 	SET NOCOUNT ON; 
+
+    -- {copyright}
 
 	DECLARE @totalLen int;
 	SELECT @totalLen = LEN(@Input);
