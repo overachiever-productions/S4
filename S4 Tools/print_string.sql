@@ -4,6 +4,21 @@
 
 	That's what this sproc does. (It just keeps spitting out 4k chunks until the 'print' operation is done.) 
 
+
+    vNEXT: 
+        add in an optional @Delimiter sysname ... parameter... 
+            and... when it's present then: 
+                a) get it's length and substract that from the 4K 'gulps' we're spitting out and
+                b) use it to signify start/end... of a 'chunk'. 
+
+            COULD be something as simple as ***** 
+                and... maybe I need an @StartDelimiter and an @EndDelimiter ... 
+                    so... |****** and *****| might work or whatever... 
+                        the idea that these'd make it super easy to see where something started or finished. 
+
+            ALSO. 
+                I might not really need to SUBSTRACT this from the length... i might just spit chunk/gulp ... then PRINT delimiter then print chunk/gulp... etc.
+
 */
 
 USE [admindb];
