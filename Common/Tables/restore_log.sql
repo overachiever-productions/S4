@@ -282,6 +282,9 @@ END;
 
 -- may have 'escaped' previous update/mod logic... 
 IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
-	ALTER TABLE dbo.restore_log
-		DROP CONSTRAINT DF_restore_log_test_date;
-END
+	ALTER TABLE dbo.restore_log DROP CONSTRAINT DF_restore_log_test_date;
+
+    IF OBJECT_ID(N'DF_restore_log_operation_date') IS NULL BEGIN 
+        ALTER TABLE dbo.[restore_log] ADD CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()) FOR [operation_date];
+    END;
+END;
