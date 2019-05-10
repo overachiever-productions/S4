@@ -26,7 +26,7 @@
 
 	SIGNATURE / EXAMPLE: 
 		
-		EXEC [admindb].[dbo].[print_logins]
+		EXEC [admindb].[dbo].[script_logins]
 			@TargetDatabases = N'[ALL]',
 			@ExcludedDatabases = N'Compression%,Masked%, %_Test',
 			@DatabasePriorities = N'Billing,*,SSVDev',
@@ -43,11 +43,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.print_logins','P') IS NOT NULL
-	DROP PROC dbo.print_logins;
+IF OBJECT_ID('dbo.script_logins','P') IS NOT NULL
+	DROP PROC dbo.script_logins;
 GO
 
-CREATE PROC dbo.print_logins 
+CREATE PROC dbo.script_logins 
 	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
 	@ExcludedDatabases						nvarchar(MAX)			= NULL,
 	@DatabasePriorities						nvarchar(MAX)			= NULL,

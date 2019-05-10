@@ -5,7 +5,7 @@
 		- 'Wrapper' Sproc that assembles inputs and then 'routes' them into dbo.script_logins.
 			dbo.script_logins does all the 'work' of outputting login info but simply outputs to screen/console/whatever, 
 				whereas export_server_logins 'wraps' execution in error handlers (sending email alerts if there are any problems) 
-					AND tackles process of directing output from dbo.print_logins into a .sql file (at a specified location (@OutputPath))
+					AND tackles process of directing output from dbo.script into a .sql file (at a specified location (@OutputPath))
 						and can/will copy the output file to a secondary location (@CopyToPath). 
 
 
@@ -137,7 +137,7 @@ AS
 		RETURN 0; 
 	END; 
 
-	-- if we're still here, we need to dynamically output/execute dbo.print_logins so that output is directed to a file (and copied if needed)
+	-- if we're still here, we need to dynamically output/execute dbo.script_logins so that output is directed to a file (and copied if needed)
 	--		while catching and alerting on any errors or problems. 
 
 	DECLARE @errorDetails nvarchar(MAX);
