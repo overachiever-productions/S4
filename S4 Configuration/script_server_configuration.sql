@@ -3,7 +3,7 @@
 	
 
 
-	EXEC admindb.dbo.[script_server_configuration]
+	EXEC admindb.dbo.[export_server_configuration]
 		--@OutputPath = N'[DEFAULT]', 
 		@CopyToPath = N'D:\Dropbox\Server\SQLBackups';
 
@@ -12,11 +12,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.script_server_configuration','P') IS NOT NULL
-	DROP PROC dbo.script_server_configuration;
+IF OBJECT_ID('dbo.export_server_configuration','P') IS NOT NULL
+	DROP PROC dbo.export_server_configuration;
 GO
 
-CREATE PROC dbo.script_server_configuration 
+CREATE PROC dbo.export_server_configuration 
 	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
 	@CopyToPath								nvarchar(2000)			= NULL, 
 	@AddServerNameToFileName				bit						= 1, 
@@ -28,7 +28,7 @@ CREATE PROC dbo.script_server_configuration
 AS
 	SET NOCOUNT ON; 
 
-	-- License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639  (username: s4   password: simple )
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -91,13 +91,13 @@ AS
 	IF @PrintOnly = 1 BEGIN 
 		
 		-- just execute the sproc that prints info to the screen: 
-		EXEC dbo.print_configuration;
+		EXEC dbo.script_configuration;
 
 		RETURN 0;
 	END; 
 
 
-	-- if we're still here, we need to dynamically output/execute dbo.print_configuration so that output is directed to a file (and copied if needed)
+	-- if we're still here, we need to dynamically output/execute dbo.script_configuration so that output is directed to a file (and copied if needed)
 	--		while catching and alerting on any errors or problems. 
 	DECLARE @errorDetails nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -125,7 +125,7 @@ AS
 
 	-- Set up a 'translation' of the sproc call (for execution via xp_cmdshell): 
 	DECLARE @sqlCommand varchar(MAX); 
-	SET @sqlCommand = N'EXEC admindb.dbo.print_configuration;';
+	SET @sqlCommand = N'EXEC admindb.dbo.script_configuration;';
 
 	DECLARE @command varchar(8000) = 'sqlcmd {0} -q "{1}" -o "{2}"';
 
