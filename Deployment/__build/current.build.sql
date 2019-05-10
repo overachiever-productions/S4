@@ -175,6 +175,11 @@ DECLARE @olderObjects xml = CONVERT(xml, N'<list>
     <entry schema="dbo" name="get_vector_delay" type="P" comment="v5.6 Vector Standardization (cleanup)." />
 
     <entry schema="dbo" name="load_databases" type="P" comment="v5.8 refactor/changes." />
+
+    <entry schema="dbo" name="script_server_logins" type="P" comment="v6.2 refactoring." />
+    <entry schema="dbo" name="print_logins" type="P" comment="v6.2 refactoring." />
+    <entry schema="dbo" name="script_server_configuration" type="P" comment="v6.2 refactoring." />
+    <entry schema="dbo" name="print_configuration" type="P" comment="v6.2 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
