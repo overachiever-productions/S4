@@ -1,6 +1,6 @@
 /*
 
-    INTERNAL:
+    INTERNAL
         This is an explicitly internal UDF - simply because the signature is 
             such an UGLY beast (i.e., way too many parameters). 
 
