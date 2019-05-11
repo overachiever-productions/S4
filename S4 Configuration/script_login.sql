@@ -13,19 +13,19 @@
                     EXEC admindb.dbo.script_login '716CECA6-52EF-4F74-89EF-03BB5B550A6B;'
                     GO
 
-            Dump the sa login - if it exists: 
+            script/output the sa login - if it exists: 
                     EXEC admindb.dbo.script_login 'sa';
 
-            As above, but prevent password update IF exists: 
+            As above, but ALLOW password ALTER IF exists: 
                     EXEC admindb.dbo.script_login 
                         @LoginName = 'sa', 
-                        @AllowUpdateIfExists = 0;]
+                        @BehaviorIfLoginExists = N'ALTER';
                     GO
 
             Similar, but with the 'test' login - if it exists - and ... allow it to be DROPed and CREATEd if it already exists: 
                     EXEC admindb.dbo.script_login 
                         @LoginName = 'test', 
-                        @AllowDropAndRecreateIfExists = 1;     
+                        @BehaviorIfLoginExists = N'DROP_AND_CREATE';
                     GO  
 
             dump a sample login - forcing the default db to master and disabling the policy checks... 
@@ -51,12 +51,13 @@
                         PRINT 'sad trombone';
                     GO
 
-            API consumpton example - expect to have/load the @definition: 
+            API consumpton example - expect to have/load the @definition - and allow ALTER if exists:  
                     DECLARE @definition nvarchar(MAX); -- must be NULL; 
                     DECLARE @outcome int;
 
                     EXEC @outcome = dbo.script_login 
                         @LoginName = 'sa', 
+                        @BehaviorIfLoginExists = N'ALTER',
                         @Output = @definition OUTPUT; 
 
                     IF @outcome = 0 
@@ -76,8 +77,7 @@ GO
 
 CREATE PROC dbo.script_login
     @LoginName                              sysname                 NULL,
-    @AllowUpdateIfExists                   bit                     = 1, 
-    @AllowDropAndRecreateIfExists           bit                     = 0,
+    @BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 
@@ -134,8 +134,7 @@ AS
     DECLARE @formatted nvarchar(MAX);
     SELECT @formatted = dbo.[format_sql_login](
         @enabled, 
-        @AllowUpdateIfExists, 
-        @AllowDropAndRecreateIfExists,
+        @BehaviorIfLoginExists,
         @LoginName, 
         @password, 
         @sid, 
