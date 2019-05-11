@@ -11,17 +11,8 @@
 				A similar approach would be to simply get a list of 'OFFLINE'/SINGLE_USER/WHATEVER dbs... 
 					and... see if the @masterDB for a given login (while processing their print operations) is found in @offlineDBs or something... at which point, it's NOT a 'server level only' login - it's a user bound to an offline db (most likely).
 
-
 	TODO
 		- Implement logic to handle logins NOT mapped to ANY db - as per: https://trello.com/c/dCbst8kZ/46-bug-print-logins (I've got a stub-in for this in the main loop... (line 203-ish)
-
-
-	NOTE: 
-		- Not really intended to be called directly. Should typically be called by dbo.script_server_logins. 
-
-	DEPENDENCIES:
-		- dbo.split_string
-		- dbo.
 
 
 	SIGNATURE / EXAMPLE: 
@@ -54,19 +45,19 @@ CREATE PROC dbo.script_logins
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
 	@ExcludedUsers							nvarchar(MAX)			= NULL,
 	@ExcludeMSAndServiceLogins				bit						= 1,
-	@DisablePolicyChecks					bit						= 0,
+	@BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
+    @DisablePolicyChecks					bit						= 0,
 	@DisableExpiryChecks					bit						= 0, 
 	@ForceMasterAsDefaultDB					bit						= 0,
+-- TODO: remove this functionality - and... instead, have a sproc that lists logins that have access to MULTIPLE databases... 
 	@WarnOnLoginsHomedToOtherDatabases		bit						= 0				-- warns when a) set to 1, and b) default_db is NOT master NOR the current DB where the user is defined... (for a corresponding login).
 AS
 	SET NOCOUNT ON; 
 
 	-- {copyright}
 
-	IF NULLIF(@TargetDatabases,'') IS NULL BEGIN
-		RAISERROR('Parameter @TargetDatabases cannot be NULL or empty.', 16, 1)
-		RETURN -1;
-	END; 
+	IF NULLIF(@TargetDatabases,'') IS NULL 
+        SET @TargetDatabases = N'[ALL]';
 
 	DECLARE @ignoredDatabases table (
 		[database_name] sysname NOT NULL
@@ -98,6 +89,7 @@ AS
 	);
 
 	SELECT 
+        CASE WHEN sp.[is_disabled] = 1 THEN 0 ELSE 1 END [enabled],
 		sp.[name], 
 		sp.[sid],
 		sp.[type], 
@@ -117,7 +109,7 @@ AS
 
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @tab nchar(1) = NCHAR(9);
-	DECLARE @info nvarchar(MAX);
+	DECLARE @output nvarchar(MAX);
 
 	INSERT INTO @ignoredDatabases ([database_name])
 	SELECT [result] [database_name] FROM dbo.[split_string](@ExcludedDatabases, N',', 1) ORDER BY row_id;
@@ -180,7 +172,7 @@ AS
 		INNER JOIN 
 			@ingoredUsers i ON i.[user_name] LIKE u.[name];
 
-		INSERT INTO #Orphans (name, [sid])
+		INSERT INTO #Orphans ([name], [sid])
 		SELECT 
 			u.[name], 
 			u.[sid]
@@ -190,24 +182,24 @@ AS
 		WHERE
 			l.[name] IS NULL OR l.[sid] IS NULL;
 
-		SET @info = N'';
+		SET @output = N'';
 
 		-- Report on Orphans:
-		SELECT @info = @info + 
+		SELECT @output = @output + 
 			N'-- ORPHAN DETECTED: ' + [name] + N' (SID: ' + CONVERT(nvarchar(MAX), [sid], 2) + N')' + @crlf
 		FROM 
 			[#Orphans]
 		ORDER BY 
 			[name]; 
 
-		IF NULLIF(@info,'') IS NOT NULL
-			PRINT @info; 
+		IF NULLIF(@output, '') IS NOT NULL
+			PRINT @output; 
 
 		-- Report on differently-homed logins if/as directed:
 		IF @WarnOnLoginsHomedToOtherDatabases = 1 BEGIN
-			SET @info = N'';
+			SET @output = N'';
 
-			SELECT @info = @info +
+			SELECT @output = @output +
 				N'-- NOTE: Login ' + u.[name] + N' is set to use [' + l.[default_database_name] + N'] as its default database instead of [' + @currentDatabase + N'].'
 			FROM 
 				[#Users] u
@@ -218,8 +210,8 @@ AS
 				AND l.default_database_name <> 'master'  -- master is fine... 
 				AND l.default_database_name <> @currentDatabase; 				
 				
-			IF NULLIF(@info, N'') IS NOT NULL 
-				PRINT @info;
+			IF NULLIF(@output, N'') IS NOT NULL 
+				PRINT @output;
 		END;
 
 		-- Process 'logins only' logins (i.e., not mapped to any databases as users): 
@@ -258,7 +250,7 @@ AS
 				SET @sql = REPLACE(@sidTemplate, N'{0}', @dbName);
 
 				INSERT INTO [#SIDs] ([sid], [database])
-				EXEC master.sys.[sp_executesql] @sql;
+				EXEC sys.[sp_executesql] @sql;
 
 				FETCH NEXT FROM [looper] INTO @dbName;
 			END; 
@@ -266,53 +258,77 @@ AS
 			CLOSE [looper];
 			DEALLOCATE [looper];
 
-			SET @info = N'';
+			SET @output = N'';
 			
-			SELECT @info = @info + 
-				N'-- Server-Level Login:'
-				+ @crlf + N'IF NOT EXISTS (SELECT NULL FROM master.sys.server_principals WHERE [name] = ''' + l.[name] + N''') BEGIN ' 
-				+ @crlf + @tab + N'CREATE LOGIN [' + l.[name] + N'] ' + CASE WHEN l.[type] = 'U' THEN 'FROM WINDOWS WITH ' ELSE 'WITH ' END
-				+ CASE 
-					WHEN l.[type] = 'S' THEN 
-						@crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
-						+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), l.[sid], 2) + N','
-						+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
-						+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','				
-					ELSE ''
-				END 
-				+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
-				+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
-				+ @crlf + N'END;'
-				+ @crlf
-			FROM 
+            SELECT 
+                @output = @output + 
+                CASE 
+                    WHEN [l].[type] = N'S' THEN 
+                        dbo.[format_sql_login] (
+                            l.[enabled], 
+                            @BehaviorIfLoginExists, 
+                            l.[name], 
+                            CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
+                            CONVERT(nvarchar(MAX), l.[sid], 2), 
+                            l.[default_database_name], 
+                            l.[default_language_name], 
+                            CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
+                            CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
+                         )
+                    WHEN l.[type] IN (N'U', N'G') THEN 
+                        dbo.[format_windows_login] (
+                            l.[enabled], 
+                            @BehaviorIfLoginExists, 
+                            l.[name], 
+                            CONVERT(nvarchar(MAX), l.[sid], 2), 
+                            l.[default_database_name], 
+                            l.[default_language_name]
+                        )
+                    ELSE 
+                        '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
+                END
+                 + @crlf
+            FROM 
 				[#Logins] l
 			WHERE 
-				l.[sid] NOT IN (SELECT [sid] FROM [#SIDs]);
+				l.[sid] NOT IN (SELECT [sid] FROM [#SIDs]);                
 
-			IF NULLIF(@info, '') IS NOT NULL BEGIN 
-				PRINT @info + @crlf;
+			IF NULLIF(@output, '') IS NOT NULL BEGIN 
+				PRINT @output + @crlf;
 			END 
 		END; 
 
 		-- Output LOGINS:
-		SET @info = N'';
+		SET @output = N'';
 
-		SELECT @info = @info +
-			N'IF NOT EXISTS (SELECT NULL FROM master.sys.server_principals WHERE [name] = ''' + l.[name] + N''') BEGIN ' 
-			+ @crlf + @tab + N'CREATE LOGIN [' + l.[name] + N'] ' + CASE WHEN l.[type] = 'U' THEN 'FROM WINDOWS WITH ' ELSE 'WITH ' END
-			+ CASE 
-				WHEN l.[type] = 'S' THEN 
-					@crlf + @tab + @tab + N'PASSWORD = 0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED,'
-					+ @crlf + @tab + N'SID = 0x' + CONVERT(nvarchar(MAX), l.[sid], 2) + N','
-					+ @crlf + @tab + N'CHECK_EXPIRATION = ' + CASE WHEN (l.is_expiration_checked = 1 AND @DisableExpiryChecks = 0) THEN N'ON' ELSE N'OFF' END + N','
-					+ @crlf + @tab + N'CHECK_POLICY = ' + CASE WHEN (l.is_policy_checked = 1 AND @DisablePolicyChecks = 0) THEN N'ON' ELSE N'OFF' END + N','				
-				ELSE ''
-			END 
-			+ @crlf + @tab + N'DEFAULT_DATABASE = [' + CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.default_database_name END + N'],'
-			+ @crlf + @tab + N'DEFAULT_LANGUAGE = [' + l.default_language_name + N'];'
-			+ @crlf + N'END;'
-			+ @crlf
-			+ @crlf
+		SELECT 
+            @output = @output + 
+            CASE 
+                WHEN [l].[type] = N'S' THEN 
+                    dbo.[format_sql_login] (
+                        l.[enabled], 
+                        @BehaviorIfLoginExists, 
+                        l.[name], 
+                        CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
+                        CONVERT(nvarchar(MAX), l.[sid], 2), 
+                        l.[default_database_name], 
+                        l.[default_language_name], 
+                        CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
+                        CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
+                        )
+                WHEN l.[type] IN (N'U', N'G') THEN 
+                    dbo.[format_windows_login] (
+                        l.[enabled], 
+                        @BehaviorIfLoginExists, 
+                        l.[name], 
+                        CONVERT(nvarchar(MAX), l.[sid], 2), 
+                        l.[default_database_name], 
+                        l.[default_language_name]
+                    )
+                ELSE 
+                    '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
+            END
+                + @crlf
 		FROM 
 			#Users u
 			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
@@ -320,8 +336,8 @@ AS
 			u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
 			AND u.[name] NOT IN (SELECT name FROM #Orphans);
 			
-		IF NULLIF(@info, N'') IS NOT NULL
-			PRINT @info;
+		IF NULLIF(@output, N'') IS NOT NULL
+			PRINT @output;
 
 		PRINT @crlf;
 
