@@ -26,22 +26,22 @@
             SET NOCOUNT ON;
         
         Expected Error: 
-                SELECT dbo.format_sql_login(1, 1, 1, N'', '', '0x0456598165fe', 'Billing', DEFAULT, NULL, NULL);
+                SELECT dbo.format_sql_login(1, N'NONE', N'', '', '0x0456598165fe', 'Billing', DEFAULT, NULL, NULL);
 
         CREATE only - with a (fake) SID and default DB of [Billing] specified
-                SELECT dbo.format_sql_login(1, DEFAULT, DEFAULT, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
+                SELECT dbo.format_sql_login(1, DEFAULT, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
 
         CREATE, but login defaults to NOT active... so it's disabled: 
-                SELECT dbo.format_sql_login(NULL, DEFAULT, DEFAULT, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
+                SELECT dbo.format_sql_login(NULL, DEFAULT, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
 
         CREATE or ALTER (if it exists - but SID can't be changed by the ALTER):
-                SELECT dbo.format_sql_login(1, 1, DEFAULT, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
+                SELECT dbo.format_sql_login(1, N'ALTER', N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
 
-        CREATE or DROP + CREATE (even though @AllowUpdate = 1, it's overruled/ignored by @AllowReCreate)
-                SELECT dbo.format_sql_login(1, 1, 1, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
+        CREATE or DROP + CREATE 
+                SELECT dbo.format_sql_login(1, N'DROP_AND_CREATE', N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
 
         As above, but defaults to SAFE config (i.e., @Enabled is NOT specified):
-                SELECT dbo.format_sql_login(NULL, 1, 1, N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
+                SELECT dbo.format_sql_login(NULL, N'DROP_AND_CREATE', N'Bilbo', 'THe One Ring 1s fun.', '0x0456598165fe', 'Billing', NULL, NULL, NULL);
 
 
 
@@ -56,18 +56,16 @@ IF OBJECT_ID('dbo.format_sql_login','FN') IS NOT NULL
 GO
 
 CREATE FUNCTION dbo.format_sql_login (
-    -- IF NULL the login will be DISABLED via the output/script.
-    @Enabled                bit,  
-    -- i.e., assume we're moving this login from prod to a dev/qa server - an 'update' would change passwords/defaults/etc. 
-    @AllowUpdate            bit = 0,                        
-    @AllowReCreate          bit = 0,                        -- effectively, allow the SID to be 'changed'.... 
-    @Name                   sysname,                        -- always required.
-    @Password               varchar(256),                   -- NOTE: while not 'strictly' required by ALTER LOGIN statements, @Password is ALWAYS required for dbo.format_sql_login.
-    @SID                    varchar(100),                   -- only processed if this is a CREATE or a DROP/CREATE... 
-    @DefaultDatabase        sysname = N'master',            -- have to specify DEFAULT for this to work... obviously
-    @DefaultLanguage        sysname = N'[DEFAULT]',         -- have to specify DEFAULT for this to work... obviously
-    @CheckExpriration       bit = 0,                        -- have to specify DEFAULT for this to work... obviously
-    @CheckPolicy            bit = 0                         -- have to specify DEFAULT for this to work... obviously
+    
+    @Enabled                          bit,                                  -- IF NULL the login will be DISABLED via the output/script.
+    @BehaviorIfLoginExists            sysname         = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
+    @Name                             sysname,                              -- always required.
+    @Password                         varchar(256),                         -- NOTE: while not 'strictly' required by ALTER LOGIN statements, @Password is ALWAYS required for dbo.format_sql_login.
+    @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
+    @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
+    @DefaultLanguage                  sysname         = N'[DEFAULT]',       -- have to specify DEFAULT for this to work... obviously
+    @CheckExpriration                 bit             = 0,                  -- have to specify DEFAULT for this to work... obviously
+    @CheckPolicy                      bit             = 0                   -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
 AS 
@@ -81,6 +79,12 @@ AS
             + N'--' + NCHAR(9) + N'Parameters @Name and @Password are both required.' + @crlf
             + N'--' + NCHAR(9) + '   Supplied Values: @Name -> [{Name}], @Password -> [{Password}].'
         
+        IF NULLIF(@BehaviorIfLoginExists, N'') IS NULL 
+            SET @BehaviorIfLoginExists = N'NONE';
+
+        IF UPPER(@BehaviorIfLoginExists) NOT IN (N'NONE', N'ALTER', N'DROP_AND_CREATE')
+            SET @BehaviorIfLoginExists = N'NONE';
+
         IF (NULLIF(@Name, N'') IS NULL) OR (NULLIF(@Password, N'') IS NULL) BEGIN 
             SET @output = REPLACE(@output, N'{name}', ISNULL(NULLIF(@Name, N''), N'#NOT PROVIDED#'));
             SET @output = REPLACE(@output, N'{Password}', ISNULL(NULLIF(@Password, N''), N'#NOT PROVIDED#'));
@@ -98,37 +102,34 @@ END;
 GO
 ';
         -- Main logic flow:
-        IF ISNULL(@AllowReCreate, 0) = 1  -- CREATE else DROP + CREATE
-            SET @AllowUpdate = 0; -- a recreate is obviously > an update (and accomplishes the same thing + enables a SID 'update').
+        IF UPPER(@BehaviorIfLoginExists) = N'NONE' BEGIN 
+            SET @template = REPLACE(@template, N'{SidReplacementDrop}', N'');
+            SET @template = REPLACE(@template, N'{ElseClause}', N'');
+            SET @template = REPLACE(@template, N'{CreateOrAlter}', N''); 
+                
+            SET @template = REPLACE(@template, N'{Attributes2}', N'');
+            SET @template = REPLACE(@template, N'{Disable2}', N'');
 
-        IF ISNULL(@AllowReCreate, 0) = 1 BEGIN 
+        END;
+
+        IF UPPER(@BehaviorIfLoginExists) = N'ALTER' BEGIN 
+            SET @template = REPLACE(@template, N'{SidReplacementDrop}', N'');
+
+            SET @template = REPLACE(@template, N'{ElseClause}', @crlf + N'  END;' + @crlf + N'ELSE BEGIN' + @crlf);
+            SET @template = REPLACE(@template, N'{CreateOrAlter}', NCHAR(9) + N'ALTER LOGIN [{Name}] WITH ');
+            SET @template = REPLACE(@template, N'{Attributes2}', @alterAttributes);
+            SET @template = REPLACE(@template, N'{Disable2}', N'{Disable}');
+        END;
+
+        IF UPPER(@BehaviorIfLoginExists) = N'DROP_AND_CREATE' BEGIN 
             SET @template = REPLACE(@template, N'{ElseClause}', @crlf + N'  END;' + @crlf + N'ELSE BEGIN' + @crlf);
             SET @template = REPLACE(@template, N'{SidReplacementDrop}', NCHAR(9) + N'DROP LOGIN ' + QUOTENAME(@Name) + N';' + @crlf + @crlf);
             SET @template = REPLACE(@template, N'{CreateOrAlter}', NCHAR(9) + N'CREATE LOGIN [{Name}] WITH '); 
             
             SET @template = REPLACE(@template, N'{Attributes2}', @attributes);
             SET @template = REPLACE(@template, N'{Disable2}', N'{Disable}');
-
-          END;
-        ELSE BEGIN -- CREATE ONLY or CREATE else ALTER.. 
-            
-            SET @template = REPLACE(@template, N'{SidReplacementDrop}', N'');
-
-            IF ISNULL(@AllowUpdate, 0) = 1 BEGIN  -- CREATE else ALTER
-                SET @template = REPLACE(@template, N'{ElseClause}', @crlf + N'  END;' + @crlf + N'ELSE BEGIN' + @crlf);
-                SET @template = REPLACE(@template, N'{CreateOrAlter}', NCHAR(9) + N'ALTER LOGIN [{Name}] WITH ');
-                SET @template = REPLACE(@template, N'{Attributes2}', @alterAttributes);
-                SET @template = REPLACE(@template, N'{Disable2}', N'{Disable}');
-              END;
-            ELSE BEGIN  -- CREATE only... 
-                SET @template = REPLACE(@template, N'{ElseClause}', N'');
-                SET @template = REPLACE(@template, N'{CreateOrAlter}', N''); 
-                
-                SET @template = REPLACE(@template, N'{Attributes2}', N'');
-                SET @template = REPLACE(@template, N'{Disable2}', N'');
-            END;
-        END; 
-
+        END;
+  
         -- initialize output with basic details:
         SET @template = REPLACE(@template, N'{Attributes}', @attributes);
         SET @output = REPLACE(@template, N'{Name}', @Name);
