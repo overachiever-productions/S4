@@ -39,6 +39,21 @@ IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
     IF @objectId IS NOT NULL BEGIN;
 
         DECLARE @importSQL nvarchar(MAX) = N'
+        INSERT INTO dbo.restore_log (
+            restore_id, 
+            execution_id, 
+            operation_date, 
+            [database], 
+            restored_as, 
+            restore_start, 
+            restore_end, 
+            restore_succeeded, 
+		    consistency_start, 
+            consistency_end, 
+            consistency_succeeded, 
+            dropped, 
+            error_details
+        )
 	    SELECT 
 		    RestorationTestId,
             ExecutionId,
@@ -62,8 +77,7 @@ IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 	    PRINT 'Importing Previous Data from restore log.... ';
 	    SET IDENTITY_INSERT dbo.restore_log ON;
 
-	        INSERT INTO dbo.restore_log (restore_id, execution_id, operation_date, [database], restored_as, restore_start, restore_end, restore_succeeded, 
-		        consistency_start, consistency_end, consistency_succeeded, dropped, error_details)
+	        
 
             EXEC sys.[sp_executesql] @importSQL;
 
@@ -75,7 +89,7 @@ END;
 GO
 
 ---------------------------------------------------------------------------
--- v 4.6 Make sure the admindb.dbo.restore_log.restored_files column exists ... 
+-- v4.6 Make sure the admindb.dbo.restore_log.restored_files column exists ... 
 ---------------------------------------------------------------------------
 IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
 
@@ -150,7 +164,7 @@ GO
 
 
 ---------------------------------------------------------------------------
--- v 4.7 Process UTC to local time change 
+-- v4.7 Process UTC to local time change 
 ---------------------------------------------------------------------------
 DECLARE @currentVersion decimal(2,1); 
 SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
@@ -181,7 +195,7 @@ END;
 GO
 
 ---------------------------------------------------------------------------
--- v 4.9 Add recovery column + rename first two table columns:
+-- v4.9 Add recovery column + rename first two table columns:
 ---------------------------------------------------------------------------
 IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery') BEGIN 
 
@@ -216,7 +230,6 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 		    ALTER TABLE dbo.restore_log
 			    DROP CONSTRAINT DF_restore_log_dropped;
         END;
-
 
 		CREATE TABLE dbo.Tmp_restore_log (
 		    restore_id int IDENTITY(1,1) NOT NULL,                                                                      -- restore_test_id until v.9                         
@@ -255,7 +268,7 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 END;
 GO
 
--- v 4.9 (standardize/cleanup):
+-- v4.9 (standardize/cleanup):
 UPDATE dbo.[restore_log] 
 SET 
 	[dropped] = 'LEFT-ONLINE'
@@ -263,7 +276,7 @@ WHERE
 	[dropped] = 'LEFT ONLINE';
 
 ---------------------------------------------------------------------------
--- 5.0 - expand dbo.restore_log.[recovery]. S4-86.
+-- v5.0 - expand dbo.restore_log.[recovery]. S4-86.
 ---------------------------------------------------------------------------
 IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'recovery' AND [max_length] = 10) BEGIN
 	BEGIN TRAN;
@@ -280,6 +293,9 @@ IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.resto
 	COMMIT;
 END;
 
+---------------------------------------------------------------------------
+-- v6.1+
+---------------------------------------------------------------------------
 -- may have 'escaped' previous update/mod logic... 
 IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
 	ALTER TABLE dbo.restore_log DROP CONSTRAINT DF_restore_log_test_date;
