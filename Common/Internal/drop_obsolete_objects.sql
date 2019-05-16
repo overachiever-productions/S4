@@ -146,9 +146,8 @@ AS
         @Directives.nodes('//entry') [data] ([entry]);
 
     DECLARE @template nvarchar(MAX) = N'
-{comment}IF OBJECT_ID(''{schema}.{object}'', ''{type}'') IS NOT NULL 
-    DROP {object_type_description} [{schema}].[{object}]; {StatementCheck} {Notification}
-GO';
+{comment}IF OBJECT_ID(''{schema}.{object}'', ''{type}'') IS NOT NULL {BEGIN}
+    DROP {object_type_description} [{schema}].[{object}]; {StatementCheck} {Notification}{END}';
 
     DECLARE @checkTemplate nvarchar(MAX) = @crlf + @crlf + @tab + N'IF EXISTS ({statement})
         PRINT ''{warning}''; ';
@@ -193,8 +192,10 @@ GO';
             SET @current = REPLACE(@current, N'{comment}', N'');
         END;
 
-        IF NULLIF(@statement, N'') IS NOT NULL BEGIN
+        DECLARE @beginEndRequired bit = 0;
 
+        IF NULLIF(@statement, N'') IS NOT NULL BEGIN
+            SET @beginEndRequired = 1;
             SET @current = REPLACE(@current, N'{StatementCheck}', REPLACE(REPLACE(@checkTemplate, N'{statement}', @statement), N'{warning}', @warning));
           END;
         ELSE BEGIN 
@@ -202,12 +203,21 @@ GO';
         END; 
 
         IF (NULLIF(@content, N'') IS NOT NULL) AND (NULLIF(@heading, N'') IS NOT NULL) BEGIN
-
+            SET @beginEndRequired = 1;
             SET @current = REPLACE(@current, N'{Notification}', REPLACE(REPLACE(@notificationTemplate, N'{content}', @content), N'{heading}', @heading));
           END;
         ELSE BEGIN
             SET @current = REPLACE(@current, N'{Notification}', N'');
         END;
+
+        IF @beginEndRequired = 1 BEGIN 
+            SET @current = REPLACE(@current, N'{BEGIN}', N'BEGIN');
+            SET @current = REPLACE(@current, N'{END}', @crlf + N'END;');
+          END;
+        ELSE BEGIN 
+            SET @current = REPLACE(@current, N'{BEGIN}', N'');
+            SET @current = REPLACE(@current, N'{END}', N'');
+        END; 
 
         SET @command = @command + @current + @crlf;
 
@@ -223,7 +233,7 @@ Cleanup:
     END;
 
     IF NULLIF(@TargetDatabae, N'') IS NOT NULL BEGIN 
-        SET @command = N'USE DATABASE ' + QUOTENAME(@TargetDatabae) + N';' + @crlf + N'GO' + @crlf + @command;
+        SET @command = N'USE ' + QUOTENAME(@TargetDatabae) + N';' + @crlf + N'' + @command;
     END;
 
     IF @PrintOnly = 1
