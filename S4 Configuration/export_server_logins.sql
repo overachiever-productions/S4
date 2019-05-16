@@ -2,24 +2,16 @@
 /*
 
 	NOTES: 
-		- 'Wrapper' Sproc that assembles inputs and then 'routes' them into dbo.print_logins.
-			dbo.print_logins does all the 'work' of outputting login info but simply outputs to screen/console/whatever, 
-				whereas script_server_logins 'wraps' execution in error handlers (sending email alerts if there are any problems) 
-					AND tackles process of directing output from dbo.print_logins into a .sql file (at a specified location (@OutputPath))
+		- 'Wrapper' Sproc that assembles inputs and then 'routes' them into dbo.script_logins.
+			dbo.script_logins does all the 'work' of outputting login info but simply outputs to screen/console/whatever, 
+				whereas export_server_logins 'wraps' execution in error handlers (sending email alerts if there are any problems) 
+					AND tackles process of directing output from dbo.script into a .sql file (at a specified location (@OutputPath))
 						and can/will copy the output file to a secondary location (@CopyToPath). 
-
-
-
-	DEPENDENCIES: 
-		- S4 dbo.load_default_path
-		- S4 dbo.split_string
-		- S4 dbo.list_databases  (underlying sproc has dependency on this one)
-		- xp_cmdshell MUST be enabled. (For directing output.)
 
 
 	SIGNATURE / SAMPLE EXECUTION: 
 
-		EXEC admindb.dbo.[script_server_logins]
+		EXEC admindb.dbo.[export_server_logins]
    			@TargetDatabases = N'[ALL]',
 			@ExcludedDatabases = N'Compression%,Masked%, %_Test',
 			@DatabasePriorities = N'Billing,*,SSVDev',
@@ -43,11 +35,11 @@
 
 USE [admindb];
 
-IF OBJECT_ID('dbo.script_server_logins','P') IS NOT NULL
-	DROP PROC dbo.script_server_logins;
+IF OBJECT_ID('dbo.export_server_logins','P') IS NOT NULL
+	DROP PROC dbo.export_server_logins;
 GO
 
-CREATE PROC dbo.script_server_logins
+CREATE PROC dbo.export_server_logins
 	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
 	@ExcludedDatabases						nvarchar(MAX)			= NULL,
 	@DatabasePriorities						nvarchar(MAX)			= NULL,
@@ -129,8 +121,8 @@ AS
 	END;
 
 	IF @PrintOnly = 1 BEGIN
-		-- just process the sproc that prints outputs/details: 
-		EXEC dbo.[print_logins]
+		 
+		EXEC dbo.[script_logins]  
 		    @TargetDatabases = @TargetDatabases, 
 		    @ExcludedDatabases = @ExcludedDatabases, 
 		    @DatabasePriorities = @DatabasePriorities, 
@@ -145,7 +137,7 @@ AS
 		RETURN 0; 
 	END; 
 
-	-- if we're still here, we need to dynamically output/execute dbo.print_logins so that output is directed to a file (and copied if needed)
+	-- if we're still here, we need to dynamically output/execute dbo.script_logins so that output is directed to a file (and copied if needed)
 	--		while catching and alerting on any errors or problems. 
 
 	DECLARE @errorDetails nvarchar(MAX);
@@ -174,7 +166,7 @@ AS
 
 	-- Set up a 'translation' of the sproc call (for execution via xp_cmdshell): 
 	DECLARE @sqlCommand varchar(MAX); 
-	SET @sqlCommand = N'EXEC admindb.dbo.print_logins @TargetDatabases = N''{0}'', @ExcludedDatabases = N''{1}'', @DatabasePriorities = N''{2}'', @ExcludedLogins = N''{3}'', @ExcludedUsers = N''{4}'', '
+	SET @sqlCommand = N'EXEC admindb.dbo.script_logins @TargetDatabases = N''{0}'', @ExcludedDatabases = N''{1}'', @DatabasePriorities = N''{2}'', @ExcludedLogins = N''{3}'', @ExcludedUsers = N''{4}'', '
 		+ '@ExcludeMSAndServiceLogins = {5}, @DisablePolicyChecks = {6}, @DisableExpiryChecks = {7}, @ForceMasterAsDefaultDB = {8}, @WarnOnLoginsHomedToOtherDatabases = {9};';
 
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{0}', CAST(@TargetDatabases AS varchar(MAX)));
@@ -189,7 +181,7 @@ AS
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{9}', CASE WHEN @WarnOnLoginsHomedToOtherDatabases = 1 THEN '1' ELSE '0' END);
 
 	IF LEN(@sqlCommand) > 8000 BEGIN 
-		INSERT INTO @errors (error) VALUES ('Combined length of all input parameters to dbo.print_logins exceeds 8000 characters and can NOT be executed dynamically. DUMP/OUTPUT of logins can not and did NOT proceed as expected.')
+		INSERT INTO @errors (error) VALUES ('Combined length of all input parameters to dbo.script_logins exceeds 8000 characters and can NOT be executed dynamically. Export of logins can not and did NOT proceed as expected.')
 		GOTO REPORTING;
 	END; 
 

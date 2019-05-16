@@ -7,19 +7,16 @@
 		- Not really intended to be called directly. Should typically be called by dbo.script_server_configurations. 
 		- For the 'v1' version of this script, we'll just be DOCUMENTING details - not configuring them as optional/executable scripts. 
 
-	DEPENDENCIES:
-		- dbo.get_engine_version() - S4 UDF.
-
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.print_configuration','P') IS NOT NULL
-	DROP PROC dbo.print_configuration;
+IF OBJECT_ID('dbo.script_configuration','P') IS NOT NULL
+	DROP PROC dbo.script_configuration;
 GO
 
-CREATE PROC dbo.print_configuration 
+CREATE PROC dbo.script_configuration 
 
 AS
 	SET NOCOUNT ON;
