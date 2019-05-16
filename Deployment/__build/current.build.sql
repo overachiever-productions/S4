@@ -102,9 +102,6 @@ GO
 -- master db objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-USE [master];
-GO
-
 DECLARE @obsoleteObjects xml = CONVERT(xml, N'<list>
     <entry schema="dbo" name="dba_DatabaseBackups_Log" type="U" comment="older table" />
     <entry schema="dbo" name="dba_DatabaseRestore_Log" type="U" comment="older table" />
@@ -145,8 +142,6 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- admindb objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
-USE [admindb];
-GO
 
 DECLARE @olderObjects xml = CONVERT(xml, N'<list>
     <entry schema="dbo" name="server_synchronization_checks" type="P" comment="v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun">
@@ -246,6 +241,12 @@ GO
 --##INCLUDE: Common\Internal\replace_dbname_tokens.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\format_sql_login.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\format_windows_login.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
@@ -289,16 +290,19 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Configuration\print_logins.sql
+--##INCLUDE: S4 Configuration\script_login.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_server_logins.sql
+--##INCLUDE: S4 Configuration\script_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\print_configuration.sql
+--##INCLUDE: S4 Configuration\export_server_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_server_configuration.sql
+--##INCLUDE: S4 Configuration\script_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
