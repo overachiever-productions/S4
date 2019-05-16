@@ -22,6 +22,7 @@
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 1. Create admindb if/as needed: 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+SET NOCOUNT ON;
 
 USE [master];
 GO
@@ -90,168 +91,94 @@ GO
 -----------------------------------
 --##INCLUDE: Common\tables\alert_responses.sql
 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects)
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Cleanup and remove objects from previous versions
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------
+--##INCLUDE: Common\internal\drop_obsolete_objects.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- master db objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-USE [master];
-GO
+DECLARE @obsoleteObjects xml = CONVERT(xml, N'<list>
+    <entry schema="dbo" name="dba_DatabaseBackups_Log" type="U" comment="older table" />
+    <entry schema="dbo" name="dba_DatabaseRestore_Log" type="U" comment="older table" />
+    <entry schema="dbo" name="dba_SplitString" type="TF" comment="older UDF" />
+    <entry schema="dbo" name="dba_CheckPaths" type="P" comment="older sproc" />
+    <entry schema="dbo" name="dba_ExecuteAndFilterNonCatchableCommand" type="P" comment="older sproc" />
+    <entry schema="dbo" name="dba_LoadDatabaseNames" type="P" comment="older sproc" />
+    <entry schema="dbo" name="dba_RemoveBackupFiles" type="P" comment="older sproc" />
+    <entry schema="dbo" name="dba_BackupDatabases" type="P" comment="older sproc" />
+    <entry schema="dbo" name="dba_RestoreDatabases" type="P" comment="older sproc" />
+    <entry schema="dbo" name="dba_VerifyBackupExecution" type="P" comment="older sproc" />
 
--------------------------------------------------------------
--- Tables:
-IF OBJECT_ID('dbo.dba_DatabaseBackups_Log','U') IS NOT NULL
-	DROP TABLE dbo.dba_DatabaseBackups_Log;
-GO
+    <entry schema="dbo" name="dba_DatabaseBackups" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
+    <entry schema="dbo" name="dba_ExecuteNonCatchableCommand" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
+    <entry schema="dbo" name="dba_RestoreDatabases" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
+    <entry schema="dbo" name="dba_DatabaseRestore_CheckPaths" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
+    
+    <entry schema="dbo" name="dba_AvailabilityGroups_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
+    <entry schema="dbo" name="dba_Mirroring_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
+    
+    <entry schema="dbo" name="dba_FilterAndSendAlerts" type="P" comment="FORMER version of alert filtering.">
+        <notification>
+            <content>NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.</content>
+            <heading>WARNING - Potential Configuration Changes Required (alert filtering)</heading>
+        </notification>
+    </entry>
+    <entry schema="dbo" name="dba_drivespace_checks" type="P" comment="FORMER disk monitoring alerts.">
+        <notification>
+            <content>NOTE: dbo.dba_drivespace_checks was dropped from master database - make sure to change job steps/names as needed.</content>
+            <heading>WARNING - Potential Configuration Changes Required (disk-space checks)</heading>
+        </notification>
+    </entry>
+</list>');
 
-IF OBJECT_ID('dbo.dba_DatabaseRestore_Log','U') IS NOT NULL
-	DROP TABLE dbo.dba_DatabaseRestore_Log;
-GO
-
--- UDFs:
-IF OBJECT_ID('dbo.dba_SplitString','TF') IS NOT NULL
-	DROP FUNCTION dbo.dba_SplitString;
-GO
-
--------------------------------------------------------------
--- Sprocs:
--- common:
-IF OBJECT_ID('dbo.dba_CheckPaths','P') IS NOT NULL
-	DROP PROC dbo.dba_CheckPaths;
-GO
-
-IF OBJECT_ID('dbo.dba_ExecuteAndFilterNonCatchableCommand','P') IS NOT NULL
-	DROP PROC dbo.dba_ExecuteAndFilterNonCatchableCommand;
-GO
-
-IF OBJECT_ID('dbo.dba_LoadDatabaseNames','P') IS NOT NULL
-	DROP PROC dbo.dba_LoadDatabaseNames;
-GO
-
--- Backups:
-IF OBJECT_ID('[dbo].[dba_RemoveBackupFiles]','P') IS NOT NULL
-	DROP PROC [dbo].[dba_RemoveBackupFiles];
-GO
-
-IF OBJECT_ID('dbo.dba_BackupDatabases','P') IS NOT NULL
-	DROP PROC dbo.dba_BackupDatabases;
-GO
-
-IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
-	DROP PROC dba_RestoreDatabases;
-GO
-
-IF OBJECT_ID('dba_VerifyBackupExecution', 'P') IS NOT NULL
-	DROP PROC dbo.dba_VerifyBackupExecution;
-GO
-
--------------------------------------------------------------
--- Potential FORMER versions of basic code (pre 1.0).
-
-IF OBJECT_ID('dbo.dba_DatabaseBackups','P') IS NOT NULL
-	DROP PROC dbo.dba_DatabaseBackups;
-GO
-
-IF OBJECT_ID('dbo.dba_ExecuteNonCatchableCommand','P') IS NOT NULL
-	DROP PROC dbo.dba_ExecuteNonCatchableCommand;
-GO
-
-IF OBJECT_ID('dba_RestoreDatabases','P') IS NOT NULL
-	DROP PROC dba_RestoreDatabases;
-GO
-
-IF OBJECT_ID('dbo.dba_DatabaseRestore_CheckPaths','P') IS NOT NULL
-	DROP PROC dbo.dba_DatabaseRestore_CheckPaths;
-GO
-
--------------------------------------------------------------
--- Potential FORMER versions of HA monitoring (pre 1.0):
-IF OBJECT_ID('dbo.dba_AvailabilityGroups_HealthCheck','P') IS NOT NULL
-	DROP PROC dbo.dba_AvailabilityGroups_HealthCheck;
-GO
-
-IF OBJECT_ID('dbo.dba_Mirroring_HealthCheck','P') IS NOT NULL
-	DROP PROC dbo.dba_Mirroring_HealthCheck;
-GO
-
---------------------------------------------------------------
--- Potential FORMER versions of alert filtering: 
-IF OBJECT_ID('dbo.dba_FilterAndSendAlerts','P') IS NOT NULL BEGIN
-	DROP PROC dbo.dba_FilterAndSendAlerts;
-	SELECT 'NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required (alert filtering)];
-END;
-GO
-
---------------------------------------------------------------
--- Potential FORMER disk monitoring alerts: 
-IF OBJECT_ID('dbo.dba_drivespace_checks','P') IS NOT NULL BEGIN
-	DROP PROC dbo.dba_drivespace_checks;
-	SELECT 'NOTE: dbo.dba_drivespace_checks was dropped from master database - make sure to change job steps/names as needed.' [WARNING - Potential Configuration Changes Required (alert filtering)];
-END;
+EXEC dbo.drop_obsolete_objects @obsoleteObjects, N'master';
 GO
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- admindb objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
-USE [admindb];
+
+DECLARE @olderObjects xml = CONVERT(xml, N'<list>
+    <entry schema="dbo" name="server_synchronization_checks" type="P" comment="v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun">
+        <check>
+            <statement>SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE ''%server_synchronization_checks%''</statement>
+            <warning>WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.server_synchronization_checks were found. Please update to call dbo.verify_server_synchronization instead.</warning>
+        </check>
+    </entry>
+    <entry schema="dbo" name="job_synchronization_checks" type="P" comment="v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun">
+        <check>
+            <statement>SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE ''%job_synchronization_checks%''</statement>
+            <warning>WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.job_synchronization_checks were found. Please update to call dbo.verify_job_synchronization instead.</warning>
+        </check>
+    </entry>
+    <entry schema="dbo" name="data_synchronization_checks" type="P" comment="v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun">
+        <check>
+            <statement>SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE ''%data_synchronization_checks%''</statement>
+            <warning>WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.data_synchronization_checks were found. Please update to call dbo.verify_data_synchronization instead.</warning>
+        </check>
+    </entry>
+
+    <entry schema="dbo" name="load_database_names" type="P" comment="v5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases." />
+    
+    <entry schema="dbo" name="get_time_vector" type="P" comment="v5.6 Vector Standardization (cleanup)." />
+    <entry schema="dbo" name="get_vector" type="P" comment="v5.6 Vector Standardization (cleanup)." />
+    <entry schema="dbo" name="get_vector_delay" type="P" comment="v5.6 Vector Standardization (cleanup)." />
+
+    <entry schema="dbo" name="load_databases" type="P" comment="v5.8 refactor/changes." />
+
+    <entry schema="dbo" name="script_server_logins" type="P" comment="v6.2 refactoring." />
+    <entry schema="dbo" name="print_logins" type="P" comment="v6.2 refactoring." />
+    <entry schema="dbo" name="script_server_configuration" type="P" comment="v6.2 refactoring." />
+    <entry schema="dbo" name="print_configuration" type="P" comment="v6.2 refactoring." />
+</list>');
+
+EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
 GO
-
---------------------------------------------------------------
--- v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun
-IF OBJECT_ID('dbo.server_synchronization_checks', 'P') IS NOT NULL BEGIN
-	
-	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%server_synchronization_checks%')
-		PRINT 'WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.server_synchronization_checks were found. Please update to call dbo.verify_server_synchronization instead.';
-
-	DROP PROC dbo.server_synchronization_checks;
-END;
-
-IF OBJECT_ID('dbo.job_synchronization_checks', 'P') IS NOT NULL BEGIN
-	
-	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%job_synchronization_checks%')
-		PRINT 'WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.job_synchronization_checks were found. Please update to call dbo.verify_job_synchronization instead.';
-		
-	DROP PROC dbo.job_synchronization_checks;
-END;
-
-IF OBJECT_ID('dbo.data_synchronization_checks', 'P') IS NOT NULL BEGIN
-	
-	IF EXISTS(SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE '%data_synchronization_checks%')
-		PRINT 'WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.data_synchronization_checks were found. Please update to call dbo.verify_data_synchronization instead.';
-
-	DROP PROC dbo.data_synchronization_checks;
-END;
-
---------------------------------------------------------------
--- v5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases.
-IF OBJECT_ID('dbo.load_database_names','P') IS NOT NULL
-	DROP PROC dbo.load_database_names;
-GO
-
---------------------------------------------------------------
--- v5.6 Vector Standardization (cleanup):
-IF OBJECT_ID('dbo.get_time_vector','P') IS NOT NULL
-	DROP PROC dbo.get_time_vector;
-GO
-
-IF OBJECT_ID('dbo.get_vector','P') IS NOT NULL
-	DROP PROC dbo.get_vector;
-GO
-
-IF OBJECT_ID('dbo.get_vector_delay','P') IS NOT NULL
-	DROP PROC dbo.get_vector_delay;
-GO
-
---------------------------------------------------------------
--- v5.8 refactor/changes: 
-IF OBJECT_ID('dbo.load_databases','P') IS NOT NULL
-	DROP PROC dbo.load_databases;
-GO
-
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Deploy new/updated code.
@@ -314,6 +241,12 @@ GO
 --##INCLUDE: Common\Internal\replace_dbname_tokens.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\format_sql_login.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\format_windows_login.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
@@ -357,16 +290,19 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Configuration\print_logins.sql
+--##INCLUDE: S4 Configuration\script_login.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_server_logins.sql
+--##INCLUDE: S4 Configuration\script_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\print_configuration.sql
+--##INCLUDE: S4 Configuration\export_server_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_server_configuration.sql
+--##INCLUDE: S4 Configuration\script_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
