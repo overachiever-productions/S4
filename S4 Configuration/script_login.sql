@@ -76,7 +76,7 @@ IF OBJECT_ID('dbo.script_login','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.script_login
-    @LoginName                              sysname                 NULL,
+    @LoginName                              sysname,       
     @BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
