@@ -133,7 +133,7 @@ GO
         SET @template = REPLACE(@template, N'{Attributes}', @attributes);
         SET @output = REPLACE(@template, N'{Name}', @Name);
 
-        IF (@Password LIKE '0x%') AND (@Password NOT LIKE '%HASHED')
+        IF (@Password LIKE '0x%') --AND (@Password NOT LIKE '%HASHED')
             SET @Password = @Password + N' HASHED';
         ELSE 
             SET @Password = N'''' + @Password + N'''';
