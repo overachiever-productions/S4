@@ -42,15 +42,15 @@ IF OBJECT_ID('dbo.verify_server_synchronization','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_server_synchronization 
-	@IgnoreMirroredDatabaseOwnership	bit		        = 0,					
-	@IgnoredMasterDbObjects				nvarchar(MAX)   = NULL,
-	@IgnoredLogins						nvarchar(MAX)   = NULL,
-	@IgnoredAlerts						nvarchar(MAX)   = NULL,
-	@IgnoredLinkedServers				nvarchar(MAX)   = NULL,
-    @IgnorePrincipalNames               bit             = 1,                -- e.g., WinName1\Administrator and WinBox2Name\Administrator should both be treated as just 'Administrator'
-	@MailProfileName					sysname         = N'General',					
-	@OperatorName						sysname         = N'Alerts',					
-	@PrintOnly							bit		        = 0						
+	@IgnoreSynchronizedDatabaseOwnership	    bit		            = 0,					
+	@IgnoredMasterDbObjects				        nvarchar(MAX)       = NULL,
+	@IgnoredLogins						        nvarchar(MAX)       = NULL,
+	@IgnoredAlerts						        nvarchar(MAX)       = NULL,
+	@IgnoredLinkedServers				        nvarchar(MAX)       = NULL,
+    @IgnorePrincipalNames                       bit                 = 1,                -- e.g., WinName1\Administrator and WinBox2Name\Administrator should both be treated as just 'Administrator'
+	@MailProfileName					        sysname             = N'General',					
+	@OperatorName						        sysname             = N'Alerts',					
+	@PrintOnly							        bit		            = 0						
 AS
 	SET NOCOUNT ON; 
 
@@ -285,19 +285,19 @@ AS
 
 	---------------------------------------
 	-- Mirrored database ownership:
-	IF @IgnoreMirroredDatabaseOwnership = 0 BEGIN 
+	IF @IgnoreSynchronizedDatabaseOwnership = 0 BEGIN 
 		DECLARE @localOwners table ( 
 			[name] nvarchar(128) NOT NULL, 
 			sync_type sysname NOT NULL, 
 			owner_sid varbinary(85) NULL
 		);
--- TODO: S4-171
+
 		-- mirrored (local) dbs: 
 		INSERT INTO @localOwners ([name], sync_type, owner_sid)
 		SELECT d.[name], N'Mirrored' [sync_type], d.owner_sid FROM master.sys.databases d INNER JOIN master.sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL; 
 
 		-- AG'd (local) dbs: 
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+        IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN
 			INSERT INTO @localOwners ([name], sync_type, owner_sid)
 			EXEC master.sys.sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM sys.databases WHERE replica_id IS NOT NULL;';  -- has to be dynamic sql - otherwise replica_id will throw an error during sproc creation... 
 		END
@@ -313,24 +313,27 @@ AS
 		EXEC sp_executesql N'SELECT d.[name], ''Mirrored'' [sync_type], d.owner_sid FROM PARTNER.master.sys.databases d INNER JOIN PARTNER.master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL;';
 
 		-- AG'd (local) dbs: 
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
-			INSERT INTO @localOwners ([name], sync_type, owner_sid)
-			EXEC sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM sys.databases WHERE replica_id IS NOT NULL;';			
+		IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN
+			INSERT INTO @remoteOwners ([name], sync_type, owner_sid)
+			EXEC sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM [PARTNER].[master].sys.databases WHERE replica_id IS NOT NULL;';			
 		END
 
         INSERT INTO [#bus] (
             [grouping_key],
-            [heading]
+            [heading], 
+            [body]
         )    
         SELECT 
             N'databases' [grouping_key], 
-			[local].sync_type + N' database owners for database ' + QUOTENAME([local].[name]) + N' are different between servers.' [heading]
+			[local].sync_type + N' database owners for database ' + QUOTENAME([local].[name]) + N' are different between servers.' [heading], 
+            N'To correct: a) Execute a manual failover of database ' + QUOTENAME([local].[name]) + N', and then b) EXECUTE { ALTER AUTHORIZATION ON DATABASE::[' + [local].[name] + N'] TO [sa];  }. NOTE: All synchronized databases should be owned by SysAdmin.'
             -- TODO: instructions on how to fix and/or CONTROL directives TO fix... (only, can't 'fix' this issue with mirrored/AG'd databases).
 		FROM 
 			@localOwners [local]
 			INNER JOIN @remoteOwners [remote] ON [local].[name] = [remote].[name]
 		WHERE
 			[local].owner_sid <> [remote].owner_sid;
+
 	END
 
 	---------------------------------------
@@ -1009,7 +1012,7 @@ AS
 		DECLARE @message nvarchar(MAX) = N'The following synchronization issues were detected: ' + @crlf + @crlf;
 
         SELECT 
-            @message = @message + @tab +  UPPER([channel]) + N': ' + [heading] + CASE WHEN [body] IS NOT NULL THEN @crlf + @tab + @tab + [body] ELSE N'' END + @crlf + @crlf
+            @message = @message + @tab +  UPPER([channel]) + N': ' + [heading] + CASE WHEN [body] IS NOT NULL THEN @crlf + @tab + @tab + ISNULL([body], N'') ELSE N'' END + @crlf + @crlf
         FROM 
             #bus
         ORDER BY 
