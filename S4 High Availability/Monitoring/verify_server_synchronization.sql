@@ -505,6 +505,14 @@ AS
         AND p.[name] NOT LIKE '##%##' AND p.[name] NOT LIKE 'NT %\%';
 
     IF @IgnorePrincipalNames = 1 BEGIN 
+        UPDATE @localPrincipals
+        SET 
+            [simplified_name] = REPLACE([name], @localServerName + N'\', N''),
+            [sid] = 0x0
+        WHERE 
+            [type] = 'U'
+            AND [name] LIKE @localServerName + N'\%'; 
+            
         UPDATE @remotePrincipals
         SET 
             [simplified_name] = REPLACE([name], @remoteServerName + N'\', N''), 
@@ -512,14 +520,6 @@ AS
         WHERE 
             [type] = 'U' -- Windows Only... 
             AND [name] LIKE @remoteServerName + N'\%';
-
-        UPDATE @localPrincipals
-        SET 
-            [simplified_name] = REPLACE([name], @localServerName + N'\', N''),
-            [sid] = 0x0
-        WHERE 
-            [type] = 'U'
-            AND [name] LIKE @localServerName + N'\%';        
     END;
 
     -- local only:
@@ -572,7 +572,97 @@ AS
 			OR [local].is_disabled <> [remote].is_disabled
 		);
 
-	---------------------------------------
+    -- (server) role memberships: 
+    DECLARE @localMemberRoles table ( 
+        [login_name] sysname NOT NULL, 
+        [simplified_name] sysname NULL, 
+        [role] sysname NOT NULL
+    );
+
+    DECLARE @remoteMemberRoles table ( 
+        [login_name] sysname NOT NULL, 
+        [simplified_name] sysname NULL, 
+        [role] sysname NOT NULL
+    );	
+    
+    -- note, explicitly including NT SERVICE\etc and other 'built in' service accounts as we want to check for any differences in role memberships:
+    INSERT INTO @localMemberRoles (
+        [login_name],
+        [role]
+    )
+    SELECT 
+	    p.[name] [login_name],
+	    [roles].[name] [role_name]
+    FROM 
+	    sys.server_principals p 
+	    INNER JOIN sys.server_role_members m ON p.principal_id = m.member_principal_id
+	    INNER JOIN sys.server_principals [roles] ON m.role_principal_id = [roles].principal_id
+    WHERE 
+	    p.principal_id > 10 AND p.[name] NOT LIKE '##%##';
+
+    INSERT INTO @remoteMemberRoles (
+        [login_name],
+        [role]
+    )
+    EXEC sys.[sp_executesql] N'
+    SELECT 
+	    p.[name] [login_name],
+	    [roles].[name] [role_name]
+    FROM 
+	    [PARTNER].[master].sys.server_principals p 
+	    INNER JOIN [PARTNER].[master].sys.server_role_members m ON p.principal_id = m.member_principal_id
+	    INNER JOIN [PARTNER].[master].sys.server_principals [roles] ON m.role_principal_id = [roles].principal_id
+    WHERE 
+	    p.principal_id > 10 AND p.[name] NOT LIKE ''##%##''; ';
+        
+    IF @IgnorePrincipalNames = 1 BEGIN 
+        UPDATE @localMemberRoles
+        SET 
+            [simplified_name] = REPLACE([login_name], @localServerName + N'\', N'')
+        WHERE 
+            [login_name] LIKE @localServerName + N'\%';
+
+        UPDATE @remoteMemberRoles
+        SET 
+            [simplified_name] = REPLACE([login_name], @remoteServerName + N'\', N'')
+        WHERE 
+            [login_name] LIKE @remoteServerName + N'\%';        
+    END;
+
+    -- local not in remote:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )   
+    SELECT 
+        N'logins' [grouping_key], 
+        N'Login ' + QUOTENAME([local].[login_name]) + N' is a member of server role ' + QUOTENAME([local].[role]) + N' on server ' + QUOTENAME(@localServerName) + N' only.' [heading]
+    FROM 
+        @localMemberRoles [local] 
+    WHERE 
+        (ISNULL([local].[simplified_name], [local].[login_name]) + N'.' + [local].[role]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+            SELECT (ISNULL([simplified_name], [login_name]) + N'.' + [role]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remoteMemberRoles
+        )
+        AND [local].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+
+    -- remote not in local:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )   
+    SELECT 
+        N'logins' [grouping_key], 
+        N'Login ' + QUOTENAME([remote].[login_name]) + N' is a member of server role ' + QUOTENAME([remote].[role]) + N' on server ' + QUOTENAME(@remoteServerName) + N' only.' [heading]
+    FROM 
+        @remoteMemberRoles [remote] 
+    WHERE 
+        (ISNULL([remote].[simplified_name], [remote].[login_name]) + N'.' + [remote].[role]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+            SELECT (ISNULL([simplified_name], [login_name]) + N'.' + [role]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localMemberRoles
+        )
+        AND [remote].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+
+    
+    ---------------------------------------
 	-- Endpoints? 
 	--		[add if needed/desired.]
 
