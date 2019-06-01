@@ -13,12 +13,15 @@
 			c) RUN the ALTER script BACK on the source server, and then 
 			d) run the same ALTER script on the 'secondary' server. Otherwise, you'll frequently NOT get the scripts/code to achieve 100%
 			identical checksums from one server to the next (i.e., with just a single ALTER against one server). 
-		- If synchronized databases are NOT owned by the same user (ideally 'sa'), then make sure that dba_RespondToMirroredDatabaseRoleChange switches ownership to the server-principal needed. 
+		- If synchronized databases are NOT owned by the same user (ideally 'sa'), then make sure that dba_RespondToMirroredDatabaseRoleChange 
+                switches ownership to the server-principal needed. 
 		- Full execution of this sproc nets < 40ms of execution time on the primary.
 		- Current implementation doesn't address synch-checks on Server-Level Triggers or Endpoints. (But this could be added if needed.)
 		- Differences between logins are NOT addressed either. 
-		- Current implementation doesn't offer exclusions (i.e., option to ignore) server-level settings - as they should have SYSTEM-WIDE impact/scope and, therefore, should be identical between servers. 
-		- SQL Server Login passwords are hashed on their respective servers - using different 'salts' - so the same password on different servers will LOOK different always (meaning we can't check/verify if passwords are the same).
+		- Current implementation doesn't offer exclusions (i.e., option to ignore) server-level settings - as they should have SYSTEM-WIDE 
+                impact/scope and, therefore, should be identical between servers. 
+		- SQL Server Login passwords are hashed on their respective servers - using different 'salts' - so the same password on different 
+                servers will LOOK different always (meaning we can't check/verify if passwords are the same).
 
 	SAMPLE EXECUTION:
 
@@ -39,14 +42,15 @@ IF OBJECT_ID('dbo.verify_server_synchronization','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_server_synchronization 
-	@IgnoreMirroredDatabaseOwnership	bit		= 0,					-- check by default. 
-	@IgnoredMasterDbObjects				nvarchar(4000) = NULL,
-	@IgnoredLogins						nvarchar(4000) = NULL,
-	@IgnoredAlerts						nvarchar(4000) = NULL,
-	@IgnoredLinkedServers				nvarchar(4000) = NULL,
-	@MailProfileName					sysname = N'General',					
-	@OperatorName						sysname = N'Alerts',					
-	@PrintOnly							bit		= 0						-- output only to console if @PrintOnly = 1
+	@IgnoreMirroredDatabaseOwnership	bit		        = 0,					
+	@IgnoredMasterDbObjects				nvarchar(MAX)   = NULL,
+	@IgnoredLogins						nvarchar(MAX)   = NULL,
+	@IgnoredAlerts						nvarchar(MAX)   = NULL,
+	@IgnoredLinkedServers				nvarchar(MAX)   = NULL,
+    @IgnorePrincipalNames               bit             = 1,                -- e.g., WinName1\Administrator and WinBox2Name\Administrator should both be treated as just 'Administrator'
+	@MailProfileName					sysname         = N'General',					
+	@OperatorName						sysname         = N'Alerts',					
+	@PrintOnly							bit		        = 0						
 AS
 	SET NOCOUNT ON; 
 
@@ -202,7 +206,6 @@ AS
 
 	---------------------------------------
 	-- Make sure sys.messages.message_id #1480 is set so that is_event_logged = 1 (for easier/simplified role change (failover) notifications). Likewise, make sure 1440 is still set to is_event_logged = 1 (the default). 
-	
 	DECLARE @remoteMessages table (
 		language_id smallint NOT NULL, 
 		message_id int NOT NULL, 
@@ -252,9 +255,9 @@ AS
 
 	IF @localAdminDBVersion <> @remoteAdminDBVersion BEGIN
         INSERT INTO [#bus] (
-        [grouping_key],
-        [heading], 
-        [body]
+            [grouping_key],
+            [heading], 
+            [body]
         )    
         SELECT 
             N'admindb (s4 versioning)' [grouping_key],
@@ -262,12 +265,23 @@ AS
             N'Version on ' + @localServerName + N' is ' + @localAdminDBVersion + '. Version on' + @remoteServerName + N' is ' + @remoteAdminDBVersion + N'.' [body];
 	END;
 
-    --TODO: S4-173
-        -- but note: this HAS to be enabled for things to run... 
-        --  well, no. it MIGHT be enabled on the primary - but NOT enabled on the secondary. 
-        --   and... the bummber here is that I can't 'just' check the value in admindb.dbo.settings - i also have to make sure that xp_cmdshell is the same. 
-        --              actually. no. i don't. they have to be equal/same - otherwise previous checks will throw errors/warnings on xp_cmdshell
-        --              so. i just have to check dbo.settings value... 
+    DECLARE @localAdvancedValue sysname; 
+    DECLARE @remoteAdvancedValue sysname; 
+
+    SELECT @localAdvancedValue = setting_value FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling';
+    EXEC sys.sp_executesql N'SELECT @remoteAdvancedValue = setting_value FROM PARTNER.admindb.dbo.settings WHERE [setting_key] = N''advanced_s4_error_handling'';', N'@remoteAdvancedValue sysname OUTPUT', @remoteAdvancedValue = @remoteAdvancedValue OUTPUT;
+
+    IF ISNULL(@localAdvancedValue, N'0') <> ISNULL(@remoteAdvancedValue, N'0') BEGIN 
+        INSERT INTO [#bus] (
+            [grouping_key],
+            [heading], 
+            [body]
+        )
+        SELECT 
+            N'admindb (s4 versioning)' [grouping_key],
+            N'S4 Advanced Error Handling configuration settings are different betweent servers.' [heading], 
+            N'Value on ' + @localServerName + N' is ' + @localAdvancedValue + '. Value on' + @remoteServerName + N' is ' + @remoteAdvancedValue + N'.' [body];
+    END; 
 
 	---------------------------------------
 	-- Mirrored database ownership:
@@ -442,22 +456,73 @@ AS
 	DECLARE @remotePrincipals table ( 
 		[principal_id] int NOT NULL,
 		[name] sysname NOT NULL,
+        [simplified_name] sysname NULL,
 		[sid] varbinary(85) NULL,
 		[type] char(1) NOT NULL,
-		[is_disabled] bit NULL
+		[is_disabled] bit NULL, 
+        [password_hash] varbinary(256) NULL
 	);
 
-	INSERT INTO @remotePrincipals (principal_id, [name], [sid], [type], is_disabled)
-	EXEC master.sys.sp_executesql N'SELECT principal_id, [name], [sid], [type], is_disabled FROM PARTNER.master.sys.server_principals;';
+	INSERT INTO @remotePrincipals ([principal_id], [name], [sid], [type], [is_disabled], [password_hash])
+	EXEC master.sys.sp_executesql N'
+    SELECT 
+        p.[principal_id], 
+        p.[name], 
+        p.[sid], 
+        p.[type], 
+        p.[is_disabled], 
+        l.[password_hash]
+    FROM 
+        [PARTNER].[master].sys.server_principals p
+        LEFT OUTER JOIN [PARTNER].[master].sys.sql_logins l ON p.[principal_id] = l.[principal_id]
+    WHERE 
+        p.[principal_id] > 10 
+        AND p.[name] NOT LIKE ''##%##'' AND p.[name] NOT LIKE ''NT %\%'';';
 
-	DECLARE @remoteLogins table (
+	DECLARE @localPrincipals table ( 
+		[principal_id] int NOT NULL,
 		[name] sysname NOT NULL,
-		[password_hash] varbinary(256) NULL
+        [simplified_name] sysname NULL,
+		[sid] varbinary(85) NULL,
+		[type] char(1) NOT NULL,
+		[is_disabled] bit NULL, 
+        [password_hash] varbinary(256) NULL
 	);
-	INSERT INTO @remoteLogins ([name], password_hash)
-	EXEC master.sys.sp_executesql N'SELECT [name], password_hash FROM PARTNER.master.sys.sql_logins;';
 
-	-- local only:
+	INSERT INTO @localPrincipals ([principal_id], [name], [sid], [type], [is_disabled], [password_hash])
+    SELECT 
+        p.[principal_id], 
+        p.[name], 
+        p.[sid], 
+        p.[type], 
+        p.[is_disabled], 
+        l.[password_hash]
+    FROM 
+        [master].sys.server_principals p
+        LEFT OUTER JOIN [master].sys.sql_logins l ON p.[principal_id] = l.[principal_id]
+    WHERE 
+        p.[principal_id] > 10 
+        AND p.[name] NOT LIKE '##%##' AND p.[name] NOT LIKE 'NT %\%';
+
+    IF @IgnorePrincipalNames = 1 BEGIN 
+        UPDATE @remotePrincipals
+        SET 
+            [simplified_name] = REPLACE([name], @remoteServerName + N'\', N''), 
+            [sid] = 0x0
+        WHERE 
+            [type] = 'U' -- Windows Only... 
+            AND [name] LIKE @remoteServerName + N'\%';
+
+        UPDATE @localPrincipals
+        SET 
+            [simplified_name] = REPLACE([name], @localServerName + N'\', N''),
+            [sid] = 0x0
+        WHERE 
+            [type] = 'U'
+            AND [name] LIKE @localServerName + N'\%';        
+    END;
+
+    -- local only:
     INSERT INTO [#bus] (
         [grouping_key],
         [heading]
@@ -467,11 +532,10 @@ AS
 		N'Login ' + QUOTENAME([local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' exists on ' + QUOTENAME(@localServerName) + N' only.' [heading]
         -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
-		sys.server_principals [local]
+		@localPrincipals [local]
 	WHERE 
-		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @remotePrincipals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredLoginName);
+		ISNULL([local].[simplified_name], [local].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT ISNULL([simplified_name], [name]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remotePrincipals)
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
 
 	-- remote only:
     INSERT INTO [#bus] (
@@ -485,9 +549,8 @@ AS
 	FROM 
 		@remotePrincipals [remote]
 	WHERE 
-		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [remote].[name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredLoginName);
+		ISNULL([remote].[simplified_name], [remote].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT ISNULL([simplified_name], [name]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localPrincipals)
+		AND [remote].[name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
 
 	-- differences
     INSERT INTO [#bus] (
@@ -499,11 +562,10 @@ AS
 		N'Definition for Login ' + QUOTENAME([local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' is different between servers.' [heading]
         -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
-		(SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM sys.server_principals p LEFT OUTER JOIN sys.sql_logins l ON p.[name] = l.[name]) [local]
-		INNER JOIN (SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM @remotePrincipals p LEFT OUTER JOIN @remoteLogins l ON p.[name] = l.[name] COLLATE SQL_Latin1_General_CP1_CI_AS) [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
+        @localPrincipals [local]
+        INNER JOIN @remotePrincipals [remote] ON ISNULL([local].[simplified_name], [local].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS = ISNULL([remote].[simplified_name], [remote].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS
 	WHERE
-		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredLoginName)
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName)
 		AND (
 			[local].[sid] <> [remote].[sid]
 			OR [local].password_hash <> [remote].password_hash  
