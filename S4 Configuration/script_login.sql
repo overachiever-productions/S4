@@ -76,7 +76,7 @@ IF OBJECT_ID('dbo.script_login','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.script_login
-    @LoginName                              sysname                 NULL,
+    @LoginName                              sysname,       
     @BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
@@ -98,8 +98,8 @@ AS
     SELECT 
         @enabled = CASE WHEN [is_disabled] = 1 THEN 0 ELSE 1 END,
         @name = [name],
-        @password = CONVERT(nvarchar(2000), [password_hash], 2),
-        @sid = CONVERT(nvarchar(1000), [sid], 2),
+        @password = N'0x' + CONVERT(nvarchar(2000), [password_hash], 2),
+        @sid = N'0x' + CONVERT(nvarchar(1000), [sid], 2),
         @defaultDB = [default_database_name],
         @defaultLang = [default_language_name],
         @checkExpiration = [is_expiration_checked], 

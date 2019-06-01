@@ -38,6 +38,6 @@ AS
 	IF @xpCmdShellInUse = 1 AND ISNULL(@advancedS4, 0) = 1
 		RETURN 0;
 	
-	RAISERROR(N'Advanced S4 error handling capabilities are NOT enabled. Please consult S4 setup documentation and execute admindb.dbo.enabled_advanced_capabilities;', 16, 1);
+	RAISERROR(N'Advanced S4 error handling capabilities are NOT enabled. Please consult S4 setup documentation and execute admindb.dbo.enable_advanced_capabilities;', 16, 1);
 	RETURN -1;
 GO

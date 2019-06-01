@@ -34,7 +34,7 @@ EXEC [admindb].[dbo].[restore_databases]
     @BackupsRootPath = N'', 
     @RestoredRootDataPath = N'',  
     @RestoredRootLogPath = N'',  
-    @RestoredDbNamePattern = N'{0}_test',  -- {0} is replaced by name of source db 
+    @RestoredDbNamePattern = N'{0}_s4test',  -- {0} is replaced by name of source db 
     @AllowReplace = N'', -- must be N'REPLACE' if you want to ALLOW db to be replaced. 
     @SkipLogBackups = 0,  
     @ExecuteRecovery = 1,  

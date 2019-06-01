@@ -51,6 +51,12 @@ AS
 	END;
 
 	IF @xpCmdShellValue = 0 BEGIN
+
+        IF EXISTS (SELECT NULL FROM sys.[configurations] WHERE [name] = N'show advanced options' AND [value_in_use] = 0) BEGIN
+            EXEC sp_configure 'show advanced options', 1; 
+            RECONFIGURE;
+        END;
+
 		EXEC sp_configure 'xp_cmdshell', 1; 
 		RECONFIGURE;
 

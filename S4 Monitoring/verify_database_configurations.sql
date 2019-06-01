@@ -145,7 +145,7 @@ AS
 		INSERT INTO @issues ([database], [issue], [command], [success_message])
 		SELECT 
 			d.[name] [database], 
-			N'Should by Owned by 0x01 (SysAdmin). Currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' [issue], 
+			N'Should be owned by 0x01 (SysAdmin). Currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' [issue], 
 			N'ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(d.[name]) + N' TO sa;' [command], 
 			N'Database owndership successfully transferred to 0x01 (SysAdmin).' [success_message]
 		FROM 
@@ -188,7 +188,9 @@ AS
 	-----------------------------------------------------------------------------
 	-- add other checks as needed/required per environment:
 
-
+    -- vNEXT: figure out how to drop these details into a table and/or something that won't 'change' per environment. 
+    --          i.e., say that in environment X we NEED to check for ABC... great. we hard code in here for that. 
+    --              then S4 vNext comes out, ALTERS this (assuming there were changes) and the logic for ABC checks is overwritten... 
 
 
 
@@ -216,14 +218,16 @@ AS
 			SET @errorMessage = NULL;
 
 			BEGIN TRY 
-				EXEC sp_executesql @currentCommand;
---IF @currentID = 1 RAISERROR('oh noess!', 16, 1);				
-				UPDATE @issues SET [succeeded] = 1 WHERE [issue_id] = @currentID;
+                IF @PrintOnly = 0 BEGIN 
+				    EXEC sp_executesql @currentCommand;
+                END;
+
+                UPDATE @issues SET [succeeded] = 1 WHERE [issue_id] = @currentID;
+
 			END TRY 
 			BEGIN CATCH
 				SET @errorMessage = CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
 				UPDATE @issues SET [error_message] = @errorMessage WHERE [issue_id] = @currentID;
-
 			END CATCH
 
 			FETCH NEXT FROM [fixer] INTO @currentID, @currentCommand;
@@ -263,7 +267,7 @@ AS
 			SELECT 
 				@emailBody = @emailBody + @tab + QUOTENAME([database]) + N' - ' + [issue] + @crlf
 					+ @tab + @tab + N'ATTEMPTED CORRECTION: -> ' + [command] + @crlf
-					+ @tab + @tab + @tab + N'ERROR: ' + [error_message] + @crlf + @crlf
+					+ @tab + @tab + @tab + N'ERROR: ' + ISNULL([error_message], N'##Unknown/Uncaptured##') + @crlf + @crlf
 			FROM 
 				@issues 
 			WHERE 
@@ -290,7 +294,6 @@ AS
 			WHERE 
 				[succeeded] = 1 
 			ORDER BY [issue_id];
-
 		END;
 
 	END;
@@ -299,6 +302,9 @@ AS
 	IF @emailBody IS NOT NULL BEGIN
 		IF @PrintOnly = 1 BEGIN 
 			PRINT @emailSubject;
+            PRINT N'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!';
+            PRINT N'! NOTE: _NO CHANGES_ were made. The output below simply ''simulates'' what would have been done had @PrintOnly been set to 0:';
+            PRINT N'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!';
 			PRINT @emailBody;
 		  END;
 		ELSE BEGIN 

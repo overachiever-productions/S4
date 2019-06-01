@@ -127,7 +127,7 @@ GO
         SET @output = REPLACE(@template, N'{Name}', @Name);
         
         IF NULLIF(@SID, N'') IS NOT NULL BEGIN 
-            SET @output = REPLACE(@output, N'{SID}', @newAtrributeLine + N',SID = ' + @SID);
+            SET @output = REPLACE(@output, N'{SID}', @newAtrributeLine + N',SID = 0x' + @SID);
             END;
         ELSE BEGIN 
             SET @output = REPLACE(@output, N'{SID}', N'');
