@@ -1,27 +1,10 @@
 /*
-	TODO: 
-		- verify that @MailProfileName and @OperatorName are VALID entries (not just that they're present).
-		- switch all queries/SELECTs against PARTNER to be run as sp_executesql queries - so that they 'compile' at run-time instead of when this sproc/script is created
-			(to prevent this script from throwing errors on systems where there isn't a PARTNER configured when running (installing/updating) scripts).
-		
 	BUG:
 		@ignoredObjects have a hard time with ', x, y' syntax - i.e.,, works fine with ',x,y' but not with 'spaces'. 
-
-	DEPENDENCIES:
-		- PARTNER (linked server to Mirroring 'partner')
-		- admindb.dbo.server_trace_flags (table)	
-		- admindb.dbo.is_primary_database()
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
-
 
 	vNEXT:
 		- check on SQL Server Agent properties like : history retention, alert system (general, failsafe, etc.) and... on log retention. 
 		- check on SQL Server Error Log Retention details... 
-
 
 	NOTES:
 		- When code/objects in the master database are different the best way to address this is: 
@@ -30,16 +13,19 @@
 			c) RUN the ALTER script BACK on the source server, and then 
 			d) run the same ALTER script on the 'secondary' server. Otherwise, you'll frequently NOT get the scripts/code to achieve 100%
 			identical checksums from one server to the next (i.e., with just a single ALTER against one server). 
-		- If synchronized databases are NOT owned by the same user (ideally 'sa'), then make sure that dba_RespondToMirroredDatabaseRoleChange switches ownership to the server-principal needed. 
+		- If synchronized databases are NOT owned by the same user (ideally 'sa'), then make sure that dba_RespondToMirroredDatabaseRoleChange 
+                switches ownership to the server-principal needed. 
 		- Full execution of this sproc nets < 40ms of execution time on the primary.
 		- Current implementation doesn't address synch-checks on Server-Level Triggers or Endpoints. (But this could be added if needed.)
 		- Differences between logins are NOT addressed either. 
-		- Current implementation doesn't offer exclusions (i.e., option to ignore) server-level settings - as they should have SYSTEM-WIDE impact/scope and, therefore, should be identical between servers. 
-		- SQL Server Login passwords are hashed on their respective servers - using different 'salts' - so the same password on different servers will LOOK different always (meaning we can't check/verify if passwords are the same).
+		- Current implementation doesn't offer exclusions (i.e., option to ignore) server-level settings - as they should have SYSTEM-WIDE 
+                impact/scope and, therefore, should be identical between servers. 
+		- SQL Server Login passwords are hashed on their respective servers - using different 'salts' - so the same password on different 
+                servers will LOOK different always (meaning we can't check/verify if passwords are the same).
 
 	SAMPLE EXECUTION:
 
-		EXEC admindb.dbo.server_synchronization_checks 
+		EXEC admindb.dbo.verify_server_synchronization 
 			@IgnoredMasterDbObjects = N'dba_TableTest', 
 			@IgnoredAlerts = N'', 
 			@IgnoredLogins = N'test,Bilbo,distributor_admin,GoLive',
@@ -56,18 +42,23 @@ IF OBJECT_ID('dbo.verify_server_synchronization','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_server_synchronization 
-	@IgnoreMirroredDatabaseOwnership	bit		= 0,					-- check by default. 
-	@IgnoredMasterDbObjects				nvarchar(4000) = NULL,
-	@IgnoredLogins						nvarchar(4000) = NULL,
-	@IgnoredAlerts						nvarchar(4000) = NULL,
-	@IgnoredLinkedServers				nvarchar(4000) = NULL,
-	@MailProfileName					sysname = N'General',					
-	@OperatorName						sysname = N'Alerts',					
-	@PrintOnly							bit		= 0						-- output only to console if @PrintOnly = 1
+	@IgnoreSynchronizedDatabaseOwnership	    bit		            = 0,					
+	@IgnoredMasterDbObjects				        nvarchar(MAX)       = NULL,
+	@IgnoredLogins						        nvarchar(MAX)       = NULL,
+	@IgnoredAlerts						        nvarchar(MAX)       = NULL,
+	@IgnoredLinkedServers				        nvarchar(MAX)       = NULL,
+    @IgnorePrincipalNames                       bit                 = 1,                -- e.g., WinName1\Administrator and WinBox2Name\Administrator should both be treated as just 'Administrator'
+	@MailProfileName					        sysname             = N'General',					
+	@OperatorName						        sysname             = N'Alerts',					
+	@PrintOnly							        bit		            = 0						
 AS
 	SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+	EXEC dbo.verify_advanced_capabilities;
 
 	-- if we're not manually running this, make sure the server is the primary:
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -120,15 +111,21 @@ AS
 
 	-- Just to make sure that this job (running on both servers) has had enough time to update server_trace_flags, go ahead and give everything 200ms of 'lag'.
 	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
-	WAITFOR DELAY '00:00:00.200';
+	WAITFOR DELAY '00:00:00.100';
 
-	CREATE TABLE #Divergence (
-		rowid int IDENTITY(1,1) NOT NULL, 
-		name nvarchar(100) NOT NULL, 
-		[description] nvarchar(500) NOT NULL
-	);
+    CREATE TABLE #bus ( 
+        [row_id] int IDENTITY(1,1) NOT NULL, 
+        [channel] sysname NOT NULL DEFAULT (N'warning'),  -- ERROR | WARNING | INFO | CONTROL | GUIDANCE | OUTCOME (for control?)
+        [timestamp] datetime NOT NULL DEFAULT (GETDATE()),
+        [parent] int NULL,
+        [grouping_key] sysname NULL, 
+        [heading] nvarchar(1000) NULL, 
+        [body] nvarchar(MAX) NULL, 
+        [detail] nvarchar(MAX) NULL, 
+        [command] nvarchar(MAX) NULL
+    );
 
-	---------------------------------------
+    ---------------------------------------
 	-- Server Level Configuration/Settings: 
 	DECLARE @remoteConfig table ( 
 		configuration_id int NOT NULL, 
@@ -138,17 +135,22 @@ AS
 	INSERT INTO @remoteConfig (configuration_id, value_in_use)
 	EXEC master.sys.sp_executesql N'SELECT configuration_id, value_in_use FROM PARTNER.master.sys.configurations;';
 
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		N'ConfigOption: ' + [source].[name], 
-		N'Server Configuration Option is different between ' + @localServerName + N' and ' + @remoteServerName + N'. (Run ''EXEC sp_configure;'' on both servers and/or run ''SELECT * FROM master.sys.configurations;'' on both servers.)'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading], 
+        [body]
+    )
+    SELECT 
+        N'sys.configurations' [grouping_key], 
+        N'Setting ' + QUOTENAME([source].[name]) + N' is different between servers.' [heading], 
+        N'Value on ' + @localServerName + N' = ' + CAST([source].[value_in_use] AS sysname) + N'. Value on ' + @remoteServerName + N' = ' + CAST([target].[value_in_use] AS sysname) + N'.' [body]
 	FROM 
 		master.sys.configurations [source]
 		INNER JOIN @remoteConfig [target] ON [source].[configuration_id] = [target].[configuration_id]
 	WHERE 
 		[source].value_in_use <> [target].value_in_use;
 
-	---------------------------------------
+    ---------------------------------------
 	-- Trace Flags: 
 	DECLARE @remoteFlags TABLE (
 		trace_flag int NOT NULL, 
@@ -161,30 +163,39 @@ AS
 	EXEC sp_executesql N'SELECT [trace_flag], [status], [global], [session] FROM PARTNER.admindb.dbo.server_trace_flags;';
 	
 	-- local only:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'TRACE FLAG: ' + CAST(trace_flag AS nvarchar(5)), 
-		N'TRACE FLAG is enabled on ' + @localServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'trace flag' [grouping_key], 
+        N'Trace Flag ' + CAST(trace_flag AS sysname) + N' exists only on ' + @localServerName + N'.' [heading] 
+	FROM 
+		admindb.dbo.server_trace_flags 
+	WHERE 
+		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
+
+	-- remote only:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'trace flag' [grouping_key],
+        N'Trace Flag ' + CAST(trace_flag AS sysname) + N' exists only on ' + @remoteServerName + N'.' [heading]  
 	FROM 
 		admindb.dbo.server_trace_flags 
 	WHERE 
 		trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
 
-	-- remote only:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'TRACE FLAG: ' + CAST(trace_flag AS nvarchar(5)), 
-		N'TRACE FLAG is enabled on ' + @remoteServerName + N' only.'
-	FROM 
-		@remoteFlags
-	WHERE 
-		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
-
 	-- different values: 
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'TRACE FLAG: ' + CAST(x.trace_flag AS nvarchar(5)), 
-		N'TRACE FLAG Enabled Value is different between both servers.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'trace flag' [grouping_key],
+        N'Trace Flag Enabled Value is Different Between Servers.' [heading]
 	FROM 
 		admindb.dbo.server_trace_flags [x]
 		INNER JOIN @remoteFlags [y] ON x.trace_flag = y.trace_flag 
@@ -193,22 +204,8 @@ AS
 		OR x.[global] <> y.[global]
 		OR x.[session] <> y.[session];
 
-
 	---------------------------------------
 	-- Make sure sys.messages.message_id #1480 is set so that is_event_logged = 1 (for easier/simplified role change (failover) notifications). Likewise, make sure 1440 is still set to is_event_logged = 1 (the default). 
-	-- local:
-	INSERT INTO #Divergence (name, [description])
-	SELECT
-		N'ErrorMessage: ' + CAST(message_id AS nvarchar(20)), 
-		N'The is_event_logged property for this message_id on ' + @localServerName + N' is NOT set to 1. Please run Mirroring Failover setup scripts.'
-	FROM 
-		sys.messages 
-	WHERE 
-		language_id = @@langid
-		AND message_id IN (1440, 1480)
-		AND is_event_logged = 0;
-
-	-- remote:
 	DECLARE @remoteMessages table (
 		language_id smallint NOT NULL, 
 		message_id int NOT NULL, 
@@ -217,20 +214,39 @@ AS
 
 	INSERT INTO @remoteMessages (language_id, message_id, is_event_logged)
 	EXEC sp_executesql N'SELECT language_id, message_id, is_event_logged FROM PARTNER.master.sys.messages WHERE message_id IN (1440, 1480);';
-
-	INSERT INTO #Divergence (name, [description])
-	SELECT
-		N'ErrorMessage: ' + CAST(message_id AS nvarchar(20)), 
-		N'The is_event_logged property for this message_id on ' + @remoteServerName + N' is NOT set to 1. Please run Mirroring Failover setup scripts.'
+    
+    -- local:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'error messages' [grouping_key],
+        N'The is_event_logged property for message_id ' + CAST(message_id AS sysname) + N' on ' + @localServerName + N' is not set to 1.' [heading]
 	FROM 
-		@remoteMessages
+		sys.messages 
+	WHERE 
+		language_id = @@langid
+		AND message_id IN (1440, 1480)
+		AND is_event_logged = 0;
+
+	-- remote:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading] 
+    )    
+    SELECT 
+        N'error messages' [grouping_key],
+        N'The is_event_logged property for message_id ' + CAST(message_id AS sysname) + N' on ' + @remoteServerName + N' is not set to 1.' [heading]
+	FROM 
+		sys.messages 
 	WHERE 
 		language_id = @@langid
 		AND message_id IN (1440, 1480)
 		AND is_event_logged = 0;
 
 	---------------------------------------
-	-- admindb versions: 
+	-- admindb checks: 
 	DECLARE @localAdminDBVersion sysname;
 	DECLARE @remoteAdminDBVersion sysname;
 
@@ -238,15 +254,38 @@ AS
 	EXEC sys.sp_executesql N'SELECT @remoteVersion = version_number FROM PARTNER.admindb.dbo.version_history WHERE version_id = (SELECT MAX(version_id) FROM PARTNER.admindb.dbo.version_history);', N'@remoteVersion sysname OUTPUT', @remoteVersion = @remoteAdminDBVersion OUTPUT;
 
 	IF @localAdminDBVersion <> @remoteAdminDBVersion BEGIN
-		INSERT INTO #Divergence (name, [description])
-		SELECT 
-			N'admindb versions are NOT synchronized',
-			N'Admin db on ' + @localServerName + ' is ' + @localAdminDBVersion + ' while the version on ' + @remoteServerName + ' is ' + @remoteAdminDBVersion + '.';
+        INSERT INTO [#bus] (
+            [grouping_key],
+            [heading], 
+            [body]
+        )    
+        SELECT 
+            N'admindb (s4 versioning)' [grouping_key],
+            N'S4 Database versions are different betweent servers.' [heading], 
+            N'Version on ' + @localServerName + N' is ' + @localAdminDBVersion + '. Version on' + @remoteServerName + N' is ' + @remoteAdminDBVersion + N'.' [body];
 	END;
+
+    DECLARE @localAdvancedValue sysname; 
+    DECLARE @remoteAdvancedValue sysname; 
+
+    SELECT @localAdvancedValue = setting_value FROM dbo.[settings] WHERE [setting_key] = N'advanced_s4_error_handling';
+    EXEC sys.sp_executesql N'SELECT @remoteAdvancedValue = setting_value FROM PARTNER.admindb.dbo.settings WHERE [setting_key] = N''advanced_s4_error_handling'';', N'@remoteAdvancedValue sysname OUTPUT', @remoteAdvancedValue = @remoteAdvancedValue OUTPUT;
+
+    IF ISNULL(@localAdvancedValue, N'0') <> ISNULL(@remoteAdvancedValue, N'0') BEGIN 
+        INSERT INTO [#bus] (
+            [grouping_key],
+            [heading], 
+            [body]
+        )
+        SELECT 
+            N'admindb (s4 versioning)' [grouping_key],
+            N'S4 Advanced Error Handling configuration settings are different betweent servers.' [heading], 
+            N'Value on ' + @localServerName + N' is ' + @localAdvancedValue + '. Value on' + @remoteServerName + N' is ' + @remoteAdvancedValue + N'.' [body];
+    END; 
 
 	---------------------------------------
 	-- Mirrored database ownership:
-	IF @IgnoreMirroredDatabaseOwnership = 0 BEGIN 
+	IF @IgnoreSynchronizedDatabaseOwnership = 0 BEGIN 
 		DECLARE @localOwners table ( 
 			[name] nvarchar(128) NOT NULL, 
 			sync_type sysname NOT NULL, 
@@ -258,7 +297,7 @@ AS
 		SELECT d.[name], N'Mirrored' [sync_type], d.owner_sid FROM master.sys.databases d INNER JOIN master.sys.database_mirroring m ON d.database_id = m.database_id WHERE m.mirroring_guid IS NOT NULL; 
 
 		-- AG'd (local) dbs: 
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+        IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN
 			INSERT INTO @localOwners ([name], sync_type, owner_sid)
 			EXEC master.sys.sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM sys.databases WHERE replica_id IS NOT NULL;';  -- has to be dynamic sql - otherwise replica_id will throw an error during sproc creation... 
 		END
@@ -274,20 +313,27 @@ AS
 		EXEC sp_executesql N'SELECT d.[name], ''Mirrored'' [sync_type], d.owner_sid FROM PARTNER.master.sys.databases d INNER JOIN PARTNER.master.sys.database_mirroring m ON m.database_id = d.database_id WHERE m.mirroring_guid IS NOT NULL;';
 
 		-- AG'd (local) dbs: 
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
-			INSERT INTO @localOwners ([name], sync_type, owner_sid)
-			EXEC sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM sys.databases WHERE replica_id IS NOT NULL;';			
+		IF (SELECT admindb.dbo.get_engine_version()) >= 11.0 BEGIN
+			INSERT INTO @remoteOwners ([name], sync_type, owner_sid)
+			EXEC sp_executesql N'SELECT [name], N''Availability Group'' [sync_type], owner_sid FROM [PARTNER].[master].sys.databases WHERE replica_id IS NOT NULL;';			
 		END
 
-		INSERT INTO #Divergence (name, [description])
-		SELECT 
-			N'Database: ' + [local].[name], 
-			[local].sync_type + N' database owners are different between servers.'
+        INSERT INTO [#bus] (
+            [grouping_key],
+            [heading], 
+            [body]
+        )    
+        SELECT 
+            N'databases' [grouping_key], 
+			[local].sync_type + N' database owners for database ' + QUOTENAME([local].[name]) + N' are different between servers.' [heading], 
+            N'To correct: a) Execute a manual failover of database ' + QUOTENAME([local].[name]) + N', and then b) EXECUTE { ALTER AUTHORIZATION ON DATABASE::[' + [local].[name] + N'] TO [sa];  }. NOTE: All synchronized databases should be owned by SysAdmin.'
+            -- TODO: instructions on how to fix and/or CONTROL directives TO fix... (only, can't 'fix' this issue with mirrored/AG'd databases).
 		FROM 
 			@localOwners [local]
 			INNER JOIN @remoteOwners [remote] ON [local].[name] = [remote].[name]
 		WHERE
 			[local].owner_sid <> [remote].owner_sid;
+
 	END
 
 	---------------------------------------
@@ -326,10 +372,14 @@ AS
 	EXEC master.sys.sp_executesql N'SELECT [server_id], [name], [location], provider_string, [catalog], product, [data_source], [provider], is_remote_login_enabled, is_rpc_out_enabled, is_collation_compatible, uses_remote_collation, collation_name, connect_timeout, query_timeout, is_remote_proc_transaction_promotion_enabled, is_system, lazy_schema_validation FROM PARTNER.master.sys.servers;';
 
 	-- local only:
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		N'Linked Server: ' + [local].[name],
-		N'Linked Server exists on ' + @localServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'linked servers' [grouping_key], 
+        N'Linked Server definition for ' + QUOTENAME([local].[name]) + N' exists on ' + @localServerName + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		sys.servers [local]
 		LEFT OUTER JOIN @remoteLinkedServers [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -340,10 +390,14 @@ AS
 		AND [remote].[name] IS NULL;
 
 	-- remote only:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'Linked Server: ' + [remote].[name],
-		N'Linked Server exists on ' + @remoteServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'linked servers' [grouping_key], 
+        N'Linked Server definition for ' + QUOTENAME([remote].[name]) + N' exists on ' + @remoteServerName + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		@remoteLinkedServers [remote]
 		LEFT OUTER JOIN master.sys.servers [local] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -352,12 +406,15 @@ AS
 		AND [remote].[name] <> 'PARTNER'
 		AND [remote].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @IgnoredLinkedServerNames)
 		AND [local].[name] IS NULL;
-
 	
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'Linked Server: ' + [local].[name], 
-		N'Linkded server definitions are different between servers.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'linked servers' [grouping_key], 
+		N'Linked Server Definition for ' + QUOTENAME([local].[name]) + N' exists on both servers but is different.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		sys.servers [local]
 		INNER JOIN @remoteLinkedServers [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -388,7 +445,6 @@ AS
 			OR [local].is_system <> [remote].is_system
 			OR [local].lazy_schema_validation <> [remote].lazy_schema_validation
 		);
-		
 
 	---------------------------------------
 	-- Logins:
@@ -403,63 +459,213 @@ AS
 	DECLARE @remotePrincipals table ( 
 		[principal_id] int NOT NULL,
 		[name] sysname NOT NULL,
+        [simplified_name] sysname NULL,
 		[sid] varbinary(85) NULL,
 		[type] char(1) NOT NULL,
-		[is_disabled] bit NULL
+		[is_disabled] bit NULL, 
+        [password_hash] varbinary(256) NULL
 	);
 
-	INSERT INTO @remotePrincipals (principal_id, [name], [sid], [type], is_disabled)
-	EXEC master.sys.sp_executesql N'SELECT principal_id, [name], [sid], [type], is_disabled FROM PARTNER.master.sys.server_principals;';
+	INSERT INTO @remotePrincipals ([principal_id], [name], [sid], [type], [is_disabled], [password_hash])
+	EXEC master.sys.sp_executesql N'
+    SELECT 
+        p.[principal_id], 
+        p.[name], 
+        p.[sid], 
+        p.[type], 
+        p.[is_disabled], 
+        l.[password_hash]
+    FROM 
+        [PARTNER].[master].sys.server_principals p
+        LEFT OUTER JOIN [PARTNER].[master].sys.sql_logins l ON p.[principal_id] = l.[principal_id]
+    WHERE 
+        p.[principal_id] > 10 
+        AND p.[name] NOT LIKE ''##%##'' AND p.[name] NOT LIKE ''NT %\%'';';
 
-	DECLARE @remoteLogins table (
+	DECLARE @localPrincipals table ( 
+		[principal_id] int NOT NULL,
 		[name] sysname NOT NULL,
-		[password_hash] varbinary(256) NULL
+        [simplified_name] sysname NULL,
+		[sid] varbinary(85) NULL,
+		[type] char(1) NOT NULL,
+		[is_disabled] bit NULL, 
+        [password_hash] varbinary(256) NULL
 	);
-	INSERT INTO @remoteLogins ([name], password_hash)
-	EXEC master.sys.sp_executesql N'SELECT [name], password_hash FROM PARTNER.master.sys.sql_logins;';
 
-	-- local only:
-	INSERT INTO #Divergence ([name], [description])
-	SELECT 
-		N'Login: ' + [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS, 
-		N'Login exists on ' + @localServerName + N' only.'
+	INSERT INTO @localPrincipals ([principal_id], [name], [sid], [type], [is_disabled], [password_hash])
+    SELECT 
+        p.[principal_id], 
+        p.[name], 
+        p.[sid], 
+        p.[type], 
+        p.[is_disabled], 
+        l.[password_hash]
+    FROM 
+        [master].sys.server_principals p
+        LEFT OUTER JOIN [master].sys.sql_logins l ON p.[principal_id] = l.[principal_id]
+    WHERE 
+        p.[principal_id] > 10 
+        AND p.[name] NOT LIKE '##%##' AND p.[name] NOT LIKE 'NT %\%';
+
+    IF @IgnorePrincipalNames = 1 BEGIN 
+        UPDATE @localPrincipals
+        SET 
+            [simplified_name] = REPLACE([name], @localServerName + N'\', N''),
+            [sid] = 0x0
+        WHERE 
+            [type] = 'U'
+            AND [name] LIKE @localServerName + N'\%'; 
+            
+        UPDATE @remotePrincipals
+        SET 
+            [simplified_name] = REPLACE([name], @remoteServerName + N'\', N''), 
+            [sid] = 0x0
+        WHERE 
+            [type] = 'U' -- Windows Only... 
+            AND [name] LIKE @remoteServerName + N'\%';
+    END;
+
+    -- local only:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'logins' [grouping_key], 
+		N'Login ' + QUOTENAME([local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' exists on ' + QUOTENAME(@localServerName) + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
-		sys.server_principals [local]
+		@localPrincipals [local]
 	WHERE 
-		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @remotePrincipals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredLoginName);
+		ISNULL([local].[simplified_name], [local].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT ISNULL([simplified_name], [name]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remotePrincipals)
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
 
 	-- remote only:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'Login: ' + [remote].[name], 
-		N'Login exists on ' + @remoteServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'logins' [grouping_key], 
+		N'Login ' + QUOTENAME([remote].[name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' exists on ' + QUOTENAME(@remoteServerName) + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		@remotePrincipals [remote]
 	WHERE 
-		principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S'
-		AND [remote].[name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.server_principals WHERE principal_id > 10 AND principal_id NOT IN (257, 265) AND [type] = 'S')
-		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredLoginName);
+		ISNULL([remote].[simplified_name], [remote].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT ISNULL([simplified_name], [name]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localPrincipals)
+		AND [remote].[name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
 
 	-- differences
-	INSERT INTO #Divergence ([name], [description])
-	SELECT
-		N'Login: ' + [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS, 
-		N'Login is different between servers. (Check SID, disabled, or password_hash (for SQL Logins).)'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'logins' [grouping_key], 
+		N'Definition for Login ' + QUOTENAME([local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' is different between servers.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
-		(SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM sys.server_principals p LEFT OUTER JOIN sys.sql_logins l ON p.[name] = l.[name]) [local]
-		INNER JOIN (SELECT p.[name], p.[sid], p.is_disabled, l.password_hash FROM @remotePrincipals p LEFT OUTER JOIN @remoteLogins l ON p.[name] = l.[name] COLLATE SQL_Latin1_General_CP1_CI_AS) [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
+        @localPrincipals [local]
+        INNER JOIN @remotePrincipals [remote] ON ISNULL([local].[simplified_name], [local].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS = ISNULL([remote].[simplified_name], [remote].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS
 	WHERE
-		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredLoginName)
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT LIKE '##MS%' -- skip all of the MS cert signers/etc. 
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName)
 		AND (
 			[local].[sid] <> [remote].[sid]
-			--OR [local].password_hash <> [remote].password_hash  -- sadly, these are ALWAYS going to be different because of master keys/encryption details. So we can't use it for comparison purposes.
+			OR [local].password_hash <> [remote].password_hash  
 			OR [local].is_disabled <> [remote].is_disabled
 		);
 
-	---------------------------------------
+    -- (server) role memberships: 
+    DECLARE @localMemberRoles table ( 
+        [login_name] sysname NOT NULL, 
+        [simplified_name] sysname NULL, 
+        [role] sysname NOT NULL
+    );
+
+    DECLARE @remoteMemberRoles table ( 
+        [login_name] sysname NOT NULL, 
+        [simplified_name] sysname NULL, 
+        [role] sysname NOT NULL
+    );	
+    
+    -- note, explicitly including NT SERVICE\etc and other 'built in' service accounts as we want to check for any differences in role memberships:
+    INSERT INTO @localMemberRoles (
+        [login_name],
+        [role]
+    )
+    SELECT 
+	    p.[name] [login_name],
+	    [roles].[name] [role_name]
+    FROM 
+	    sys.server_principals p 
+	    INNER JOIN sys.server_role_members m ON p.principal_id = m.member_principal_id
+	    INNER JOIN sys.server_principals [roles] ON m.role_principal_id = [roles].principal_id
+    WHERE 
+	    p.principal_id > 10 AND p.[name] NOT LIKE '##%##';
+
+    INSERT INTO @remoteMemberRoles (
+        [login_name],
+        [role]
+    )
+    EXEC sys.[sp_executesql] N'
+    SELECT 
+	    p.[name] [login_name],
+	    [roles].[name] [role_name]
+    FROM 
+	    [PARTNER].[master].sys.server_principals p 
+	    INNER JOIN [PARTNER].[master].sys.server_role_members m ON p.principal_id = m.member_principal_id
+	    INNER JOIN [PARTNER].[master].sys.server_principals [roles] ON m.role_principal_id = [roles].principal_id
+    WHERE 
+	    p.principal_id > 10 AND p.[name] NOT LIKE ''##%##''; ';
+        
+    IF @IgnorePrincipalNames = 1 BEGIN 
+        UPDATE @localMemberRoles
+        SET 
+            [simplified_name] = REPLACE([login_name], @localServerName + N'\', N'')
+        WHERE 
+            [login_name] LIKE @localServerName + N'\%';
+
+        UPDATE @remoteMemberRoles
+        SET 
+            [simplified_name] = REPLACE([login_name], @remoteServerName + N'\', N'')
+        WHERE 
+            [login_name] LIKE @remoteServerName + N'\%';        
+    END;
+
+    -- local not in remote:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )   
+    SELECT 
+        N'logins' [grouping_key], 
+        N'Login ' + QUOTENAME([local].[login_name]) + N' is a member of server role ' + QUOTENAME([local].[role]) + N' on server ' + QUOTENAME(@localServerName) + N' only.' [heading]
+    FROM 
+        @localMemberRoles [local] 
+    WHERE 
+        (ISNULL([local].[simplified_name], [local].[login_name]) + N'.' + [local].[role]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+            SELECT (ISNULL([simplified_name], [login_name]) + N'.' + [role]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remoteMemberRoles
+        )
+        AND [local].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+
+    -- remote not in local:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )   
+    SELECT 
+        N'logins' [grouping_key], 
+        N'Login ' + QUOTENAME([remote].[login_name]) + N' is a member of server role ' + QUOTENAME([remote].[role]) + N' on server ' + QUOTENAME(@remoteServerName) + N' only.' [heading]
+    FROM 
+        @remoteMemberRoles [remote] 
+    WHERE 
+        (ISNULL([remote].[simplified_name], [remote].[login_name]) + N'.' + [remote].[role]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+            SELECT (ISNULL([simplified_name], [login_name]) + N'.' + [role]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localMemberRoles
+        )
+        AND [remote].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+
+    
+    ---------------------------------------
 	-- Endpoints? 
 	--		[add if needed/desired.]
 
@@ -489,10 +695,14 @@ AS
 	INSERT INTO @remoteOperators ([name], [enabled], email_address)
 	EXEC master.sys.sp_executesql N'SELECT [name], [enabled], email_address FROM PARTNER.msdb.dbo.sysoperators;';
 
-	INSERT INTO #Divergence (name, [description])
-	SELECT	
-		N'Operator: ' + [local].[name], 
-		N'Operator exists on ' + @localServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'operators' [grouping_key], 
+		N'Operator ' + QUOTENAME([local].[name]) + N' exists on ' + @localServerName + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		msdb.dbo.sysoperators [local]
 		LEFT OUTER JOIN @remoteOperators [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -500,10 +710,14 @@ AS
 		[remote].[name] IS NULL;
 
 	-- remote only
-	INSERT INTO #Divergence (name, [description])
-	SELECT	
-		N'Operator: ' + [remote].[name], 
-		N'Operator exists on ' + @remoteServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'operators' [grouping_key], 	
+        N'Operator ' + QUOTENAME([remote].[name]) + N' exists on ' + @remoteServerName + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		@remoteOperators [remote]
 		LEFT OUTER JOIN msdb.dbo.sysoperators [local] ON [remote].[name] = [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS
@@ -511,10 +725,14 @@ AS
 		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS IS NULL;
 
 	-- differences (just checking email address in this particular config):
-	INSERT INTO #Divergence (name, [description])
-	SELECT	
-		N'Operator: ' + [local].[name], 
-		N'Operator definition is different between servers. (Check email address(es) and enabled.)'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'operators' [grouping_key], 
+		N'Defintion for Operator ' + QUOTENAME([local].[name]) + N' is different between servers.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		msdb.dbo.sysoperators [local]
 		INNER JOIN @remoteOperators [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -553,10 +771,14 @@ AS
 	EXEC master.sys.sp_executesql N'SELECT [name], message_id, severity, [enabled], delay_between_responses, notification_message, include_event_description, [database_name], event_description_keyword, job_id, has_notification, performance_condition, category_id FROM PARTNER.msdb.dbo.sysalerts;';
 
 	-- local only
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'Alert: ' + [local].[name], 
-		N'Alert exists on ' + @localServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'alerts' [grouping_key], 
+		N'Alert ' + QUOTENAME([local].[name]) + N' exists on ' + @localServerName + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		msdb.dbo.sysalerts [local]
 		LEFT OUTER JOIN @remoteAlerts [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -564,10 +786,14 @@ AS
 		[remote].[name] IS NULL
 		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] FROM @ignoredAlertName);
 
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'Alert: ' + [remote].[name], 
-		N'Alert exists on ' + @remoteServerName + N' only.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'alerts' [grouping_key], 
+		N'Alert ' + QUOTENAME([remote].[name]) + N' exists on ' + @remoteServerName + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		@remoteAlerts [remote]
 		LEFT OUTER JOIN msdb.dbo.sysalerts [local] ON [remote].[name] = [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS
@@ -576,10 +802,14 @@ AS
 		AND [remote].[name] NOT IN (SELECT [name] FROM @ignoredAlertName);
 
 	-- differences:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'Alert: ' + [local].[name], 
-		N'Alert definition is different between servers.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'operators' [grouping_key],  
+		N'Definition for Alert ' + QUOTENAME([local].[name]) + N' is different between servers.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM	
 		msdb.dbo.sysalerts [local]
 		INNER JOIN @remoteAlerts [remote] ON [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[name]
@@ -635,10 +865,14 @@ AS
 	DELETE FROM @remoteMasterObjects WHERE [object_name] IN (SELECT [name] FROM @ignoredMasterObjects);
 
 	-- local only:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'object: ' + [local].[object_name], 
-		N'Object exists only in master database on ' + @localServerName + '.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'master objects' [grouping_key], 
+		N'Object ' + QUOTENAME([local].[object_name]) + N' exists in the master database on ' + @localServerName + N' only.'  [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		@localMasterObjects [local]
 		LEFT OUTER JOIN @remoteMasterObjects [remote] ON [local].[object_name] = [remote].[object_name]
@@ -646,16 +880,19 @@ AS
 		[remote].[object_name] IS NULL;
 	
 	-- remote only:
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'object: ' + [remote].[object_name], 
-		N'Object exists only in master database on ' + @remoteServerName + '.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'master objects' [grouping_key], 
+		N'Object ' + QUOTENAME([remote].[object_name]) + N' exists in the master database on ' + @remoteServerName + N' only.'  [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		@remoteMasterObjects [remote]
 		LEFT OUTER JOIN @localMasterObjects [local] ON [remote].[object_name] = [local].[object_name]
 	WHERE
 		[local].[object_name] IS NULL;
-
 
 	CREATE TABLE #Definitions (
 		row_id int IDENTITY(1,1) NOT NULL, 
@@ -751,10 +988,14 @@ AS
 	CLOSE remotetabler;
 	DEALLOCATE remotetabler;
 
-	INSERT INTO #Divergence (name, [description])
-	SELECT 
-		N'object: ' + [local].[object_name], 
-		N'Object definitions between servers are different.'
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'master objects' [grouping_key], 
+		N'The Definition for object ' + QUOTENAME([local].[object_name]) + N' (in the master database) is different between servers.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
 	FROM 
 		(SELECT [object_name], [hash] FROM #Definitions WHERE [location] = 'local') [local]
 		INNER JOIN (SELECT [object_name], [hash] FROM #Definitions WHERE [location] = 'remote') [remote] ON [local].object_name = [remote].object_name
@@ -763,20 +1004,21 @@ AS
 	
 	------------------------------------------------------------------------------
 	-- Report on any discrepancies: 
-	IF(SELECT COUNT(*) FROM #Divergence) > 0 BEGIN 
+	IF(SELECT COUNT(*) FROM #bus) > 0 BEGIN 
 
 		DECLARE @subject nvarchar(300) = N'SQL Server Synchronization Check Problems';
 		DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
 		DECLARE @tab nchar(1) = CHAR(9);
-		DECLARE @message nvarchar(MAX) = N'The following synchronization issues were detected: ' + @crlf;
+		DECLARE @message nvarchar(MAX) = N'The following synchronization issues were detected: ' + @crlf + @crlf;
 
-		SELECT 
-			@message = @message + @tab + [name] + N' -> ' + [description] + @crlf
-		FROM 
-			#Divergence
-		ORDER BY 
-			rowid;
-		
+        SELECT 
+            @message = @message + @tab +  UPPER([channel]) + N': ' + [heading] + CASE WHEN [body] IS NOT NULL THEN @crlf + @tab + @tab + ISNULL([body], N'') ELSE N'' END + @crlf + @crlf
+        FROM 
+            #bus
+        ORDER BY 
+            [row_id];
+
+
 		IF @PrintOnly = 1 BEGIN 
 			-- just Print out details:
 			PRINT 'SUBJECT: ' + @subject;
@@ -794,7 +1036,6 @@ AS
 
 	END 
 
-	DROP TABLE #Divergence;
 	DROP TABLE #Definitions;
 
 	RETURN 0;

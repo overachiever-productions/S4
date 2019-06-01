@@ -57,7 +57,7 @@ GO
 
 CREATE FUNCTION dbo.format_sql_login (
     @Enabled                          bit,                                  -- IF NULL the login will be DISABLED via the output/script.
-    @BehaviorIfLoginExists            sysname         = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
+    @BehaviorIfLoginExists            sysname         = N'NONE',            -- { NONE | ALTER | DROP_AND_CREATE }
     @Name                             sysname,                              -- always required.
     @Password                         varchar(256),                         -- NOTE: while not 'strictly' required by ALTER LOGIN statements, @Password is ALWAYS required for dbo.format_sql_login.
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
@@ -133,7 +133,7 @@ GO
         SET @template = REPLACE(@template, N'{Attributes}', @attributes);
         SET @output = REPLACE(@template, N'{Name}', @Name);
 
-        IF (@Password LIKE '0x%') AND (@Password NOT LIKE '%HASHED')
+        IF (@Password LIKE '0x%') --AND (@Password NOT LIKE '%HASHED')
             SET @Password = @Password + N' HASHED';
         ELSE 
             SET @Password = N'''' + @Password + N'''';
@@ -178,7 +178,7 @@ GO
             SET @output = REPLACE(@output, N'{CheckPolicy}', N'');
             END;
         ELSE BEGIN 
-            SET @output = REPLACE(@output, N'{CheckPolicy}', @newAtrributeLine + N',CHECK_EXPIRATION = ' + CASE WHEN @CheckPolicy = 1 THEN N'ON' ELSE 'OFF' END);
+            SET @output = REPLACE(@output, N'{CheckPolicy}', @newAtrributeLine + N',CHECK_POLICY = ' + CASE WHEN @CheckPolicy = 1 THEN N'ON' ELSE 'OFF' END);
         END;
 
         -- enabled:

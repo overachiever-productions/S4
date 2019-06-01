@@ -268,8 +268,8 @@ AS
                             l.[enabled], 
                             @BehaviorIfLoginExists, 
                             l.[name], 
-                            CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
-                            CONVERT(nvarchar(MAX), l.[sid], 2), 
+                            N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
+                            N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                             l.[default_database_name], 
                             l.[default_language_name], 
                             CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
@@ -280,7 +280,7 @@ AS
                             l.[enabled], 
                             @BehaviorIfLoginExists, 
                             l.[name], 
-                            CONVERT(nvarchar(MAX), l.[sid], 2), 
+                            N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                             l.[default_database_name], 
                             l.[default_language_name]
                         )
@@ -309,8 +309,8 @@ AS
                         l.[enabled], 
                         @BehaviorIfLoginExists, 
                         l.[name], 
-                        CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
-                        CONVERT(nvarchar(MAX), l.[sid], 2), 
+                        N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
+                        N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                         l.[default_database_name], 
                         l.[default_language_name], 
                         CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
@@ -321,7 +321,7 @@ AS
                         l.[enabled], 
                         @BehaviorIfLoginExists, 
                         l.[name], 
-                        CONVERT(nvarchar(MAX), l.[sid], 2), 
+                        N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                         l.[default_database_name], 
                         l.[default_language_name]
                     )
