@@ -40,7 +40,7 @@ AS
 	DECLARE @waitFor sysname
 	DECLARE @error nvarchar(MAX);
 
-	EXEC [admindb].dbo.[translate_vector_delay]
+	EXEC dbo.[translate_vector_delay]
 	    @Vector = @Interval,
 	    @ParameterName = N'@Interval',
 	    @Output = @waitFor OUTPUT,

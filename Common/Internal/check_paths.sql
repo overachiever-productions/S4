@@ -1,8 +1,4 @@
-
 /*
-
-	DEPENDENCIES:
-		- None.
 
 	NOTES:
 		- This sproc was created to enble reuse and encapsulation of the logic that tackles determining whether 
@@ -10,12 +6,6 @@
 			additional complexity in errors thrown when SQL Server is instructed to restore a backup that doesn't 
 			exist (i.e., it's a lot easier to read an error that says: invalid path... than "the backup specified
 			is not valid, or you don't have permissions, etc." (i.e., SQL Server 'catch all' error). 
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
-
 
 */
 

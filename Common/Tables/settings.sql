@@ -84,21 +84,27 @@ ELSE BEGIN
 				CONSTRAINT PK_settings PRIMARY KEY NONCLUSTERED (setting_id)
 			);
 
-			INSERT INTO dbo.settings (setting_type, setting_key, setting_value) 
+            CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
+
+            DECLARE @insertFromOriginal nvarchar(MAX) = N'INSERT INTO dbo.settings (setting_type, setting_key, setting_value) 
 			SELECT 
-				N'UNIQUE' [setting_type], 
+				N''UNIQUE'' [setting_type], 
 				[setting_key], 
 				[setting_value]
 			FROM 
 				[#settings]
 			ORDER BY 
-				[row_id];
+				[row_id]; ';
 
-
-			CREATE CLUSTERED INDEX CLIX_settings ON dbo.[settings] ([setting_key], [setting_id]);
+            EXEC sp_executesql @insertFromOriginal;
+			
 		COMMIT;
+
+        IF OBJECT_ID(N'tempdb..#settings') IS NOT NULL 
+            DROP TABLE [#settings];
 	END;
 END;
+GO
 
 -- 6.0: 'legacy enable' advanced S4 error handling from previous versions if not already defined: 
 IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN

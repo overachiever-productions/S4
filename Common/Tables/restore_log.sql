@@ -77,8 +77,6 @@ IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 	    PRINT 'Importing Previous Data from restore log.... ';
 	    SET IDENTITY_INSERT dbo.restore_log ON;
 
-	        
-
             EXEC sys.[sp_executesql] @importSQL;
 
 	    SET IDENTITY_INSERT dbo.restore_log OFF;
@@ -161,7 +159,6 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 	COMMIT;
 END;
 GO
-
 
 ---------------------------------------------------------------------------
 -- v4.7 Process UTC to local time change 
@@ -274,6 +271,7 @@ SET
 	[dropped] = 'LEFT-ONLINE'
 WHERE 
 	[dropped] = 'LEFT ONLINE';
+GO
 
 ---------------------------------------------------------------------------
 -- v5.0 - expand dbo.restore_log.[recovery]. S4-86.
@@ -292,6 +290,7 @@ IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.resto
 
 	COMMIT;
 END;
+GO
 
 ---------------------------------------------------------------------------
 -- v6.1+
@@ -304,3 +303,4 @@ IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
         ALTER TABLE dbo.[restore_log] ADD CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()) FOR [operation_date];
     END;
 END;
+GO
