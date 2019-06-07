@@ -282,7 +282,7 @@ AS
 			
 				EXEC @returnValue = dbo.[execute_command]
 					@Command = @command,
-					@ExecutionType = N'SHELL',
+					@ExecutionType = N'SQLCMD',
 					@ExecutionRetryCount = 1, 
 					@DelayBetweenAttempts = N'5s',
 					@Results = @executionResults OUTPUT 
@@ -395,7 +395,7 @@ ShrinkLogFile:
 					
 					EXEC @returnValue = dbo.[execute_command]
 					    @Command = @command, 
-					    @ExecutionType = N'SHELL', 
+					    @ExecutionType = N'SQLCMD', 
 					    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS]', 
 					    @Results = @executionResults OUTPUT;
 					
