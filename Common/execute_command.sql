@@ -50,9 +50,8 @@ CREATE PROC dbo.execute_command
 	@ExecutionType							sysname						= N'EXEC',							-- { EXEC | SQLCMD | SHELL | PARTNER }
 	@ExecutionRetryCount					int							= 2,								-- number of times to try executing process - until either success (no error) or @ExecutionRetryCount reached. 
 	@DelayBetweenAttempts					sysname						= N'5s',
-	
 	@IgnoredResults							nvarchar(2000)				= N'[COMMAND_SUCCESS]',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, [tokens]'. Allowed Tokens: [COMMAND_SUCCESS] | [USE_DB_SUCCESS] | [ROWS_AFFECTED] | [BACKUP] | [RESTORE] | [SHRINKLOG] | [DBCC] ... 
-
+    @PrintOnly                              bit                         = 0,
 	@Results								xml							OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -213,36 +212,44 @@ ExecutionAttempt:
 
 		IF UPPER(@ExecutionType) = N'EXEC' BEGIN 
 			
-			EXEC sp_executesql @Command; 
+            IF @PrintOnly = 1 
+                PRINT @Command 
+            ELSE 
+			    EXEC sp_executesql @Command; 
+
 			SET @succeeded = 1;
 
 		  END; 
 		ELSE BEGIN 
 			DELETE FROM #Results;
-PRINT @xpCmd;
-			INSERT INTO #Results (result) 
-			EXEC master.sys.[xp_cmdshell] @xpCmd;
 
-			DELETE r
-			FROM 
-				#Results r 
-				INNER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]);
+            IF @PrintOnly = 1
+                PRINT @xpCmd 
+            ELSE BEGIN
+			    INSERT INTO #Results (result) 
+			    EXEC master.sys.[xp_cmdshell] @xpCmd;
 
-			IF EXISTS(SELECT NULL FROM [#Results] WHERE [result] IS NOT NULL) BEGIN 
-				SET @result = N'';
-				SELECT 
-					@result = @result + [result] + CHAR(13) + CHAR(10)
-				FROM 
-					[#Results] 
-				WHERE 
-					[result] IS NOT NULL
-				ORDER BY 
-					[result_id]; 
+			    DELETE r
+			    FROM 
+				    #Results r 
+				    INNER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]);
+
+			    IF EXISTS(SELECT NULL FROM [#Results] WHERE [result] IS NOT NULL) BEGIN 
+				    SET @result = N'';
+				    SELECT 
+					    @result = @result + [result] + CHAR(13) + CHAR(10)
+				    FROM 
+					    [#Results] 
+				    WHERE 
+					    [result] IS NOT NULL
+				    ORDER BY 
+					    [result_id]; 
 									
-			  END;
-			ELSE BEGIN 
-				SET @succeeded = 1;
-			END;
+			      END;
+			    ELSE BEGIN 
+				    SET @succeeded = 1;
+			    END;
+            END;
 		END;
 	END TRY
 
