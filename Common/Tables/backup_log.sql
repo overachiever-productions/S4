@@ -38,6 +38,7 @@ IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
 		CONSTRAINT PK_backup_log PRIMARY KEY CLUSTERED (backup_id)
 	);	
 END;
+GO
 
 ---------------------------------------------------------------------------
 -- Copy previous log data (v3 and below) if this is a new v4 install. 
@@ -80,3 +81,4 @@ IF @objectId IS NOT NULL BEGIN
 
 	SET IDENTITY_INSERT dbo.backup_log OFF;
 END;
+GO

@@ -49,7 +49,7 @@ AS
 
 	INSERT INTO @rows ([row_id], [result])
 	SELECT [row_id], [result] 
-	FROM admindb.[dbo].[split_string](@Input, @RowDelimiter, 1);
+	FROM [dbo].[split_string](@Input, @RowDelimiter, 1);
 
 	DECLARE @columnCountMax int = 0;
 

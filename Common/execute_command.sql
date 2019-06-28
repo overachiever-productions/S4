@@ -47,12 +47,11 @@ GO
 
 CREATE PROC dbo.execute_command
 	@Command								nvarchar(MAX), 
-	@ExecutionType							sysname						= N'EXEC',							-- { EXEC | SHELL | PARTNER }
+	@ExecutionType							sysname						= N'EXEC',							-- { EXEC | SQLCMD | SHELL | PARTNER }
 	@ExecutionRetryCount					int							= 2,								-- number of times to try executing process - until either success (no error) or @ExecutionRetryCount reached. 
 	@DelayBetweenAttempts					sysname						= N'5s',
-	
 	@IgnoredResults							nvarchar(2000)				= N'[COMMAND_SUCCESS]',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, [tokens]'. Allowed Tokens: [COMMAND_SUCCESS] | [USE_DB_SUCCESS] | [ROWS_AFFECTED] | [BACKUP] | [RESTORE] | [SHRINKLOG] | [DBCC] ... 
-
+    @PrintOnly                              bit                         = 0,
 	@Results								xml							OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -67,24 +66,32 @@ AS
 	-- Validate Inputs:
 	IF @ExecutionRetryCount <= 0 SET @ExecutionRetryCount = 1;
 
+    IF UPPER(@ExecutionType) NOT IN (N'EXEC', N'SQLCMD', N'SHELL', N'PARTNER') BEGIN 
+        RAISERROR(N'Permitted @ExecutionType values are { EXEC | SQLCMD | SHELL | PARTNER }.', 16, 1);
+        RETURN -2;
+    END; 
 
 	-- if @ExecutionType = PARTNER, make sure we have a PARTNER entry in sys.servers... 
 
 
-	-- for SHELL and PARTNER... final 'statement' needs to be varchar(4000) or less. 
+	-- for SQLCMD, SHELL, and PARTNER... final 'statement' needs to be varchar(4000) or less. 
 
-	DECLARE @delay sysname; 
-	DECLARE @error nvarchar(MAX);
-	EXEC [admindb].dbo.[translate_vector_delay]
-	    @Vector = @DelayBetweenAttempts,
-	    @ParameterName = N'@DelayBetweenAttempts',
-	    @Output = @delay OUTPUT, 
-	    @Error = @error OUTPUT;
 
-	IF @error IS NOT NULL BEGIN 
-		RAISERROR(@error, 16, 1);
-		RETURN -5;
-	END;
+    -- validate @DelayBetweenAttempts (if required/present):
+    IF @ExecutionRetryCount > 1 BEGIN
+	    DECLARE @delay sysname; 
+	    DECLARE @error nvarchar(MAX);
+	    EXEC dbo.[translate_vector_delay]
+	        @Vector = @DelayBetweenAttempts,
+	        @ParameterName = N'@DelayBetweenAttempts',
+	        @Output = @delay OUTPUT, 
+	        @Error = @error OUTPUT;
+
+	    IF @error IS NOT NULL BEGIN 
+		    RAISERROR(@error, 16, 1);
+		    RETURN -5;
+	    END;
+    END;
 
 	-----------------------------------------------------------------------------
 	-- Processing: 
@@ -174,21 +181,27 @@ AS
 	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
 	DECLARE @serverName sysname = '';
 
-	SET @xpCmd = 'sqlcmd {0} -q "' + REPLACE(@Command, @crlf, ' ') + '"';
-	IF UPPER(@ExecutionType) = N'SHELL' BEGIN 
+	IF UPPER(@ExecutionType) = N'SHELL' BEGIN
+        SET @xpCmd = CAST(@Command AS varchar(2000));
+    END;
+    
+    IF UPPER(@ExecutionType) IN (N'SQLCMD', N'PARTNER') BEGIN
+        SET @xpCmd = 'sqlcmd {0} -q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+    
+        IF UPPER(@ExecutionType) = N'SQLCMD' BEGIN 
 		
-		IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
-			SET @serverName = N' -S .\' + @@SERVICENAME;
+		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
+			    SET @serverName = N' -S .\' + @@SERVICENAME;
 		
-		SET @xpCmd = REPLACE(@xpCmd, '{0}', @serverName);
-	END; 
+		    SET @xpCmd = REPLACE(@xpCmd, '{0}', @serverName);
+	    END; 
 
-	IF UPPER(@ExecutionType) = N'PARTNER' BEGIN 
-		SELECT @serverName = REPLACE(data_source, N'tcp:', N'') FROM sys.servers WHERE [name] = N'PARTNER';
+	    IF UPPER(@ExecutionType) = N'PARTNER' BEGIN 
+		    SELECT @serverName = REPLACE([data_source], N'tcp:', N'') FROM sys.servers WHERE [name] = N'PARTNER';
 
--- TODO: ensure that this accounts for named instances:
-		SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
-	END; 
+		    SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
+	    END; 
+    END;
 	
 ExecutionAttempt:
 	
@@ -199,36 +212,44 @@ ExecutionAttempt:
 
 		IF UPPER(@ExecutionType) = N'EXEC' BEGIN 
 			
-			EXEC sp_executesql @Command; 
+            IF @PrintOnly = 1 
+                PRINT @Command 
+            ELSE 
+			    EXEC sp_executesql @Command; 
+
 			SET @succeeded = 1;
 
 		  END; 
 		ELSE BEGIN 
 			DELETE FROM #Results;
 
-			INSERT INTO #Results (result) 
-			EXEC master.sys.[xp_cmdshell] @xpCmd;
+            IF @PrintOnly = 1
+                PRINT @xpCmd 
+            ELSE BEGIN
+			    INSERT INTO #Results (result) 
+			    EXEC master.sys.[xp_cmdshell] @xpCmd;
 
-			DELETE r
-			FROM 
-				#Results r 
-				INNER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]);
+			    DELETE r
+			    FROM 
+				    #Results r 
+				    INNER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]);
 
-			IF EXISTS(SELECT NULL FROM [#Results] WHERE [result] IS NOT NULL) BEGIN 
-				SET @result = N'';
-				SELECT 
-					@result = @result + [result] + CHAR(13) + CHAR(10)
-				FROM 
-					[#Results] 
-				WHERE 
-					[result] IS NOT NULL
-				ORDER BY 
-					[result_id]; 
+			    IF EXISTS(SELECT NULL FROM [#Results] WHERE [result] IS NOT NULL) BEGIN 
+				    SET @result = N'';
+				    SELECT 
+					    @result = @result + [result] + CHAR(13) + CHAR(10)
+				    FROM 
+					    [#Results] 
+				    WHERE 
+					    [result] IS NOT NULL
+				    ORDER BY 
+					    [result_id]; 
 									
-			  END;
-			ELSE BEGIN 
-				SET @succeeded = 1;
-			END;
+			      END;
+			    ELSE BEGIN 
+				    SET @succeeded = 1;
+			    END;
+            END;
 		END;
 	END TRY
 

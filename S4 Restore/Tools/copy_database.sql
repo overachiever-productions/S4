@@ -73,7 +73,7 @@ AS
 	BEGIN TRY 
 		EXEC dbo.restore_databases
 			@DatabasesToRestore = @SourceDatabaseName,
-			@BackupsRootDirectory = @BackupsRootDirectory,
+			@BackupsRootPath = @BackupsRootDirectory,
 			@RestoredRootDataPath = @DataPath,
 			@RestoredRootLogPath = @LogPath,
 			@RestoredDbNamePattern = @TargetDatabaseName,

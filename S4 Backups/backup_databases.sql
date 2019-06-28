@@ -1,33 +1,3 @@
-
-
--- NEXT STEPS (with version 3.8.2.16655 modifications):
---		a) create-directory checks need to include the PATH as part of the error. 
---				in other words, I specified: X:\Pigs\ as the path to push @CopyTo backups to... and got this message: 
---					HResult 0x5620, Level 16, State 1 -> xp_create_subdir() returned error 3, 'The system cannot find the path specified.'
---			I want that to say: "Error when creating/validating path X:\Pigs\ACESvc. Error [ HResult 0x5620, Level 16, State 1 -> xp_create_subdir() returned error 3, 'The system cannot find the path specified.' ]
---		b) likewise, when I specified X:\Pigs as the path... file removal... (attempting to remove OLDER files from X:\pigs) threw errors - as in, ERRORS, or EXCEPTIONS (not warnings about file copy operations)
---			in the form of: 
---				Unexpected Error removing backups. Error: 50000 - Invalid @TargetDirectory specified - either the path does not exist, or SQL Server's Service Account does not have permissions to access the specified directory. 
---			I'd like that to:
---				1) specify @TargetDirectory VALUE - because a variable there doesn't help at ALL with debugging. 
---				2) somehow log this as a COPY detail - (which shouldn't be too hard) ... given that this is related to the COPY TO operation. 
---					or, in other words, failure to remove older backups from @BackupPath = Exception/Error. But failure to remove OLDER copies from the COPY TO Location is ... a network hiccup/warning instead. 
---							(and, after x attempts at trying to copy files - which will also mean cleanup attempts), we'll STOP working on these and... be done. 
-
---		c) start implementing and testing the retry logic (now that everything else is working as expected). 
---		d) test the hell out of this. 
---			AND, under these concerns, I have to ensure that WHEN I do a better job of makign each 'step' in the backup process (check paths, generate backup code, run backup code, verify backup, copy to secondary, delete backups, etc.)
---				that I DON'T create a nightmare scenario where (either locally or on the secondary) that I'm _DELETING_ files when the backup didn't WORK or get copied/etc. 
---					i.e., it's always better to 'run out of disk' (and get the alerts before hand) than to let 'cleanup code' somehow remove ALL backups in some 'nightmare' scenario where
---					backups aren't happening, but 'cleanup' does happen - over the period of hours/days... 
---						PRETTY sure I've got code that accounts for this scenario - just want to make sure I don't 'overwrite' that code/logic in making this routine more robust.
-
-
--- ALSO see the vNEXT notes down blow... in terms of 'retry' logic and DECOUPLING copy operations from backup operations. that stuff all needs to be tackled at the same time. 
-
-
-
-
 /*
 
 	NOTES:
@@ -41,11 +11,6 @@
 			and you'll get a whole host of errors/problems. 
 
 		- This sproc explicitly uses RAISERROR instead of THROW for 'backwards compat' down to SQL Server 2008. 
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
 
 	TODO:
 		- test/validate (and clean-up) on case-sensitive server (as much as those suck).
@@ -410,23 +375,20 @@ AS
 DoneRemovingFilesBeforeBackup:
 		END
 
-		SET @command = 'EXECUTE master.dbo.xp_create_subdir N''' + @backupPath + ''';';
+        SET @outcome = NULL;
+		BEGIN TRY
+            EXEC dbo.establish_directory
+                @TargetDirectory = @backupPath, 
+                @PrintOnly = @PrintOnly,
+                @Error = @outcome OUTPUT;
 
-		IF @PrintOnly = 1
-			PRINT @command;
-		ELSE BEGIN
-			BEGIN TRY
-				SET @outcome = NULL;
-				EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @Result = @outcome OUTPUT;
+			IF @outcome IS NOT NULL
+				SET @errorMessage = ISNULL(@errorMessage, '') + N' Error verifying directory: [' + @backupPath + N']: ' + @outcome;
 
-				IF @outcome IS NOT NULL
-					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-
-			END TRY
-			BEGIN CATCH 
-				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: [' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N']. Backup Filepath non-valid. Cannot continue with backup.';
-			END CATCH;
-		END;
+		END TRY
+		BEGIN CATCH 
+			SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: [' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N']. Backup Filepath non-valid. Cannot continue with backup.';
+		END CATCH;
 
 		-- Normally, it wouldn't make sense to 'bail' on backups simply because we couldn't remove an older file. But, when the directive is to RemoveFilesBEFORE backups, we have to 'bail' to avoid running out of disk space when we can't delete files BEFORE backups. 
 		IF @errorMessage IS NOT NULL
@@ -546,22 +508,21 @@ DoneRemovingFilesBeforeBackup:
 		IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
 			
 			SET @copyStart = GETDATE();
-			SET @command = 'EXECUTE master.dbo.xp_create_subdir N''' + @copyToBackupPath + ''';';
+            SET @copyMessage = NULL;
 
-			IF @PrintOnly = 1 
-				PRINT @command;
-			ELSE BEGIN
-				BEGIN TRY 
-					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'CREATEDIR', @Result = @outcome OUTPUT;
-					
-					IF @outcome IS NOT NULL
-						SET @copyMessage = @outcome;
-				END TRY
-				BEGIN CATCH
-					SET @copyMessage = N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N'. Detail: [' + ISNULL(@copyMessage, '') + N']';
-				END CATCH;
-			END;
+            BEGIN TRY 
+                EXEC dbo.establish_directory
+                    @TargetDirectory = @copyToBackupPath, 
+                    @PrintOnly = @PrintOnly,
+                    @Error = @outcome OUTPUT;                
+
+                IF @outcome IS NOT NULL
+				    SET @errorMessage = ISNULL(@errorMessage, '') + N' Error verifying COPY_TO directory: ' + @copyToBackupPath + N': ' + @copyMessage;   
+
+            END TRY
+            BEGIN CATCH 
+                SET @copyMessage = N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N'. Detail: [' + ISNULL(@copyMessage, '') + N']';
+            END CATCH
 
 			-- if we didn't run into validation errors, we can go ahead and try the copyTo process: 
 			IF @copyMessage IS NULL BEGIN

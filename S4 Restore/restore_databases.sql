@@ -1,5 +1,3 @@
-
-
 /*
     WARNINGS:
         - Used INCORRECTLY, this sproc CAN drop/overwrite production databases. 
@@ -46,6 +44,31 @@
 
             FODDER: 
                 https://www.sqlskills.com/blogs/paul/sqlskills-sql101-why-is-restore-slower-than-backup/
+
+
+    DOCS (to add). 
+
+here's an EXAMPLE of how to do nightly restore tests on ONLY the primary: 
+        (nothing too complex ... just wrap execution in an is_primary_server() check... )
+
+            IF (SELECT admindb.dbo.is_primary_server()) = 1 BEGIN
+	            EXEC [admindb].[dbo].[restore_databases]
+		            @DatabasesToRestore = N'[READ_FROM_FILESYSTEM]', 
+		            @DatabasesToExclude = N'[SYSTEM], __certs', 
+		            @Priorities = N'Motion4', 
+		            @BackupsRootPath = N'\\10.100.213.13\SQLBackups', 
+		            @RestoredRootDataPath = N'C:\SQLData',  
+		            @RestoredRootLogPath = N'C:\SQLData',  
+		            @RestoredDbNamePattern = N'{0}_s4test',  
+		            @SkipLogBackups = 0,  
+		            @ExecuteRecovery = 1,  
+		            @CheckConsistency = 1,  
+		            @DropDatabasesAfterRestore = 1,  
+		            @MaxNumberOfFailedDrops = 3, 
+		            @PrintOnly = 0;
+            END;
+
+
 
 */
 
