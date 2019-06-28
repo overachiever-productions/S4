@@ -77,8 +77,6 @@ IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 	    PRINT 'Importing Previous Data from restore log.... ';
 	    SET IDENTITY_INSERT dbo.restore_log ON;
 
-	        
-
             EXEC sys.[sp_executesql] @importSQL;
 
 	    SET IDENTITY_INSERT dbo.restore_log OFF;
@@ -93,7 +91,7 @@ GO
 ---------------------------------------------------------------------------
 IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.restore_log') AND [name] = N'restored_files') BEGIN
 
-	BEGIN TRANSACTION
+	BEGIN TRANSACTION;
         
         IF OBJECT_ID(N'DF_restore_log_operation_date') IS NOT NULL BEGIN
 		    ALTER TABLE dbo.restore_log
@@ -126,7 +124,7 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
         END;
 			
 		CREATE TABLE dbo.Tmp_restore_log (
-		    restore_id int IDENTITY(1,1) NOT NULL,                                                                      -- restore_test_id until v.9                         
+		    restore_id int IDENTITY(1,1) NOT NULL,                                                                      -- restore_test_id until v4.9                         
 		    execution_id uniqueidentifier NOT NULL,                                                                     -- restore_id until v 4.9            
 		    operation_date date NOT NULL CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()),
 		    operation_type varchar(20) NOT NULL CONSTRAINT DF_restore_log_operation_type DEFAULT ('RESTORE-TEST'),      -- added v 4.9
@@ -161,7 +159,6 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.r
 	COMMIT;
 END;
 GO
-
 
 ---------------------------------------------------------------------------
 -- v4.7 Process UTC to local time change 
@@ -274,6 +271,7 @@ SET
 	[dropped] = 'LEFT-ONLINE'
 WHERE 
 	[dropped] = 'LEFT ONLINE';
+GO
 
 ---------------------------------------------------------------------------
 -- v5.0 - expand dbo.restore_log.[recovery]. S4-86.
@@ -292,15 +290,31 @@ IF EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.resto
 
 	COMMIT;
 END;
+GO
 
 ---------------------------------------------------------------------------
 -- v6.1+
 ---------------------------------------------------------------------------
--- may have 'escaped' previous update/mod logic... 
+-- S4-195- BUG: these changes may have been missed during previous updates:
 IF OBJECT_ID(N'DF_restore_log_test_date') IS NOT NULL BEGIN
 	ALTER TABLE dbo.restore_log DROP CONSTRAINT DF_restore_log_test_date;
+END;
 
-    IF OBJECT_ID(N'DF_restore_log_operation_date') IS NULL BEGIN 
-        ALTER TABLE dbo.[restore_log] ADD CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()) FOR [operation_date];
+IF OBJECT_ID(N'DF_restore_log_operation_date') IS NULL BEGIN 
+    ALTER TABLE dbo.[restore_log] ADD CONSTRAINT DF_restore_log_operation_date DEFAULT (GETDATE()) FOR [operation_date];
+END;
+GO
+
+-- streamline default text: 
+IF EXISTS (SELECT NULL FROM sys.[default_constraints] WHERE [name] = N'DF_restore_log_operation_type' AND [definition] <> '(''RESTORE-TEST'')') BEGIN 
+    IF OBJECT_ID(N'DF_restore_log_operation_date') IS NOT NULL BEGIN
+		ALTER TABLE dbo.restore_log DROP CONSTRAINT DF_restore_log_operation_type;
+    END    
+
+    IF OBJECT_ID(N'DF_restore_log_operation_date') IS NOT NULL BEGIN
+        ALTER TABLE dbo.restore_log ADD CONSTRAINT DF_restore_log_operation_type DEFAULT 'RESTORE-TEST' FOR [operation_type];
+
+        UPDATE dbo.[restore_log] SET [operation_type] = 'RESTORE-TEST' WHERE [operation_type] = 'RESTORE_TEST';
     END;
 END;
+GO

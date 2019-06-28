@@ -31,7 +31,6 @@ AS
 		@Vector = @Vector, 
 		@ValidationParameterName = @ParameterName,
 		@ProhibitedIntervals = 'DAY,WEEK,MONTH,QUARTER,YEAR',  -- days are overkill for any sort of WAITFOR delay specifier (that said, 38 HOURS would work... )  
-		@TranslationInterval = N'MILLISECOND', 
 		@Output = @difference OUTPUT, 
 		@Error = @Error OUTPUT;
 

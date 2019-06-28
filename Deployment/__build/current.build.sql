@@ -247,6 +247,9 @@ GO
 --##INCLUDE: Common\Internal\format_windows_login.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\establish_directory.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
