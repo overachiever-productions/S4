@@ -1,6 +1,33 @@
 /*
 
--- TODO: thread count is off/wrong... 
+-- TODO: thread count is off/wrong... (should, 'simply', be the count of either request_ids or execution_context_ids (ecids)... 
+
+/*
+        TODO: 
+            For SQL Server 2014 (SP2 ...hmmmm) + ... 
+                use sys.dm_exec_input_buffer instead of DBCC INPUTBUFFER ... not JUST cuz it's newer/better
+                    but... because it's SET-BASED: 
+                        https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-exec-input-buffer-transact-sql?view=sql-server-2017
+                        (i.e., notice Example B - via CROSS-APPLY)  
+                            (and yeah, okay, fine, likely just some 'hack' under the covers... but, still, if this is ever going to be optimized, it'd be in the DMV - not the undocumented? DBCC command).
+
+   
+        TODO:
+            document these details (in terms of how they apply to dbo.list_processes - or... more specifically: DOCUMENT dbo.list_processes and what the outputs all mean/etc.)
+                            -- docs: https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-db-task-space-usage-transact-sql?view=sql-server-2017
+
+                            -- doesn't have the task_address and is_remote_task columns in 10.0 / 10.5
+                            SELECT * FROM sys.[dm_db_task_space_usage];
+
+
+                            -- doesn't have the user_objects_deferred_dealloc_page_count column in 10.0 / 10.5
+                            SELECT * FROM sys.[dm_db_session_space_usage];
+
+
+
+*/
+
+
 
 
 -- 2014 SP2 + 
@@ -61,6 +88,7 @@ CREATE PROC dbo.list_processes
 	@ExcludeNegativeDurations				bit			= 1,		-- exclude service broker and some other system-level operations/etc. 
 	@ExcludeBrokerProcesses					bit			= 1,		-- need to document that it does NOT block ALL broker waits (and, that it ONLY blocks broker WAITs - i.e., that's currently the ONLY way it excludes broker processes - by waits).
 	@ExcludeFTSDaemonProcesses				bit			= 1,
+    --@ExcludeCDCProcesses                    bit         = 1,      -- vNEXT: looks like, sadly, either have to watch for any/some/all? of the following: program_name = SQLAgent Job ID that ... is a CDC task (sigh)... statement_text = 'waitfor delay @waittime' (see this all the time), and/or NAME of the object_id/sproc being executed is ... sys.sp_cdc_scan...  and that's JUST to ignore the LOG READER when it's idle... might have to look at other waits when active/etc. 
 	@ExcludeSystemProcesses					bit			= 1,			-- spids < 50... 
 	@ExcludeSelf							bit			= 1,	
 	@IncludePlanHandle						bit			= 0,	
@@ -68,7 +96,7 @@ CREATE PROC dbo.list_processes
 	@IncludeBlockingSessions				bit			= 1,		-- 'forces' inclusion of spids CAUSING blocking even if they would not 'naturally' be pulled back by TOP N, etc. 
 	@IncudeDetailedMemoryStats				bit			= 0,		-- show grant info... 
 	@IncludeExtendedDetails					bit			= 1,
-	-- vNEXT				--@DetailedTempDbStats					bit			= 0,		-- pull info about tempdb usage by session and such... 
+    @IncludeTempdbUsageDetails              bit         = 1,
 	@ExtractCost							bit			= 1	
 AS 
 	SET NOCOUNT ON; 
@@ -91,6 +119,7 @@ AS
 		[command] nvarchar(32) NULL,
 		[granted_memory] bigint NULL,
 		[requested_memory] bigint NULL,
+        [query_cost] float NULL,
 		[ideal_memory] bigint NULL,
 		[cpu] int NOT NULL,
 		[reads] bigint NOT NULL,
@@ -103,6 +132,7 @@ AS
 		[host_name] sysname NULL,
 		[percent_complete] real NULL,
 		[open_tran] int NULL,
+        [tempdb_details] nvarchar(MAX) NULL,
 		[sql_handle] varbinary(64) NULL,
 		[plan_handle] varbinary(64) NULL, 
 		[statement_start_offset] int NULL, 
@@ -126,6 +156,7 @@ AS
 			g.[granted_memory_kb],
 			g.[requested_memory_kb],
 			g.[ideal_memory_kb],
+            g.[query_cost],
 			r.[cpu_time] [cpu], 
 			r.[reads], 
 			r.[writes], 
@@ -137,6 +168,7 @@ AS
 			s.[host_name],
 			r.[percent_complete],
 			r.[open_transaction_count] [open_tran],
+            {TempDBDetails},
 			r.[sql_handle],
 			r.[plan_handle],
 			r.[statement_start_offset], 
@@ -144,10 +176,10 @@ AS
 		FROM 
 			sys.dm_exec_requests r
 			INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
-			LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id
+			LEFT OUTER JOIN sys.dm_exec_query_memory_grants g ON r.session_id = g.session_id AND r.[plan_handle] = g.[plan_handle]
 		WHERE
 			-- TODO: if wait_types to exclude gets ''stupid large'', then instead of using an IN()... go ahead and create a CTE/derived-table/whatever and do a JOIN instead... 
-			r.wait_type NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
+			ISNULL(r.wait_type, '''') NOT IN(''BROKER_TO_FLUSH'',''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', ''BROKER_EVENTHANDLER'', ''BROKER_TRANSMITTER'',''BROKER_TASK_STOP'', ''MISCELLANEOUS'' {ExcludeMirroringWaits} {ExcludeFTSWaits} {ExcludeBrokerWaits})
 			{ExcludeSystemProcesses}
 			{ExcludeSelf}
 			{ExcludeNegative}
@@ -167,6 +199,7 @@ AS
 		[granted_memory_kb],
 		[requested_memory_kb],
 		[ideal_memory_kb],
+        [query_cost],
 		[cpu],
 		[reads],
 		[writes],
@@ -178,6 +211,7 @@ AS
 		[host_name],
 		[percent_complete],
 		[open_tran],
+        [tempdb_details],
 		[sql_handle],
 		[plan_handle],
 		[statement_start_offset],
@@ -203,6 +237,7 @@ AS
 			ISNULL([g].[granted_memory_kb],	(x.[memusage] * 8096)) [granted_memory_kb],
 			ISNULL([g].[requested_memory_kb], -1) [requested_memory_kb],
 			ISNULL([g].[ideal_memory_kb], -1) [ideal_memory_kb],
+            ISNULL([g].[query_cost], -1) [query_cost],
 			ISNULL([r].[cpu_time], 0 - [s].[cpu_time]) [cpu],
 			ISNULL([r].[reads], 0 - [s].[reads]) [reads],
 			ISNULL([r].[writes], 0 - [s].[writes]) [writes],
@@ -214,6 +249,7 @@ AS
 			[s].[host_name],
 			0 [percent_complete],
 			x.[open_tran] [open_tran],	  -- sys.dm_exec_sessions has this - from 2012+
+            {TempDBDetails},
 			ISNULL([r].[sql_handle], (SELECT c.most_recent_sql_handle FROM sys.[dm_exec_connections] c WHERE c.[most_recent_session_id] = s.[session_id])) [sql_handle],
 			[r].[plan_handle],
 			ISNULL([r].[statement_start_offset], x.[stmt_start]) [statement_start_offset],
@@ -223,13 +259,11 @@ AS
 			sys.dm_exec_sessions s 
 			INNER JOIN sys.[sysprocesses] x ON s.[session_id] = x.[spid] -- ugh... i hate using this BUT there are details here that are just NOT anywhere else... 
 			LEFT OUTER JOIN sys.dm_exec_requests r ON s.session_id = r.[session_id] 
-			LEFT OUTER JOIN sys.[dm_exec_query_memory_grants] g ON s.[session_id] = g.[session_id]
+			LEFT OUTER JOIN sys.[dm_exec_query_memory_grants] g ON s.[session_id] = g.[session_id] AND r.[plan_handle] = g.[plan_handle] 
 		WHERE 
 			s.[session_id] NOT IN (SELECT session_id FROM [core])
 			AND s.[session_id] IN (SELECT blocked_by FROM [core])
-	) 
-	
-	';
+	) ';
 
 	DECLARE @blockersUNION nvarchar(MAX) = N'
 	UNION 
@@ -246,6 +280,7 @@ AS
 		[granted_memory_kb],
 		[requested_memory_kb],
 		[ideal_memory_kb],
+        [query_cost],
 		[cpu],
 		[reads],
 		[writes],
@@ -257,6 +292,7 @@ AS
 		[host_name],
 		[percent_complete],
 		[open_tran],
+        [tempdb_details],
 		[sql_handle],
 		[plan_handle],
 		[statement_start_offset],
@@ -265,7 +301,49 @@ AS
 		[blockers]	
 	';
 
+    DECLARE @mergedTempdbMetricsAsACorrelatedSubQuery nvarchar(MAX) = N'
+	        N''<tempdb_usage>'' + 
+		        ISNULL((
+			            (SELECT 
+				            COUNT(*) [@allocation_count],
+				            CAST(ISNULL((SUM(u.user_objects_alloc_page_count / 128.0)), 0) as decimal(22,1)) [@tempdb_mb], 
+				            CAST(ISNULL((SUM(u.internal_objects_alloc_page_count / 128.0)), 0) as decimal(22,1)) [@spill_mb]
+			            FROM 
+				            sys.dm_db_task_space_usage u 
+			            WHERE 
+				            u.session_id = s.session_id AND (u.user_objects_alloc_page_count > 0 OR u.internal_objects_alloc_page_count > 0)
+			            GROUP BY 
+				            u.session_id
+			            FOR 
+				            XML PATH(''request'')))
+		            , N''<request />'')
+		        + 
+		        ISNULL((
+		            (SELECT 
+			            COUNT(*) [@allocation_count],
+			            CAST(ISNULL((SUM(u.user_objects_alloc_page_count / 128.0)), 0) as decimal(22,1)) [@tempdb_mb], 
+			            CAST(ISNULL((SUM(u.internal_objects_alloc_page_count / 128.0)), 0) as decimal(22,1)) [@spill_mb]
+		            FROM 
+			            sys.dm_db_session_space_usage u 
+		            WHERE 
+			            u.session_id = s.session_id AND (u.user_objects_alloc_page_count > 0 OR u.internal_objects_alloc_page_count > 0)
+		            GROUP BY 
+			            u.session_id
+		            FOR 
+			            XML PATH(''session'')))
+		            , N''<session />'') + N''</tempdb_usage>'' [tempdb_details]';
+
 	SET @topSQL = REPLACE(@topSQL, N'{OrderBy}', N'ORDER BY [row_source], ' + QUOTENAME(LOWER(@OrderBy)) + N' DESC');
+
+    -- must be processed before @IncludeBlockingSessions:
+    IF @IncludeTempdbUsageDetails = 1 BEGIN 
+        SET @topSQL = REPLACE(@topSQL, N'{TempDBDetails}', @mergedTempdbMetricsAsACorrelatedSubQuery);
+        SET @blockersCTE = REPLACE(@blockersCTE, N'{TempDBDetails}', @mergedTempdbMetricsAsACorrelatedSubQuery);
+      END; 
+    ELSE BEGIN 
+        SET @topSQL = REPLACE(@topSQL, N'{TempDBDetails}', N'NULL [tempdb_details]');
+        SET @blockersCTE = REPLACE(@blockersCTE, N'{TempDBDetails}', N'NULL [tempdb_details]');
+    END;
 
 	IF @IncludeBlockingSessions = 1 BEGIN 
 		SET @topSQL = REPLACE(@topSQL, N'{blockersCTE} ', @blockersCTE);
@@ -329,7 +407,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N'');
 	END;
 
---EXEC dbo.[print_string] @Input = @topSQL;
+--EXEC dbo.[print_long_string] @Input = @topSQL;
 --RETURN 0;
 
 	INSERT INTO [#core] (
@@ -344,6 +422,7 @@ AS
 		[granted_memory],
 		[requested_memory],
 		[ideal_memory],
+        [query_cost],
 		[cpu],
 		[reads],
 		[writes],
@@ -355,6 +434,7 @@ AS
 		[host_name],
 		[percent_complete],
 		[open_tran],
+        [tempdb_details],
 		[sql_handle],
 		[plan_handle],
 		[statement_start_offset],
@@ -422,6 +502,7 @@ AS
         WITH XMLNAMESPACES (DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
         SELECT
             p.[session_id],
+--TODO: look at whether or not a more explicit path with provide any perf benefits (less tempdb usage, less CPU/less time, etc.)
             p.batch_plan.value('(/ShowPlanXML/BatchSequence/Batch/Statements/StmtSimple/@StatementSubTreeCost)[1]', 'float') [plan_cost]
 		INTO 
 			#costs
@@ -429,8 +510,30 @@ AS
             [#plans] p;
     END;
 
-	DECLARE @projectionSQL nvarchar(MAX) = N'
-	SELECT 
+    DECLARE @tempdbExtractionCTE nvarchar(MAX) = N'
+    WITH extracted AS (
+        SELECT 
+            session_id,
+            details.value(''(tempdb_usage[1]/request[1]/@tempdb_mb)'', N''decimal(22,1)'') [request_tempdb_mb],
+            details.value(''(tempdb_usage[1]/request[1]/@spill_mb)'', N''decimal(22,1)'') [request_spills_mb],
+            details.value(''(tempdb_usage[1]/session[1]/@tempdb_mb)'', N''decimal(22,1)'') [session_tempdb_mb],
+            details.value(''(tempdb_usage[1]/session[1]/@spill_mb)'', N''decimal(22,1)'') [session_spills_mb]
+        FROM 
+            (SELECT 
+                [session_id],
+                CAST([tempdb_details] AS xml) [details]
+            FROM 
+                [#core]) x
+    )
+    ' ;
+
+    DECLARE @tempdbDetailsSummary nvarchar(MAX) = N'
+        CAST(ISNULL(x.[session_spills_mb], 0.0) AS sysname) + N'' '' + CASE WHEN NULLIF(x.[request_spills_mb], 0.0) IS NULL THEN N'''' ELSE N'' ('' + CAST(x.[request_spills_mb] AS sysname) + N'')'' END[spills_mb - s (r)],
+        CAST(ISNULL(x.[session_tempdb_mb], 0.0) AS sysname) + N'' '' + CASE WHEN NULLIF(x.[request_tempdb_mb], 0.0) IS NULL THEN N'''' ELSE N'' ('' + CAST(x.[request_tempdb_mb] AS sysname) + N'')'' END[tempdb_mb - s (r)],
+    ';
+
+	DECLARE @projectionSQL nvarchar(MAX) = N'{tempdbExtractionCTE}
+    SELECT 
 		c.[session_id],
 		c.[blocked_by],  
 		CASE WHEN c.[database_id] = 0 THEN ''resourcedb'' ELSE DB_NAME(c.database_id) END [db_name],
@@ -441,13 +544,14 @@ AS
         c.[wait_resource],
 		--t.[batch_text],  
 		t.[statement_text],
-		{extractCost}
+		{extractCost}        
 		c.[cpu],
 		c.[reads],
 		c.[writes],
 		{memory}
 		dbo.format_timespan(c.[duration]) [elapsed_time], 
 		dbo.format_timespan(c.[wait_time]) [wait_time],
+        {tempdbDetails}
 		ISNULL(c.[program_name], '''') [program_name],
 		c.[login_name],
 		c.[host_name],
@@ -461,9 +565,9 @@ AS
 		INNER JOIN #plans p ON c.session_id = p.session_id
 		INNER JOIN #statementPlans sp ON c.session_id = sp.session_id
 		{extractJoin}
+        {tempdbUsageJoin}
 	ORDER BY
 		[row_number];'
-
 
 	IF @IncludeIsolationLevel = 1 BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{isolation_level}', N'CASE c.isolation_level WHEN 0 THEN ''Unspecified'' WHEN 1 THEN ''ReadUncomitted'' WHEN 2 THEN ''Readcomitted'' WHEN 3 THEN ''Repeatable'' WHEN 4 THEN ''Serializable'' WHEN 5 THEN ''Snapshot'' END [isolation_level],');
@@ -494,13 +598,24 @@ AS
 	END; 
 
 	IF @ExtractCost = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST(pc.[plan_cost] as decimal(20,2)) [plan_cost],');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST(pc.[plan_cost] as decimal(20,2)) [plan_cost], CAST(c.[query_cost] as decimal(20,2)) [grant_cost], ');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'LEFT OUTER JOIN #costs pc ON c.[session_id] = pc.[session_id]');
 	  END
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'');
 	END;
+
+    IF @IncludeTempdbUsageDetails = 1 BEGIN 
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbDetails}', @tempdbDetailsSummary);
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbExtractionCTE}', @tempdbExtractionCTE);
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbUsageJoin}', N'LEFT OUTER JOIN extracted x ON c.[session_id] = x.[session_id] ');
+      END;
+    ELSE BEGIN 
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbDetails}', N'');
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbExtractionCTE}', N'');
+        SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbUsageJoin}', N'');
+    END;
 
 --EXEC dbo.print_long_string @projectionSQL;
 --RETURN 0;

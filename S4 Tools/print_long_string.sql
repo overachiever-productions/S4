@@ -6,18 +6,25 @@
 
 
     vNEXT: 
-        add in an optional @Delimiter sysname ... parameter... 
-            and... when it's present then: 
-                a) get it's length and substract that from the 4K 'gulps' we're spitting out and
-                b) use it to signify start/end... of a 'chunk'. 
+        Add in a delimiter - or, at least, an OPTION for one - i.e., a BIT field only... 
+            which would basically work as follows: 
+                - instead of chunking at 4000 chars a pop, we chunk at 3996 (i.e., @chunkSize will have to be dynamically set in a variable based on @MarkBoundaries being 0 or 1
+                - if this is chunk number 0... and @MarkBoundaries = 1... do nothing BEFORE printing. 
+                - if @chunkNumber > 0 ... and we still have @chars to process... PRINT N'-- 4K characters reached by dbo.print_long_string' + @crlf + N''* /   (without spaces... sigh)... 
+                
+                - always end everything that we print out (except for the 'short-circuit if we don't have @chunkSize left)... 
+                    with a PRINT @substring + N'/ *'  (only... don't include spaces obviously - doing that here so it doesn't break comments).
 
-            COULD be something as simple as ***** 
-                and... maybe I need an @StartDelimiter and an @EndDelimiter ... 
-                    so... |****** and *****| might work or whatever... 
-                        the idea that these'd make it super easy to see where something started or finished. 
 
-            ALSO. 
-                I might not really need to SUBSTRACT this from the length... i might just spit chunk/gulp ... then PRINT delimiter then print chunk/gulp... etc.
+            that way we'd get something like the exact following: 
+
+... 
+... AND someValue = 1 A/*
+-- 4K charactgers reached by dbo.print_long_string
+*/ND this is the rest of the text 
+... 
+.. 
+so that we're JUST inserting INLINE comments right into the middle of a statement and that it SHOULD (unless we're in the middle of inline comments (sigh)... be ignored... 
 
 */
 
