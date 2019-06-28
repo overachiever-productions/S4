@@ -178,6 +178,26 @@
 
             SELECT @dbname;
 
+
+
+    USAGE: 
+        assume we want the following to work: 
+
+            USE widgets; 
+            GO 
+
+            EXEC admindb.dbo.list_table_details;
+            GO 
+
+        and we want tables from the WIDGETS database to be listed...  then... the IMPLEMENTATION for that is fairly straight-forward in the form of: 
+
+            1. The signature for dbo.list_table_details NEEDS an @TargetDatabase  (sysname) parameter. 
+            2. I'll set that to N'[CALLING_DB]' as a specialized token... 
+            3. IF, during processing of list_table_details... we see that there's a specified value for @TargetDatabase (e.g., @TargetDatabase = 'Kittens'), then we use that
+                OTHERWISE, we swap out [CALLING_DB] with the result/output from dbo.get_executing_dbname... 
+
+                all... of which... kicks ass. 
+
 */
 
 USE [admindb];
