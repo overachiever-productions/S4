@@ -7,16 +7,16 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('list_running_jobs','P') IS NOT NULL
-	DROP PROC list_running_jobs;
+IF OBJECT_ID('dbo.list_running_jobs','P') IS NOT NULL
+	DROP PROC dbo.[list_running_jobs];
 GO
 
-CREATE PROC list_running_jobs 
+CREATE PROC dbo.[list_running_jobs ]
 	@StartTime							datetime				= NULL, 
 	@EndTime							datetime				= NULL, 
 	@ExcludedJobs						nvarchar(MAX)			= NULL, 
-	@SerializedOutput					xml						= NULL			OUTPUT,			-- when set to any non-null value (i.e., '') this will be populated with output - rather than having the output projected through the 'bottom' of the sproc (so that we can consume these details from other sprocs/etc.)
-	@PreFilterPaddingWeeks				int						= 1								-- if @StartTime/@EndTime are specified, msdb.dbo.sysjobhistory stores start_dates as ints - so this is used to help pre-filter those results by @StartTime - N weeks and @EndTime + N weeks ... 
+	@PreFilterPaddingWeeks				int						= 1,							-- if @StartTime/@EndTime are specified, msdb.dbo.sysjobhistory stores start_dates as ints - so this is used to help pre-filter those results by @StartTime - N weeks and @EndTime + N weeks ... 
+    @SerializedOutput					xml						= NULL			OUTPUT			-- when set to any non-null value (i.e., '') this will be populated with output - rather than having the output projected through the 'bottom' of the sproc (so that we can consume these details from other sprocs/etc.)
 AS
 	SET NOCOUNT ON; 
 

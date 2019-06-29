@@ -33,13 +33,6 @@
 
                 SELECT @output;
 
-
-    dbo.translate_jobname_from_program_name;
-    dbo.program_name_to_job_name;
-    dbo.translate_program_to_job_name;
-    dbo.translate_program_name_to_agent_job;
-
-
 */
 
 USE [admindb];
