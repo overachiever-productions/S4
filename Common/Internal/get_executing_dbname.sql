@@ -17,6 +17,42 @@
 
                 And we're 3x levels deep - at which point, this sproc will throw an exception.
 
+                AND... here's a script that'll 'repro' the problems/concerns listed above: 
+
+
+                        USE [Meddling];
+                        GO
+
+                        SET NOCOUNT ON; 
+
+                        DECLARE @dbs table (
+                            [database_name] sysname NOT NULL
+                        );
+
+                        INSERT INTO @dbs ([database_name])
+                        EXEC admindb.dbo.[list_databases]
+                            @Targets = N's4_old, s4_new, oink';
+
+
+                        DECLARE @template nvarchar(MAX) = N'USE [{0}];
+
+                        EXEC admindb.dbo.get_executing_dbname;
+
+                        ';
+
+
+                        DECLARE @sql nvarchar(MAX) = N'';
+
+                        SELECT @sql = @sql + REPLACE(@template, N'{0}', [database_name])
+                        FROM 
+                            @dbs; 
+
+                        PRINT @sql;
+
+                        EXEC sp_executesql @sql;
+
+
+
     vNEXT: 
         see if I can't, somehow, figure out either a) IF I can even '3x'-chain dbs (like I think i might be able to)
         or b) 
