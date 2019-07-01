@@ -34,7 +34,7 @@ AS
 		@Output = @difference OUTPUT, 
 		@Error = @Error OUTPUT;
 
-	IF @difference > 350 BEGIN 
+	IF @difference > 1260000 BEGIN 
 		RAISERROR(N'@Vector can not be > 350 Hours (i.e., 2+ weeks) when defining a DELAY value.', 16, 1);
 		RETURN -2;
 	END; 
