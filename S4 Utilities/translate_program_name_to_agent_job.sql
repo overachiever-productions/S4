@@ -1,4 +1,6 @@
 /*
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
 
     OVERVIEW: 
         - Converts value of sys.dm_exec_sessions.program_name to a SQL Server Agent JOB NAME (assuming a valid 'program name' identifier). 
@@ -9,7 +11,7 @@
         -- expect error/exception: 
                 EXEC admindb.dbo.translate_program_name_to_agent_job '.NET something provider app';
 
-        -- expect output/select of job-name (assuming a valid job identifier): 
+        -- expect PROJECTion of job-name (assuming a valid job identifier): 
                 DECLARE @program_name sysname = N'SQLAgent - TSQL JobStep (Job 0x47018E68FDE2034EBB2C4E7F6F07424A : Step 1)'; -- i.e., what you'd get from sys.dm_exec_sessions.program_name
                 EXEC admindb.dbo.translate_program_name_to_agent_job
                     @program_name;
@@ -22,7 +24,7 @@
                     @IncludeJobStepInOutput = 1;
 
 
-        -- expect output via @output parameter: 
+        -- REPLY - with output...  
                 DECLARE @program_name sysname = N'SQLAgent - TSQL JobStep (Job 0x47018E68FDE2034EBB2C4E7F6F07424A : Step 1)'; -- i.e., what you'd get from sys.dm_exec_sessions.program_name
 
                 DECLARE @output sysname = N'';  -- can't be NULL 
@@ -45,7 +47,7 @@ GO
 CREATE PROC dbo.[translate_program_name_to_agent_job]
     @ProgramName                    sysname, 
     @IncludeJobStepInOutput         bit         = 0, 
-    @JobName                        sysname     = NULL       OUTPUT
+    @JobName                        sysname     = N'default'       OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -71,7 +73,7 @@ AS
     IF @IncludeJobStepInOutput = 1
         SET @output = @output + N' (Step ' + @currentStepString + N')';
 
-    IF @JobName IS NOT NULL 
+    IF NULLIF(@JobName, N'') IS NULL
         SET @JobName = @output; 
     ELSE 
         SELECT @output [job_name];

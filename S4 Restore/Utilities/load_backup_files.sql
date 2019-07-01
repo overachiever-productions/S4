@@ -1,31 +1,43 @@
 /*
 
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
+
+
 	Sproc exists primarily for 1 reason: 
 		- to 'wrap' logic for grabbing a list of available backups... 
 		- so that this logic can be RE-USED multiple times (as needed) when running restore operations (so that we can look for NEWLY added files and such if/when restore operations take a long time to execute).
 
+        -- Expect PROJECTion as output:
+                EXEC dbo.load_backup_files 
+                    @DatabaseToRestore = N'Billing', 
+                    @SourcePath = N'D:\SQLBackups\Billing', 
+                    @Mode = N'FULL', 
+                    @LastAppliedFile = NULL;
 
 
-		-- FULL:
-		DECLARE @lastFile nvarchar(400) = NULL;
-		DECLARE @output nvarchar(MAX);
-		EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'FULL', @LastAppliedFile = NULL, @Output = @output OUTPUT;
-		SELECT @output [FULL BACKUP FILE];
+        -- Example of REPLY outputs - for all file-types... 
 
-		SELECT @lastFile = @output;
+		        -- FULL:
+		        DECLARE @lastFile nvarchar(400) = NULL;
+		        DECLARE @output nvarchar(MAX);
+		        EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'FULL', @LastAppliedFile = NULL, @Output = @output OUTPUT;
+		        SELECT @output [FULL BACKUP FILE];
 
-		-- DIFF (if present):
-		EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'DIFF', @LastAppliedFile = @lastFile, @Output = @output OUTPUT;
-		SET @lastFile = ISNULL(NULLIF(@output,''), @lastFile);
-		SELECT @lastFile [Last Applied (DIFF if present - otherwise FULL)]
+		        SELECT @lastFile = @output;
 
-
-		-- T-LOGs:
-		EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'LOG', @LastAppliedFile = @lastFile, @Output = @output OUTPUT;
-		SELECT * FROM dbo.[split_string](@output, N',');
-		GO
+		        -- DIFF (if present):
+                SET @output = NULL;
+		        EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'DIFF', @LastAppliedFile = @lastFile, @Output = @output OUTPUT;
+		        SET @lastFile = ISNULL(NULLIF(@output,''), @lastFile);
+		        SELECT @lastFile [Last Applied (DIFF if present - otherwise FULL)]
 
 
+		        -- T-LOGs:
+                SET @output = NULL;
+		        EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'LOG', @LastAppliedFile = @lastFile, @Output = @output OUTPUT;
+		        SELECT * FROM dbo.[split_string](@output, N',', 1);
+		        GO
 
 
 
@@ -44,7 +56,7 @@ CREATE PROC dbo.load_backup_files
 	@SourcePath					nvarchar(400), 
 	@Mode						sysname,				-- FULL | DIFF | LOG 
 	@LastAppliedFile			nvarchar(400)			= NULL,	
-	@Output						nvarchar(MAX)			OUTPUT
+	@Output						nvarchar(MAX)			= N'default'  OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -109,11 +121,24 @@ AS
 		DELETE FROM @results WHERE [output] NOT LIKE 'LOG%';
 	END;
 
-	SET @Output = N'';
-	SELECT @Output = @Output + [output] + N',' FROM @results ORDER BY [id];
+    IF NULLIF(@Output, N'') IS NULL BEGIN -- if @Output has been EXPLICITLY initialized as NULL/empty... then REPLY... 
+        
+	    SET @Output = N'';
+	    SELECT @Output = @Output + [output] + N',' FROM @results ORDER BY [id];
 
-	IF ISNULL(@Output,'') <> ''
-		SET @Output = LEFT(@Output, LEN(@Output) - 1);
+	    IF ISNULL(@Output,'') <> ''
+		    SET @Output = LEFT(@Output, LEN(@Output) - 1);
+
+        RETURN 0;
+    END;
+
+    -- otherwise, project:
+    SELECT 
+        [output]
+    FROM 
+        @results
+    ORDER BY 
+        [id];
 
 	RETURN 0;
 GO

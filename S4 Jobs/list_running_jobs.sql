@@ -1,5 +1,7 @@
 /*
 
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
 
 
 */
@@ -16,7 +18,7 @@ CREATE PROC dbo.[list_running_jobs ]
 	@EndTime							datetime				= NULL, 
 	@ExcludedJobs						nvarchar(MAX)			= NULL, 
 	@PreFilterPaddingWeeks				int						= 1,							-- if @StartTime/@EndTime are specified, msdb.dbo.sysjobhistory stores start_dates as ints - so this is used to help pre-filter those results by @StartTime - N weeks and @EndTime + N weeks ... 
-    @SerializedOutput					xml						= NULL			OUTPUT			-- when set to any non-null value (i.e., '') this will be populated with output - rather than having the output projected through the 'bottom' of the sproc (so that we can consume these details from other sprocs/etc.)
+    @SerializedOutput					xml						= N'<default/>'			OUTPUT			-- when set to any non-null value (i.e., '') this will be populated with output - rather than having the output projected through the 'bottom' of the sproc (so that we can consume these details from other sprocs/etc.)
 AS
 	SET NOCOUNT ON; 
 
@@ -144,7 +146,7 @@ AS
 	
 	-----------------------------------------------------------------------------
     -- Send output as XML if requested:
-	IF @SerializedOutput IS NOT NULL BEGIN 
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY initialized as NULL/empty... then REPLY...  
 
 		SELECT @SerializedOutput = (
 			SELECT 

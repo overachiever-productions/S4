@@ -1,5 +1,7 @@
 /*
     NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
+
         - Does _NOT_ work from within master or tempdb. 
         - DOES work within model and msdb. 
         - DOES work against all other USER databases.
@@ -196,8 +198,6 @@
 
             EXEC admindb.dbo.get_executing_dbname;
 
-
-
     -- Expect 'meddling' as result-set: 
             USE [meddling];
             GO
@@ -209,12 +209,10 @@
             USE [meddling];
             GO
             
-            DECLARE @dbname sysname = N'';
+            DECLARE @dbname sysname = NULL;
             EXEC admindb.dbo.get_executing_dbname @ExecutingDBName = @dbname OUTPUT; 
 
-            SELECT @dbname;
-
-
+            SELECT @dbname [reply];
 
     USAGE: 
         assume we want the following to work: 
@@ -244,7 +242,7 @@ IF OBJECT_ID('dbo.get_executing_dbname','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[get_executing_dbname]
-    @ExecutingDBName                sysname         = NULL      OUTPUT
+    @ExecutingDBName                sysname         = N'#DEFAULT#'      OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -284,7 +282,7 @@ AS
         SET @output = (SELECT TOP 1 [db_name] FROM @options);
     END;
 
-    IF @ExecutingDBName IS NULL BEGIN 
+    IF @ExecutingDBName = N'#DEFAULT#' BEGIN 
         SELECT @output [executing_db_name];
       END;
     ELSE BEGIN 

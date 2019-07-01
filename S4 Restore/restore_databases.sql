@@ -275,7 +275,7 @@ AS
 
 	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
 	IF ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
-		DECLARE @databases xml = '';
+		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
 		EXEC dbo.[load_backup_database_names]
@@ -339,7 +339,7 @@ AS
     DECLARE @statusDetail nvarchar(MAX);
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
-	DECLARE @fileList nvarchar(MAX); 
+	DECLARE @fileList nvarchar(MAX) = NULL; 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 
@@ -532,7 +532,11 @@ AS
 
 		-- Check for a FULL backup: 
 		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a [SYSTEM] database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
-		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'FULL', @Output = @fileList OUTPUT;
+		EXEC dbo.load_backup_files 
+            @DatabaseToRestore = @databaseToRestore, 
+            @SourcePath = @sourcePath, 
+            @Mode = N'FULL', 
+            @Output = @fileList OUTPUT;
 		
 		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
 			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
@@ -652,7 +656,13 @@ AS
 			[FileName] = @backupName;
         
 		-- Restore any DIFF backups if present:
-		EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'DIFF', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
+        SET @fileList = NULL;
+		EXEC dbo.load_backup_files 
+            @DatabaseToRestore = @databaseToRestore, 
+            @SourcePath = @sourcePath, 
+            @Mode = N'DIFF', 
+            @LastAppliedFile = @backupName, 
+            @Output = @fileList OUTPUT;
 		
 		IF NULLIF(@fileList, N'') IS NOT NULL BEGIN
 			SET @backupName = @fileList;
@@ -702,7 +712,14 @@ AS
 			-- reset values per every 'loop' of main processing body:
 			DELETE FROM @logFilesToRestore;
 
-			EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
+            SET @fileList = NULL;
+			EXEC dbo.load_backup_files 
+                @DatabaseToRestore = @databaseToRestore, 
+                @SourcePath = @sourcePath, 
+                @Mode = N'LOG', 
+                @LastAppliedFile = @backupName,
+                @Output = @fileList OUTPUT;
+
 			INSERT INTO @logFilesToRestore ([log_file])
 			SELECT result FROM dbo.[split_string](@fileList, N',', 1) ORDER BY row_id;
 			
@@ -766,7 +783,14 @@ AS
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
 
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
-					EXEC dbo.load_backup_files @DatabaseToRestore = @databaseToRestore, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @fileList OUTPUT;
+                    SET @fileList = NULL;
+					EXEC dbo.load_backup_files 
+                        @DatabaseToRestore = @databaseToRestore, 
+                        @SourcePath = @sourcePath, 
+                        @Mode = N'LOG', 
+                        @LastAppliedFile = @backupName,
+                        @Output = @fileList OUTPUT;
+
 					INSERT INTO @logFilesToRestore ([log_file])
 					SELECT result FROM dbo.[split_string](@fileList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
 					ORDER BY row_id;

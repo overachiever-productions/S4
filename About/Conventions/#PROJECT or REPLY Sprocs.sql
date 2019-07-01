@@ -105,4 +105,9 @@
                             EXEC dbo.get_timestamp @OutputValue = @timestamp OUTPUT; 
 
                       would REPLY with the current date-time value into that @timestamp variable. 
+
+
+
+
+
 */

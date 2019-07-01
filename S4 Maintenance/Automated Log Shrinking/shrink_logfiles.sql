@@ -145,7 +145,7 @@ AS
 		[outcome] nvarchar(MAX) NOT NULL, 
 	);
 
-	DECLARE @SerializedOutput xml = '';
+	DECLARE @SerializedOutput xml = NULL;
 	EXEC dbo.[list_logfile_sizes]
 	    @TargetDatabases = @TargetDatabases,
 	    @DatabasesToExclude = @DatabasesToExclude,
@@ -429,7 +429,7 @@ ShrinkLogFile:
 
 	-- otherwise... spit out whatever form of output/report would make sense at this point... where... we can bind #operations up as XML ... as a set of details about what happened here... 
 
-	SET @SerializedOutput = '';
+	SET @SerializedOutput = NULL;
 	EXEC dbo.[list_logfile_sizes]
 	    @TargetDatabases = @TargetDatabases,
 	    @DatabasesToExclude = @DatabasesToExclude,

@@ -1,31 +1,39 @@
 /*
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
+
 		
-		SIGNATURES:
+	SIGNATURES:
 		
-			-----------------------------------------------------------------
-				-- expected exception (unless [PRIORITY] is a defined token in dbo.[settings]):
-				EXEC dbo.list_databases_matching_token N'[PRIORITY]';
+		-----------------------------------------------------------------
+			-- expected exception (unless [PRIORITY7] is a defined token in dbo.[settings]):
+			        EXEC dbo.list_databases_matching_token N'[PRIORITY7]';
 
-			-----------------------------------------------------------------
-				EXEC dbo.list_databases_matching_token N'[ALL]';
+		-----------------------------------------------------------------
+            -- expect PROJECTion of all dbs:
+			        EXEC dbo.list_databases_matching_token N'[ALL]';
 
-			-----------------------------------------------------------------
-				EXEC dbo.list_databases_matching_token N'[SYSTEM]';
+		-----------------------------------------------------------------
+            -- ditto, but just SYSTEM dbs... 
+			        EXEC dbo.list_databases_matching_token N'[SYSTEM]';
 
-			-----------------------------------------------------------------
-				EXEC dbo.list_databases_matching_token N'[DEV]';
+		-----------------------------------------------------------------
+            -- ditto, but ONLY if DEV has been defined in dbo.settings. 
+			        EXEC dbo.list_databases_matching_token N'[DEV]';
 
-			-----------------------------------------------------------------
-				-- expected exception IF there are no [TEST] definitions in dbo.settings: 
-				EXEC dbo.list_databases_matching_token N'[TEST]';
+		-----------------------------------------------------------------
+			-- expected exception IF there are no [TEST] definitions in dbo.settings: 
 
-			-----------------------------------------------------------------
-				DECLARE @databases xml = N'';
-				EXEC dbo.list_databases_matching_token 
-					@Token = N'[DEV]', 
-					@SerializedOutput = @databases OUTPUT; 
+			        EXEC dbo.list_databases_matching_token N'[TEST]';
 
-				SELECT @databases;
+		-----------------------------------------------------------------
+            -- expect REPLY as serialized xml via @databases.
+			    DECLARE @databases xml;
+			    EXEC dbo.list_databases_matching_token 
+				    @Token = N'[DEV]', 
+				    @SerializedOutput = @databases OUTPUT; 
+
+			    SELECT @databases;
 
 
 */
@@ -40,7 +48,7 @@ GO
 
 CREATE PROC dbo.list_databases_matching_token	
 	@Token								sysname			= N'[DEV]',					-- { [DEV] | [TEST] }
-	@SerializedOutput					xml				= NULL	OUTPUT
+	@SerializedOutput					xml				= N'<default/>'	    OUTPUT
 AS 
 
 	SET NOCOUNT ON; 
@@ -135,7 +143,8 @@ AS
 			f.row_id, d.[name];
 	END;
 
-	IF @SerializedOutput IS NOT NULL BEGIN 
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY initialized as NULL/empty... then REPLY... 
+
 		SELECT @SerializedOutput = (SELECT 
 			[row_id] [database/@id],
 			[database_name] [database]
@@ -148,6 +157,7 @@ AS
 		RETURN 0;
 	END;
 
+    -- otherwise (if we're still here) ... PROJECT:
 	SELECT 
 		[database_name]
 	FROM 

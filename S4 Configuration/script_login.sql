@@ -1,6 +1,7 @@
 /*
 
-
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
     
 
     SAMPLES / EXAMPLES: 
@@ -13,7 +14,7 @@
                     EXEC admindb.dbo.script_login '716CECA6-52EF-4F74-89EF-03BB5B550A6B;'
                     GO
 
-            script/output the sa login - if it exists: 
+            PROJECT the sa login - if it exists: 
                     EXEC admindb.dbo.script_login 'sa';
 
             As above, but ALLOW password ALTER IF exists: 
@@ -28,7 +29,7 @@
                         @BehaviorIfLoginExists = N'DROP_AND_CREATE';
                     GO  
 
-            dump a sample login - forcing the default db to master and disabling the policy checks... 
+            PROJECT a sample login - forcing the default db to master and disabling the policy checks... 
                     EXEC admindb.dbo.script_login 
                         @LoginName = 'periscope_demo', 
                         @DisableExpiryChecks = 1, 
@@ -36,7 +37,7 @@
                         @ForceMasterAsDefaultDB = 1;
                     GO
 
-            API consumption example - expect failure (xxxx doesn't exist):
+           REPLY example - expect failure (xxxx doesn't exist):
 
                     DECLARE @loginDefinition nvarchar(MAX); -- must be NULL; 
                     DECLARE @outcome int;
@@ -51,8 +52,8 @@
                         PRINT 'sad trombone';
                     GO
 
-            API consumpton example - expect to have/load the @definition - and allow ALTER if exists:  
-                    DECLARE @definition nvarchar(MAX); -- must be NULL; 
+            REPLY example - expect to have/load the @definition - and allow ALTER if exists:  
+                    DECLARE @definition nvarchar(MAX); 
                     DECLARE @outcome int;
 
                     EXEC @outcome = dbo.script_login 
@@ -81,7 +82,7 @@ CREATE PROC dbo.script_login
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 
-    @Output                                 nvarchar(MAX)           = ''        OUTPUT
+    @Output                                 nvarchar(MAX)           = 'default'        OUTPUT
 AS 
     SET NOCOUNT ON; 
 
@@ -144,7 +145,7 @@ AS
         @checkPolicy
      );
 
-    IF @Output IS NULL BEGIN 
+    IF NULLIF(@Output, N'') IS NULL BEGIN 
         SET @Output = @formatted;
         RETURN 0;
     END;

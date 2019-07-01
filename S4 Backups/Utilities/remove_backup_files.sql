@@ -1,8 +1,7 @@
-
-
-
 /*
 	NOTES:
+        - This sproc adheres to the PROJECT/REPLY usage convention.
+
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
 
 		- Not yet documented. 
@@ -14,15 +13,6 @@
 		xp_dirtree:
 			http://www.sqlservercentral.com/blogs/everyday-sql/2012/12/31/how-to-use-xp_dirtree-to-list-all-files-in-a-folder-part-2/
 			http://stackoverflow.com/questions/26750054/xp-dirtree-in-sql-server
-
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
-
-	Scalable:
-		1.5+
 */
 
 
@@ -54,11 +44,11 @@ CREATE PROC [dbo].[remove_backup_files]
 	@TargetDirectory					nvarchar(2000) = N'[DEFAULT]',				-- { path_to_backups }
 	@Retention							nvarchar(10),								-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
 	@ServerNameInSystemBackupPath		bit = 0,									-- for mirrored servers/etc.
-	@Output								nvarchar(MAX) = NULL OUTPUT,				-- When set to non-null value, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@SendNotifications					bit	= 0,									-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
 	@MailProfileName					sysname = N'General',
 	@EmailSubjectPrefix					nvarchar(50) = N'[Backups Cleanup ] ',
+    @Output								nvarchar(MAX) = N'default' OUTPUT,			-- When explicitly set to NULL, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@PrintOnly							bit = 0 									-- { 0 | 1 }
 AS
 	SET NOCOUNT ON; 
@@ -89,7 +79,7 @@ AS
 		RETURN -2;
 	END;
 	
-	IF ((@PrintOnly = 0) OR (@Output IS NULL)) AND (@Edition != 'EXPRESS') BEGIN; -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
+	IF ((@PrintOnly = 0) OR (NULLIF(@Output, N'default') IS NULL)) AND (@Edition != 'EXPRESS') BEGIN; -- we just need to check email info, anything else can be logged and then an email can be sent (unless we're debugging). 
 
 		-- Operator Checks:
 		IF ISNULL(@OperatorName, '') IS NULL BEGIN;
@@ -198,7 +188,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	DECLARE @routeInfoAsOutput bit = 0;
-	IF @Output IS NOT NULL 
+	IF @Output IS NULL
 		SET @routeInfoAsOutput = 1; 
 
 	SET @Output = NULL;
@@ -210,7 +200,7 @@ AS
 
 	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
 	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
-		DECLARE @databases xml = '';
+		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
 		EXEC dbo.[load_backup_database_names]
@@ -234,6 +224,7 @@ AS
 
 		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
+        SET @databases = NULL;
 		EXEC dbo.load_backup_database_names
 			@TargetDirectory = @TargetDirectory, 
 			@SerializedOutput = @databases OUTPUT;
