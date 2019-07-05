@@ -15,6 +15,34 @@
 			- a number/value
 			- an interval (i.e., similar to a date part - OR 'backup')
 
+        TESTS / SIGNATURES: 
+
+
+                -- expect error - backups aren't handled by this code: 
+
+                            DECLARE @output bigint, @error nvarchar(max); 
+                            EXEC dbo.translate_vector 
+                                @Vector = N'4 backups', 
+                                @Output = @output OUTPUT, 
+                                @Error = @error OUTPUT; 
+
+                            SELECT @output, @error;
+                            GO
+
+                -- translate 1200 milliseconds into... milliseconds. 
+
+                            DECLARE @output bigint, @error nvarchar(max); 
+                            EXEC dbo.translate_vector 
+                                @Vector = N'1200 milliseconds', 
+                                @Output = @output OUTPUT, 
+                                @Error = @error OUTPUT; 
+
+                            SELECT @output, @error;
+                            GO
+
+
+
+
 
 */
 
