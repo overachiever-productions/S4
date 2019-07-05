@@ -1,5 +1,8 @@
 
 /*
+    TODO:
+        - move this into \internal ... 
+    
 
     vNEXT: 
         -- Hmmm. All of this 'hard-coded' stuff is all fine. 
@@ -13,7 +16,7 @@
 		- command outcome/success will be indicated by the RETURN value of dbo.execute_command. 
 			If the value is 0, then the @Command sent in either INITIALLY executed as desired or EVENTUALLY executed - based on 'retry' rules. 
 			If the value is 1, then the @Command failed. 
-			For values other than 0 or 1, dbo.execute_command ran into a bug, problem, unexpected scenario or exception and IT failed. 
+			For values other than 0 or 1, dbo.execute_command ran into a bug, problem, unexpected scenario or exception and code within dbo.execute_command failed or was PREVENTED from executing. 
 
 		- @Results
 			For each and every attempt, an xml 'row'/entry will be added for any EXCEPTION messages/errors (for any/all @ExecutionTypes) 
@@ -35,6 +38,15 @@
 
 
 
+v6.5 Refactor Impacts the following: 
+
+        establish_directory
+        restore_databases
+        shrink_logfiles
+        execute_command
+
+
+
 
 */
 
@@ -48,7 +60,7 @@ GO
 CREATE PROC dbo.execute_command
 	@Command								nvarchar(MAX), 
 	@ExecutionType							sysname						= N'EXEC',							-- { EXEC | SQLCMD | SHELL | PARTNER }
-	@ExecutionRetryCount					int							= 2,								-- number of times to try executing process - until either success (no error) or @ExecutionRetryCount reached. 
+	@ExecutionAttemptsCount					int							= 2,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
 	@DelayBetweenAttempts					sysname						= N'5s',
 	@IgnoredResults							nvarchar(2000)				= N'[COMMAND_SUCCESS]',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, [tokens]'. Allowed Tokens: [COMMAND_SUCCESS] | [USE_DB_SUCCESS] | [ROWS_AFFECTED] | [BACKUP] | [RESTORE] | [SHRINKLOG] | [DBCC] ... 
     @PrintOnly                              bit                         = 0,
@@ -64,7 +76,9 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
-	IF @ExecutionRetryCount <= 0 SET @ExecutionRetryCount = 1;
+	IF @ExecutionAttemptsCount <= 0 SET @ExecutionAttemptsCount = 1;
+
+    IF @ExecutionAttemptsCount > 0 
 
     IF UPPER(@ExecutionType) NOT IN (N'EXEC', N'SQLCMD', N'SHELL', N'PARTNER') BEGIN 
         RAISERROR(N'Permitted @ExecutionType values are { EXEC | SQLCMD | SHELL | PARTNER }.', 16, 1);
@@ -78,7 +92,7 @@ AS
 
 
     -- validate @DelayBetweenAttempts (if required/present):
-    IF @ExecutionRetryCount > 1 BEGIN
+    IF @ExecutionAttemptsCount > 1 BEGIN
 	    DECLARE @delay sysname; 
 	    DECLARE @error nvarchar(MAX);
 	    EXEC dbo.[translate_vector_delay]
@@ -95,8 +109,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Processing: 
-	DECLARE @ExecutionAttemptCount int = 0; -- set to 1 during first exectuion attempt:
-	DECLARE @succeeded bit = 0;
+
 
 	DECLARE @filters table (
 		filter_type varchar(20) NOT NULL, 
@@ -180,6 +193,7 @@ AS
 	DECLARE @xpCmd varchar(2000);
 	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
 	DECLARE @serverName sysname = '';
+    DECLARE @execOutput int;
 
 	IF UPPER(@ExecutionType) = N'SHELL' BEGIN
         SET @xpCmd = CAST(@Command AS varchar(2000));
@@ -203,6 +217,9 @@ AS
 	    END; 
     END;
 	
+	DECLARE @ExecutionAttemptCount int = 0; -- set to 1 during first exectuion attempt:
+	DECLARE @succeeded bit = 0;
+    
 ExecutionAttempt:
 	
 	SET @ExecutionAttemptCount = @ExecutionAttemptCount + 1;
@@ -212,12 +229,15 @@ ExecutionAttempt:
 
 		IF UPPER(@ExecutionType) = N'EXEC' BEGIN 
 			
+            SET @execOutput = NULL;
+
             IF @PrintOnly = 1 
                 PRINT @Command 
             ELSE 
-			    EXEC sp_executesql @Command; 
+			    EXEC @execOutput = sp_executesql @Command; 
 
-			SET @succeeded = 1;
+            IF @execOutput = 0
+                SET @succeeded = 1;
 
 		  END; 
 		ELSE BEGIN 
@@ -229,6 +249,11 @@ ExecutionAttempt:
 			    INSERT INTO #Results (result) 
 			    EXEC master.sys.[xp_cmdshell] @xpCmd;
 
+-- v6.5
+-- don't delete... either: a) update to set column treat_as_handled = 1 or... b) just use a sub-select/filter in the following query... or something. 
+--  either way, the idea is: 
+--              we capture ALL output - and spit it out for review/storage/auditing/trtoubleshooting and so on. 
+---                 but .. only certain outputs are treated as ERRORS or problems... 
 			    DELETE r
 			    FROM 
 				    #Results r 
@@ -251,6 +276,7 @@ ExecutionAttempt:
 			    END;
             END;
 		END;
+
 	END TRY
 
 	BEGIN CATCH 
@@ -264,7 +290,7 @@ ExecutionAttempt:
 	END; 
 
 	IF @succeeded = 0 BEGIN 
-		IF @ExecutionAttemptCount < @ExecutionRetryCount BEGIN 
+		IF @ExecutionAttemptCount < @ExecutionAttemptsCount BEGIN 
 			WAITFOR DELAY @delay; 
 			GOTO ExecutionAttempt;
 		END;
