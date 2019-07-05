@@ -1,7 +1,58 @@
 /*
 
-	-- TODO: backups... 
+	-- vNEXT: 
+        the whole "Valid interval specifiers are ... " error message is ... techniical true... 
+            as in, that lists ALL valid/optional intervals. 
+            but... 
+                i need to tweak that so that it only spits out intervals that are ... permitted in the current operation
+                    Or, in other words I need to: 
+                        a) add a new column to @intervals - say, [option_specifier]
+                        b)  load the value with the whole 'specifier' for a given thing - e.g., days are DAY(S)|D whereas milliseconds are MILLISECOND(S)|MS
+                        c) serialize a list of these that are allowed by means of excluding any prohibited... and then 'chaining' the remaining entries... 
 
+
+
+    TESTS / SIGNATURES: 
+
+
+            -- Expect exception - weet isn't a valid value: 
+
+                        DECLARE @type sysname, @value bigint, @error nvarchar(MAX); 
+                        EXEC admindb.dbo.parse_vector
+                            @Vector = N'2 weets', 
+                            @IntervalType = @type OUTPUT, 
+                            @Value = @value OUTPUT, 
+                            @Error = @error OUTPUT;
+
+                        SELECT @value, @type, @error;
+                        GO
+            
+            -- Expect exception - week is legit, but it's PROHIBITED in the operation calling this routine:
+
+                        DECLARE @type sysname, @value bigint, @error nvarchar(MAX); 
+                        EXEC admindb.dbo.parse_vector
+                            @Vector = N'2 weeks', -- also try: 2w 2week 2 week, etc. 
+                            @ProhibitedIntervals = N'WEEK,MONTH',
+                            @IntervalType = @type OUTPUT, 
+                            @Value = @value OUTPUT, 
+                            @Error = @error OUTPUT;
+
+                        SELECT @value, @type, @error;
+                        GO
+
+
+            -- expect 1200 MILLISECOND (i.e., 1200 milliseconds)
+
+                        DECLARE @type sysname, @value bigint, @error nvarchar(MAX); 
+                        EXEC admindb.dbo.parse_vector
+                            @Vector = N'1200 milliseconds',
+                            @ProhibitedIntervals = N'WEEK,MONTH',
+                            @IntervalType = @type OUTPUT, 
+                            @Value = @value OUTPUT, 
+                            @Error = @error OUTPUT;
+
+                        SELECT @value, @type, @error;
+                        GO
 
 */
 
@@ -68,7 +119,7 @@ AS
 	-- check for prohibited intervals: 
 	IF NULLIF(@ProhibitedIntervals, N'') IS NOT NULL BEGIN 
 		-- delete INTERVALS based on keys - e.g., if ms is prohibited, we don't want to simply delete the MS entry - we want to get all 'forms' of it (i.e., MS, MILLISECOND, etc.)
-		DELETE FROM @intervals WHERE [interval] IN (SELECT [interval] FROM @intervals WHERE [key] IN (SELECT [result] FROM dbo.[split_string](@ProhibitedIntervals, N',', 1)));
+		DELETE FROM @intervals WHERE [interval] IN (SELECT [interval] FROM @intervals WHERE UPPER([key]) IN (SELECT UPPER([result]) FROM dbo.[split_string](@ProhibitedIntervals, N',', 1)));
 		
 		IF @interval NOT IN (SELECT [interval] FROM @intervals) BEGIN
 			SET @Error = N'The interval-specifier [' + @interval + N'] is not permitted in this operation type. Prohibited intervals for this operation are: ' + @ProhibitedIntervals + N'.';
