@@ -160,8 +160,8 @@ AS
 			[data].[row].value('database_size_gb[1]', 'decimal(20,1)') database_size_gb, 
 			[data].[row].value('log_size_gb[1]', 'decimal(20,1)') log_size_gb,
 			[data].[row].value('log_percent_used[1]', 'decimal(5,2)') log_percent_used, 
-			--[data].[row].value('vlf_count[1]', 'int') vlf_count,
-			--[data].[row].value('log_as_percent_of_db_size[1]', 'decimal(5,2)') log_as_percent_of_db_size,
+			[data].[row].value('vlf_count[1]', 'int') vlf_count,
+			[data].[row].value('log_as_percent_of_db_size[1]', 'decimal(5,2)') log_as_percent_of_db_size,
 			[data].[row].value('mimimum_allowable_log_size_gb[1]', 'decimal(20,1)') [initial_min_allowed_gbs]
 		FROM 
 			@SerializedOutput.nodes('//database') [data]([row])
@@ -174,7 +174,15 @@ AS
 			[shredded]
 	) 
 	
-	INSERT INTO [#logSizes] ( [database_name], [recovery_model], [database_size_gb], [log_size_gb], [log_percent_used], [initial_min_allowed_gbs], [target_log_size])
+	INSERT INTO [#logSizes] (
+        [database_name], 
+        [recovery_model], 
+        [database_size_gb], 
+        [log_size_gb], 
+        [log_percent_used], 
+        [initial_min_allowed_gbs], 
+        [target_log_size]
+    )
 	SELECT 
 		[s].[database_name],
         [s].[recovery_model],

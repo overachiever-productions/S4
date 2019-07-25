@@ -78,7 +78,7 @@ GO
 
 CREATE PROC dbo.script_login
     @LoginName                              sysname,       
-    @BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
+    @BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_AND_CREATE }
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 

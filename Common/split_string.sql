@@ -25,7 +25,7 @@ IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
 GO
 
 CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20), @TrimResults bit)
-RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(200))
+RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(MAX))
 	--WITH SCHEMABINDING
 AS 
 	BEGIN

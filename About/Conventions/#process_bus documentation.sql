@@ -7,6 +7,8 @@
 
         - process buses also exist to keep a detailed record of all changes and attempted changes/operations during a specific round of processing. 
 
+        ALSO... this entire process can, does, and WILL lend itself INSANELY well to 're-try' operations and logic. 
+
     IMPLEMENTATION
         - process busses are implemented as the union of 2x tools/techniques: 
             a) a temp-table - which keeps tabs on whatever blocks/types of logic or other operations are needed during a given 'operation' (i.e., inside a sproc/etc.) 
@@ -113,7 +115,7 @@
                     
                         The <command> element has a number of attributes defined/allowed - relative to ... command execution. 
                             Likewise, each command element will have a <statement> child-element - for the body of the command to be executed/run. 
-                                and can also have up to 2x OPTIONAL child elements if/as needed: <outcomes> and <guidance>. 
+                                and can also have up to 2x OPTIONAL child elements if/as needed: <outcomes> and <context>. 
 
                                 NOTE: <outcomes> DOES need to be a parent/wrapper and 'set' element - as a single command can be tried multiple times - and have multiple outcomes. 
                                     for example, we try to get header info against a backup file - which fails the first time executed with a 'file in use' error, but, if/when we
@@ -121,47 +123,52 @@
                                             BUT, is fine/useable on the 3rd execution - in which case we want to see: 2x 'errors' and a 'commmand succeeded' set of operations for outcomes. 
 
 
-                                        <command
-                                                created = "timestamp of when this command was DEFINED"
+                                                <operation>
+                                                    <command
+                                                            created = "timestamp of when this command was DEFINED"
 
-                                                execution_type = "EXEC|SQLCMD|SHELL|PARTNER|NO_EXECUTE"
+                                                            execution_type = "EXEC|SQLCMD|SHELL|PARTNER|NO_EXECUTE"
                                                 
-                                                         command_order="sequence value here" -- every command will get a NEXT VALUE FOR dbo.process_bus_sequence... 
-                                                         --  really not sure it's needed. if there's ONE command per each op... and each op has a row_id ... then.... who cares, right?
+                                                                     command_order="sequence value here" -- every command will get a NEXT VALUE FOR dbo.process_bus_sequence... 
+                                                                     --  really not sure it's needed. if there's ONE command per each op... and each op has a row_id ... then.... who cares, right?
 
-                                                retry_count="number of retries to allow" - can be null/empty... (defaults to 0)
+                                                            retry_count="number of retries to allow" - can be null/empty... (defaults to 0)
 
-                                                retry_interval="4 seconds" or whatever... - can also, obviously, be empty... 
+                                                            retry_interval="4 seconds" or whatever... - can also, obviously, be empty... 
 
-                                                ignored_results = "exact string passed in to dbo.execute_command's @IgnoredResults"
+                                                            ignored_results = "exact string passed in to dbo.execute_command's @IgnoredResults"
 
-                                                completed = "timestamp for when the operation was actually completed?"
-                                        >
-                                    
-                                            <statement>exact statement to be executed goes here - and there's just a single statement per command</statement>
+                                                            completed = "timestamp for when the operation was actually completed?"
+                                                    >
+                                                            ACTUAL COMMAND BODY GOES HERE.... 
+                                                    </command>
 
-                                            <outcomes>
-                                                <outcome
-                                                    execution_start = "timestamp"
-                                                    execution_end = "timestamp" ... hmmm. do i really want both? potentially... probably... 
-                                                    outcome_type = "INFO | EXCEPTION"  --  i think... or, possibly, INFO | ERROR | EXCEPTION... 
-                                                >
-                                                    actual text body of the outcome itself goes here (i.e., 0 rows affected, Command completed, oink, whatever)
-                                                </outcome>
-                                            <outcomes>
+                                                    <outcomes>
+                                                        <outcome
+                                                            execution_start = "timestamp"
+                                                            execution_end = "timestamp" ... hmmm. do i really want both? potentially... probably... 
+                                                            outcome_type = "INFO | EXCEPTION"  --  i think... or, possibly, INFO | ERROR | EXCEPTION... 
+                                                        >
+                                                            actual text body of the outcome itself goes here (i.e., 0 rows affected, Command completed, oink, whatever)
+                                                        </outcome>
+                                                    <outcomes>
 
-                                            <guidance>
-                                                <detail 
-                                                    for = "hmmmm not sure of this one yet" -- I've got 2 options. I could say something like for = "outcome.2" ... in which case, i need to likely throw ordinals into play... and then keep outcome.345298 ... OR, i could do for="GUID HERE FOR THE thing to append to" - in which case, commands and outcomes COULD have guidance applied - but both would need a guid... 
-                                                    type = "warning | info"  ... where info = some kind of context data and/or info on how to troubleshoot or try to address some sort of issue/problem/etc. 
-                                                    (other attributes as needed - i.e., maybe some sort of link? or info about what docs to consult? - dunno)
-                                                >
-                                                    <heading>heading information would go here - though it's not required</heading>
-                                                    <body>yup... the message/info/warning/whatever... </body>
-                                                </detail>
-                                            <guidance>
+
+
+
+                                                    <context>
+                                                        <detail 
+                                                            type=" { ERROR | WARNING | INFO | CONTROL | GUIDANCE } " 
+                                                            target = " command | outcome " 
+                                                                (may need to specifically target a SPECIFIC outcome - i.e., outcome.ordinal(5) or ... outcome.GUIDHere or outcome.SequenceNumberHere? 
+                                                                not SURE I'll need this though - i.e., i could probably put any 'details' targetting outcomes just in the 'end' of the outcomes summary, right?)
+                                                        >
+                                                            <heading>heading information would go here - though it's not required</heading>
+                                                            <body>yup... the message/info/warning/whatever... </body>
+                                                        </detail>
+                                                    </context>
                             
-                                        </command>
+                                                </operation>
 
                                 Key Notes about schema/elements: 
 
@@ -172,10 +179,26 @@
                                     <commands> 
                                         should, really, be considered as being the set of parameters and details to 'hand into' dbo.execute_command - for execution. 
 
-                                    <guidance> 
-                                        should be details that are provided by the CALLING/executing code-blocks - i.e., if dbo.pause_synchronization is being run and we can't
-                                            get a successful 'suspend/pause' outcome, 'guidance' should show some info on why and/or what the admin running the sproc can do next. 
+                                    <context> 
+                                        Additional information, warnings, guidance, and 'context' about specific commands and/or outcomes. 
+                                            ERROR: this isn't a SQL error - it's an S4 error - like: "sproc such and such said you can't do blah blah blah with database xyz because...<reason>". 
+                                            
+                                            WARNING: S4 warnings about non-best practices or other things that HAVE to be done after ... say, flipping a DB to ... FULL recovery from SIMPLE (i.e., "warning - make sure to kick off DIFF or FULL backup and enable T-LOG backups"...) 
+                                            
+                                            INFO: something like... "Not going to do xyz with database blah - because it does not meet requirements for... shrink_databases (small enough already) or... whatever". 
+                                                might be no difference between INFO and control? 
+                                            
+                                            CONTROL: details on what we're doing and/or why... e.g., 
+                                                "attempting to shrink database xyz's log from N GB down to target of y GB.... " 
+                                                or "waiting for log backups" 
+                                                or "scripting login from server A... to apply to server b..." 
+                                                etc... 
 
+                                            GUIDANCE: 
+                                                not quite the same as WARNINGs. Warnings are for things that need to be done or addressed. 
+                                                GUIDANCE is ... more along the lines of ... 
+                                                    "if you keep having this problem, you can try xyz or consult this link..." 
+                                                    and so on... 
 
 
 
@@ -226,51 +249,6 @@
 
 
 
-
-
-                    NOTES: from previous incarnations/ideas: 
-
-                        here's the old table I had - where the 'channel' has some good info/ideas in it: 
-
- 
-                                            CREATE TABLE #bus ( 
-                                                [row_id] int IDENTITY(1,1) NOT NULL, 
-                                                [channel] sysname NOT NULL DEFAULT (N'WARNING'),  -- ERROR | WARNING | INFO | CONTROL | GUIDANCE | OUTCOME (for control?)
-                                                [timestamp] datetime NOT NULL DEFAULT (GETDATE()),
-                                                [parent] int NULL,
-                                                [grouping_key] sysname NULL, 
-                                                [heading] nvarchar(1000) NULL, 
-                                                [body] nvarchar(MAX) NULL, 
-                                                [detail] nvarchar(MAX) NULL, 
-                                                [command] nvarchar(MAX) NULL
-                                            );
-
-                        specifically, the CONTROL and OUTCOME 'channels'...
-                            I BELIEVE those can/will just be dumped into the #bus table itself though - as additional columns. 
-
-                                ERROR: 
-                                    something bad happened - i.e., exception/etc. 
-
-                                WARNING: 
-                                    exceeded RPOs or possible problem/etc. 
-
-                                INFO: 
-                                    output from dbo.execute_command if/when errors encountered BUT the process completes after N retries (as specified). 
-
-                                CONTROL: 
-                                    internal directives/data or whatever - fairly customizable...   
-                                        examples: 
-                                            in dbo.verify_server_synchronization ... i could set up a 'command' to try and sync each login that was different ... by making the oldest one a copy of the new one. 
-                                                that's a 'control' operation/input/message. 
-                                                I'd also, of course, have an info/error/warning associated with this one the way out too - i.e., what was that OUTCOME of that bit of automation?
-
-                                GUIDANCE: 
-                                    additional details that can/will be 'interjected' during processing or elsewhere... 
-
-
-                                OUTCOME:
-                                    yeah, still not sure about this one. I COULD specify this as the 'response' or 'outcome'/link to a CONTROL operation. 
-                                        BUT, it seems like a better approach would be... to drop in an INFO | WARNING | ERROR keyed to the parent_id... right?
 
 */
 
