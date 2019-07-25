@@ -404,7 +404,13 @@ GO
 --##INCLUDE: S4 Jobs\get_last_job_completion.sql
 
 -----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
+
+-----------------------------------
 --##INCLUDE: S4 Jobs\list_running_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
