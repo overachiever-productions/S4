@@ -108,10 +108,9 @@ AS
 
     DECLARE @syncCheckSpanMinutes int = DATEDIFF(MINUTE, @lastCheckupExecutionTime, GETDATE());
 
-PRINT 'Last Run: ' + CONVERT(sysname, @lastCheckupExecutionTime, 121); 
-PRINT 'Mins Ago: ' + CAST(@syncCheckSpanMinutes AS sysname);
-RETURN 0;
-
+    IF @syncCheckSpanMinutes <= 1 
+        RETURN 0; -- no sense checking on history if it's just been a minute... 
+    
     ----------------------------------------------
     -- Begin Processing: 
 	DECLARE @localServerName sysname = @@SERVERNAME;
