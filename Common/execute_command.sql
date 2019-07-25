@@ -1,5 +1,8 @@
-
 /*
+
+   PICKUP/NEXT:
+        v6.5 - currently in the middle of a MAJOR 'refactor' - which is a lot more like a rewrite/re-think (to enable all sorts of retry-interactions and better auditing + flow-of-control).
+
     TODO:
         - move this into \internal ... 
     
@@ -38,7 +41,206 @@
 
 
 
-v6.5 Refactor Impacts the following: 
+v6.5 Refactor / REWRITE 
+
+    Changes to Make: 
+        - allow [DEFAULT] tokens/valus to be passed into @DelayBetweenAttempts and @IgnoredResults
+            i.e., if those values are set to [DEFAULT]... then load in the defaults (2 and 5s - respectively)
+
+        - @RetryCount has been changed to @ExecutionAttemptsCount (might want to make that @TotalExecutionAttemptsCount (though that's a bit of a mouth-ful). 
+            I'll have to change this through all callers... 
+
+        - still bugged that I came up with an option for EXEC and... there's no real way to capture any of the output... 
+            that seems insane/bad/stupid/dumb. 
+                arguably... i MIGHT want to drop it as an option (entirely) and just use SQLCMD instead ... cuz a KEY part of the 'rewrite' is to 
+                    address the idea/need to CAPTURE all output and store/save it... etc. 
+
+            NOTE: 
+                the ONLY reason that 'EXEC' is an ExecutionType is cuz i (rightly-ish) realized that dbo.execute_command (with 'retry' logic built in)
+                    would be a GREAT way to make everything 'retry-able' - including 'simple stuff' that didn't need to be executed in an external thread... 
+                        the rub, of course, is that I can't get the outputs... 
+                            meaning that either: 
+                                a) i figure out SOME way to get outputs from sp_executesql (yeah... no)
+                                b) I figure out a SMART/RELIABLE way to wrap every input/command into a try/catch/capture... of some sorts that accomplishes the above
+                                    
+                                        EXAMPLE: 
+                                            assume that @Command = N'USE [dbname];  CHECKPOINT;]; 
+
+                                            in, say, 99.9% of cases, that'll work JUST fine... unless, of course, [dbname] doesn't exist. 
+                                            HAPPILY, with a TRY/CATCH wrapped around the call to sp_executesql @Command... i'll capture crap like that. 
+
+                                            but... what about non errors - is there ANY way to do something like... dynamically wrap @command with: 
+                                                    
+                                                            BEGIN TRY 
+
+                                                                   EXEC @completedCorrectly = sp_executesql @command ... 
+
+                                                            END TRY
+                                                            BEGIN CATCH 
+                                                                ... 
+                                                            END CATCH
+                                                    
+                                                            -- is there a way to read the output buffer? 
+
+                                            YES... (well - ish and MAYBE)
+                                                project details found here: 
+                                                    
+
+
+
+                                                                    The only way I can think to possibly pull-off option b here would be to: 
+                                                                        i) somehow tweak/modify 'sp_outputbuffer' to a point where it would be viable/reliable in terms 
+                                                                            of what ever it is that it's parsing... 
+                                                                                https://www.itprotoday.com/sql-server/cool-way-spy-output-buffer
+
+                                                                                seriously... he's removing a bunch of stuff. 
+                                                                                    what if I figured out some way to REMOVE the 'text' and chained the HEX out into something
+                                                                                        then CONVERTED/TRANSLATED the hex into something good? 
+
+                                                                        ii) could somehow mark and trace... 
+                                                                                e.g., each EXEC operation would run something like the following: 
+
+
+                                                                                            PRINT 'EXEC marker here';
+                                                                                            SET @spid = @@SPID; 
+
+                                                                                            EXEC sp_executesql @command... 
+
+                                                                                        and then... SOMEHOW ... a) grab that @spid value (might be able to 'infuse' that into the @command 
+                                                                                            itself... but that's damned sketchy/crazy... 
+
+                                                                                            and, b) (once i get the spid), run DBCC OUTPUTBUFFER ... clean up the data
+                                                                                                and ... return everything since the 'EXEC marker here';
+                                                                                                    seems insanely hard... 
+                                                                                    Oh... wait. 
+                                                                                        dummy. 
+
+                                                                                        EXEC doesn't leave my current spid... 
+                                                                                            so... this is a lot simpler: 
+
+                                                                                            1. drop a marker. 
+                                                                                            2. exec @worked = sp_executesql @command
+                                                                                            3. EXEC load_buffer_since_mark(@spid, 'mark name here'); 
+                                                                                                
+                                                                                                report on what I find in 3... 
+                                                                                  
+
+
+
+
+                                                                                ALTER PROC sp_outputbuffer
+                                                                                    -- Produce cleaned-up DBCC OUTPUTBUFFER report for a given SPID.
+                                                                                    -- Author: Andrew Zanevsky, 2001-06-29
+
+                                                                                    @spid smallint
+                                                                                AS
+                                                                                    SET NOCOUNT ON;
+                                                                                    SET ANSI_PADDING ON;
+
+                                                                                    DECLARE
+                                                                                        @outputbuffer varchar(80),
+                                                                                        @clean varchar(16),
+                                                                                        @pos smallint;
+
+                                                                                    CREATE TABLE #out (
+                                                                                        -- Primary key on IDENTITY column prevents rows
+                                                                                        -- from changing order when you update them later.
+                                                                                        line int IDENTITY PRIMARY KEY CLUSTERED,
+                                                                                        dirty varchar(255) NULL,
+                                                                                        clean varchar(16) NULL
+                                                                                    );
+
+                                                                                    INSERT #out (
+                                                                                        dirty
+                                                                                    )
+                                                                                    EXEC ('DBCC OUTPUTBUFFER(' + @spid + ') WITH NO_INFOMSGS');
+
+                                                                                    SET @pos = 0;
+                                                                                    WHILE @pos < 16
+                                                                                        BEGIN
+                                                                                            SET @pos = @pos + 1;
+                                                                                            -- 1. Eliminate 0x00 symbols.
+                                                                                            -- 2. Keep line breaks.
+                                                                                            -- 3. Eliminate dots substituted by DBCC OUTPUTBUFFER
+                                                                                            --  for nonprintable symbols, but keep real dots.
+                                                                                            -- 4. Keep all printable characters.
+                                                                                            -- 5. Convert anything else to blank,
+                                                                                            --  but compress multiple blanks to one.
+                                                                                            UPDATE
+                                                                                                #out
+                                                                                            SET
+                                                                                                clean = ISNULL(clean, '') + CASE
+                                                                                                                                WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) = '0a' THEN CHAR(10)
+                                                                                                                                WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) BETWEEN '20' AND '7e' THEN SUBSTRING(dirty, 61 + @pos, 1)
+                                                                                                                                ELSE ' '
+                                                                                                                            END
+                                                                                            WHERE
+                                                                                                CASE
+                                                                                                    WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) = '0a' THEN 1
+                                                                                                    WHEN SUBSTRING(dirty, 61 + @pos, 1) = '.' AND SUBSTRING(dirty, 9 + @pos * 3, 2) <> '2e' THEN 0
+                                                                                                    WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) BETWEEN '20' AND '7e' THEN 1
+                                                                                                    WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) = '00' THEN 0
+                                                                                                    WHEN RIGHT('x' + clean, 1) IN (' ', CHAR(10)) THEN 0
+                                                                                                    ELSE 1
+                                                                                                END = 1;
+                                                                                        END;
+
+                                                                                    DECLARE c_output CURSOR FOR SELECT clean FROM #out;
+                                                                                    OPEN c_output;
+                                                                                    FETCH c_output
+                                                                                    INTO
+                                                                                        @clean;
+
+                                                                                    SET @outputbuffer = '';
+
+                                                                                    WHILE @@FETCH_STATUS = 0
+                                                                                        BEGIN
+                                                                                            SET @outputbuffer = @outputbuffer + CASE
+                                                                                                                                    WHEN RIGHT(@outputbuffer, 1) = ' ' OR @outputbuffer = '' THEN LTRIM(ISNULL(@clean, ''))
+                                                                                                                                    ELSE ISNULL(@clean, '')
+                                                                                                                                END;
+
+                                                                                            IF DATALENGTH(@outputbuffer) > 64 BEGIN
+                                                                                    PRINT @outputbuffer;
+                                                                                    SET @outputbuffer = '';
+                                                                                    END;
+
+                                                                                            FETCH c_output
+                                                                                            INTO
+                                                                                                @clean;
+                                                                                        END;
+                                                                                    PRINT @outputbuffer;
+
+                                                                                    CLOSE c_output;
+                                                                                    DEALLOCATE c_output;
+
+                                                                                    DROP TABLE #out;
+
+                                                                                GO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                c) I get rid of EXEC as an option... 
+
+
+        - @Results needs to be re-named to @Outcomes ... i.e., to match the xml node being sent out... 
+
+        - Callers will need to be able to a) store/keep (eventually) the outcomes and b) parse/examine them for any kinds of non-success details
+            so that ... 
+
+
+    Impacts the following sprocs (i.e., the changes above will apply to all of the following callers): 
 
         establish_directory
         restore_databases
