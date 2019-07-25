@@ -45,7 +45,6 @@ GO
 
 CREATE PROC dbo.verify_data_synchronization 
 	@IgnoredDatabases						nvarchar(MAX)		= NULL,
-	@SyncCheckSpanMinutes					int					= 10,  --MKC: Remove (see S4-155)
 	@TransactionDelayThresholdMS			int					= 8600,
 	@AvgerageSyncDelayThresholdMS			int					= 2800,
 	@EmailSubjectPrefix						nvarchar(50)		= N'[Data Synchronization Problems] ',
@@ -56,6 +55,7 @@ AS
 	SET NOCOUNT ON;
 
 	-- {copyright}
+
 
 	---------------------------------------------
 	-- Validation Checks: 
@@ -93,7 +93,27 @@ AS
 		PRINT 'Server is Not Primary.';
 		RETURN 0;
 	END;
+        
+    ----------------------------------------------
+	-- Determine the last time this job ran: 
+    DECLARE @lastCheckupExecutionTime datetime;
+    EXEC [dbo].[get_last_job_completion_by_session_id] 
+        @SessionID = @@SPID, 
+        @ExcludeFailures = 1, 
+        @LastTime = @lastCheckupExecutionTime OUTPUT; 
 
+    SET @lastCheckupExecutionTime = ISNULL(@lastCheckupExecutionTime, DATEDIFF(HOUR, -2, GETDATE()));
+    IF DATEDIFF(DAY, @lastCheckupExecutionTime, GETDATE()) > 2
+        SET @lastCheckupExecutionTime = DATEDIFF(HOUR, -2, GETDATE())
+
+    DECLARE @syncCheckSpanMinutes int = DATEDIFF(MINUTE, @lastCheckupExecutionTime, GETDATE());
+
+PRINT 'Last Run: ' + CONVERT(sysname, @lastCheckupExecutionTime, 121); 
+PRINT 'Mins Ago: ' + CAST(@syncCheckSpanMinutes AS sysname);
+RETURN 0;
+
+    ----------------------------------------------
+    -- Begin Processing: 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
@@ -216,7 +236,7 @@ AS
 		--		then it's NOT working correctly (i.e. it's somehow not seeing everything it needs to in order
 		--		to report - and we need to throw an error):
 		SELECT @transdelay = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
-		WHERE time_recorded >= DATEADD(n, 0 - @SyncCheckSpanMinutes, GETUTCDATE());
+		WHERE time_recorded >= @lastCheckupExecutionTime;
 
 		DELETE FROM @output; 
 		INSERT INTO @output
@@ -235,10 +255,10 @@ AS
 
 		-- check for problems with transaction delay:
 		SELECT @transdelay = MAX(ISNULL(transaction_delay,0)) FROM @output
-		WHERE time_recorded >= DATEADD(n, 0 - @SyncCheckSpanMinutes, GETUTCDATE());
+		WHERE time_recorded >= @lastCheckupExecutionTime;
 		IF @transdelay > @TransactionDelayThresholdMS BEGIN 
 			SET @errorMessage = N'Mirroring Alert - Delays Applying Snapshot to Secondary'
-				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@SyncCheckSpanMinutes as nvarchar(20)) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
+				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
 			VALUES (@errorMessage);
@@ -246,11 +266,11 @@ AS
 
 		-- check for problems with transaction delays on the primary:
 		SELECT @averagedelay = MAX(ISNULL(average_delay,0)) FROM @output
-		WHERE time_recorded >= DATEADD(n, 0 - @SyncCheckSpanMinutes, GETUTCDATE());
+		WHERE time_recorded >= @lastCheckupExecutionTime;
 		IF @averagedelay > @AvgerageSyncDelayThresholdMS BEGIN 
 
 			SET @errorMessage = N'Mirroring Alert - Transactions Delayed on Primary'
-				+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N' in last ' + CAST(@SyncCheckSpanMinutes as nvarchar(20)) + N' minutes is greater than allowed threshold of ' + CAST(@AvgerageSyncDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
+				+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@AvgerageSyncDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
 			VALUES (@errorMessage);
@@ -404,4 +424,3 @@ REPORTING:
 
 	RETURN 0;
 GO
-
