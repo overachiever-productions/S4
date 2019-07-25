@@ -111,7 +111,7 @@ AS
     DECLARE @endTime datetime = DATEADD(SECOND, CAST((LEFT(@duration, 2)) AS int) * 3600 + CAST((SUBSTRING(@duration, 3, 2)) AS int) * 60 + CAST((RIGHT(@duration, 2)) AS int), @startTime); 
 
     IF @LastTime IS NOT NULL
-        SELECT @endTime [completion_time_of_last_successfuL_job_execution];
+        SELECT @endTime [completion_time_of_last_job_execution];
     ELSE 
         SET @LastTime = @endTime;
 
