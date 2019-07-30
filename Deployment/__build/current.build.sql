@@ -436,7 +436,7 @@ GO
 --##INCLUDE: S4 High Availability\compare_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 High Availability\Failover\respond_to_db_failover.sql
+--##INCLUDE: S4 High Availability\Failover\process_synchronization_failover.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Failover\verify_job_states.sql
@@ -450,6 +450,8 @@ GO
 -----------------------------------
 --##INCLUDE: S4 High Availability\Monitoring\verify_data_synchronization.sql
 
+-----------------------------------
+--##INCLUDE: S4 High Availability\Setup & Configuration\add_synchronization_partner.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Auditing:
