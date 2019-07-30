@@ -56,7 +56,6 @@ AS
 
 	-- {copyright}
 
-
 	---------------------------------------------
 	-- Validation Checks: 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
@@ -102,9 +101,10 @@ AS
         @ExcludeFailures = 1, 
         @LastTime = @lastCheckupExecutionTime OUTPUT; 
 
-    SET @lastCheckupExecutionTime = ISNULL(@lastCheckupExecutionTime, DATEDIFF(HOUR, -2, GETDATE()));
+    SET @lastCheckupExecutionTime = ISNULL(@lastCheckupExecutionTime, DATEADD(HOUR, -2, GETDATE()));
+
     IF DATEDIFF(DAY, @lastCheckupExecutionTime, GETDATE()) > 2
-        SET @lastCheckupExecutionTime = DATEDIFF(HOUR, -2, GETDATE())
+        SET @lastCheckupExecutionTime = DATEADD(HOUR, -2, GETDATE())
 
     DECLARE @syncCheckSpanMinutes int = DATEDIFF(MINUTE, @lastCheckupExecutionTime, GETDATE());
 
@@ -256,7 +256,7 @@ AS
 		SELECT @transdelay = MAX(ISNULL(transaction_delay,0)) FROM @output
 		WHERE time_recorded >= @lastCheckupExecutionTime;
 		IF @transdelay > @TransactionDelayThresholdMS BEGIN 
-			SET @errorMessage = N'Mirroring Alert - Delays Applying Snapshot to Secondary'
+			SET @errorMessage = N'Mirroring Alert - Delays Applying Data to Secondary'
 				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
@@ -336,7 +336,6 @@ AS
 			--	INSERT INTO @errors (errorMessage)
 			--	VALUES(@errorMessage);
 			--END 
-			
 
 			-- Check on Status of all members:
 			SET @downNodes = N'';
@@ -377,6 +376,16 @@ AS
 		END;
 		-- otherwise, we've already run checks on the availability group itself. 
 
+
+
+
+		FETCH NEXT FROM ag_checker INTO @currentAGdDatabase;
+	END;
+
+
+	CLOSE ag_checker;
+	DEALLOCATE ag_checker;
+
 		-- TODO: implement synchronization (i.e., lag/timing/threshold/etc.) logic per each synchronized database... (i.e., here).
 		-- or... maybe this needs to be done per AG? not sure of what makes the most sense. 
 		--		here's a link though: https://www.sqlshack.com/measuring-availability-group-synchronization-lag/
@@ -389,12 +398,91 @@ AS
 		--					b) spin up a job that collects those stats (i.e., runs the job) every ... 30 seconds or someting tame but viable? 
 		--					c) have this query ... query that info over the last n minutes... similar to what I'm doing to detect mirroring 'lag' problems.
 
-		FETCH NEXT FROM ag_checker INTO @currentAGdDatabase;
-	END;
+-- TODO: this is currently implemented against ALL databases... 
+--      won't be too hard to simply tweak the CTE to do a search/lookup PER database and change everything to work that way... 
+    DECLARE @states table ( 
+        [database_name] sysname NOT NULL, 
+        [is_primary] bit NOT NULL, 
+        [last_commit_time] datetime NULL
+    );
+
+    INSERT INTO @states (
+        [database_name],
+        [is_primary],
+        [last_commit_time]
+    )
+    SELECT
+        adc.[database_name],
+        drs.is_primary_replica [is_primary],
+        drs.last_commit_time 
+    FROM
+        sys.dm_hadr_database_replica_states AS drs
+        INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id;
+
+    WITH p AS ( 
+        SELECT 
+            [database_name], 
+            ISNULL(last_commit_time, GETDATE()) [last_commit]
+        FROM 
+            @states 
+        WHERE [is_primary] = 1
+    ), 
+    s AS ( 
+        SELECT 
+            [database_name], 
+            MIN(ISNULL(last_commit_time, GETDATE())) [last_commit]
+        FROM 
+            @states 
+        WHERE [is_primary] = 0
+        GROUP BY [database_name]
+    )
+
+    SELECT 
+        @averagedelay = MAX(DATEDIFF(MILLISECOND, s.[last_commit], p.[last_commit]))
+    FROM 
+        p 
+        INNER JOIN s ON p.[database_name] = s.[database_name];
+
+	IF @averagedelay > @AvgerageSyncDelayThresholdMS BEGIN 
+
+		SET @errorMessage = N'AG Alert - Delays Applying Data to Secondary'
+			+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@AvgerageSyncDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB */ N' on Server: ' + @localServerName + N'.';
+
+		INSERT INTO @errors (errorMessage)
+		VALUES (@errorMessage);
+	END 
+
+-- NOTE / TODO: 
+--      I'm using an @tableVariable below INSTEAD of just grabbing _Total (irght out of the gate) because i'll eventually push/pull this logic up into the cursor loop - 
+  --        where we can grab these details PER database... 
+    DECLARE @agTransDelays table (
+        [database_name] sysname NOT NULL, 
+        [transaction_delay] decimal(19,2) NULL
+    );
+
+    INSERT INTO @agTransDelays (
+        [database_name],
+        [transaction_delay]
+    )
+
+    SELECT  
+        [instance_name] [database_name], 
+        CAST([cntr_value] AS decimal(19,2)) [transaction_delay]
+    FROM sys.dm_os_performance_counters 
+    WHERE [counter_name] LIKE 'Transaction Delay%'
+	    AND [object_name] LIKE 'SQLServer:Database Replica%';
 
 
-	CLOSE ag_checker;
-	DEALLOCATE ag_checker;
+    SELECT @transdelay = [transaction_delay] FROM @agTransDelays WHERE [database_name] = N'_Total';
+
+    IF ISNULL(@transdelay, 0) >= @TransactionDelayThresholdMS BEGIN
+
+		SET @errorMessage = N'AG Alert  - Transactions Delayed on Primary'
+			+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB +*/ N' on Server: ' + @localServerName + N'.';
+
+		INSERT INTO @errors (errorMessage)
+		VALUES (@errorMessage);
+    END;
 
 
 REPORTING:

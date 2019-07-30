@@ -64,7 +64,9 @@ AS
     
     END TRY
     BEGIN CATCH
-        RAISERROR(N'Error converting Program Name: ''%s'' to SQL Server Agent JobID (Guid).', 16, 1, @ProgramName);
+        IF NULLIF(@JobName, N'') IS NOT NULL
+            RAISERROR(N'Error converting Program Name: ''%s'' to SQL Server Agent JobID (Guid).', 16, 1, @ProgramName);
+
         RETURN -1;
     END CATCH
 
