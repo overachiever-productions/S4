@@ -200,3 +200,6 @@ AS
 
     CLOSE [walker];
     DEALLOCATE [walker];
+
+    RETURN 0;
+GO
