@@ -1,6 +1,6 @@
-
 /*
 
+2957198445
 
 	EXEC dbo.verify_audit_configuration
 		@AuditName = N'Server Audit', 
@@ -79,7 +79,7 @@ AS
 
 	-- If we have a checksum, verify that as well: 
 	IF @OptionalAuditSignature IS NOT NULL BEGIN 
-		DECLARE @currentSignature bigint = 0;
+		DECLARE @currentSignature bigint = NULL;
 		DECLARE @returnValue int; 
 
 		EXEC @returnValue = dbo.generate_audit_signature

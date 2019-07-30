@@ -1,14 +1,5 @@
 /*
 
-		FUN: 
-			Here' are some resource identifiers I've captured from Deadlock and OTHER traces: 
-
-				METADATA: database_id = 5 COMPRESSED_FRAGMENT(object_id = 597577167, fragment_id = 6088335), lockPartitionId = 0
-					METADATA: database_id = 5 COMPRESSED_FRAGMENT(object_id = 597577167, fragment_id = 1427564), lockPartitionId = 0
-						i.e., the two locks above were fighting with each other ... and caused a deadlock... 
-							PRETTY sure this is ..... Full Text Indexing... https://twitter.com/kevriley/status/301042539232915457  (especially since the table in question was FTI'd...  (and massive))...		
-
-
 
 		FODDER: 
 			- https://support.microsoft.com/en-us/help/224453/inf-understanding-and-resolving-sql-server-blocking-problems 
@@ -21,16 +12,16 @@
 			RESOURCE IDENTIFIER PATTERNS:
 		
 				DATABASE 
-					DATABASE: 12:0									so, here's the rub... all waits i was seeing were in dbid 7 - why the hell am i seeing 36 waits against DATABASE: 12:0 ???? 
+					DATABASE: 12:0									 
 
 				APPLICATION
 					APPLICATION: ???? 
 
 				FILE 
-					FILE: 7:0										looks fairly obvious - as in, something going on with 'a file' for DBID 7 (right?). Only... which file - and WHAT is going on? (is it the log file? or ... what?)
+					FILE: 7:0										dbid:0 - as in, ALWAYS 0 - and... that's NOT a FILE_ID (obviously). BOL says: "Represents a database file. This file can be either a data or a log file.".
 
 				METADATA
-					METADATA: ??? 
+					METADATA:                                       database_id appears to be a constant - but this uses 'wild' formatting (see below) 
 
 				ALLOCATION_UNIT
 					ALLOCATION_UNIT: ???? 
@@ -39,7 +30,7 @@
 					TAB: 5:496056853:1								dbid:objectid:indexid
 			
 				HOBT
-					HOBT: ????										dbid:hobt? ???? 
+					HOBT: dbid:hobt_id							    dbid:hobt_id (sys.partitions.hobt_id)
 
 				EXTENT 
 					EXTENT: 7:1:23456								dbid:fileid:pageid (of the FIRST page in the extent). 							
@@ -65,7 +56,7 @@
 																									https://dba.stackexchange.com/questions/106762/how-can-i-convert-a-key-in-a-sql-server-deadlock-report-to-the-value
 																									https://littlekendra.com/2016/10/17/decoding-key-and-page-waitresource-for-deadlocks-and-blocking/
 				ROW
-						RID: 7:1:104778:3								dbid:fileid:pageid:slot (row)  
+					RID: 7:1:104778:3								dbid:fileid:pageid:slot (row)  
 
 
 				OBJECT 
@@ -76,38 +67,52 @@
 
 
 		TODO:
-			- Implement METADATA
 			- Implement HOBT (should be pretty easy)
 			- Implement APPLICATION
+            - Implement METADATA (looks pretty hard/varied)
+
+                METADATA examples: 
+
+                     (from blocked processes trace)
+                    METADATA: database_id = 15 SECURITY_CACHE($hash = 0x5:0x0)
+                    METADATA: database_id = 15 SECURITY_CACHE($hash = 0x5:0x0)
+
+                      (from deadlock trace)
+                    METADATA: database_id = 5 COMPRESSED_FRAGMENT(object_id = 597577167, fragment_id = 6088335), lockPartitionId = 0
+					   	    PRETTY sure this is ..... Full Text Indexing... https://twitter.com/kevriley/status/301042539232915457  (especially since the table in question was FTI'd...  (and massive))...		
+
+                            an interesting take-away though... 
+                                - seems like we ALWAYS get the database_id 
+                                    ... and, in other cases (like the compressed fragment) ... we get full-on meta-data that points where we need to go... 
+
 
 			- Add Index ID into TABLE locks - assuming it's ever anything OTHER than 1 or (and, even then, i'd like to use the name of the IX or 'HEAP')... 
 
 			- Look at creating the STATEMENTS needed to pull/return outputs for PAGE, KEY, and ROW identifiers... (PAGE and KEY are 'easy-ish' = they're just SELECT * FROM [dbid]..[objectid] WHERE %%physloc|lockres%%... = (formatted for whatever type). 
 				Rows... harder, I'd have to figure out the ... PK? on the row? or the IX 'key'? and then ... translate that into an id? ... guessing it COULD? be done? but... not sure... 
 						meh. not SUPER hard... but it'll take some work. But, DBCC PAGE (output type of 3 will get what is needed): 
-										DBCC PAGE('Xcelerator', 1, 689098, 3) WITH TABLERESULTS;
-										DBCC PAGE('Xcelerator', 1, 8584, 3) WITH TABLERESULTS;
-
-
+										DBCC PAGE('Widgets', 1, 689098, 3) WITH TABLERESULTS;
+										DBCC PAGE('Widgets', 1, 8584, 3) WITH TABLERESULTS;
 
 		USAGE: 
-			- Example Execution - where db_id 7 is 'remapped' to a database named 'ProdDatabase' and where the meta-data for OBJECT_ID and other lookups comes from a database (on box) called ProdDatabase5_Clone (i.e., a DBCC CLONEDATABASE() 'copy') of the database... 
+			- Example Execution - where db_id 7 is 'remapped' to a database named 'ProdDatabase' and where the meta-data 
+                    for OBJECT_ID and other lookups comes from a database (on box) called ProdDatabase5_Clone (i.e., a DBCC CLONEDATABASE() 'copy') of the database... 
 
+                    @DatabaseMappings Format/Config:
+                        origin_db_id,
+                        name_of_proxy_db_locally,
+                        [friendly_name_of_database]
 
 
 					DECLARE @output nvarchar(MAX);
 					EXEC dbo.extract_waitresource 
 						@WaitResource = N'KEY: 7:72057594197573632 (6b82a10ccc24)', 
-						@DatabaseMappings = N'7|ProdDatabase|ProdDatabase_Clone5,5|admindb',
+						@DatabaseMappings = N'7|ProdDatabase_Clone5|ProdDatabase,5|admindb',
 						@Output = @output OUTPUT;
 
 					SELECT @output [resource_details];
 
-
-
 */
-
-
 
 
 
@@ -137,6 +142,11 @@ AS
 		RETURN 0;
 	END;
 
+    IF @WaitResource LIKE N'ACCESS_METHODS_DATASET_PARENT%' BEGIN 
+        SET @Output = N'[SYSTEM].[PARALLEL_SCAN (CXPACKET)].[' + @WaitResource + N']';
+        RETURN 0;
+    END;
+
 	IF @WaitResource LIKE '%COMPILE]' BEGIN -- just change the formatting so that it matches 'rules processing' details below... 
 		SET @WaitResource = N'COMPILE: ' + REPLACE(REPLACE(@WaitResource, N' [COMPILE]', N''), N'OBJECT: ', N'');
 	END;
@@ -159,13 +169,13 @@ AS
 
 	CREATE TABLE #ExtractionMapping ( 
 		row_id int NOT NULL, 
-		[database_id] int NOT NULL, 
-		[mapped_name] sysname NOT NULL, 
-		[metadata_name] sysname NULL
+		[database_id] int NOT NULL,         -- source_id (i.e., from production)
+        [metadata_name] sysname NOT NULL,   -- db for which OBJECT_ID(), PAGE/HOBT/KEY/etc. lookups should be executed against - LOCALLY
+        [mapped_name] sysname NULL          -- friendly-name (i.e., if prod_db_name = widgets, and local meta-data-db = widgets_copyFromProd, friendly_name makes more sense as 'widgets' but will DEFAULT to widgets_copyFromProd (if friendly is NOT specified)
 	); 
 
 	IF NULLIF(@DatabaseMappings, N'') IS NOT NULL BEGIN
-		INSERT INTO #ExtractionMapping ([row_id], [database_id], [mapped_name], [metadata_name])
+		INSERT INTO #ExtractionMapping ([row_id], [database_id], [metadata_name], [mapped_name])
 		EXEC dbo.[shred_string] 
 		    @Input = @DatabaseMappings, 
 		    @RowDelimiter = N',',
@@ -197,8 +207,8 @@ AS
 		DECLARE @metaDataDatabaseName sysname;
 
 		-- NOTE: _MAY_ need to override this in some resource types - but, it's used in SO many types (via @part2) that 'solving' for it here makes tons of sense). 
-		SET @logicalDatabaseName = ISNULL((SELECT [mapped_name] FROM #ExtractionMapping WHERE database_id = @part2) , DB_NAME(@part2));
-		SET @metaDataDatabaseName = ISNULL((SELECT ISNULL([metadata_name], [mapped_name]) FROM #ExtractionMapping WHERE database_id = @part2) , DB_NAME(@part2));
+		SET @metaDataDatabaseName = ISNULL((SELECT [metadata_name] FROM [#ExtractionMapping] WHERE [database_id] = @part2), DB_NAME(@part2));
+        SET @logicalDatabaseName = ISNULL((SELECT ISNULL([mapped_name], [metadata_name]) FROM [#ExtractionMapping] WHERE [database_id] = @part2), DB_NAME(@part2));
 
 		IF @waittype = N'DATABASE' BEGIN
 			IF @part3 = 0 
@@ -210,13 +220,15 @@ AS
 		END; 
 
 		IF @waittype = N'FILE' BEGIN 
-			SET @lookupSQL = N'SELECT @objectName = [physical_name] FROM [Xcelerator].sys.[database_files] WHERE FILE_ID = ' + CAST(@part3 AS sysname) + N';';
-			EXEC [sys].[sp_executesql]
-				@stmt = @lookupSQL, 
-				@params = N'@objectName sysname OUTPUT', 
-				@objectName = @objectName OUTPUT;
+            -- MKC: lookups are pointless -.. 
+			--SET @lookupSQL = N'SELECT @objectName = [physical_name] FROM [Xcelerator].sys.[database_files] WHERE FILE_ID = ' + CAST(@part3 AS sysname) + N';';
+			--EXEC [sys].[sp_executesql]
+			--	@stmt = @lookupSQL, 
+			--	@params = N'@objectName sysname OUTPUT', 
+			--	@objectName = @objectName OUTPUT;
 
-			SELECT @Output = QUOTENAME(@logicalDatabaseName) + N' - FILE_LOCK (' + ISNULL(@objectName, N'FILE_ID: ' + CAST(@part3 AS sysname)) + N')';
+			--SELECT @Output = QUOTENAME(@logicalDatabaseName) + N' - FILE_LOCK (' + ISNULL(@objectName, N'FILE_ID: ' + CAST(@part3 AS sysname)) + N')';
+            SELECT @Output = QUOTENAME(@logicalDatabaseName) + N' - FILE_LOCK (Data or Log file - Engine does not specify)';
 			RETURN 0;
 		END;
 

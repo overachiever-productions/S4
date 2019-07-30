@@ -10,11 +10,6 @@
 			Or
 			- a (custom job category called) 'Disabled' if/when the job needs to be disabled. 
 	
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
-
 	NOTES:
 		- The Primary in a Mirrored environment is a 'PRINCIPAL'. But in an AG environment, it's the 'PRIMARY'.
 		- This job disables/enables JOBs where:

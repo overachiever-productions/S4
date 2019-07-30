@@ -45,7 +45,7 @@ CREATE PROC dbo.script_logins
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
 	@ExcludedUsers							nvarchar(MAX)			= NULL,
 	@ExcludeMSAndServiceLogins				bit						= 1,
-	@BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_ANCE_CREATE }
+	@BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_AND_CREATE }
     @DisablePolicyChecks					bit						= 0,
 	@DisableExpiryChecks					bit						= 0, 
 	@ForceMasterAsDefaultDB					bit						= 0,
@@ -268,7 +268,7 @@ AS
                             l.[enabled], 
                             @BehaviorIfLoginExists, 
                             l.[name], 
-                            N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
+                            N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
                             N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                             l.[default_database_name], 
                             l.[default_language_name], 
@@ -309,7 +309,7 @@ AS
                         l.[enabled], 
                         @BehaviorIfLoginExists, 
                         l.[name], 
-                        N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' HASHED', 
+                        N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
                         N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                         l.[default_database_name], 
                         l.[default_language_name], 

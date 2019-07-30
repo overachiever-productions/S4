@@ -175,7 +175,7 @@ WHERE
 
 IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysalerts WHERE message_id = 1480) BEGIN 
 	INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	SELECT 3, N'ERROR', N'A SQL Server Agent Alert has not been set up to ''trap'' Message 1480 (database failover) has not been created.';
+	SELECT 3, N'ERROR', N'A SQL Server Agent Alert has not been set up to ''trap'' Message 1480 (database failover).';
 END
 
 -- Warn if no job to respond to failover:
@@ -234,7 +234,7 @@ INSERT INTO #Errors (SectionID, Severity, ErrorText)
 SELECT 
 	5, 
 	N'ERROR',
-	N'Object [' + x.name + N'] was not found in the admin database.'
+	N'Object [' + x.[name] + N'] was not found in the admin database.'
 FROM 
 	@ObjectNames x
 	LEFT OUTER JOIN admindb.dbo.sysobjects o ON o.name = x.name

@@ -1,13 +1,14 @@
-
 /*
-	TODO:
-		- Assert/Check dependencies prior to execution of core logic.
-
-
-	NOTE:
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
 		- Can be used for server-level OR datbase-level specifications. 
 			To target server-level specifications, set @Target = NULL or @Target = N'[SYSTEM]'. 
 			Otherwise, @Target is the name of the database to check for the @SpecificationName. 
+
+	
+    
+    TODO:
+		- Assert/Check dependencies prior to execution of core logic.
 
 
 	EXECUTION EXAMPLES / SIGNATURES:
@@ -16,34 +17,34 @@
 				EXEC dbo.generate_specification_signature 
 					@Target						= N'msdb',			
 					@SpecificationName			= N'Jobs Monitoring (msdb)',
-					@IncludeAuditGUIDInHash		= 1;
+					@IncludeParentAuditIdInSignature		= 1;
 				GO
 
 				-- server-level specification: 
 				EXEC dbo.generate_specification_signature 
 					@SpecificationName			= N'Server Audit Specification',
-					@IncludeAuditGUIDInHash		= 1;
+					@IncludeParentAuditIdInSignature		= 1;
 				GO
 
 		OR 
 				
 				-- db-level specification (as target)... 
-				DECLARE @signature bigint = 0;  -- must be set to a non-NULL value: 
+				DECLARE @signature bigint = NULL;
 				EXEC dbo.generate_specification_signature 
-					@Target						= N'msdb',			
-					@SpecificationName			= N'Jobs Monitoring (msdb)',
-					@IncludeAuditGUIDInHash		= 1, 
-					@SpecificationSignature		= @signature OUTPUT;
+					@Target						            = N'msdb',			
+					@SpecificationName			            = N'Jobs Monitoring (msdb)',
+					@IncludeParentAuditIdInSignature		= 1, 
+					@SpecificationSignature		            = @signature OUTPUT;
 
 				SELECT @signature [signature];
 				GO
 
 				-- server-level specification: 
-				DECLARE @signature bigint = 0;  -- must be set to a non-NULL value: 
+				DECLARE @signature bigint;
 				EXEC dbo.generate_specification_signature 
-					@SpecificationName			= N'Server Audit Specification',
-					@IncludeAuditGUIDInHash		= 1, 
-					@SpecificationSignature		= @signature OUTPUT;
+					@SpecificationName			            = N'Server Audit Specification',
+					@IncludeParentAuditIdInSignature		= 1, 
+					@SpecificationSignature		            = @signature OUTPUT;
 
 				SELECT @signature [signature];
 				GO
@@ -62,7 +63,7 @@ CREATE PROC dbo.generate_specification_signature
 	@Target										sysname				= N'SERVER',			-- SERVER | 'db_name' - SERVER is default and represents a server-level specification, whereas a db_name will specify that this is a database specification).
 	@SpecificationName							sysname,
 	@IncludeParentAuditIdInSignature			bit					= 1,
-	@SpecificationSignature						bigint				= NULL OUTPUT
+	@SpecificationSignature						bigint				= -1    OUTPUT
 AS
 	SET NOCOUNT ON; 
 	
@@ -143,7 +144,7 @@ AS
 		INSERT INTO @databases([database_name])
 		EXEC dbo.list_databases
 			@Targets = @Target, 
-			@ExcludeDev = 1;
+			@Exclusions = N'[DEV]';
 
 		IF NOT EXISTS (SELECT NULL FROM @databases WHERE LOWER([database_name]) = LOWER(@Target)) BEGIN
 			SET @errorMessage = N'Specified @Target database [' + @Target + N'] does not exist. Please check your input and try again.';
@@ -213,7 +214,7 @@ AS
 	CLOSE [details];
 	DEALLOCATE [details];
 
-	IF @SpecificationSignature IS NULL
+	IF @SpecificationSignature = -1
 		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
 	ELSE	
 		SELECT @SpecificationSignature = SUM(hash) FROM @hashes;

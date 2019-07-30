@@ -1,4 +1,3 @@
-
 /*
 
 	NOTE: 
@@ -10,9 +9,11 @@
 	NOTE: 
 		there's a limitation/flaw/bug in the SQL Server Agent: 
 			- it will NOT log anything into msdb.dbo.sysjobhistory until the FIRST job-step of the job has completed. 
-			So, if you've got, say, a 10 step job, and the first job-step takes 2 minutes to execute and... your server crashes 1 minute into the execution of that first job step, there's NO way to see that the job was ever even started... 
+			So, if you've got, say, a 10 step job, and the first job-step takes 2 minutes to execute and... your server crashes 
+                1 minute into the execution of that first job step, there's NO way to see that the job was ever even started... 
 
-			as a work-around, you may want to drop a quick job step into the FRONT of your jobs (make sure you double-check the start step and the next action step) that basically says: PRINT 'Marking Job as Started for SysJobHistory....';
+			as a work-around, you may want to drop a quick job step into the FRONT of your 
+                jobs (make sure you double-check the start step and the next action step) that basically says: PRINT 'Marking Job as Started for SysJobHistory....';
 
 
 	EXEC dbo.restart_jobs @PrintOnly = 1;
@@ -133,7 +134,7 @@ LoadShutDownTime:
 	);
 
 	-- Extract Job Execution Details: 
-	DECLARE @output xml = N'';
+	DECLARE @output xml = NULL;
 	EXEC dbo.list_running_jobs 
 		@StartTime = @serviceShutDownTime, 
 		@EndTime = @serviceStartupTime,

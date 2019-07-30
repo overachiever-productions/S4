@@ -1,0 +1,8 @@
+While the idea is to replace all of the stuff in this folder ... 
+
+Just remember that: 
+	- the stuff in this folder is ALL about CONFIGURATION - or getting AGs/Mirrored-DBs up and running/ready
+		(i.e., creating the environment). 
+
+	- some of the other sprocs that I'll have around management and setup/configuration will be MORE 
+		geared at ... adding specific DBs to AGs/Mirroring and/or similar things. 
