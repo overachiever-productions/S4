@@ -454,6 +454,10 @@ GO
 --##INCLUDE: S4 High Availability\Setup & Configuration\add_synchronization_partner.sql
 
 -----------------------------------
+--##INCLUDE: S4 High Availability\Setup & Configuration\add_synchronization_alerts.sql
+
+
+-----------------------------------
 --##INCLUDE: S4 High Availability\Setup & Configuration\verify_synchronization_setup.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
