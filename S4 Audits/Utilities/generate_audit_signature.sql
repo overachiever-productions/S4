@@ -1,15 +1,14 @@
-
 /*
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
+
 
 	TODO:
 		- Assert/Check dependencies prior to execution of core logic.
-
-	TODO:
 		- Predicates weren't available with 2008R2 instances ... nor was it possible to add a max_files detail to the audit's definition (well, see it via dmv). 
 
 	vNEXT: 
 		- POSSIBLY look at an @IncludePredicates parameter and when it's 0 (vs default of 1)... exclude [predicate] from the signature... 
-
 
 	SAMPLE EXECUTION:
 
@@ -18,7 +17,7 @@
 
 		OR
 
-				DECLARE @signature int = 0;	-- NOTE: value MUST be set to a non-NULL value. 
+				DECLARE @signature bigint; 
 				EXEC dbo.generate_audit_signature
 					@AuditName = N'Server Audit', 
 					@AuditSignature = @signature OUTPUT; 
@@ -40,7 +39,7 @@ GO
 CREATE PROC dbo.generate_audit_signature 
 	@AuditName					sysname, 
 	@IncludeGuidInHash			bit			= 1, 
-	@AuditSignature				bigint		= NULL OUTPUT
+	@AuditSignature				bigint		= -1 OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -88,7 +87,7 @@ AS
 		VALUES (@hash);
 	END
 
-	IF @AuditSignature IS NULL
+	IF @AuditSignature = -1
 		SELECT SUM([hash]) [audit_signature] FROM @hashes; 
 	ELSE	
 		SELECT @AuditSignature = SUM(hash) FROM @hashes;

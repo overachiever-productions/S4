@@ -1,4 +1,3 @@
-
 /*
 
 	INTERNAL:
@@ -122,7 +121,7 @@ AS
 
 	WHILE @@FETCH_STATUS = 0 BEGIN
 
-		SET @databases = '';
+		SET @databases = NULL;
 		SET @serialized = N'';
 
 		EXEC dbo.list_databases_matching_token 

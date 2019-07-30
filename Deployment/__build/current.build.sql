@@ -102,7 +102,8 @@ GO
 -- master db objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-DECLARE @obsoleteObjects xml = CONVERT(xml, N'<list>
+DECLARE @obsoleteObjects xml = CONVERT(xml, N'
+<list>
     <entry schema="dbo" name="dba_DatabaseBackups_Log" type="U" comment="older table" />
     <entry schema="dbo" name="dba_DatabaseRestore_Log" type="U" comment="older table" />
     <entry schema="dbo" name="dba_SplitString" type="TF" comment="older UDF" />
@@ -143,7 +144,8 @@ GO
 -- admindb objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-DECLARE @olderObjects xml = CONVERT(xml, N'<list>
+DECLARE @olderObjects xml = CONVERT(xml, N'
+<list>
     <entry schema="dbo" name="server_synchronization_checks" type="P" comment="v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun">
         <check>
             <statement>SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE ''%server_synchronization_checks%''</statement>
@@ -175,6 +177,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'<list>
     <entry schema="dbo" name="print_logins" type="P" comment="v6.2 refactoring." />
     <entry schema="dbo" name="script_server_configuration" type="P" comment="v6.2 refactoring." />
     <entry schema="dbo" name="print_configuration" type="P" comment="v6.2 refactoring." />
+
+    <entry schema="dbo" name="respond_to_db_failover" type="P" comment="v6.5 refactoring (changed to dbo.process_synchronization_failover)" />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -247,16 +251,10 @@ GO
 --##INCLUDE: Common\Internal\format_windows_login.sql
 
 -----------------------------------
---##INCLUDE: Common\Internal\establish_directory.sql
-
------------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
 --##INCLUDE: Common\format_timespan.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\is_job_running.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\count_matches.sql
@@ -271,11 +269,19 @@ GO
 --##INCLUDE: Common\execute_command.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\establish_directory.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\load_backup_database_names.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\shred_string.sql
 
+-----------------------------------
+--##INCLUDE: Common\Internal\get_executing_dbname.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\translate_program_name_to_agent_job.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Backups:
@@ -307,6 +313,11 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\enable_alerts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\enable_alert_filtering.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
@@ -388,6 +399,28 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Tools\print_long_string.sql
 
+-----------------------------------
+--##INCLUDE: S4 Tools\is_xml_empty.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- SQL Server Agent Jobs
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\is_job_running.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\list_running_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -408,7 +441,7 @@ GO
 --##INCLUDE: S4 High Availability\compare_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 High Availability\Failover\respond_to_db_failover.sql
+--##INCLUDE: S4 High Availability\Failover\process_synchronization_failover.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Failover\verify_job_states.sql
@@ -422,6 +455,14 @@ GO
 -----------------------------------
 --##INCLUDE: S4 High Availability\Monitoring\verify_data_synchronization.sql
 
+-----------------------------------
+--##INCLUDE: S4 High Availability\Setup & Configuration\add_synchronization_partner.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Setup & Configuration\add_failover_processing.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Setup & Configuration\verify_synchronization_setup.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Auditing:

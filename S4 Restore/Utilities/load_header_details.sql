@@ -24,12 +24,11 @@ GO
 
 CREATE PROC dbo.load_header_details 
 	@BackupPath					nvarchar(800), 
-	@SourceVersion				decimal(4,2)	= NULL,
-	@BackupDate					datetime		OUTPUT, 
-	@BackupSize					bigint			OUTPUT, 
-	@Compressed					bit				OUTPUT, 
-	@Encrypted					bit				OUTPUT
-
+	@SourceVersion				decimal(4,2)	            = NULL,
+	@BackupDate					datetime		            OUTPUT, 
+	@BackupSize					bigint			            OUTPUT, 
+	@Compressed					bit				            OUTPUT, 
+	@Encrypted					bit				            OUTPUT
 AS
 	SET NOCOUNT ON; 
 

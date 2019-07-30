@@ -6,6 +6,54 @@
 	Outputs the 'hh:mm:ss.xxx' for a WAITFOR DELAY statement/operation.
 	
 
+    TESTS / SIGNATURES: 
+
+        -- expect error (month not valid): 
+
+                DECLARE @output sysname, @error nvarchar(MAX); 
+                EXEC admindb.dbo.translate_vector_delay 
+                    @Vector = N'1 month', 
+                    @Output = @output OUTPUT, 
+                    @Error = @error OUTPUT; 
+
+        -- expect an exception (> 48 hours): 
+
+                DECLARE @output sysname, @error nvarchar(MAX); 
+                EXEC admindb.dbo.translate_vector_delay 
+                    @Vector = N'53 hours',     
+                    @Output = @output OUTPUT, 
+                    @Error = @error OUTPUT; 
+
+
+        -- expect 2 hours and 3 minutes: 
+
+                DECLARE @output sysname, @error nvarchar(MAX); 
+                EXEC admindb.dbo.translate_vector_delay 
+                    @Vector = N'123 minutes',     
+                    @Output = @output OUTPUT, 
+                    @Error = @error OUTPUT;
+
+                SELECT @error, @output;
+
+        -- expect 800ms: 
+
+                DECLARE @output sysname, @error nvarchar(MAX); 
+                EXEC admindb.dbo.translate_vector_delay 
+                    @Vector = N'800 ms',     
+                    @Output = @output OUTPUT, 
+                    @Error = @error OUTPUT;
+
+                SELECT @error, @output;
+
+        -- expect 1.2 seconds: 
+
+                DECLARE @output sysname, @error nvarchar(MAX); 
+                EXEC admindb.dbo.translate_vector_delay 
+                    @Vector = N'1200 milliseconds',     
+                    @Output = @output OUTPUT, 
+                    @Error = @error OUTPUT;
+
+                SELECT @error, @output;
 */
 
 USE [admindb];
@@ -16,7 +64,7 @@ IF OBJECT_ID('dbo.translate_vector_delay','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.translate_vector_delay
-	@Vector								nvarchar(10)	= NULL, 
+	@Vector								sysname     	= NULL, 
 	@ParameterName						sysname			= NULL, 
 	@Output								sysname			= NULL		OUT, 
 	@Error								nvarchar(MAX)	= NULL		OUT
@@ -30,12 +78,12 @@ AS
 	EXEC dbo.translate_vector 
 		@Vector = @Vector, 
 		@ValidationParameterName = @ParameterName,
-		@ProhibitedIntervals = 'DAY,WEEK,MONTH,QUARTER,YEAR',  -- days are overkill for any sort of WAITFOR delay specifier (that said, 38 HOURS would work... )  
+		@ProhibitedIntervals = N'DAY,WEEK,MONTH,QUARTER,YEAR',  -- days are overkill for any sort of WAITFOR delay specifier (that said, 38 HOURS would work... )  
 		@Output = @difference OUTPUT, 
 		@Error = @Error OUTPUT;
 
-	IF @difference > 350 BEGIN 
-		RAISERROR(N'@Vector can not be > 350 Hours (i.e., 2+ weeks) when defining a DELAY value.', 16, 1);
+	IF @difference > 187200100 BEGIN 
+		RAISERROR(N'@Vector can not be > 52 Hours when defining a DELAY value.', 16, 1);
 		RETURN -2;
 	END; 
 

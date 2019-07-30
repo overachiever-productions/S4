@@ -1,5 +1,8 @@
 /*
 
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
+
 	General Workflows: 
 		- dbo.list_logfile_sizes  
 			- spits out dbname, dbsize, logsize, log-file-size-as-percentage-of-db-size... , vlf count, current minimum size? 
@@ -41,7 +44,7 @@ CREATE PROC dbo.list_logfile_sizes
 	@Priorities							nvarchar(MAX)							= NULL,
 	--@IgnoreLogFilesWithGBsLessThan	decimal(12,1)							= 0.5,
 	@ExcludeSimpleRecoveryDatabases		bit										= 1,
-	@SerializedOutput					xml										= NULL			OUTPUT
+	@SerializedOutput					xml										= N'<default/>'			OUTPUT
 AS 
 	SET NOCOUNT ON; 
 
@@ -188,7 +191,7 @@ AS
 
 	-----------------------------------------------------------------------------
     -- Send output as XML if requested:
-	IF @SerializedOutput IS NOT NULL BEGIN 
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY initialized as NULL/empty... then REPLY...
 		SELECT @SerializedOutput = (SELECT 
 			[database_name],
 			[recovery_model],

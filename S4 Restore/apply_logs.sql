@@ -1,9 +1,4 @@
-
-
 /*
-
-
-
 	TODO: 
 		- this piglet needs a MAJOR refactor... i wrote it over a period of days (calendar-wise) so ideas/concepts are 'all over the place' and i've got lots of REDUNDANCIES in error checking, evaluation/logic, etc. 
 		
@@ -142,7 +137,7 @@ AS
 
 	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
 	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
-		DECLARE @databases xml = '';
+		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
 		EXEC dbo.[load_backup_database_names]
@@ -166,6 +161,7 @@ AS
 
 		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
+        SET @databases = NULL;
 		EXEC dbo.load_backup_database_names
 			@TargetDirectory = @BackupsRootPath, 
 			@SerializedOutput = @databases OUTPUT;
@@ -206,7 +202,7 @@ AS
 	DECLARE @fileList xml;
 	DECLARE @latestPreviousFileRestored sysname;
 	DECLARE @sourcePath sysname; 
-	DECLARE @backupFilesList nvarchar(MAX);
+	DECLARE @backupFilesList nvarchar(MAX) = NULL;
 	DECLARE @currentLogFileID int;
 	DECLARE @backupName sysname;
 	DECLARE @pathToTLogBackup sysname;
@@ -384,8 +380,15 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 				-- Check for any new files if we're now 'out' of files to process: 
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
 
+                    SET @backupFilesList = NULL;
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
-					EXEC dbo.load_backup_files @DatabaseToRestore = @sourceDbName, @SourcePath = @sourcePath, @Mode = N'LOG', @LastAppliedFile = @backupName, @Output = @backupFilesList OUTPUT;
+					EXEC dbo.load_backup_files 
+                        @DatabaseToRestore = @sourceDbName, 
+                        @SourcePath = @sourcePath, 
+                        @Mode = N'LOG', 
+                        @LastAppliedFile = @backupName,
+                        @Output = @backupFilesList OUTPUT;
+
 					INSERT INTO @logFilesToRestore ([log_file])
 					SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
 					ORDER BY row_id;

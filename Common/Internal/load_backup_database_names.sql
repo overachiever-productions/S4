@@ -1,9 +1,9 @@
 /*
-	TODO: 
-
-	DEPENDENCIES:
-
-	NOTES:
+	INTERNAL:
+        Internal use only - not for callers/consumption by end-users/etc. 
+    
+    NOTE: 
+        - This sproc adheres to the PROJECT/REPLY usage convention.
 		
 	EXAMPLES: 
 
@@ -17,7 +17,7 @@
 				GO
 
 			---------------------------------------
-				DECLARE @databases xml = '';
+				DECLARE @databases xml = NULL;
 				EXEC load_backup_database_names
 					@TargetDirectory = N'D:\SQLBackups', 
 					@SerializedOutput = @databases OUTPUT;
@@ -49,31 +49,41 @@
 				GO
 
 			---------------------------------------
-				DECLARE @databases xml = '';
+				DECLARE @databases xml = NULL;
 				EXEC load_backup_database_names
 					@TargetDirectory = N'D:\SQLBackups', 
 					@SerializedOutput = @databases OUTPUT;
-			
-				DECLARE @serialized nvarchar(MAX) = N'';
-				WITH shredded AS ( 
-					SELECT 
-						[data].[row].value('@id[1]', 'int') [row_id], 
-						[data].[row].value('.[1]', 'sysname') [database_name]
-					FROM 
-						@databases.nodes('//database') [data]([row])
-				) 
+			   
+                SELECT @databases;
 
-				SELECT 
-					@serialized = @serialized + [database_name] + N','
-				FROM 
-					shredded 
-				ORDER BY 
-					row_id;
+            ---------------------------------------
+            -- this might LOOK insane (and might well be) 
+            --          but, it's taking serialized XML output and turning it into a serialized LIST of dbs - e.g., 'db1, db7, etc.'... 
 
-				SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
-				SELECT @serialized;
-				GO
+                    DECLARE @databases xml = '';
+                    EXEC load_backup_database_names
+                        @TargetDirectory = N'D:\SQLBackups', 
+                        @SerializedOutput = @databases OUTPUT;
+            
+                    DECLARE @serialized nvarchar(MAX) = N'';
+                    WITH shredded AS ( 
+                        SELECT 
+                            [data].[row].value('@id[1]', 'int') [row_id], 
+                            [data].[row].value('.[1]', 'sysname') [database_name]
+                        FROM 
+                            @databases.nodes('//database') [data]([row])
+                    ) 
 
+                    SELECT 
+                        @serialized = @serialized + [database_name] + N','
+                    FROM 
+                        shredded 
+                    ORDER BY 
+                        row_id;
+
+                    SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
+                    SELECT @serialized;
+                    GO
 
 
 */
@@ -87,7 +97,7 @@ GO
 
 CREATE PROC dbo.load_backup_database_names 
 	@TargetDirectory				sysname				= N'[DEFAULT]',		
-	@SerializedOutput				xml					= NULL					OUTPUT
+	@SerializedOutput				xml					= N'<default/>'					OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -138,7 +148,7 @@ AS
 	--		In this sproc we WILL list any 'folders' for system databases found (i.e., we're LISTING databases - not getting the actual backups or paths). 
 	--		However, in dbo.restore_databases if the @TargetPath + N'\' + @dbToRestore doesn't find any files, and @dbToRestore is a SystemDB, we'll look in @TargetPath + '\' + @ServerName + '\' + @dbToRestore for <backup_type>_<db_name>*.bak/.trn etc.)... 
 
-	IF @SerializedOutput IS NOT NULL BEGIN 
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY initialized as NULL/empty... then REPLY... 
 		SELECT @SerializedOutput = (SELECT 
 			[row_id] [database/@id],
 			[database_name] [database]

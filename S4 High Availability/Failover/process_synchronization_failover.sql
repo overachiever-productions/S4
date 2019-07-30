@@ -16,11 +16,6 @@
 					(Batch Jobs = any job where the Job.CategoryName = NameOfASynchronizedDatabase)
 				b) attempts to repair orphaned users on DB that has just become the PRIMARY.
 
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
-	
 	
 	vNEXT:
 		- Look into whether it would make sense to try and 'fire off' a request to process this 'stuff' via service broker - that'd allow for some buffering/padding of operations/etc. 
@@ -43,11 +38,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.respond_to_db_failover','P') IS NOT NULL
-	DROP PROC dbo.respond_to_db_failover;
+IF OBJECT_ID('dbo.process_synchronization_failover','P') IS NOT NULL
+	DROP PROC dbo.process_synchronization_failover;
 GO
 
-CREATE PROC dbo.respond_to_db_failover 
+CREATE PROC dbo.process_synchronization_failover 
 	@MailProfileName			sysname = N'General',
 	@OperatorName				sysname = N'Alerts', 
 	@PrintOnly					bit		= 0					-- for testing (i.e., to validate things work as expected)

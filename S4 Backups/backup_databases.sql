@@ -607,7 +607,7 @@ RemoveOlderFiles:
 
 				  END;
 				ELSE BEGIN;
-					SET @outcome = 'OUTPUT';
+					SET @outcome = NULL;
 					DECLARE @Output nvarchar(MAX);
 					EXEC dbo.remove_backup_files
 						@BackupType= @BackupType,
@@ -643,7 +643,7 @@ RemoveOlderFiles:
 
 					  END;
 					ELSE BEGIN;
-						SET @outcome = 'OUTPUT';
+						SET @outcome = NULL;
 					
 						EXEC dbo.remove_backup_files
 							@BackupType= @BackupType,
