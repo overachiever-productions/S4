@@ -102,7 +102,8 @@ GO
 -- master db objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-DECLARE @obsoleteObjects xml = CONVERT(xml, N'<list>
+DECLARE @obsoleteObjects xml = CONVERT(xml, N'
+<list>
     <entry schema="dbo" name="dba_DatabaseBackups_Log" type="U" comment="older table" />
     <entry schema="dbo" name="dba_DatabaseRestore_Log" type="U" comment="older table" />
     <entry schema="dbo" name="dba_SplitString" type="TF" comment="older UDF" />
@@ -143,7 +144,8 @@ GO
 -- admindb objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-DECLARE @olderObjects xml = CONVERT(xml, N'<list>
+DECLARE @olderObjects xml = CONVERT(xml, N'
+<list>
     <entry schema="dbo" name="server_synchronization_checks" type="P" comment="v4.9 - .5.0 renamed noun_noun_check sprocs for HA monitoring to verify_noun_noun">
         <check>
             <statement>SELECT NULL FROM msdb.dbo.[sysjobsteps] WHERE [command] LIKE ''%server_synchronization_checks%''</statement>
@@ -175,6 +177,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'<list>
     <entry schema="dbo" name="print_logins" type="P" comment="v6.2 refactoring." />
     <entry schema="dbo" name="script_server_configuration" type="P" comment="v6.2 refactoring." />
     <entry schema="dbo" name="print_configuration" type="P" comment="v6.2 refactoring." />
+
+    <entry schema="dbo" name="respond_to_db_failover" type="P" comment="v6.5 refactoring (changed to dbo.process_synchronization_failover)" />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
