@@ -151,3 +151,5 @@ GO'
         END CATCH;
     END;
     
+    RETURN 0;
+GO
