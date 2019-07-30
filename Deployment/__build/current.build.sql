@@ -313,6 +313,11 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\enable_alerts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\enable_alert_filtering.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
