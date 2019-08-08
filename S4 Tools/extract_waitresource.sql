@@ -9,6 +9,12 @@
 				docs on sys.dm_tran_locks - which covers SOME of these details a bit...
 
 
+            TODO:
+                Paul Randal outlined/identified 0:0:0
+                    https://twitter.com/PaulRandal/status/1158810119670358016
+
+                    integrate that back into the 'handler' for 0:0:0... 
+
 			RESOURCE IDENTIFIER PATTERNS:
 		
 				DATABASE 
@@ -138,7 +144,9 @@ AS
 	END;
 		
 	IF @WaitResource = N'0:0:0' BEGIN 
-		SET @Output = N'[0:0:0] - UNIDENTIFIED_RESOURCE';
+		SET @Output = N'[0:0:0] - UNIDENTIFIED_RESOURCE';  -- Paul Randal Identified this on twitter on 2019-08-06: https://twitter.com/PaulRandal/status/1158810119670358016
+                                                           -- specifically: when the last wait type is PAGELATCH, the last resource isn't preserved - so we get 0:0:0 - been that way since 2005. 
+                                                           --      and, I honestly wonder if that could/would be the case with OTHER scenarios? 
 		RETURN 0;
 	END;
 

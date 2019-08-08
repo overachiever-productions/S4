@@ -64,7 +64,7 @@ AS
     EXEC @outcome = dbo.[execute_command]
         @Command = @command, 
         @ExecutionType = N'SHELL',
-        @ExecutionRetryCount = 1,
+        @ExecutionAttemptsCount = 1,
         @IgnoredResults = N'',
         @PrintOnly = @PrintOnly,
         @Results = @Results OUTPUT;
