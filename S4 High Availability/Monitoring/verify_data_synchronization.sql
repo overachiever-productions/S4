@@ -1,6 +1,8 @@
 
 /*
 
+    S4-218: 
+        https://overachieverllc.atlassian.net/browse/S4-218
 				
 			It MIGHT make more sense to look at something like these:
 				https://skreebydba.com/2016/10/31/monitoring-and-alerting-for-availability-groups/
@@ -455,34 +457,35 @@ AS
 -- NOTE / TODO: 
 --      I'm using an @tableVariable below INSTEAD of just grabbing _Total (irght out of the gate) because i'll eventually push/pull this logic up into the cursor loop - 
   --        where we can grab these details PER database... 
-    DECLARE @agTransDelays table (
-        [database_name] sysname NOT NULL, 
-        [transaction_delay] decimal(19,2) NULL
-    );
+-- SEE S4-218 for more infomration on why this isn't working and how simple 'vectoring' of the counter data really isn't enough... 
+  --  DECLARE @agTransDelays table (
+  --      [database_name] sysname NOT NULL, 
+  --      [transaction_delay] decimal(19,2) NULL
+  --  );
 
-    INSERT INTO @agTransDelays (
-        [database_name],
-        [transaction_delay]
-    )
+  --  INSERT INTO @agTransDelays (
+  --      [database_name],
+  --      [transaction_delay]
+  --  )
 
-    SELECT  
-        [instance_name] [database_name], 
-        CAST([cntr_value] AS decimal(19,2)) [transaction_delay]
-    FROM sys.dm_os_performance_counters 
-    WHERE [counter_name] LIKE 'Transaction Delay%'
-	    AND [object_name] LIKE 'SQLServer:Database Replica%';
+  --  SELECT  
+  --      [instance_name] [database_name], 
+  --      CAST([cntr_value] AS decimal(19,2)) [transaction_delay]
+  --  FROM sys.dm_os_performance_counters 
+  --  WHERE [counter_name] LIKE 'Transaction Delay%'
+	 --   AND [object_name] LIKE 'SQLServer:Database Replica%';
 
 
-    SELECT @transdelay = [transaction_delay] FROM @agTransDelays WHERE [database_name] = N'_Total';
+  --  SELECT @transdelay = [transaction_delay] FROM @agTransDelays WHERE [database_name] = N'_Total';
 
-    IF ISNULL(@transdelay, 0) >= @TransactionDelayThresholdMS BEGIN
+  --  IF ISNULL(@transdelay, 0) >= @TransactionDelayThresholdMS BEGIN
 
-		SET @errorMessage = N'AG Alert  - Transactions Delayed on Primary'
-			+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB +*/ N' on Server: ' + @localServerName + N'.';
+		--SET @errorMessage = N'AG Alert  - Transactions Delayed on Primary'
+		--	+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB +*/ N' on Server: ' + @localServerName + N'.';
 
-		INSERT INTO @errors (errorMessage)
-		VALUES (@errorMessage);
-    END;
+		--INSERT INTO @errors (errorMessage)
+		--VALUES (@errorMessage);
+  --  END;
 
 
 REPORTING:

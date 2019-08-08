@@ -1,5 +1,9 @@
 /*
 
+    TODO: bug with adding 1480 ... if it's already there... this throws errors. 
+        also... if a job for processing already exists???> just use it? 
+            and/or MAYBE I should put the fact that there's a job for processing failover into the settings table?
+                and then do some comparisons against that? 
 
 */
 
