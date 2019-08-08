@@ -259,9 +259,7 @@ AS
 	FROM 
 		msdb.dbo.sysjobs sj
 		LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
-		LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
-	WHERE
-		sj.name NOT IN (SELECT [name] FROM #IgnoredJobs); 
+		LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id;
 
 	INSERT INTO #RemoteJobs (job_id, [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
 	EXEC master.sys.sp_executesql N'SELECT 
@@ -280,7 +278,16 @@ FROM
 	LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 	LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id';
 
-	DELETE FROM #RemoteJobs WHERE [name] IN (SELECT [name] FROM #IgnoredJobs);
+	-- Remove Ignored Jobs: 
+	DELETE x 
+	FROM 
+		[#LocalJobs] x 
+		INNER JOIN [#IgnoredJobs] ignored ON x.[name] LIKE ignored.[name];
+	
+	DELETE x 
+	FROM 
+		[#RemoteJobs] x 
+		INNER JOIN [#IgnoredJobs] ignored ON x.[name] LIKE [ignored].[name];
 
 	----------------------------------------------
 	-- Process high-level details about each job
