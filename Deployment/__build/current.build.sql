@@ -221,6 +221,9 @@ GO
 --##INCLUDE: Common\Internal\load_default_path.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\load_default_value.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\shred_resources.sql
 
 -----------------------------------
@@ -237,6 +240,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\translate_vector_datetime.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\verify_alerting_configuration.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
@@ -373,6 +379,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Maintenance\check_database_consistency.sql
 
 -----------------------------------
 --##INCLUDE: S4 Maintenance\Automated Log Shrinking\list_logfile_sizes.sql
