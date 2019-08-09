@@ -221,7 +221,7 @@ GO
 --##INCLUDE: Common\Internal\load_default_path.sql
 
 -----------------------------------
---##INCLUDE: Common\Internal\load_default_value.sql
+--##INCLUDE: Common\Internal\load_default_setting.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\shred_resources.sql
@@ -451,6 +451,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Failover\verify_job_states.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Monitoring\Internal\verify_online.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Monitoring\Internal\verify_partner.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Monitoring\verify_job_synchronization.sql
