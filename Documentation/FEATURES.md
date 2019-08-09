@@ -3,6 +3,8 @@
 [NOTE TO SELF: No one wants to read a treatise on what S4 does for them. They want to see the benefits - first hand. So, just provide a VERY short statement here about how S4 combines useful stuff with convention and enables ... simplicity.]
 [purpose... simplify many common tasks and address other needed tasks etc. - all from a set of standardized interfaces and .. conventions.]
 
+[NOTE TO SELF: This site has a great intro - i.e., just start by showing examples of how th etool works.]
+
 
 ## S4 Documentation
 * [Setup and Installation](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2FSETUP.md)

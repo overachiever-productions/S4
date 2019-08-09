@@ -13,7 +13,7 @@ IF OBJECT_ID('dbo.list_running_jobs','P') IS NOT NULL
 	DROP PROC dbo.[list_running_jobs];
 GO
 
-CREATE PROC dbo.[list_running_jobs ]
+CREATE PROC dbo.[list_running_jobs]
 	@StartTime							datetime				= NULL, 
 	@EndTime							datetime				= NULL, 
 	@ExcludedJobs						nvarchar(MAX)			= NULL, 

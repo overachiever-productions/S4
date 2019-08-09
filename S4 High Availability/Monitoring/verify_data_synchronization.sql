@@ -1,6 +1,8 @@
 
 /*
 
+    S4-218: 
+        https://overachieverllc.atlassian.net/browse/S4-218
 				
 			It MIGHT make more sense to look at something like these:
 				https://skreebydba.com/2016/10/31/monitoring-and-alerting-for-availability-groups/
@@ -57,34 +59,54 @@ AS
 	-- {copyright}
 
 	---------------------------------------------
-	-- Validation Checks: 
-	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
-		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN
-			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
-			RETURN -4;
-		 END;
-		ELSE BEGIN
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-				RAISERROR('Invalid Operator Name Specified.', 16, 1);
-				RETURN -4;
-			END;
-		END;
+	-- Dependencies Validation:
+	DECLARE @return int, @returnMessage nvarchar(MAX);
+    IF @PrintOnly = 0 BEGIN 
 
-		-- Profile Checks:
-		DECLARE @DatabaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
- 
-		IF @DatabaseMailProfile <> @MailProfileName BEGIN
-			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
-			RETURN -5;
-		END; 
-	END;
+	    EXEC @return = dbo.verify_advanced_capabilities;
+        IF @return <> 0
+            RETURN @return;
+
+        EXEC @return = dbo.verify_alerting_configuration
+            @OperatorName, 
+            @MailProfileName;
+
+        IF @return <> 0 
+            RETURN @return;
+    END;
 
 	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
 		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
 		RETURN -5;
 	END;
+
+	EXEC @return = dbo.verify_partner 
+		@Error = @returnMessage OUTPUT; 
+
+	IF @return <> 0 BEGIN 
+		-- S4-229: this (current) response is a hack - i.e., sending email/message DIRECTLY from this code-block violates DRY
+		--			and is only in place until dbo.verify_job_synchronization is rewritten to use a process bus.
+		IF @PrintOnly = 1 BEGIN 
+			PRINT 'PARTNER is disconnected/non-accessible. Terminating early. Connection Details/Error:';
+			PRINT '     ' + @returnMessage;
+		  END;
+		ELSE BEGIN 
+			DECLARE @hackSubject nvarchar(200), @hackMessage nvarchar(MAX);
+			SELECT 
+				@hackSubject = N'PARTNER server is down/non-accessible.', 
+				@hackMessage = N'Job Synchronization Checks can not continue as PARTNER server is down/non-accessible. Connection Error Details: ' + NCHAR(13) + NCHAR(10) + @returnMessage; 
+
+			EXEC msdb..sp_notify_operator 
+				@profile_name = @MailProfileName, 
+				@name = @OperatorName, 
+				@subject = @hackSubject,
+				@body = @hackMessage;
+		END;
+
+		RETURN 0;
+	END;
+
+
 
 	----------------------------------------------
 	-- Determine which server to run checks on. 
@@ -455,34 +477,35 @@ AS
 -- NOTE / TODO: 
 --      I'm using an @tableVariable below INSTEAD of just grabbing _Total (irght out of the gate) because i'll eventually push/pull this logic up into the cursor loop - 
   --        where we can grab these details PER database... 
-    DECLARE @agTransDelays table (
-        [database_name] sysname NOT NULL, 
-        [transaction_delay] decimal(19,2) NULL
-    );
+-- SEE S4-218 for more infomration on why this isn't working and how simple 'vectoring' of the counter data really isn't enough... 
+  --  DECLARE @agTransDelays table (
+  --      [database_name] sysname NOT NULL, 
+  --      [transaction_delay] decimal(19,2) NULL
+  --  );
 
-    INSERT INTO @agTransDelays (
-        [database_name],
-        [transaction_delay]
-    )
+  --  INSERT INTO @agTransDelays (
+  --      [database_name],
+  --      [transaction_delay]
+  --  )
 
-    SELECT  
-        [instance_name] [database_name], 
-        CAST([cntr_value] AS decimal(19,2)) [transaction_delay]
-    FROM sys.dm_os_performance_counters 
-    WHERE [counter_name] LIKE 'Transaction Delay%'
-	    AND [object_name] LIKE 'SQLServer:Database Replica%';
+  --  SELECT  
+  --      [instance_name] [database_name], 
+  --      CAST([cntr_value] AS decimal(19,2)) [transaction_delay]
+  --  FROM sys.dm_os_performance_counters 
+  --  WHERE [counter_name] LIKE 'Transaction Delay%'
+	 --   AND [object_name] LIKE 'SQLServer:Database Replica%';
 
 
-    SELECT @transdelay = [transaction_delay] FROM @agTransDelays WHERE [database_name] = N'_Total';
+  --  SELECT @transdelay = [transaction_delay] FROM @agTransDelays WHERE [database_name] = N'_Total';
 
-    IF ISNULL(@transdelay, 0) >= @TransactionDelayThresholdMS BEGIN
+  --  IF ISNULL(@transdelay, 0) >= @TransactionDelayThresholdMS BEGIN
 
-		SET @errorMessage = N'AG Alert  - Transactions Delayed on Primary'
-			+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB +*/ N' on Server: ' + @localServerName + N'.';
+		--SET @errorMessage = N'AG Alert  - Transactions Delayed on Primary'
+		--	+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB +*/ N' on Server: ' + @localServerName + N'.';
 
-		INSERT INTO @errors (errorMessage)
-		VALUES (@errorMessage);
-    END;
+		--INSERT INTO @errors (errorMessage)
+		--VALUES (@errorMessage);
+  --  END;
 
 
 REPORTING:
