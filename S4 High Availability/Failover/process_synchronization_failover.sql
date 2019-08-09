@@ -50,7 +50,7 @@ AS
 	SET NOCOUNT ON;
 
 	IF @PrintOnly = 0
-		WAITFOR DELAY '00:00:03.00'; -- No, really, give things about 3 seconds (just to let db states 'settle in' to synchronizing/synchronized).
+		WAITFOR DELAY '00:00:05.00'; -- No, really, give things about 5 seconds (just to let db states 'settle in' to synchronizing/synchronized).
 
 	DECLARE @serverName sysname = @@SERVERNAME;
 	DECLARE @username sysname;

@@ -179,6 +179,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
     <entry schema="dbo" name="print_configuration" type="P" comment="v6.2 refactoring." />
 
     <entry schema="dbo" name="respond_to_db_failover" type="P" comment="v6.5 refactoring (changed to dbo.process_synchronization_failover)" />
+
+	<entry schema="dbo" name="server_trace_flags" type="U" comment="v6.6 - Direct Query for Trace Flags vs delayed/table-checks." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -221,6 +223,9 @@ GO
 --##INCLUDE: Common\Internal\load_default_path.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\load_default_setting.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\shred_resources.sql
 
 -----------------------------------
@@ -237,6 +242,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\translate_vector_datetime.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\verify_alerting_configuration.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
@@ -276,6 +284,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\shred_string.sql
+
+-----------------------------------
+--##INCLUDE: S4 Tools\print_long_string.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\get_executing_dbname.sql
@@ -375,6 +386,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: S4 Maintenance\check_database_consistency.sql
+
+-----------------------------------
 --##INCLUDE: S4 Maintenance\Automated Log Shrinking\list_logfile_sizes.sql
 
 -----------------------------------
@@ -394,9 +408,6 @@ GO
 --##INCLUDE: S4 Tools\extract_waitresource.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\print_long_string.sql
-
------------------------------------
 --##INCLUDE: S4 Tools\is_xml_empty.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -404,7 +415,13 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: S4 Jobs\list_running_jobs.sql
+
+-----------------------------------
 --##INCLUDE: S4 Jobs\is_job_running.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
 
 -----------------------------------
 --##INCLUDE: S4 Jobs\get_last_job_completion.sql
@@ -412,15 +429,34 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
 
------------------------------------
---##INCLUDE: S4 Jobs\list_running_jobs.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\server_trace_flags.sql
+
+-----------------------------------
+-- v6.6 Changes to PARTNER (if present):
+IF EXISTS (SELECT NULL FROM sys.servers WHERE UPPER([name]) = N'PARTNER' AND [is_linked] = 1) BEGIN 
+	IF NOT EXISTS (SELECT NULL FROM sys.[sysservers] WHERE UPPER([srvname]) = N'PARTNER' AND [rpc] = 1) BEGIN
+        EXEC master.dbo.sp_serveroption 
+	        @server = N'PARTNER', 
+	        @optname = N'rpc', 
+	        @optvalue = N'true';		
+
+		PRINT N'Enabled RPC on PARTNER (for v6.6+ compatibility).';
+	END;
+
+	IF NOT EXISTS (SELECT NULL FROM sys.[sysservers] WHERE UPPER([srvname]) = N'PARTNER' AND [rpcout] = 1) BEGIN
+        EXEC master.dbo.sp_serveroption 
+	        @server = N'PARTNER', 
+	        @optname = N'rpc out', 
+	        @optvalue = N'true';
+			
+		PRINT N'Enabled RPC_OUT on PARTNER (for v6.6+ compatibility).';
+	END;
+END;
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\list_synchronizing_databases.sql
@@ -432,9 +468,6 @@ GO
 --##INCLUDE: S4 High Availability\is_primary_database.sql
 
 -----------------------------------
---##INCLUDE: S4 High Availability\server_trace_flags.sql
-
------------------------------------
 --##INCLUDE: S4 High Availability\compare_jobs.sql
 
 -----------------------------------
@@ -442,6 +475,15 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Failover\verify_job_states.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Monitoring\Internal\populate_trace_flags.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Monitoring\Internal\verify_online.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Monitoring\Internal\verify_partner.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Monitoring\verify_job_synchronization.sql

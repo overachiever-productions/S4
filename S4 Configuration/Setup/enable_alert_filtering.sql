@@ -58,7 +58,7 @@ AS
 	        @ErrorNumber = @ErrorNumber, 
 	        @Severity = @Severity,
 	        @Message = N''$(ESCAPE_SQUOTE(A-MSG))'', 
-            @OperatorNmae = N''{operator}'', 
+            @OperatorName = N''{operator}'', 
             @MailProfileName = N''{profile}''; ';
 
         SET @command = REPLACE(@command, N'{operator}', @OperatorName);
