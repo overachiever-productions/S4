@@ -58,60 +58,20 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	EXEC dbo.verify_advanced_capabilities;
+	DECLARE @return int, @returnMessage nvarchar(MAX);
+    IF @PrintOnly = 0 BEGIN 
 
-	-- if we're not manually running this, make sure the server is the primary:
-	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
-		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN
-			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
-			RETURN -4;
-		 END;
-		ELSE BEGIN
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-				RAISERROR('Invalid Operator Name Specified.', 16, 1);
-				RETURN -4;
-			END;
-		END;
+	    EXEC @return = dbo.verify_advanced_capabilities;
+        IF @return <> 0
+            RETURN @return;
 
-		-- Profile Checks:
-		DECLARE @DatabaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
- 
-		IF @DatabaseMailProfile <> @MailProfileName BEGIN
-			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
-			RETURN -5;
-		END; 
-	END;
+        EXEC @return = dbo.verify_alerting_configuration
+            @OperatorName, 
+            @MailProfileName;
 
-	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
-		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
-		RETURN -5;
-	END; 
-
-	IF OBJECT_ID('admindb.dbo.server_trace_flags', 'U') IS NULL BEGIN 
-		RAISERROR('Table dbo.server_trace_flags is not present in master. Synchronization check can not be processed.', 16, 1);
-		RETURN -6;
-	END
-
-	-- Start by updating dbo.server_trace_flags on both servers:
-	TRUNCATE TABLE dbo.server_trace_flags; -- truncating and replacing nets < 1 page of data and typically around 0ms of CPU. 
-
-	INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
-	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
-
-	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
-	END;
-
-	DECLARE @localServerName sysname = @@SERVERNAME;
-	DECLARE @remoteServerName sysname; 
-	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
-
-	-- Just to make sure that this job (running on both servers) has had enough time to update server_trace_flags, go ahead and give everything 200ms of 'lag'.
-	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
-	WAITFOR DELAY '00:00:00.100';
+        IF @return <> 0 
+            RETURN @return;
+    END;
 
     CREATE TABLE #bus ( 
         [row_id] int IDENTITY(1,1) NOT NULL, 
@@ -124,6 +84,55 @@ AS
         [detail] nvarchar(MAX) NULL, 
         [command] nvarchar(MAX) NULL
     );
+
+	EXEC @return = dbo.verify_partner 
+		@Error = @returnMessage OUTPUT; 
+
+	IF @return <> 0 BEGIN 
+		INSERT INTO [#bus] (
+			[channel],
+			[heading],
+			[body], 
+			[detail]
+		)
+		VALUES	(
+			N'ERROR', 
+			N'PARTNER is down/inaccessible.', 
+			N'Synchronization Checks against PARTNER server cannot be conducted as connection attempts against PARTNER from ' + @@SERVERNAME + N' failed.', 
+			@returnMessage
+		)
+		
+		GOTO REPORTING;
+	END;
+
+	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
+		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
+		RETURN -5;
+	END; 
+
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;
+
+	IF OBJECT_ID('admindb.dbo.server_trace_flags', 'U') IS NULL BEGIN 
+		RAISERROR('Table dbo.server_trace_flags is not present in master. Synchronization check can not be processed.', 16, 1);
+		RETURN -6;
+	END
+
+	-- Start by updating dbo.server_trace_flags on both servers:
+	TRUNCATE TABLE dbo.server_trace_flags; -- truncating and replacing nets < 1 page of data and typically around 0ms of CPU. 
+
+	INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
+	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
+
+	DECLARE @localServerName sysname = @@SERVERNAME;
+	DECLARE @remoteServerName sysname; 
+	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
+
+	-- Just to make sure that this job (running on both servers) has had enough time to update server_trace_flags, go ahead and give everything 200ms of 'lag'.
+	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
+	WAITFOR DELAY '00:00:00.100';
 
     ---------------------------------------
 	-- Server Level Configuration/Settings: 
@@ -1004,6 +1013,7 @@ AS
 	
 	------------------------------------------------------------------------------
 	-- Report on any discrepancies: 
+REPORTING:
 	IF(SELECT COUNT(*) FROM #bus) > 0 BEGIN 
 
 		DECLARE @subject nvarchar(300) = N'SQL Server Synchronization Check Problems';
@@ -1035,8 +1045,6 @@ AS
 		END;
 
 	END 
-
-	DROP TABLE #Definitions;
 
 	RETURN 0;
 GO

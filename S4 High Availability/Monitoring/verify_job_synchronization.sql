@@ -90,7 +90,6 @@
 USE [admindb];
 GO
 
-
 IF OBJECT_ID('dbo.verify_job_synchronization','P') IS NOT NULL
 	DROP PROC dbo.verify_job_synchronization;
 GO
@@ -106,33 +105,51 @@ AS
 	-- {copyright}
 
 	---------------------------------------------
-	-- Validation Checks: 
-	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
-		-- Operator Checks:
-		IF ISNULL(@OperatorName, '') IS NULL BEGIN
-			RAISERROR('An Operator is not specified - error details can''t be sent if/when encountered.', 16, 1);
-			RETURN -4;
-		 END;
-		ELSE BEGIN
-			IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysoperators WHERE [name] = @OperatorName) BEGIN
-				RAISERROR('Invalid Operator Name Specified.', 16, 1);
-				RETURN -4;
-			END;
-		END;
+	-- Dependencies Validation:
+	DECLARE @return int, @returnMessage nvarchar(MAX);
+    IF @PrintOnly = 0 BEGIN 
 
-		-- Profile Checks:
-		DECLARE @DatabaseMailProfile nvarchar(255);
-		EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output';
- 
-		IF @DatabaseMailProfile <> @MailProfileName BEGIN
-			RAISERROR('Specified Mail Profile is invalid or Database Mail is not enabled.', 16, 1);
-			RETURN -5;
-		END; 
-	END;
+	    EXEC @return = dbo.verify_advanced_capabilities;
+        IF @return <> 0
+            RETURN @return;
+
+        EXEC @return = dbo.verify_alerting_configuration
+            @OperatorName, 
+            @MailProfileName;
+
+        IF @return <> 0 
+            RETURN @return;
+    END;
 
 	IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = 'PARTNER') BEGIN 
 		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
 		RETURN -5;
+	END;
+
+	EXEC @return = dbo.verify_partner 
+		@Error = @returnMessage OUTPUT; 
+
+	IF @return <> 0 BEGIN 
+		-- S4-229: this (current) response is a hack - i.e., sending email/message DIRECTLY from this code-block violates DRY
+		--			and is only in place until dbo.verify_job_synchronization is rewritten to use a process bus.
+		IF @PrintOnly = 1 BEGIN 
+			PRINT 'PARTNER is disconnected/non-accessible. Terminating early. Connection Details/Error:';
+			PRINT '     ' + @returnMessage;
+		  END;
+		ELSE BEGIN 
+			DECLARE @hackSubject nvarchar(200), @hackMessage nvarchar(MAX);
+			SELECT 
+				@hackSubject = N'PARTNER server is down/non-accessible.', 
+				@hackMessage = N'Job Synchronization Checks can not continue as PARTNER server is down/non-accessible. Connection Error Details: ' + NCHAR(13) + NCHAR(10) + @returnMessage; 
+
+			EXEC msdb..sp_notify_operator 
+				@profile_name = @MailProfileName, 
+				@name = @OperatorName, 
+				@subject = @hackSubject,
+				@body = @hackMessage;
+		END;
+
+		RETURN 0;
 	END;
 
 	----------------------------------------------
