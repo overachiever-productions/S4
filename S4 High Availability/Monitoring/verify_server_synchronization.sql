@@ -121,18 +121,12 @@ AS
 	END
 
 	-- Start by updating dbo.server_trace_flags on both servers:
-	TRUNCATE TABLE dbo.server_trace_flags; -- truncating and replacing nets < 1 page of data and typically around 0ms of CPU. 
-
-	INSERT INTO dbo.server_trace_flags(trace_flag, [status], [global], [session])
-	EXECUTE ('DBCC TRACESTATUS() WITH NO_INFOMSGS');
+	EXEC dbo.[populate_trace_flags];
+	EXEC sp_executesql N'EXEC [PARTNER].[admindb].dbo.populate_trace_flags; ';
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
 	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
-
-	-- Just to make sure that this job (running on both servers) has had enough time to update server_trace_flags, go ahead and give everything 200ms of 'lag'.
-	--	 Lame, yes. But helps avoid false-positives and also means we don't have to set up RPC perms against linked servers. 
-	WAITFOR DELAY '00:00:00.100';
 
     ---------------------------------------
 	-- Server Level Configuration/Settings: 

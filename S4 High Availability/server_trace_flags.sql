@@ -5,16 +5,10 @@
 				i.e., TraceFlags -> {json details here }
 
 				well. problem with that is... that's going to be harder to deal with in non 2016 instances - so ... maybe not. 
-
 	
 	DEPENDENCIES:
 		- Mirroring or AvailabilityGroups (in most cases) be set-up/configured. However, this may be used to check on differences between any two servers, provided they're configured as 'PARTNER' servers. 
 		- Full usage of this table requires a PARTNER linked-server to be created. 
-
-	CODE, LICENSE, DOCS:
-		https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
-		username: s4
-		password: simple
 
 	NOTES:
 		- This table exists to get 'around' the problem/issue that there's no way to 'query' TraceFlags without executing DBCC TRACESTATUS() - which, when being called from 
