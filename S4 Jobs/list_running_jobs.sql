@@ -4,6 +4,12 @@
         - This sproc adheres to the PROJECT/REPLY usage convention.
 
 
+	BUG:
+		S4-230:	
+			LEAD() (windowing function) isn't supported on 2008 (and/or 2008 R2?) 
+			Set up Conditional Build.
+
+
 */
 
 USE [admindb];
