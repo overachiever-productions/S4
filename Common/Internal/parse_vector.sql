@@ -26,6 +26,22 @@
 
                         SELECT @value, @type, @error;
                         GO
+
+
+			-- Expect Exception: WEEKs are explicitly prohibited: 
+
+                        DECLARE @type sysname, @value bigint, @error nvarchar(MAX); 
+                        EXEC admindb.dbo.parse_vector
+                            @Vector = N'2 weeks', 
+							@ProhibitedIntervals = N'WEEK,MONTH',
+							@IntervalType = @type OUTPUT,
+                            @Value = @value OUTPUT, 
+                            @Error = @error OUTPUT;
+
+                        SELECT @value, @type, @error;
+                        GO
+
+
             
             -- Expect exception - week is legit, but it's PROHIBITED in the operation calling this routine:
 

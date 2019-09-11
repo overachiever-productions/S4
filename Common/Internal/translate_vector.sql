@@ -1,5 +1,21 @@
 /*
 
+	TODO:
+		- add overflow protection for ALL interval types... 
+			i.e., do ABS on the @value ... and then ... for the @intervalType... run a check BEFORE doing DATEDIFF and explain what's up (if the interval/value is too large).
+
+
+	TODO/REFACTOR:
+		- @TranslationDatePart is about as stupid/generic/confusing as possible. 
+			change it to @OutputInterval or @TargetInveralType or @TargetDatePart or ... something. 
+
+		- make it so that SECONDs/SECOND are both equally valid inputs (i.e., see the 'failing' test case in the sigs/tests section. 
+			i need to be able to PARSE 'intervals' easily/repeatedly (i don't know that I want to extract this logic from dbo.parse_vector into ... parse_interval... 
+				(and then have parse_vector ... use parse_interval to get the interval and then derive/determine the value... )
+					cuz... that seems almost obscene in terms of avoiding DRY... but, it probably makes the MOST sense long-term and... for DRY... 
+
+
+
 
 	NOTE: 
 		dbo.translate_vector is primarily designed as an INTERNAL/HELPER routine - meaning: 
@@ -39,6 +55,34 @@
 
                             SELECT @output, @error;
                             GO
+				
+				-- translate 1200 milliseconds into... seconds. 
+
+                            DECLARE @output bigint, @error nvarchar(max); 
+                            EXEC dbo.translate_vector 
+                                @Vector = N'1200 milliseconds', 
+								@TranslationDatePart = 'SECOND',   -- note value is SECOND... but SECONDs works... 
+                                @Output = @output OUTPUT, 
+                                @Error = @error OUTPUT; 
+
+                            SELECT @output, @error;
+                            GO
+
+
+				-- TODO: make this test/scenario WORK (i.e. SECONDs __SHOULD___ be allowed).
+				-- translate 1200 milliseconds into... seconds. 
+
+                            DECLARE @output bigint, @error nvarchar(max); 
+                            EXEC dbo.translate_vector 
+                                @Vector = N'1200 milliseconds', 
+								@TranslationDatePart = 'SECONDS',   -- note value is SECOND... but SECONDs works... 
+                                @Output = @output OUTPUT, 
+                                @Error = @error OUTPUT; 
+
+                            SELECT @output, @error;
+                            GO
+
+
 
 
 
