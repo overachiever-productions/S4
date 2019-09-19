@@ -71,6 +71,14 @@
 				@Priorities = N'SelectExp, *, Traces';
 			GO
 
+			-- Wildcard Priorities:
+			EXEC admindb.dbo.[list_databases]
+				@Targets = N'Billing,BorderTraffic,ClearTrace,Counters,SSDAlerts_Test, SSDAlertsStage, SSVDev',
+				@Exclusions = N'GPS, *h',
+				@Priorities = N'SS%, *, B%';
+			GO
+
+
 			EXEC dbo.list_databases 
 				@ExcludeReadOnly = 1;
 			GO
