@@ -338,7 +338,7 @@ AS
 				END [prioritized_priority]
 			FROM 
 				@target_databases t 
-				LEFT OUTER JOIN @prioritized p ON p.[database_name] = t.[database_name]
+				LEFT OUTER JOIN @prioritized p ON t.[database_name] LIKE p.[database_name]
 		) 
 
 		INSERT INTO @prioritized_targets ([database_name])
