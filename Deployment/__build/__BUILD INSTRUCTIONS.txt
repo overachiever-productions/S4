@@ -33,7 +33,13 @@ BUILD DIRECTIVES HANDLED BY S4Build(Prototype).exe:
 			will cause the build file to: 
 				a) create a place-holder that says that the sproc isn't supported
 					(currently it says "not supported in 2008" but I need to tweak this so that the RAISERORR content is 
-						passed along in the form of this syntax:  --##CONDITIONAL_SUPPORT(< 10.5)[This is the OPTIONAL RaiseError message - otherwise there will be a default placeholder of "sorry, not supported".]
+						passed along in the form of this syntax:  --##CONDITIONAL_SUPPORT(< 10.5)[This is the OPTIONAL RaiseError message - otherwise there will be a default placeholder of "sorry, not supported".
+
+				b)? ... i got distracted? what? the 'docs' here are missing. 
+				that said: 
+					1... there's some info in the S4BuildPrototype that shows how this stuff is handled. 
+					2... there's an example of this functionality in dbo.generate_audit_signature;
+				 3. there's an example of CONDITIONAL_VERSION in dbo.list_synchronizing_databases
 
 	--##CONDITIONAL_VERSION(xxx) 
 		where xxx is the condition to be satisfied 
@@ -45,7 +51,7 @@ BUILD DIRECTIVES HANDLED BY S4Build(Prototype).exe:
 					c) ALTER... 
 
 				the ONLY difference here is that the ALTER WOULD BREAK on older versions... (i.e., it'd fail syntax checks)
-					so... the 'guts' of that alter are GRABBED and then put into an @variable instead... 
+					so... the 'guts' of that alter are GRABBED and then put into an @variable instead...
 
 	##{{S4version}}
 		token, which will be replaced by Maj.Min.Id.BuildID whenever the build file is running and processing

@@ -1,5 +1,5 @@
 --##OUTPUT: \\Deployment
---##NOTE: This is a build file only (i.e., it stores upgade/install directives + place-holders for code to drop into admindb, etc.
+--##NOTE: This is a build file only (i.e., it stores upgade/install directives + place-holders for code to drop into admindb, etc.)
 /*
 
 	REFERENCE:
@@ -300,7 +300,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
-
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Configuration:

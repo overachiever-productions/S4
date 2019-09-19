@@ -4,12 +4,6 @@
         - This sproc adheres to the PROJECT/REPLY usage convention.
 
 
-	BUG:
-		S4-230:	
-			LEAD() (windowing function) isn't supported on 2008 (and/or 2008 R2?) 
-			Set up Conditional Build.
-
-
 */
 
 USE [admindb];
@@ -18,6 +12,8 @@ GO
 IF OBJECT_ID('dbo.list_running_jobs','P') IS NOT NULL
 	DROP PROC dbo.[list_running_jobs];
 GO
+
+--##CONDITIONAL_SUPPORT(> 10.5)
 
 CREATE PROC dbo.[list_running_jobs]
 	@StartTime							datetime				= NULL, 
