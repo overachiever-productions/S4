@@ -49,8 +49,6 @@ FODDER
 --			Andy Mallon has a great article on this stuff: https://am2.co/2017/10/finding-leader-blocker/
 
 
--- vNEXT: tempdb info (spills, usage, overhead, etc). as an optional parameter (i.e., @includetempdbmetrics)
-
 -- vNEXT: @Formatter sysname ... a udf that can be used as an additional column to watch for any specific details a given org might want to grab.. 
 --			give it the sql statement? and... maybe the plan? dunno...   (this'd let me grab the "/* ReportID: xxxx; OrgID: yyyyy */ if needed.. and give other people similar details. 
 --			would'nt be allowed to be a 'filter'... just a formatter.... 
@@ -542,8 +540,8 @@ AS
         c.[status], 
 		c.[wait_type],
         c.[wait_resource],
-		--t.[batch_text],  
-		t.[statement_text],
+		t.[batch_text],  
+		--t.[statement_text],
 		{extractCost}        
 		c.[cpu],
 		c.[reads],
@@ -598,7 +596,7 @@ AS
 	END; 
 
 	IF @ExtractCost = 1 BEGIN 
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CAST(pc.[plan_cost] as decimal(20,2)) [plan_cost], CAST(c.[query_cost] as decimal(20,2)) [grant_cost], ');
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractCost}', N'CASE WHEN [pc].[plan_cost] IS NULL AND [c].[query_cost] IS NOT NULL THEN CAST(CAST([c].[query_cost] AS decimal(20,2)) AS sysname) + N''g'' ELSE CAST(CAST([pc].[plan_cost] AS decimal(20,2)) AS sysname) END [cost], ');
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extractJoin}', N'LEFT OUTER JOIN #costs pc ON c.[session_id] = pc.[session_id]');
 	  END
 	ELSE BEGIN 
