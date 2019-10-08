@@ -260,7 +260,9 @@ AS
     -- Begin Processing: 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
-	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
+	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', 
+		N'@remoteName sysname OUTPUT', 
+		@remoteName = @remoteServerName OUTPUT;
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
@@ -517,7 +519,6 @@ AS
 				VALUES(@errorMessage);
 			END;
 
-
 			-- mark the current AG as processed (so that we don't bother processing multiple dbs (and getting multiple errors/messages) if/when they're all in the same AG(s)). 
 			INSERT INTO @processedAgs ([agname])
 			VALUES(@currentAGName);
@@ -530,128 +531,137 @@ AS
 	CLOSE ag_checker;
 	DEALLOCATE ag_checker;
 
-	CREATE TABLE [#metrics] (
-		[row_id] int IDENTITY(1, 1) NOT NULL,
-		[database_name] sysname NOT NULL,
-		[iteration] int NOT NULL,
-		[timestamp] datetime NOT NULL,
-		[synchronization_delay (RPO)] decimal(20, 2) NOT NULL,
-		[recovery_time (RTO)] decimal(20, 2) NOT NULL,
-		-- raw data: 
-		[redo_queue_size] decimal(20, 2) NULL,
-		[redo_rate] decimal(20, 2) NULL,
-		[primary_last_commit] datetime NULL,
-		[secondary_last_commit] datetime NULL, 
-		[ignore_rpo_as_anomalous] bit NOT NULL CONSTRAINT DF_metrics_anomalous DEFAULT (0)
-	);
+	IF EXISTS (SELECT NULL FROM @synchronizingDatabases WHERE [sync_type] = N'AG') BEGIN
 
+		CREATE TABLE [#metrics] (
+			[row_id] int IDENTITY(1, 1) NOT NULL,
+			[database_name] sysname NOT NULL,
+			[iteration] int NOT NULL,
+			[timestamp] datetime NOT NULL,
+			[synchronization_delay (RPO)] decimal(20, 2) NOT NULL,
+			[recovery_time (RTO)] decimal(20, 2) NOT NULL,
+			-- raw data: 
+			[redo_queue_size] decimal(20, 2) NULL,
+			[redo_rate] decimal(20, 2) NULL,
+			[primary_last_commit] datetime NULL,
+			[secondary_last_commit] datetime NULL, 
+			[ignore_rpo_as_anomalous] bit NOT NULL CONSTRAINT DF_metrics_anomalous DEFAULT (0)
+		);
 
-	DECLARE @iterations int = 1; 
-	WHILE @iterations < @AGSyncCheckIterationCount BEGIN
+		DECLARE @agSyncCheckSQL nvarchar(MAX) = N'
+			WITH [metrics] AS (
+				SELECT
+					[adc].[database_name],
+					[drs].[last_commit_time],
+					CAST([drs].[redo_queue_size] AS decimal(20,2)) [redo_queue_size],   -- KB of log data not yet ''checkpointed'' on the secondary... 
+					CAST([drs].[redo_rate] AS decimal(20,2)) [redo_rate],		-- avg rate (in KB) at which redo (i.e., inverted checkpoints) are being applied on the secondary... 
+					[drs].[is_primary_replica] [is_primary]
+				FROM
+					[sys].[dm_hadr_database_replica_states] AS [drs]
+					INNER JOIN [sys].[availability_databases_cluster] AS [adc] ON [drs].[group_id] = [adc].[group_id] AND [drs].[group_database_id] = [adc].[group_database_id]
+			), 
+			[primary] AS ( 
+				SELECT
+					[database_name],
+					[last_commit_time] [primary_last_commit]
+				FROM
+					[metrics]
+				WHERE
+					[is_primary] = 1
 
-		WITH [metrics] AS (
-			SELECT
-				[adc].[database_name],
-				[drs].[last_commit_time],
-				CAST([drs].[redo_queue_size] AS decimal(20,2)) [redo_queue_size],   -- KB of log data not yet 'checkpointed' on the secondary... 
-				CAST([drs].[redo_rate] AS decimal(20,2)) [redo_rate],		-- avg rate (in KB) at which redo (i.e., inverted checkpoints) are being applied on the secondary... 
-				[drs].[is_primary_replica] [is_primary]
-			FROM
-				[sys].[dm_hadr_database_replica_states] AS [drs]
-				INNER JOIN [sys].[availability_databases_cluster] AS [adc] ON [drs].[group_id] = [adc].[group_id] AND [drs].[group_database_id] = [adc].[group_database_id]
-		), 
-		[primary] AS ( 
-			SELECT
-				[database_name],
-				[last_commit_time] [primary_last_commit]
-			FROM
-				[metrics]
-			WHERE
-				[is_primary] = 1
-
-		), 
-		[secondary] AS ( 
-			SELECT
-				[database_name],
-				[last_commit_time] [secondary_last_commit], 
-				[redo_rate], 
-				[redo_queue_size]
-			FROM
-				[metrics]
-			WHERE
-				[is_primary] = 0
-		) 
-
-		INSERT INTO [#metrics] (
-			[database_name],
-			[iteration],
-			[timestamp],
-			[synchronization_delay (RPO)],
-			[recovery_time (RTO)],
-			[redo_queue_size],
-			[redo_rate],
-			[primary_last_commit],
-			[secondary_last_commit]
-		)
-		SELECT 
-			p.[database_name], 
-			@iterations [iteration], 
-			GETDATE() [timestamp],
-			DATEDIFF(SECOND, ISNULL(s.[secondary_last_commit], GETDATE()), ISNULL(p.[primary_last_commit], DATEADD(MINUTE, -10, GETDATE()))) [synchronization_delay (RPO)],
-			CAST((CASE 
-				WHEN s.[redo_queue_size] = 0 THEN 0 
-				ELSE ISNULL(s.[redo_queue_size], 0) / s.[redo_rate]
-			END) AS decimal(20, 2)) [recovery_time (RTO)],
-			s.[redo_queue_size], 
-			s.[redo_rate], 
-			p.[primary_last_commit], 
-			s.[secondary_last_commit]
-		FROM 
-			[primary] p 
-			INNER JOIN [secondary] s ON p.[database_name] = s.[database_name];
-
-		WAITFOR DELAY @waitFor;
-
-		SET @iterations += 1;
-	END;
-
-	IF @ExcludeAnomolousSyncDeviations = 1 BEGIN 
-
-		WITH derived AS ( 
+			), 
+			[secondary] AS ( 
+				SELECT
+					[database_name],
+					[last_commit_time] [secondary_last_commit], 
+					[redo_rate], 
+					[redo_queue_size]
+				FROM
+					[metrics]
+				WHERE
+					[is_primary] = 0
+			) 
 
 			SELECT 
-				[database_name],
-				CAST(MAX([synchronization_delay (RPO)]) AS decimal(20, 2)) [max],
-				CAST(AVG([synchronization_delay (RPO)]) AS decimal(20, 2)) [mean], 
-				CAST(STDEV([synchronization_delay (RPO)]) AS decimal(20, 2)) [deviation]
+				p.[database_name], 
+				@iterations [iteration], 
+				GETDATE() [timestamp],
+				DATEDIFF(SECOND, ISNULL(s.[secondary_last_commit], GETDATE()), ISNULL(p.[primary_last_commit], DATEADD(MINUTE, -10, GETDATE()))) [synchronization_delay (RPO)],
+				CAST((CASE 
+					WHEN s.[redo_queue_size] = 0 THEN 0 
+					ELSE ISNULL(s.[redo_queue_size], 0) / s.[redo_rate]
+				END) AS decimal(20, 2)) [recovery_time (RTO)],
+				s.[redo_queue_size], 
+				s.[redo_rate], 
+				p.[primary_last_commit], 
+				s.[secondary_last_commit]
 			FROM 
-				[#metrics] 
-			GROUP BY 
-				[database_name]
+				[primary] p 
+				INNER JOIN [secondary] s ON p.[database_name] = s.[database_name]; ';
 
-		), 
-		db_iterations AS ( 
+		DECLARE @iterations int = 1; 
+		WHILE @iterations < @AGSyncCheckIterationCount BEGIN
+
+			INSERT INTO [#metrics] (
+				[database_name],
+				[iteration],
+				[timestamp],
+				[synchronization_delay (RPO)],
+				[recovery_time (RTO)],
+				[redo_queue_size],
+				[redo_rate],
+				[primary_last_commit],
+				[secondary_last_commit]
+			)
+			EXEC sp_executesql 
+				@agSyncCheckSQL, 
+				N'@iterations int', 
+				@iterations = @iterations;				
+
+			WAITFOR DELAY @waitFor;
+
+			SET @iterations += 1;
+		END;
+
+		IF @ExcludeAnomolousSyncDeviations = 1 BEGIN 
+
+			WITH derived AS ( 
+
+				SELECT 
+					[database_name],
+					CAST(MAX([synchronization_delay (RPO)]) AS decimal(20, 2)) [max],
+					CAST(AVG([synchronization_delay (RPO)]) AS decimal(20, 2)) [mean], 
+					CAST(STDEV([synchronization_delay (RPO)]) AS decimal(20, 2)) [deviation]
+				FROM 
+					[#metrics] 
+				GROUP BY 
+					[database_name]
+
+			), 
+			db_iterations AS ( 
 	
-			SELECT 
-				(
-					SELECT TOP 1 x.row_id 
-					FROM [#metrics] x 
-					WHERE x.[synchronization_delay (RPO)] = d.[max] AND [x].[database_name] = d.[database_name] 
-					ORDER BY x.[synchronization_delay (RPO)] DESC
-				) [row_id]
-			FROM 
-				[derived] d
-			WHERE 
-				d.mean - d.[deviation] < 0 -- biz-rule - only if/when deviation 'knocks everything' negative... 
-				AND d.[max] > ([d].[mean] + d.[deviation] + ABS([d].[mean] - d.[deviation]))
-		)
+				SELECT 
+					(
+						SELECT TOP 1 x.row_id 
+						FROM [#metrics] x 
+						WHERE x.[synchronization_delay (RPO)] = d.[max] AND [x].[database_name] = d.[database_name] 
+						ORDER BY x.[synchronization_delay (RPO)] DESC
+					) [row_id]
+				FROM 
+					[derived] d
+				WHERE 
+					d.mean - d.[deviation] < 0 -- biz-rule - only if/when deviation 'knocks everything' negative... 
+					AND d.[max] > ([d].[mean] + d.[deviation] + ABS([d].[mean] - d.[deviation]))
+			)
 
-		UPDATE m 
-		SET 
-			m.[ignore_rpo_as_anomalous] = 1 
-		FROM 
-			[#metrics] m 
-			INNER JOIN [db_iterations] x ON m.[row_id] = x.[row_id];
+			UPDATE m 
+			SET 
+				m.[ignore_rpo_as_anomalous] = 1 
+			FROM 
+				[#metrics] m 
+				INNER JOIN [db_iterations] x ON m.[row_id] = x.[row_id];
+		END;
+
 	END;
 
 	WITH violations AS ( 
