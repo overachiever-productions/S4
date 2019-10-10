@@ -1,21 +1,4 @@
-
 /*
-
-    S4-218: 
-        https://overachieverllc.atlassian.net/browse/S4-218
-				
-			It MIGHT make more sense to look at something like these:
-				https://skreebydba.com/2016/10/31/monitoring-and-alerting-for-availability-groups/
-
-				i.e., data-flow alerts and other alerts... 
-
-				still, the ability to set a threshold from within code and analyze 'rate of stall/redo' and other stuff is pretty nice to have. 
-						GUESSING i get some queue and resend/redo and other 'queue' lenght thingies via PerfMon for AGs (assuming I can't find DMVs/DMFs like I'm using with mirroring).
-
-
-
-
-
 		Other potential fodder: 
 			perf counters:
 				https://docs.microsoft.com/en-us/sql/relational-databases/performance-monitor/sql-server-database-mirroring-object
@@ -36,6 +19,87 @@
 
 
 
+	TODO:
+		[NOTE: the info below now correlates to this parameter: @ExcludeAnomolousSyncDeviations]
+			
+		document/address problem or issue with Ghosted Records. 
+			specifically, we're determining 'lag' and RPOs by means of the vector between primary_last_log_commit and secondary_last_log_commit
+				as, normally, they should be within a few milliseconds of each other. 
+
+			Only, imagine a scenario like the following: 
+				- very little traffic and/or very few modifications. 
+					specifically, a few INSERTs every 10-180 seconds and a FEW DELETEs every 1-2.5 minutes... 
+
+					at this point the last-log-commit time on BOTH servers is going to be, say, 10, 40, or even 120 seconds+ OLD. 
+						it'll be the SAME on both - cuz the last change was 'a long time ago' - but it happened synchronously on both servers at/around the exact same time
+							so... the VECTOR between those two metrics isn't large - but the duration between NOW and when that happened is ... large-ish. 
+
+				- Ghosted Record Cleanup. 
+					this is a process that doesn't have to be synchronously committed - it happens on the primary and (apparently?) gets thrown over the fence to the secondary
+						(I actually need to double-check and see if i can spot whether this stuff is happening or not... 
+							i.e., all of these 'details' are a very SOLID working THEORY... they're the only thing that really explains what's going on here - and I can see 
+								that ghosted record cleanup IS happening on the primary and it IS happening at/around the time of the main problem - i.e., it's the catalyst - or so it appears). 
+
+					meaning that ... 
+						we now have 'async' changes ... that are 120+ seconds or whatever apart. 
+
+						I've started to tackle this by means of averages - i.e., instead of taking the RPO 'right now' ... I 'poll' over N seconds and X times. 
+
+						BUT, that's still not enough... i.e., 4x RPOs of 0 and 1x RPO of 147 still weigh in at an average of, say, 45seconds - well over the 15s threshold i normally want. 
+
+						SO, 
+							I need to do the following: 
+								- 1. set up different options for polling - maybe EVEN by DATABASE... 
+									this'll SUCK to put into @Params for this sproc so... instead, I'm going to: 
+										a) default the @pollCount and @waitDuration to whatever makes sense (i.e., whatever's already in the sproc below). 
+										b) set up options to LOOK FOR 'overwrites' for those defaults ... in the dbo.settings table. 
+											and then... POSSIBLY, if i can think of a clean/easy way to tackle it ... look at doing this if/when certain dbs are found or whatever... 
+												(probably NOT going to be feasible). 
+
+
+								- 2. Look at using STDEV - to ignore/'remove'/'flatten' hiccups caused by this problem - as per the 'dogs' stuff here: 
+									
+										https://www.mathsisfun.com/data/standard-deviation.html
+
+											and further detailed here: 
+												https://www.mathsisfun.com/data/standard-deviation-formulas.html
+
+						NOTE: 
+							Final implementation is as follows: 
+								1. If @ExcludeAnomolousSyncDeviations is enabled... then. 
+								2. Calculate the MEAN (AVG) per each DB. 
+								3. Also calculate SAMPLE STDEV (i.e., STDEV vs STDEVP) per database. 
+								4. Add STDEV to MEAN. 
+								5. Substract STDEV from MEAN. 
+								6. _IF_ MEAN - STDEV is < 0, then 
+									ADD 
+										MEAN + STDEV + (ABS(MEAN - STDEV))
+									instead of just using STDEV + MEAN (i.e., 'overwrite 'rule' #4'... 
+
+								7. ALLOW removal/exclusion of 1x (i.e., largest) rpo or other target value IF 
+									the value of output #6 is > output of #4 AND... the RPO in question is > #6... 
+
+
+								e.g., 
+									RPOs are 
+										0
+										147 
+										0 
+										3
+										0
+
+									AVG/MEAN = 30 seconds (i.e., 150 / 5) 
+									SAMPLED MEAN = 66. 
+									30 + 66 = 96 as upper bound (#4)
+									30 - 66 = -36 as lower bound. (#5)
+									36 + 96 = 132 (#6 - i.e., outcome of #5 was < 0 - so ABS value is added to result of #4). 
+
+									147 IS > 132
+										so it's excluded/ignored - meaning we get an average of .75  (i.e., 3 seconds / 4 iterations).
+											whereas if @ExcludeAnomolousSyncDeviations had been set to 0, we'd be back at the AVG of 30 seconds. 
+
+
+
 */
 
 USE [admindb];
@@ -47,12 +111,17 @@ GO
 
 CREATE PROC dbo.verify_data_synchronization 
 	@IgnoredDatabases						nvarchar(MAX)		= NULL,
-	@TransactionDelayThresholdMS			int					= 8600,
-	@AvgerageSyncDelayThresholdMS			int					= 2800,
+	@RPOThreshold							sysname				= N'10 seconds',
+	@RTOThreshold							sysname				= N'40 seconds',
+	
+	@AGSyncCheckIterationCount				int					= 8, 
+	@AGSyncCheckDelayBetweenChecks			sysname				= N'1800 milliseconds',
+	@ExcludeAnomolousSyncDeviations			bit					= 0,    -- Primarily for Ghosted Records Cleanup... 
+	
 	@EmailSubjectPrefix						nvarchar(50)		= N'[Data Synchronization Problems] ',
 	@MailProfileName						sysname				= N'General',	
 	@OperatorName							sysname				= N'Alerts',	
-	@PrintOnly								bit						= 0
+	@PrintOnly								bit					= 0
 AS
 	SET NOCOUNT ON;
 
@@ -106,8 +175,6 @@ AS
 		RETURN 0;
 	END;
 
-
-
 	----------------------------------------------
 	-- Determine which server to run checks on. 
 	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
@@ -133,11 +200,69 @@ AS
     IF @syncCheckSpanMinutes <= 1 
         RETURN 0; -- no sense checking on history if it's just been a minute... 
     
+	-- convert vectors to seconds: 
+	DECLARE @rpoSeconds decimal(20, 2);
+	DECLARE @rtoSeconds decimal(20, 2);
+
+	DECLARE @vectorOutput bigint, @vectorError nvarchar(max); 
+    EXEC dbo.translate_vector 
+        @Vector = @RPOThreshold, 
+        @Output = @vectorOutput OUTPUT, -- milliseconds
+		@ProhibitedIntervals = N'DAY, WEEK, MONTH, QUARTER, YEAR',
+        @Error = @vectorError OUTPUT; 
+
+	IF @vectorError IS NOT NULL BEGIN 
+		RAISERROR(@vectorError, 16, 1);
+		RETURN -1;
+	END;
+
+	SET @rpoSeconds = @vectorOutput / 1000;
+	
+    EXEC dbo.translate_vector 
+        @Vector = @RTOThreshold, 
+        @Output = @vectorOutput OUTPUT, -- milliseconds
+		@ProhibitedIntervals = N'DAY, WEEK, MONTH, QUARTER, YEAR',
+        @Error = @vectorError OUTPUT; 
+
+	IF @vectorError IS NOT NULL BEGIN 
+		RAISERROR(@vectorError, 16, 1);
+		RETURN -1;
+	END;
+
+	SET @rtoSeconds = @vectorOutput / 1000;
+
+	IF @rtoSeconds > 2764800 OR @rpoSeconds > 2764800 BEGIN 
+		RAISERROR(N'@RPOThreshold and @RTOThreshold values can not be set to > 1 month.', 16, 1);
+		RETURN -10;
+	END;
+
+	IF @rtoSeconds < 2 OR @rpoSeconds < 2 BEGIN 
+		RAISERROR(N'@RPOThreshold and @RTOThreshold values can not be set to less than 2 seconds.', 16, 1);
+		RETURN -10;
+	END;
+
+	-- translate @AGSyncCheckDelayBetweenChecks into waitfor value. 
+	DECLARE @waitFor sysname;
+	SET @vectorError = NULL;
+
+	EXEC dbo.[translate_vector_delay] 
+		@Vector = @AGSyncCheckDelayBetweenChecks, 
+		@ParameterName = N'@AGSyncCheckDelayBetweenChecks', 
+		@Output = @waitFor OUTPUT, 
+		@Error = @vectorError OUTPUT;
+
+	IF @vectorError IS NOT NULL BEGIN 
+		RAISERROR(@vectorError, 16, 1);
+		RETURN -20;
+	END;
+
     ----------------------------------------------
     -- Begin Processing: 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
-	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
+	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', 
+		N'@remoteName sysname OUTPUT', 
+		@remoteName = @remoteServerName OUTPUT;
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
@@ -277,9 +402,9 @@ AS
 		-- check for problems with transaction delay:
 		SELECT @transdelay = MAX(ISNULL(transaction_delay,0)) FROM @output
 		WHERE time_recorded >= @lastCheckupExecutionTime;
-		IF @transdelay > @TransactionDelayThresholdMS BEGIN 
+		IF @transdelay > @rpoSeconds BEGIN 
 			SET @errorMessage = N'Mirroring Alert - Delays Applying Data to Secondary'
-				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
+				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@rpoSeconds as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
 			VALUES (@errorMessage);
@@ -288,10 +413,10 @@ AS
 		-- check for problems with transaction delays on the primary:
 		SELECT @averagedelay = MAX(ISNULL(average_delay,0)) FROM @output
 		WHERE time_recorded >= @lastCheckupExecutionTime;
-		IF @averagedelay > @AvgerageSyncDelayThresholdMS BEGIN 
+		IF @averagedelay > @rtoSeconds BEGIN 
 
 			SET @errorMessage = N'Mirroring Alert - Transactions Delayed on Primary'
-				+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@AvgerageSyncDelayThresholdMS as nvarchar(30)) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
+				+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@rtoSeconds as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
 			VALUES (@errorMessage);
@@ -302,7 +427,6 @@ AS
 
 	CLOSE m_checker; 
 	DEALLOCATE m_checker;
-
 	
 	----------------------------------------------
 	-- Process AG'd Databases: 
@@ -337,7 +461,11 @@ AS
 	
 		SET @currentAGName = N'';
 		SET @currentAGId = NULL;
-		EXEC master.sys.sp_executesql N'SELECT @currentAGName = ag.[name], @currentAGId = ag.group_id FROM sys.availability_groups ag INNER JOIN sys.availability_replicas ar ON ag.group_id = ar.group_id INNER JOIN sys.databases d ON ar.replica_id = d.replica_id WHERE d.[name] = @currentAGdDatabase;', N'@currentAGdDatabase sysname, @currentAGName sysname OUTPUT, @currentAGId uniqueidentifier OUTPUT', @currentAGdDatabase = @currentAGdDatabase, @currentAGName = @currentAGName OUTPUT, @currentAGId = @currentAGId OUTPUT;
+		EXEC sys.sp_executesql N'SELECT @currentAGName = ag.[name], @currentAGId = ag.group_id FROM sys.availability_groups ag INNER JOIN sys.availability_replicas ar ON ag.group_id = ar.group_id INNER JOIN sys.databases d ON ar.replica_id = d.replica_id WHERE d.[name] = @currentAGdDatabase;', 
+			N'@currentAGdDatabase sysname, @currentAGName sysname OUTPUT, @currentAGId uniqueidentifier OUTPUT', 
+			@currentAGdDatabase = @currentAGdDatabase, 
+			@currentAGName = @currentAGName OUTPUT, 
+			@currentAGId = @currentAGId OUTPUT;
 
 		IF NOT EXISTS (SELECT NULL FROM @processedAgs WHERE agname = @currentAGName) BEGIN
 		
@@ -391,122 +519,194 @@ AS
 				VALUES(@errorMessage);
 			END;
 
-
 			-- mark the current AG as processed (so that we don't bother processing multiple dbs (and getting multiple errors/messages) if/when they're all in the same AG(s)). 
 			INSERT INTO @processedAgs ([agname])
 			VALUES(@currentAGName);
 		END;
 		-- otherwise, we've already run checks on the availability group itself. 
 
-
-
-
 		FETCH NEXT FROM ag_checker INTO @currentAGdDatabase;
 	END;
-
 
 	CLOSE ag_checker;
 	DEALLOCATE ag_checker;
 
-		-- TODO: implement synchronization (i.e., lag/timing/threshold/etc.) logic per each synchronized database... (i.e., here).
-		-- or... maybe this needs to be done per AG? not sure of what makes the most sense. 
-		--		here's a link though: https://www.sqlshack.com/measuring-availability-group-synchronization-lag/
-		--			NOTE: in terms of implementing 'monitors' for the above... the queries that Derik provides are all awesome. 
-		--				Only... AGs don't work the same way as... mirroring. with mirroring, i can 'query' a set of stats captured over the last x minutes. and see if there have been any problems DURING that window... 
-		--				with these queries... if there's not a problem this exact second... then... everything looks healthy. 
-		--				so, there's a very real chance i might want to: 
-		--					a) wrap up Derik's queries into a sproc that can/will dump metrics into a table within admindb... (and only keep them for a max of, say, 2 months?)
-		--							err... actually, the sproc will have @HistoryRetention = '2h' or '2m' or whatever... (obviously not '2b')... 
-		--					b) spin up a job that collects those stats (i.e., runs the job) every ... 30 seconds or someting tame but viable? 
-		--					c) have this query ... query that info over the last n minutes... similar to what I'm doing to detect mirroring 'lag' problems.
+	IF EXISTS (SELECT NULL FROM @synchronizingDatabases WHERE [sync_type] = N'AG') BEGIN
 
--- TODO: this is currently implemented against ALL databases... 
---      won't be too hard to simply tweak the CTE to do a search/lookup PER database and change everything to work that way... 
-    DECLARE @states table ( 
-        [database_name] sysname NOT NULL, 
-        [is_primary] bit NOT NULL, 
-        [last_commit_time] datetime NULL
-    );
+		CREATE TABLE [#metrics] (
+			[row_id] int IDENTITY(1, 1) NOT NULL,
+			[database_name] sysname NOT NULL,
+			[iteration] int NOT NULL,
+			[timestamp] datetime NOT NULL,
+			[synchronization_delay (RPO)] decimal(20, 2) NOT NULL,
+			[recovery_time (RTO)] decimal(20, 2) NOT NULL,
+			-- raw data: 
+			[redo_queue_size] decimal(20, 2) NULL,
+			[redo_rate] decimal(20, 2) NULL,
+			[primary_last_commit] datetime NULL,
+			[secondary_last_commit] datetime NULL, 
+			[ignore_rpo_as_anomalous] bit NOT NULL CONSTRAINT DF_metrics_anomalous DEFAULT (0)
+		);
 
-    INSERT INTO @states (
-        [database_name],
-        [is_primary],
-        [last_commit_time]
-    )
-    SELECT
-        adc.[database_name],
-        drs.is_primary_replica [is_primary],
-        drs.last_commit_time 
-    FROM
-        sys.dm_hadr_database_replica_states AS drs
-        INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id;
+		DECLARE @agSyncCheckSQL nvarchar(MAX) = N'
+			WITH [metrics] AS (
+				SELECT
+					[adc].[database_name],
+					[drs].[last_commit_time],
+					CAST([drs].[redo_queue_size] AS decimal(20,2)) [redo_queue_size],   -- KB of log data not yet ''checkpointed'' on the secondary... 
+					CAST([drs].[redo_rate] AS decimal(20,2)) [redo_rate],		-- avg rate (in KB) at which redo (i.e., inverted checkpoints) are being applied on the secondary... 
+					[drs].[is_primary_replica] [is_primary]
+				FROM
+					[sys].[dm_hadr_database_replica_states] AS [drs]
+					INNER JOIN [sys].[availability_databases_cluster] AS [adc] ON [drs].[group_id] = [adc].[group_id] AND [drs].[group_database_id] = [adc].[group_database_id]
+			), 
+			[primary] AS ( 
+				SELECT
+					[database_name],
+					[last_commit_time] [primary_last_commit]
+				FROM
+					[metrics]
+				WHERE
+					[is_primary] = 1
 
-    WITH p AS ( 
-        SELECT 
-            [database_name], 
-            ISNULL(last_commit_time, GETDATE()) [last_commit]
-        FROM 
-            @states 
-        WHERE [is_primary] = 1
-    ), 
-    s AS ( 
-        SELECT 
-            [database_name], 
-            MIN(ISNULL(last_commit_time, GETDATE())) [last_commit]
-        FROM 
-            @states 
-        WHERE [is_primary] = 0
-        GROUP BY [database_name]
-    )
+			), 
+			[secondary] AS ( 
+				SELECT
+					[database_name],
+					[last_commit_time] [secondary_last_commit], 
+					[redo_rate], 
+					[redo_queue_size]
+				FROM
+					[metrics]
+				WHERE
+					[is_primary] = 0
+			) 
 
-    SELECT 
-        @averagedelay = MAX(DATEDIFF(MILLISECOND, s.[last_commit], p.[last_commit]))
-    FROM 
-        p 
-        INNER JOIN s ON p.[database_name] = s.[database_name];
+			SELECT 
+				p.[database_name], 
+				@iterations [iteration], 
+				GETDATE() [timestamp],
+				DATEDIFF(SECOND, ISNULL(s.[secondary_last_commit], GETDATE()), ISNULL(p.[primary_last_commit], DATEADD(MINUTE, -10, GETDATE()))) [synchronization_delay (RPO)],
+				CAST((CASE 
+					WHEN s.[redo_queue_size] = 0 THEN 0 
+					ELSE ISNULL(s.[redo_queue_size], 0) / s.[redo_rate]
+				END) AS decimal(20, 2)) [recovery_time (RTO)],
+				s.[redo_queue_size], 
+				s.[redo_rate], 
+				p.[primary_last_commit], 
+				s.[secondary_last_commit]
+			FROM 
+				[primary] p 
+				INNER JOIN [secondary] s ON p.[database_name] = s.[database_name]; ';
 
-	IF @averagedelay > @AvgerageSyncDelayThresholdMS BEGIN 
+		DECLARE @iterations int = 1; 
+		WHILE @iterations < @AGSyncCheckIterationCount BEGIN
 
-		SET @errorMessage = N'AG Alert - Delays Applying Data to Secondary'
-			+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@AvgerageSyncDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB */ N' on Server: ' + @localServerName + N'.';
+			INSERT INTO [#metrics] (
+				[database_name],
+				[iteration],
+				[timestamp],
+				[synchronization_delay (RPO)],
+				[recovery_time (RTO)],
+				[redo_queue_size],
+				[redo_rate],
+				[primary_last_commit],
+				[secondary_last_commit]
+			)
+			EXEC sp_executesql 
+				@agSyncCheckSQL, 
+				N'@iterations int', 
+				@iterations = @iterations;				
 
-		INSERT INTO @errors (errorMessage)
-		VALUES (@errorMessage);
-	END 
+			WAITFOR DELAY @waitFor;
 
--- NOTE / TODO: 
---      I'm using an @tableVariable below INSTEAD of just grabbing _Total (irght out of the gate) because i'll eventually push/pull this logic up into the cursor loop - 
-  --        where we can grab these details PER database... 
--- SEE S4-218 for more infomration on why this isn't working and how simple 'vectoring' of the counter data really isn't enough... 
-  --  DECLARE @agTransDelays table (
-  --      [database_name] sysname NOT NULL, 
-  --      [transaction_delay] decimal(19,2) NULL
-  --  );
+			SET @iterations += 1;
+		END;
 
-  --  INSERT INTO @agTransDelays (
-  --      [database_name],
-  --      [transaction_delay]
-  --  )
+		IF @ExcludeAnomolousSyncDeviations = 1 BEGIN 
 
-  --  SELECT  
-  --      [instance_name] [database_name], 
-  --      CAST([cntr_value] AS decimal(19,2)) [transaction_delay]
-  --  FROM sys.dm_os_performance_counters 
-  --  WHERE [counter_name] LIKE 'Transaction Delay%'
-	 --   AND [object_name] LIKE 'SQLServer:Database Replica%';
+			WITH derived AS ( 
 
+				SELECT 
+					[database_name],
+					CAST(MAX([synchronization_delay (RPO)]) AS decimal(20, 2)) [max],
+					CAST(AVG([synchronization_delay (RPO)]) AS decimal(20, 2)) [mean], 
+					CAST(STDEV([synchronization_delay (RPO)]) AS decimal(20, 2)) [deviation]
+				FROM 
+					[#metrics] 
+				GROUP BY 
+					[database_name]
 
-  --  SELECT @transdelay = [transaction_delay] FROM @agTransDelays WHERE [database_name] = N'_Total';
+			), 
+			db_iterations AS ( 
+	
+				SELECT 
+					(
+						SELECT TOP 1 x.row_id 
+						FROM [#metrics] x 
+						WHERE x.[synchronization_delay (RPO)] = d.[max] AND [x].[database_name] = d.[database_name] 
+						ORDER BY x.[synchronization_delay (RPO)] DESC
+					) [row_id]
+				FROM 
+					[derived] d
+				WHERE 
+					d.mean - d.[deviation] < 0 -- biz-rule - only if/when deviation 'knocks everything' negative... 
+					AND d.[max] > ([d].[mean] + d.[deviation] + ABS([d].[mean] - d.[deviation]))
+			)
 
-  --  IF ISNULL(@transdelay, 0) >= @TransactionDelayThresholdMS BEGIN
+			UPDATE m 
+			SET 
+				m.[ignore_rpo_as_anomalous] = 1 
+			FROM 
+				[#metrics] m 
+				INNER JOIN [db_iterations] x ON m.[row_id] = x.[row_id];
+		END;
 
-		--SET @errorMessage = N'AG Alert  - Transactions Delayed on Primary'
-		--	+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@TransactionDelayThresholdMS as nvarchar(30)) + /* N'ms for database: ' + @currentMirroredDB +*/ N' on Server: ' + @localServerName + N'.';
+	END;
 
-		--INSERT INTO @errors (errorMessage)
-		--VALUES (@errorMessage);
-  --  END;
+	WITH violations AS ( 
+		SELECT 
+			[database_name],
+			CAST(AVG([synchronization_delay (RPO)]) AS decimal(20, 2)) [rpo (seconds)],
+			CAST(AVG([recovery_time (RTO)]) AS decimal(20,2 )) [rto (seconds)], 
+			CAST((
+				SELECT 
+					[x].[iteration] [@iteration], 
+					[x].[timestamp] [@timestamp],
+					[x].[ignore_rpo_as_anomalous],
+					[x].[synchronization_delay (RPO)] [rpo], 
+					[x].[recovery_time (RTO)] [rto],
+					[x].[redo_queue_size], 
+					[x].[redo_rate], 
+					[x].[primary_last_commit], 
+					[x].[secondary_last_commit]
+				FROM 
+					[#metrics] x 
+				WHERE 
+					x.[database_name] = m.[database_name]
+				ORDER BY 
+					[x].[row_id] 
+				FOR XML PATH('detail'), ROOT('details')
+			) AS xml) [raw_data]
+		FROM 
+			[#metrics] m
+		WHERE 
+			m.[ignore_rpo_as_anomalous] = 0  -- note: these don't count towards rpo values - but they ARE included in serialized xml output (for review/analysis purposes). 
+		GROUP BY
+			[database_name]
+	) 
 
+	INSERT INTO @errors (
+		[errorMessage]
+	)
+	SELECT 
+		N'AG Alert - SLA Warning(s) for ' + QUOTENAME([database_name]) + @crlf + @tab + @tab + N'RPO and RTO values are currently set at [' + @RPOThreshold + N'] and [' + @RTOThreshold + N'] - but are currently polling at an AVERAGE of [' + CAST([rpo (seconds)] AS sysname) + N' seconds] AND [' + CAST([rto (seconds)] AS sysname) + N' seconds] for database ' + QUOTENAME([database_name])  + N'. Raw XML Data: ' + CAST([raw_data] AS nvarchar(MAX))
+	FROM 
+		[violations]
+	WHERE 
+		[violations].[rpo (seconds)] > @rpoSeconds OR [violations].[rto (seconds)] > @rtoSeconds
+	ORDER BY 
+		[database_name];
 
 REPORTING:
 	-- 

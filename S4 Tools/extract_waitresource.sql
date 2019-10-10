@@ -100,6 +100,15 @@
 										DBCC PAGE('Widgets', 1, 689098, 3) WITH TABLERESULTS;
 										DBCC PAGE('Widgets', 1, 8584, 3) WITH TABLERESULTS;
 
+			- Add Schema Lock Problems... 
+					The following are WAIT_TYPES (when found) and wait_resources from Ex.DB1 - when creating a bevy of new logins for the DH database when there are 20K logins
+						on the server, and TFs for TOKENSTOREUSERPERMS have been tweaked/modified accordingly - and where there was some UGLY locking/blocking across the ENTIRE system
+
+							LCK_M_SCH_M	|	METADATA: database_id = 1 SECURITY_CACHE($hash = 0x0:0x15), lockPartitionId = 0
+							LCK_M_SCH_S	|	METADATA: database_id = 1 PERMISSIONS(class = 100, major_id = 0), lockPartitionId = 0
+							      -		|	METADATA: database_id = 1 INVALID(INVALID), lockPartitionId = 0
+
+
 		USAGE: 
 			- Example Execution - where db_id 7 is 'remapped' to a database named 'ProdDatabase' and where the meta-data 
                     for OBJECT_ID and other lookups comes from a database (on box) called ProdDatabase5_Clone (i.e., a DBCC CLONEDATABASE() 'copy') of the database... 
