@@ -1,7 +1,6 @@
 /*
-
-    TODO: bug with adding 1480 ... if it's already there... this throws errors. 
-        also... if a job for processing already exists???> just use it? 
+	vNEXT (maybe?): 
+	   .. if a job for processing already exists???> just use it? 
             and/or MAYBE I should put the fact that there's a job for processing failover into the settings table?
                 and then do some comparisons against that? 
 
@@ -112,11 +111,13 @@ GO'
 
     -- enable alerts - and map to job: 
     BEGIN TRY 
-        IF EXISTS (SELECT NULL FROM msdb.dbo.sysalerts WHERE [message_id] = 1480 AND [name] = N'1480 - Partner Role Change')
+		DECLARE @1480AlertName sysname = N'1480 - Partner Role Change';
+
+        IF EXISTS (SELECT NULL FROM msdb.dbo.sysalerts WHERE [message_id] = 1480 AND [name] = @1480AlertName)
             EXEC msdb.dbo.[sp_delete_alert] @name = N'1480 - Partner Role Change';
 
         EXEC msdb.dbo.[sp_add_alert]
-            @name = N'1480 - Partner Role Change',
+            @name = @1480AlertName,
             @message_id = 1480,
             @enabled = 1,
             @delay_between_responses = 5,

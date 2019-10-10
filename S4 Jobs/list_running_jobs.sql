@@ -13,6 +13,8 @@ IF OBJECT_ID('dbo.list_running_jobs','P') IS NOT NULL
 	DROP PROC dbo.[list_running_jobs];
 GO
 
+--##CONDITIONAL_SUPPORT(> 10.5)
+
 CREATE PROC dbo.[list_running_jobs]
 	@StartTime							datetime				= NULL, 
 	@EndTime							datetime				= NULL, 
