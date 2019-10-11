@@ -1,29 +1,29 @@
-﻿<style>
-    div.stub { display: none; }
-</style>
-# S4
+﻿# S4
 **S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
 
-
-<i class="fa fa-plus fa-spin fa-lg"></i>
-
-<i class="fa fa-refresh fa-spin fa-lg"></i>
+> ### <i class="fa fa-random"></i> This Documentation is a Work in Progress  
+> Please note that any documentation (bullet-points, paragraphs/sections/etc.) [surrounded within blocks] represents a DRAFT version of documentation and will be 'rough around the edges'.
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
 ## <a name="toc"></a> TABLE OF CONTENTS
-- [Installation](#installation)
+- [Setup](#setup)
     - [Requirements](#requirements)
     - [Step By Step Installation Instructions](#step-by-step-installation)
     - [Enabling Advanced S4 Features](#enabling-advanced-s4-features)
-- [Updating S4](#updates)
-- [FEATURES AND BENEFITS](#features-and-benefits)
+    - [Updating S4](#updates)
+    - [Removing S4](#removing)
+- [S4 Features and Benefits](#features-and-benefits)
 - [Using S4 Conventions](#using-s4-conventions)
 - [S4 Best Practices](#s4-best-practices)
 
-## <a name="installation"></a> INSTALLATION 
+## <a name="installation"></a>SETUP 
+Run xyz.sql against your server.   
+xyz.sql will create a new `[admindb]` if it does not exist (if it does, the 'installer' will simnply update your admindb to the latest version/release), and ALL S4 code and logic will be dropped into the `[admindb]` database. (Enabling easy cleanup/removal if you don't want it.)
 
-### <a name="requirements"></a> Requirements
+To install, grab the latest .sql release file, and execute it against your server. The release file will create a new `[admindb]` if one does not already exist, and all S4 code is pushed into this database. 
+
+### <a name="requirements"></a>Requirements
 - SQL Server 2008+. NOT everything in S4 works with SQL Server 2008/R2 - but all S4 functionality IS intended to work with SQL Sever 2012+.
 - Ability to run T-SQL against SQL Server and create a database ([admindb]).
 - Advanced Error Handling (required for backups + automated restore tests and many other 'advanced' S4 features) require xp_cmdshell to be enabled - as outlined [below](#enabling-advanced-s4-features).
@@ -53,10 +53,6 @@ EXEC [admindb].dbo.[enable_advanced_capabilities];
 GO
 ```
 
-<i class="fa fa-plus fa-camera fa-lg"></i>
-
-
-
 <div class="stub">[And to undo, execute dbo.disable_advanced_capabilities. Likewise to view/verify whether capabilities are on or not: EXEC dbo.verifiy_advanced_capabilities.]
 
 *[-- TODO: document this fully as part of the v6.0 release (as that's where enabling xp _cmdshell will be removed from normal installation/deployment and become an OPTIONAL feature that can be enabled within the admindb itself (well, via the admindb - cuz it'll enable xp _cmdshell across the server if/as needed.)
@@ -72,17 +68,17 @@ v6.0 is where xp_cmdshell enabling will be 'split' out from the main deployment 
 
 [example of dbo.execute_command (same backup statement as above - but passed in as a command) - and show the output - i.e., we TRAPPED the error (with full details).]
 
-[NOTE about how all of this is ... yeah, a pain, but there's no other way. Then... xp_cmdshell is native SQL Server and just fine.]</div>
+[NOTE about how all of this is ... yeah, a pain, but there's no other way. Then... xp_cmdshell is native SQL Server and just fine.]
 
 
 #### Common Questions and Concerns about enabling xp_cmdshell 
 Meh. There's a lot of [FUD](https://en.wikipedia.org/wiki/Fear,_uncertainty_and_doubt) out there about enabling xp_cmdshell on your SQL Server. Security is NEVER something to take lightly, but xp_cmdshell isn't a security concern - having a SQL Server running with ELEVATED PERMISSIONS is a security concern. xp_cmdshell merely allows the SQL Server Service account to interact with the OS much EASIER than would otherwise be possible without xp_cmdshell enabled. 
 
-For more detailed information, see [Notes about xp_cmdshell](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2Fxp_cmdshell_notes.md)
+For more detailed information, see [Notes about xp_cmdshell](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2Fxp_cmdshell_notes.md)</div>
 
 [Return to Table of Contents](#toc)
 
-## <a name="updates"></a> UPDATES
+### <a name="updates"></a> UPDATES
 Once S4 has been deployed, keeping it updated is simple: 
 1. As with a new installation/deployment, simply locate the latest.version.sql file (e.g., "5.6.2820.1.sql") in the [Deployment](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Deployment) folder,
 
@@ -93,6 +89,14 @@ Once S4 has been deployed, keeping it updated is simple:
 4. Upon completion, the update/deployment script will output information about all versions installed on your target server instance:
 
 ![](https://assets.overachiever.net/s4/images/install_update_completed.gif)
+
+### <a name="removing S4"></a> Removing S4
+[Removal of S4 is fairly straightforward - as virtually everything that it does or creates is in the admindb. However, Advanced S4 functionality does make changes to system configurations on your SQL Server - so you'll want to disable/reset those changes before removing. Likewise, if you've used S4 for setup/configuration of your server initially or to set up monitoring and alerting for any HA stuff... ]
+1. [Disable Advanced Functionality if desired. (Recommended.) ... sproc to do so... ]
+2. [Remove/Disable any SQL Server Agent Jobs that may be calling S4 functionality (disk checks, alerts, filtering of alerts, etc.)]
+3. [DROP the admindb database.] 
+4. [Done. To re-add, simply follow the instructions for installation.]
+
 
 [Return to Table of Contents](#toc)
 
@@ -115,12 +119,8 @@ sdfsdf
 ## <a name="s4-best-practices"></a> S4 BEST PRACTICES
 sfdsdfsd
 
-
-<i class="fa fa-refresh fa-spin fa-lg"></i>
-
 [Return to Table of Contents](#toc)
 
-
-
-
-
+<style>
+    div.stub { display: none; }
+</style>
