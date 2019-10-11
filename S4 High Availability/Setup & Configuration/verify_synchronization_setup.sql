@@ -150,7 +150,7 @@ AS
     INSERT INTO @ObjectNames (name)
     VALUES 
     (N'server_trace_flags'),
-    (N'respond_to_db_failover');
+    (N'process_synchronization_failover');
 
     INSERT INTO #Errors (SectionID, Severity, ErrorText)
     SELECT 
@@ -192,9 +192,9 @@ AS
     END
 
     -- Warn if no job to respond to failover:
-    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%respond_to_db_failover%') BEGIN 
+    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%process_synchronization_failover%') BEGIN 
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	    SELECT 3, N'WARNING', N'A SQL Server Agent Job that calls [respond_to_db_failover] (to handle database failover) was not found.';
+	    SELECT 3, N'WARNING', N'A SQL Server Agent Job that calls [process_synchronization_failover] (to handle database failover) was not found.';
     END 
 
 
