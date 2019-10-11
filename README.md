@@ -1,11 +1,12 @@
 ﻿<style>
     div.stub { display: none; }
 </style>
-<script src="https://kit.fontawesome.com/955c682021.js" crossorigin="anonymous"></script>
 # S4
 **S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
 
-<i class="fa fa-refresh fa-spin fa-lg"></i>
+
+<i class="fas fa-camera"></i>
+
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
