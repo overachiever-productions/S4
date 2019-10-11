@@ -1,9 +1,12 @@
 ﻿# S4
 **S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
 
-### LICENSE 
+<script src="https://kit.fontawesome.com/955c682021.js" crossorigin="anonymous"></script>
+<style>
+    div.stub { display: none; }
+</style>
 
-[MIT License](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
+[MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
 ## <a name="toc"></a> TABLE OF CONTENTS
 - [Installation](#installation)
@@ -46,7 +49,9 @@ EXEC [admindb].dbo.[enable_advanced_capabilities];
 GO
 ```
 
-[And to undo, execute dbo.disable_advanced_capabilities. Likewise to view/verify whether capabilities are on or not: EXEC dbo.verifiy_advanced_capabilities.]
+<i class="fa fa-refresh fa-spin fa-lg"></i>
+
+<div class="stub">[And to undo, execute dbo.disable_advanced_capabilities. Likewise to view/verify whether capabilities are on or not: EXEC dbo.verifiy_advanced_capabilities.]
 
 *[-- TODO: document this fully as part of the v6.0 release (as that's where enabling xp _cmdshell will be removed from normal installation/deployment and become an OPTIONAL feature that can be enabled within the admindb itself (well, via the admindb - cuz it'll enable xp _cmdshell across the server if/as needed.)
 v6.0 is where xp_cmdshell enabling will be 'split' out from the main deployment process into a sproc that'll report on the current setting, provide some info/docs/"don't panic details", and enable sp _ configure functionality.]*
@@ -61,7 +66,7 @@ v6.0 is where xp_cmdshell enabling will be 'split' out from the main deployment 
 
 [example of dbo.execute_command (same backup statement as above - but passed in as a command) - and show the output - i.e., we TRAPPED the error (with full details).]
 
-[NOTE about how all of this is ... yeah, a pain, but there's no other way. Then... xp_cmdshell is native SQL Server and just fine.]
+[NOTE about how all of this is ... yeah, a pain, but there's no other way. Then... xp_cmdshell is native SQL Server and just fine.]</div>
 
 
 #### Common Questions and Concerns about enabling xp_cmdshell 
