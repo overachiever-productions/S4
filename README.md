@@ -1,10 +1,11 @@
-﻿# S4
-**S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
-
-<script src="https://kit.fontawesome.com/955c682021.js" crossorigin="anonymous"></script>
-<style>
+﻿<style>
     div.stub { display: none; }
 </style>
+<script src="https://kit.fontawesome.com/955c682021.js" crossorigin="anonymous"></script>
+# S4
+**S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
+
+<i class="fa fa-refresh fa-spin fa-lg"></i>
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
@@ -40,6 +41,7 @@ To deploy S4 to a target SQL Server Instance:
 
 **NOTE:** *If S4 has already been deployed to your target SQL Server Instance, the deployment script will detect this and simply UPDATE all code in the [admindb] to the latest version - adding a new entry into admindb.dbo.version_history.* 
 
+<i class="fa fa-refresh fa-spin fa-lg"></i>
 
 ### <a name="enabling-advanced-s4-features"></a> Enabling Advanced S4 Features
 Once S4 has been deployed (i.e., after the admindb has been created), to deploy advanced error-handling features, simply run the following: 
@@ -50,6 +52,8 @@ GO
 ```
 
 <i class="fa fa-refresh fa-spin fa-lg"></i>
+
+
 
 <div class="stub">[And to undo, execute dbo.disable_advanced_capabilities. Likewise to view/verify whether capabilities are on or not: EXEC dbo.verifiy_advanced_capabilities.]
 
