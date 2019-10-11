@@ -1,26 +1,29 @@
 ﻿# S4
 **S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
 
-## LICENSE 
+### LICENSE 
 
 [MIT License](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
-## TABLE OF CONTENTS
+## <a name="toc"></a> TABLE OF CONTENTS
 - [Installation](#installation)
     - [Requirements](#requirements)
     - [Step By Step Installation Instructions](#step-by-step-installation)
     - [Enabling Advanced S4 Features](#enabling-advanced-s4-features)
 - [Updating S4](#updates)
 - [FEATURES AND BENEFITS](#features-and-benefits)
-## INSTALLATION 
+- [Using S4 Conventions](#using-s4-conventions)
+- [S4 Best Practices](#s4-best-practices)
 
-### Requirements
+## <a name="installation"></a> INSTALLATION 
+
+### <a name="requirements"></a> Requirements
 - SQL Server 2008+. NOT everything in S4 works with SQL Server 2008/R2 - but all S4 functionality IS intended to work with SQL Sever 2012+.
 - Ability to run T-SQL against SQL Server and create a database ([admindb]).
 - Advanced Error Handling (required for backups + automated restore tests and many other 'advanced' S4 features) require xp_cmdshell to be enabled - as outlined [below](#enabling-advanced-s4-features).
 - SMTP (Database Mail) for notifications and alerts when using advanced/automated S4 features.
 
-### Steb By Step Installation
+### <a name="step-by-step-installation"></a> Steb By Step Installation
 To deploy S4 to a target SQL Server Instance:
 1. Locate the latest version of S4 in the [Deployment](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Deployment) folder. By convention, only the latest and most-up-to-date version of S4 will be in the Deployment folder (and will use a min.max.signature.build.sql file format - e.g.., "5.5.2816.2.sql"). 
 
@@ -35,7 +38,7 @@ To deploy S4 to a target SQL Server Instance:
 **NOTE:** *If S4 has already been deployed to your target SQL Server Instance, the deployment script will detect this and simply UPDATE all code in the [admindb] to the latest version - adding a new entry into admindb.dbo.version_history.* 
 
 
-### Enabling Advanced S4 Features
+### <a name="enabling-advanced-s4-features"></a> Enabling Advanced S4 Features
 Once S4 has been deployed (i.e., after the admindb has been created), to deploy advanced error-handling features, simply run the following: 
 
 ```sql
@@ -66,7 +69,9 @@ Meh. There's a lot of [FUD](https://en.wikipedia.org/wiki/Fear,_uncertainty_and_
 
 For more detailed information, see [Notes about xp_cmdshell](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2Fxp_cmdshell_notes.md)
 
-## UPDATES
+[Return to Table of Contents](#toc)
+
+## <a name="updates"></a> UPDATES
 Once S4 has been deployed, keeping it updated is simple: 
 1. As with a new installation/deployment, simply locate the latest.version.sql file (e.g., "5.6.2820.1.sql") in the [Deployment](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Deployment) folder,
 
@@ -78,16 +83,27 @@ Once S4 has been deployed, keeping it updated is simple:
 
 ![](https://assets.overachiever.net/s4/images/install_update_completed.gif)
 
-## FEATURES AND BENEFITS
+[Return to Table of Contents](#toc)
+
+## <a name="features-and-benefits"></a> FEATURES AND BENEFITS
 examples go here... 
 
-## APIs
+[Return to Table of Contents](#toc)
+
+## <a name="apis"></a> APIs
 **NOTE:** *Not ALL S4 code has currently been documented. Specifically, 'internally used' and 'helper' code remains largely undocumented at this point.* 
 
-## USING S4 (Conventions)
 
+[Return to Table of Contents](#toc)
 
-## S4 BEST PRACTICES
+## <a name="using-s4-conventions"></a> USING S4 Conventions
+sdfsdf
 
+[Return to Table of Contents](#toc)
+
+## <a name="s4-best-practices"></a> S4 BEST PRACTICES
+sfdsdfsd
+
+[Return to Table of Contents](#toc)
 
 
