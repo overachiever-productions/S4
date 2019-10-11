@@ -5,8 +5,9 @@
 **S**imple **S**QL **S**erver **S**cripts -> **S<sup>4</sup>**
 
 
-<i class="fas fa-camera"></i>
+<i class="fa fa-plus fa-spin fa-lg"></i>
 
+<i class="fa fa-refresh fa-spin fa-lg"></i>
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
@@ -52,7 +53,7 @@ EXEC [admindb].dbo.[enable_advanced_capabilities];
 GO
 ```
 
-<i class="fa fa-refresh fa-spin fa-lg"></i>
+<i class="fa fa-plus fa-camera fa-lg"></i>
 
 
 
@@ -114,6 +115,12 @@ sdfsdf
 ## <a name="s4-best-practices"></a> S4 BEST PRACTICES
 sfdsdfsd
 
+
+<i class="fa fa-refresh fa-spin fa-lg"></i>
+
 [Return to Table of Contents](#toc)
+
+
+
 
 
