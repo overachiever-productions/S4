@@ -45,7 +45,7 @@ This is where I'm dropping my test links.
 
 - [setup.md](?encodedPath=Documentation%2FSETUP.md)
 
-- Here's a link to [conventions](encodedPath=Documentation%2FCONVENTIONS.md).
+- Here's a link to [conventions](?encodedPath=Documentation%2FCONVENTIONS.md).
 
 
 ## Requirements
