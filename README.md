@@ -15,22 +15,43 @@
     - [Updating S4](#updates)
     - [Removing S4](#removing)
 - [S4 Features and Benefits](#features-and-benefits)
-    - [S4 Backups](#simplified-and-robust-backups) 
-    - [Automated Restore Tests](#simplified-restore-operations-and-automated-restore-testing)
+    - [S4 BACKUPs](#simplified-and-robust-backups) 
+    - [Automated RESTORE Tests](#simplified-restore-operations-and-automated-restore-testing)
     - [Performance Monitoring](#performance-monitoring)
     - [S4 Utilities](#utilities)
-    - [Using S4 Conventions](#using-s4-conventions)
+- [APIs](#apis)
+    - [SQL Server Audit Signature Monitoring and Verification](#sql-server-audit-signature-monitoring-and-verification)
+    - [SQL Server BACKUPs and Utilities](#sql-server-backups-and-utilities)
+    - [SQL Server Configuration Utilities](#sql-server-configuration-utilities)
+    - [High Availability Configuration, Monitoring, and Management](#high-availability-configuration,-monitoring,-and-management)
+    - [SQL Server Agent Jobs](#sql-server-agent-jobs)
+    - [SQL Server Maintenance](#sql-server-maintenance)
+    - [Monitoring](#monitoring)
+    - [Performance](#performance)
+    - [RESTORE Operations and Utilities](#restore-operations-and-utilities)
+    - [Tools and Utilities](#tools-and-utilities)    
+- [S4 Conventions](#s4-conventions)
+    - [Backup Conventions](#backup-conventions)
+    - [Database Name Tokens](database-name-tokens)
+    - [Alerting](#alerting-conventions)
 - [S4 Best Practices](#s4-best-practices)
 
 ## License
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
+## Test Links
+This is where I'm dropping my test links. 
+
+- [setup.md](?encodedPath=Documentation%2FSETUP.md)
+
+- Here's a link to [conventions](encodedPath=Documentation%2FCONVENTIONS.md).
+
+
 ## Requirements
 **SQL Server Requirements:**
 
-- SQL Server 2012+.
-- MOST (but not all) S4 functionality works with SQL Server 2008 / SQL Server 2008 R2. 
+- SQL Server 2012+. *(MOST (but not all) S4 functionality ALSO works with SQL Server 2008 / SQL Server 2008 R2.)* 
 - Some advanced functionality does not work on Express and/or Web Versions of SQL Server.
 - Windows Server Only. (Not yet tested on Azure/Linux.)
 
@@ -40,7 +61,7 @@
 - SMTP (SQL Server Database Mail) for advanced S4 automation and alerts.
 
 ## SETUP 
-Setup is trivial: run a [T-SQL script "e.g.7.0.3042.sql"](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment) against your target server and S4 will create a new `[admindb]` database - as the new home for all S4 code and functionality.  
+**Setup is trivial:** run a [T-SQL script ](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment) "e.g.7.0.3042.sql" against your target server and S4 will create a new `[admindb]` database - as the new home for all S4 code and functionality.  
 
 Advanced S4 automation and error handling requires a server-level change - which has to be explicitly enabled via the step outlined in [Enabling Advanced S4 Features](#enabling-advanced-s4-features). 
 
