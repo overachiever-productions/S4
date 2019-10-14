@@ -30,14 +30,6 @@
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
-## Test Links
-This is where I'm dropping my test links. 
-
-- [setup.md](?encodedPath=Documentation%2FSETUP.md)
-
-- Here's a link to [conventions](?encodedPath=Documentation%2FCONVENTIONS.md).
-
-
 ## Requirements
 **SQL Server Requirements:**
 
@@ -55,7 +47,7 @@ This is where I'm dropping my test links.
 
 Advanced S4 automation and error handling requires a server-level change - which has to be explicitly enabled via the step outlined in [Enabling Advanced S4 Features](#enabling-advanced-s4-features). 
 
-Once deployed, it's easy to [keep S4 updated](#updating-s4) - just grab new releases of the deployment file, and run them against your target server (where they'll see your exising deployment and update code as needed).
+Once deployed, it's easy to [keep S4 updated](#updates) - just grab new releases of the deployment file, and run them against your target server (where they'll see your exising deployment and update code as needed).
 
 If (for whatever reason) you no longer want/need S4, you can 'Undo' advanced functionality via the instructions found in [Removing S4](#removing-s4) - and then DROP the `[admindb]` database.
 
@@ -82,7 +74,7 @@ Once S4 has been deployed (i.e., after the admindb has been created), to deploy 
     GO
 ```
 #### Common Questions and Concerns about enabling xp_cmdshell 
-Meh. There's a lot of [FUD](https://en.wikipedia.org/wiki/Fear,_uncertainty_and_doubt) out there about enabling xp_cmdshell on your SQL Server. *Security is NEVER something to take lightly, but xp_cmdshell isn't a security concern - having a SQL Server running with ELEVATED PERMISSIONS is a security concern.* xp_cmdshell merely allows the SQL Server Service account to interact with the OS much EASIER than would otherwise be possible without xp_cmdshell enabled. 
+Meh. There's a lot of [FUD](https://en.wikipedia.org/wiki/Fear,_uncertainty_and_doubt) out there about enabling xp_cmdshell on your SQL Server. *Security is NEVER something to take lightly, but xp_cmdshell isn't a security concern* - running a SQL Server with ELEVATED PERMISSIONS is a security concern. xp_cmdshell merely allows the SQL Server Service account to interact with the OS much EASIER than would otherwise be possible without xp_cmdshell enabled. 
 
 To checkup-on/view current S4 advanced functionality and configuration settings, run the following: 
 
@@ -98,7 +90,7 @@ To checkup-on/view current S4 advanced functionality and configuration settings,
 [Return to Table of Contents](#table-of-contents)
 
 ### UPDATES
-Keeping S4 up-to-date is simple - just grab and run the latest-release.sql file against your target server.
+Keeping S4 up-to-date is simple - just grab and run the `latest-release.sql` file against your target server.
 
 To Update S4: 
 1. Grab the `latest-release.sql` S4 deployment script. By convention, the LATEST version of S4 will be available in the [\Deployment\ ](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment) folder - and will be the only T-SQL file present (e.g., "5.6.2831.1.sql" - as per the screenshot below).
@@ -129,12 +121,14 @@ To remove S4:
     GO
 ```
 
-4. Done. (If you want to re-install, simply re-run the original setup instructions.)
+4. Done. 
+
+(If you want to re-install, simply re-run the original setup instructions.)
 
 [Return to Table of Contents](#table-of-contents)
 
 ## FEATURES AND BENEFITS
-The entire point of S4 is to simplify common DBA and other administrative tasks - by 'weaponizing' commonly-executed commands and operations into a set of standardized scripts. 
+The entire point of S4 is to simplify common DBA and other administrative tasks - by 'weaponizing' commonly-needed operations into a set of standardized scripts. 
 
 ### Simplified and Robust Backups
 S4 backup functionality streamlines the most-commonly used parts of the T-SQL BACKUP command into a simplified interface that provides simplified setup/management, enables easy automation (with high-context error details and alerts), and integration 'cleanup' or retention policies - all through a simplified interface. 
@@ -168,7 +162,7 @@ Similarly, the following command will ONLY execute DIFF backups of the `[Billing
     GO
 ```
 
-[For more information, see API documentation for dbo.backup_databases and be sure to check out best-practices and conventions info on blah blah blah.] 
+For more information, see API documentation for [dbo.backup_databases](?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well. 
 
 ### Simplified Restore Operations and Automated Restore-Testing
 With a standardized convention defining how SQL Server Backups are stored (i.e., implemented via dbo.backup_databases), RESTORE operations become trivial. 
@@ -203,7 +197,7 @@ Similarly, the following command could be used to REPLACE nightly dev/test datab
     GO
 ```
 
-[For more info, see the explicit details for dbo.restore_databases and the best-practices guidelines and documentation for RESTOREs/etc.]
+For more info, see API documentation for [dbo.restore_databases](?encodedPath=Documentation%2Fapis%2restore_databases.md) and be sture to checkout documented [best-practices for RESTORE operations](?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well.
 
 <div class="stub">### Listing Databases
 [common to need lists of DBs to iterate over ... or to tackle - especially if/when need to remove certain kinds, define a priority/order/etc. ... all has been codified into a highly extensible sproc in the form of dbo.list_databases - which adheres to DB token-naming convention.]
@@ -229,7 +223,8 @@ Examples include:
 
 <div class="stub">
 ### HA Configuration, Monitoring, and Alerting
-
+- x
+- y
 </div>
 
 ### S4 Utilities 
@@ -285,36 +280,26 @@ SELECT dbo.format_timespan(147894); -- 000:02:27.894;
 The majority of S4 functionality is made accessible via a number of 'public' modules (sprocs and UDFs) that are designed to be used either in stand-along scenarios (e.g., BACKUPs or some forms or perf-monitoring), as re-usable logic/functionality that can easily be integrated into your own administrative routines and functions (like generating lists of specific types of databases, or as part of a QA/DEV provisioning process, etc.).
 
 For specific details, see the following: 
-- [SQL Server Audit Signature Monitoring and Verification](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
-- [SQL Server BACKUPs and Utilities](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#sql-server-backups-and-utilities)
-- [SQL Server Configuration Utilities](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#sql-server-configuration-utilities)
-- [High Availability Configuration, Monitoring, and Management](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
-- [SQL Server Agent Jobs](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#sql-server-agent-jobs)
-- [SQL Server Maintenance](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#sql-server-maintenance)
-- [Monitoring](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#monitoring)
-- [Performance](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#performance)
-- [RESTORE Operations and Utilities](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#restore-operations-and-utilities)
-- [Tools and Utilities](?encodedPath=DOCUMENTATION%2Fapis%2FAPIS.md#tools-and-utilities)   
+- [SQL Server Audit Signature Monitoring and Verification](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
+- [SQL Server BACKUPs and Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-backups-and-utilities)
+- [SQL Server Configuration Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-configuration-utilities)
+- [High Availability Configuration, Monitoring, and Management](?encodedPath=Documentation%2Fapis%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
+- [SQL Server Agent Jobs](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-agent-jobs)
+- [SQL Server Maintenance](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-maintenance)
+- [Monitoring](?encodedPath=Documentation%2Fapis%2FAPIS.md#monitoring)
+- [Performance](?encodedPath=Documentation%2Fapis%2FAPIS.md#performance)
+- [RESTORE Operations and Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#restore-operations-and-utilities)
+- [Tools and Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#tools-and-utilities)   
 
 [Return to Table of Contents](#table-of-contents)
 
 ## USING S4 Conventions
-[intro about conventions and then.... lists of conventions goes here... ]
+S4 favors convention over configuration. [TODO: find a link that does a good job of explaining what this means i.e., it attempts to address the most commonly-used and most-commonly needed configuration options and 'choices' by means of standardized/conventionalized defaults - yet, still allows customization (explicit configuration) of key or core configuration choices.]
 
-<div class="stub" meta="this is content 'pulled' from setup - that now belongs in CONVENTIONS - because advanced error handling is a major convention">[LINK to CONVENTIONS about how S4 doesn't want to just 'try' things and throw up hands if/when there's an error. it strives for caller-inform. So that troubleshooting is easy and natural - as DBAs/admins will have immediate access to specific exceptions and errors - without having to spend tons of time debugging and so on... ]
+[To accomodate conventions based on standards/etc. as well as address a few internal paradigms/problem-solving-somethings, S4 explicitly defines and uses the following conventions - which are key to understand and be familiar with if/when using them as production management tools.] 
+[NOTE: this'll be a TOC, but it'll link out to the CONVENTIONS.md page which'll cover as many of these conventions as needed in that .md and if/when a convention is more 'complex'... that convention will get its own .md page for further clarification/context.]
 
-#### TRY / CATCH Fails to Catch All Exceptions in SQL Server
-[demonstrate this by means of an example - e.g., backup to a drive that doesn't exist... and try/catch... then show the output... of F5/execution.]
-
-[To get around this, have to enable xp_cmdshell - to let us 'shell out' to the SQL Server's own shell and run sqlcmd with the command we want to run... so that we can capture all output/details as needed.] 
-
-[example of dbo.execute_command (same backup statement as above - but passed in as a command) - and show the output - i.e., we TRAPPED the error (with full details).]
-
-[NOTE about how all of this is ... yeah, a pain, but there's no other way. Then... xp_cmdshell is native SQL Server and just fine.]
-
-
-For more detailed information, see [Notes about xp_cmdshell](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=feature~2f5.6&encodedPath=Documentation%2Fxp_cmdshell_notes.md)</div>
-
+- [S4 Conventions 'Home Page'](?encodedPath=Documentation%2FCONVENTIONS.md)
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -323,15 +308,11 @@ A key goal of S4 is to enable best-practices execution in 'weaponized' form - or
   
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]
 
-<div class="stub">[make sure that HA docs/links have a reference to these two sites/doc-sources: 
+- [Best-Practices 'Home Page'](?encodedPath=Documentation%2FCONVENTIONS.md)
 
-- [SQL Server Biz Continuity](https://docs.microsoft.com/en-us/sql/database-engine/sql-server-business-continuity-dr?view=sql-server-2017)
-
-- [Windows Server Failover Clustering DOCS](https://docs.microsoft.com/en-us/windows-server/failover-clustering/failover-clustering-overview)
-
-]</div>
 
 [Return to Table of Contents](#table-of-contents)
+
 <style>
     div.stub { display: none; }
 </style>

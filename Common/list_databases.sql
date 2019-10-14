@@ -86,6 +86,18 @@
 			EXEC dbo.list_databases N'[DEV]';
 
 
+-- TODO: 
+		REMOVE READ_FROM_FILESYSTEM as an @Targets Token. 
+		AND, instead, add a new @Authority or @Source or whatever param that defines WHERE we're getting the list of names... 
+			with the following 'domain' of options: 
+				FILESYSTEM | DB_CATALOG | LIST 
+
+			dbo.restore_databases will DEFAULT calls into this via FILESYSTEM... and just about everything else will use DB_CATALOG 
+				but all can/will allow 'LIST' (or 'DYNAMIC' or 'SERIALIZED' or whatever I end up calling it) 
+					that just 'shreds, a, string, and, treats, EVERY, entry, as, an, expected, database, the, end'.
+
+
+
 */
 
 USE [admindb];

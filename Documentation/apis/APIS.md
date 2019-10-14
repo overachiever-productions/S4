@@ -1,9 +1,9 @@
 [README](?encodedPath=README.md) > S4 APIs
 
 ## S4 APIs
-[blurb about how ... this is a SERIOUS work-in-progress - i.e., not a LOT of currently defined code/modules have explicit docs (yet)]
 
-**NOTE:** *Not ALL S4 code has currently been documented. Specifically, 'internally used' and 'helper' code remains largely undocumented at this point.* 
+> ### <i class="fa fa-random"></i> Work in Progress
+> Most public S4 APIs/Modules have NOT been fully documented (yet). Those that have been documented, have a link to their 'full' documentation page. 
 
 ### TABLE OF CONTENTS
 
@@ -46,7 +46,6 @@ Keep an eye on your audit specifications and definitions - by means of periodic 
 - **dbo.is_primary_server:** returns true if the FIRST (alphabetically) synchronized database on a specified server is the primary database in a Mirroring or AG configuration.
 - **dbo.is_primary_database:** returns true if specified database (name) is the primary.
 - **dbo.list_synchronizing_databases:** Provides a list of all databases being Mirrored or Participating in an Availability Group as Replicas. 
-
 
 #### Availability Setup and Configuration Tools
 - **dbo.add_synchronization_partner:** Create/Define a PARTNER setup as a Linked Server Definition - for server, job, and data-synchronization checks. 
@@ -97,8 +96,10 @@ Keep an eye on your audit specifications and definitions - by means of periodic 
 - **dbo.list_recovery_metrics:** Each time dbo.restore_databases is run, it stores meta-data about restore times, included files (i.e., the name/size of each .bak + .trn included as part of the backup), corruption checks, and other metrics/statistics - which can be queried to get a quick and accurate sense of compliance with SLAs.
 
 ### Tools And Utilities
-- **dbo.extract_statement:** sdflksdflksd 
-- **dbo.extract_waitresource:** sdfsdf
+- **[dbo.list_databases]():** Core component of S4 functionality - as it provides easy-to-manage techniques for getting lists of various TYPEs of databases (based on states/statuses/locations/etc.)
+- **dbo.split_string:** Performance optimized string-splitting functionality - that ensures proper sort/output order - and, optionally, allows trim() operations against split-ed values.
+- **dbo.extract_statement:** Given a specific database_id, object_id, and T-SQL Stack start/end statement offsets, this S4 module will grab the exact T-SQL statement being executed from within a module (i.e., sproc, UDF, trigger, etc.). 
+- **dbo.extract_waitresource:** Given a specific WAIT_RESOURCE, this S4 module will translate/fetch explicit details about the resource in question. (Helpful when troubleshooting locking/blocking problems and/or deadlocks).
 - **dbo.is_xml_empty:** Detecting 'empty' is harder than you might initially think. It's not rocket-surgery, but it does warrant some easily re-usable logic to make detection easier.
 - **dbo.normalize_text:** Parameterize or normalize T-SQL text/statements.
 - **dbo.print_long_string:** Bypass the 4000 char limit of PRINT to 'spit out' long text. 

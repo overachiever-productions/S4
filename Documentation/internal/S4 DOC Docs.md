@@ -8,7 +8,7 @@ Snippets and Docs for S4 Documentation (i.e., meta-docs) - to ease standardizati
 - [/Deployment/](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment)
 
 - [/APIs (root)](?encodedPath=apis%2FAPIS.md)
-- [/APIS/targetPage](?encodedPath=apis%2Ffile_name.md)
+- [/APIS/targetPage](?encodedPath=Documentation%2Fapis%2Ffile_name.md)
 
 
 

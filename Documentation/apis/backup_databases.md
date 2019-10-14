@@ -6,74 +6,35 @@
 TODO: synthesize these (overly detailed details... ) into a quick overview of WHY S4 doesn't use MIRROR_TO syntax if/when Enterprise Edition is present - i.e., 2 reasons: 1 retry logic is harder and 2 it's nice to know how long stuff is taking... 
 
 ```
-I got rid of it with build: 3.8.2.16655
+    I got rid of it with build: 3.8.2.16655
+    
+    NOTES for the rationale on WHY i got rid of this were scattered throughout the doc, but I've put some of them in here for future reference:
+    
+    --MKC: this'll need some attention - i.e., if I can't create the directory... then the drive isn't there.... and... copyTo operations won't work –	previously, i think i just bailed? Nope. Looks like i STOPPED trying to do backups though - and just jumped to 'NextDatabase'. –	that'll all have to change. –	AH. maybe this is how I do it: just move this bit of logic DOWN into the section where I tackle COPY to operations. i.e., no sense checking NOW (before I've backed up and verified)... instead, i should check after the backup is made. –	the exception/problem, however, would be ... enterprise-edition MIRROR_TO functionality - which I'll have to address. hmmm. IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN;
+    
+    -- Execute Copy if a copy was specified and we're NOT on Enterprise Edition:
+    
+    --MKC: execute copy-to path valication here... or... maybe execute it here for non-Enterprise and execute it for enterprise up above? –	though... if we do it for enterprise up above? and the path is busted... then... i guess we .. run the backup, and log info on how we couldn't do the copy_to backup... because, that'd be the outcome. –	that adds a bit more complexity, but it dpes follow the business rules/intentions of the script very well. IF @CopyToBackupDirectory IS NOT NULL BEGIN;
+    
+    IF @Edition = 'ENTERPRISE' BEGIN;
+    -- MKC: Yeah, I'll have to set this to -1 for enterprise edition... well, the copy seconds... 
+    --	which kind of stinks, but whatever. 
+    			IF @LogSuccessfulOutcomes = 1 BEGIN;
+    				UPDATE dbo.dba_DatabaseBackups_Log
+    				SET ...
+    
+    – MKC: if we got here... then, the copy completed successfully - no issues. –	if we didn't... then I need to check the exception from the backup? well. i would. but... i'm NOT going to. –	the way i'll address 'copy_to' (or MIRROR_TO) via enterprise is a) i'll check the path, b) if it's valid, we assume the backup + copy works (if it doesn't we'll get a logged exception), c) if the path isn't good, i'll catch that, NOT use MIRROR_TO, and then try to –	run a copy operation further on (though... that'll depend upon xp_cmdshell. –	which, honestly? means I'm about ready to gut the ENTERPRISE edition's MIRROR_TO clause. –	that thing's golden. but.... with it there's NO resiliency. at all. whereas, if I get this working as expected, i'll have resiliency. the only negative being that i'll need xp_cmdshelll enabled (whereas, with enterprise edition i think i didn't need that)? –	but, here's the deal: I need xp_cmdshell. and i've got the balls to demand it actually. –	so. yeah. removing Enterprise Edition MIRROR_TO functionality. CopyDetails = N'COPIED TO DESTINATION via Enterprise Edition''s MIRROR TO clause.' WHERE BackupId = @currentOperationID;
+    
+    The shorter version of why I got rid of it:
+    
+    It makes retry logic quite a bit harder. There's no way to really measure how LONG the copy part of the operation was taking (plus, i like the idea of: backup -> validation -> COPY vs whatever SQL Server enterprise would be doing (which MIGHT be backup + copy -> validation + validation? Or... ???? ) Gutting this logic made things a bit clearer/simpler (i.e., putting one of the S's back into the S4).
 
-NOTES for the rationale on WHY i got rid of this were scattered throughout the doc, but I've put some of them in here for future reference:
-
---MKC: this'll need some attention - i.e., if I can't create the directory... then the drive isn't there.... and... copyTo operations won't work –	previously, i think i just bailed? Nope. Looks like i STOPPED trying to do backups though - and just jumped to 'NextDatabase'. –	that'll all have to change. –	AH. maybe this is how I do it: just move this bit of logic DOWN into the section where I tackle COPY to operations. i.e., no sense checking NOW (before I've backed up and verified)... instead, i should check after the backup is made. –	the exception/problem, however, would be ... enterprise-edition MIRROR_TO functionality - which I'll have to address. hmmm. IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN;
-
--- Execute Copy if a copy was specified and we're NOT on Enterprise Edition:
-
---MKC: execute copy-to path valication here... or... maybe execute it here for non-Enterprise and execute it for enterprise up above? –	though... if we do it for enterprise up above? and the path is busted... then... i guess we .. run the backup, and log info on how we couldn't do the copy_to backup... because, that'd be the outcome. –	that adds a bit more complexity, but it dpes follow the business rules/intentions of the script very well. IF @CopyToBackupDirectory IS NOT NULL BEGIN;
-
-IF @Edition = 'ENTERPRISE' BEGIN;
--- MKC: Yeah, I'll have to set this to -1 for enterprise edition... well, the copy seconds... 
---	which kind of stinks, but whatever. 
-			IF @LogSuccessfulOutcomes = 1 BEGIN;
-				UPDATE dbo.dba_DatabaseBackups_Log
-				SET ...
-
-– MKC: if we got here... then, the copy completed successfully - no issues. –	if we didn't... then I need to check the exception from the backup? well. i would. but... i'm NOT going to. –	the way i'll address 'copy_to' (or MIRROR_TO) via enterprise is a) i'll check the path, b) if it's valid, we assume the backup + copy works (if it doesn't we'll get a logged exception), c) if the path isn't good, i'll catch that, NOT use MIRROR_TO, and then try to –	run a copy operation further on (though... that'll depend upon xp_cmdshell. –	which, honestly? means I'm about ready to gut the ENTERPRISE edition's MIRROR_TO clause. –	that thing's golden. but.... with it there's NO resiliency. at all. whereas, if I get this working as expected, i'll have resiliency. the only negative being that i'll need xp_cmdshelll enabled (whereas, with enterprise edition i think i didn't need that)? –	but, here's the deal: I need xp_cmdshell. and i've got the balls to demand it actually. –	so. yeah. removing Enterprise Edition MIRROR_TO functionality. CopyDetails = N'COPIED TO DESTINATION via Enterprise Edition''s MIRROR TO clause.' WHERE BackupId = @currentOperationID;
-
-The shorter version of why I got rid of it:
-
-It makes retry logic quite a bit harder. There's no way to really measure how LONG the copy part of the operation was taking (plus, i like the idea of: backup -> validation -> COPY vs whatever SQL Server enterprise would be doing (which MIGHT be backup + copy -> validation + validation? Or... ???? ) Gutting this logic made things a bit clearer/simpler (i.e., putting one of the S's back into the S4).
 ```
+
 
 </div>
 
-<div class="stub" meta="this WAS in the new/rewrite of 'features' - i.e., show people how stuff works by means of quick examples. It's redundant... but it _MIGHT_ make sense to show a blank/empty folder (screenshots) and show how progressing through the backups below will 'fill' that folder and what everything does/means/etc. Or, in other words, I'm keeping this as a CYA">
-```sql
-    -- Kick off FULL backups of all SYSTEM databases (master, msdb, model, distribution, etc.)
-    EXEC admindb.dbo.backup_databases
-        @BackupType = N'FULL',
-        @Targets = N'{SYSTEM}', 
-        @BackupRetention = N'3 days';
-    
-    -- As above, but instead of using SQL Server's default Backups directory, specify a backup location:
-    EXEC admindb.dbo.backup_databases
-        @BackupType = N'FULL',
-        @Targets = N'{SYSTEM}', 
-        @BackupDirectory = N'D:\SQLBackups',
-        @BackupRetention = N'3 days';
-    
-    -- As above, but instead of EXECUTING the actual backups, just PRINT/OUTPUT the commands: 
-    EXEC admindb.dbo.backup_databases
-        @BackupType = N'FULL',
-        @Targets = N'{SYSTEM}', 
-        @BackupDirectory = N'D:\SQLBackups',
-        @BackupRetention = N'3 days', 
-        @PrintOnly = 1;
 
-    -- Let's also copy these backups off-box (and keep them a bit longer off-box):
-
-
-    -- Instead of SYSTEM databases, let's backup ALL user databases instead - and push them offbox too:
-    EXEC admindb.dbo.backup_databases
-        @BackupType = N'FULL',
-        @Targets = N'{USER}', 
-        @BackupDirectory = N'D:\SQLBackups',
-        @CopyToDirectory = N'\\backup-server\SQLBackups'
-        @BackupRetention = N'2 days', 
-        @CopyToRetention = N'4 days';
-        
-```
-
-By CONVENTION, S4 isolates all backups for each database into their own SUB-folders - from the @BackupDirectory and @CopyToDirectory path locations. 
-
-For example, assume we have the following USER databases: Billing, Customers, Products, Widgets - along with master, model, msdb, and the admindb (treated as a {SYSTEM} database by S4 scripts - by default) as {SYSTEM} databases - and have executed the commands above - i.e., pointing @BackupDirectory at D:\SQLBackups.
-
-</div>
 
 
 ## S4 Backups
@@ -505,3 +466,7 @@ EXEC admindb.dbo.dbo.backup_databases
 [Return to Table of Contents](#table-of-contents)
 
 [Return to README](?encodedPath=README.md)
+
+<style>
+    div.stub { display: none; }
+</style>
