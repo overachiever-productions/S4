@@ -96,7 +96,7 @@ Keep an eye on your audit specifications and definitions - by means of periodic 
 - **dbo.list_recovery_metrics:** Each time dbo.restore_databases is run, it stores meta-data about restore times, included files (i.e., the name/size of each .bak + .trn included as part of the backup), corruption checks, and other metrics/statistics - which can be queried to get a quick and accurate sense of compliance with SLAs.
 
 ### Tools And Utilities
-- **[dbo.list_databases]():** Core component of S4 functionality - as it provides easy-to-manage techniques for getting lists of various TYPEs of databases (based on states/statuses/locations/etc.)
+- **[dbo.list_databases](?encodedPath=Documentation%2Fapis%2Flist_databases):** Core component of S4 functionality - as it provides easy-to-manage techniques for getting lists of various TYPEs of databases (based on states/statuses/locations/etc.)
 - **dbo.split_string:** Performance optimized string-splitting functionality - that ensures proper sort/output order - and, optionally, allows trim() operations against split-ed values.
 - **dbo.extract_statement:** Given a specific database_id, object_id, and T-SQL Stack start/end statement offsets, this S4 module will grab the exact T-SQL statement being executed from within a module (i.e., sproc, UDF, trigger, etc.). 
 - **dbo.extract_waitresource:** Given a specific WAIT_RESOURCE, this S4 module will translate/fetch explicit details about the resource in question. (Helpful when troubleshooting locking/blocking problems and/or deadlocks).

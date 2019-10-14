@@ -5,9 +5,9 @@
 
 
 ### TABLE OF CONTENTS
-- [BACKUPS](#)
-- [RESTORES](#)  
-~~- [JOBS](#)~~
+- [BACKUPS](?encodedPath=Documentation%2best-practices%2FBACKUPS.md)
+- [RESTORES](?encodedPath=Documentation%2best-practices%2FRESTORES.md)  
+~~- [JOBS]()~~
 
 
 ### Templates 
