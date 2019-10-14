@@ -162,7 +162,7 @@ Similarly, the following command will ONLY execute DIFF backups of the `[Billing
     GO
 ```
 
-For more information, see API documentation for [dbo.backup_databases](?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well. 
+For more information, see API documentation for [dbo.backup_databases](?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md) as well. 
 
 ### Simplified Restore Operations and Automated Restore-Testing
 With a standardized convention defining how SQL Server Backups are stored (i.e., implemented via dbo.backup_databases), RESTORE operations become trivial. 
@@ -280,16 +280,16 @@ SELECT dbo.format_timespan(147894); -- 000:02:27.894;
 The majority of S4 functionality is made accessible via a number of 'public' modules (sprocs and UDFs) that are designed to be used either in stand-along scenarios (e.g., BACKUPs or some forms or perf-monitoring), as re-usable logic/functionality that can easily be integrated into your own administrative routines and functions (like generating lists of specific types of databases, or as part of a QA/DEV provisioning process, etc.).
 
 For specific details, see the following: 
-- [SQL Server Audit Signature Monitoring and Verification](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
-- [SQL Server BACKUPs and Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-backups-and-utilities)
-- [SQL Server Configuration Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-configuration-utilities)
-- [High Availability Configuration, Monitoring, and Management](?encodedPath=Documentation%2Fapis%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
-- [SQL Server Agent Jobs](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-agent-jobs)
-- [SQL Server Maintenance](?encodedPath=Documentation%2Fapis%2FAPIS.md#sql-server-maintenance)
-- [Monitoring](?encodedPath=Documentation%2Fapis%2FAPIS.md#monitoring)
-- [Performance](?encodedPath=Documentation%2Fapis%2FAPIS.md#performance)
-- [RESTORE Operations and Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#restore-operations-and-utilities)
-- [Tools and Utilities](?encodedPath=Documentation%2Fapis%2FAPIS.md#tools-and-utilities)   
+- [SQL Server Audit Signature Monitoring and Verification](?encodedPath=Documentation%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
+- [SQL Server BACKUPs and Utilities](?encodedPath=Documentation%2FAPIS.md#sql-server-backups-and-utilities)
+- [SQL Server Configuration Utilities](?encodedPath=Documentation%2FAPIS.md#sql-server-configuration-utilities)
+- [High Availability Configuration, Monitoring, and Management](?encodedPath=Documentation%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
+- [SQL Server Agent Jobs](?encodedPath=Documentation%2FAPIS.md#sql-server-agent-jobs)
+- [SQL Server Maintenance](?encodedPath=Documentation%2FAPIS.md#sql-server-maintenance)
+- [Monitoring](?encodedPath=Documentation%2FAPIS.md#monitoring)
+- [Performance](?encodedPath=Documentation%2FAPIS.md#performance)
+- [RESTORE Operations and Utilities](?encodedPath=Documentation%2FAPIS.md#restore-operations-and-utilities)
+- [Tools and Utilities](?encodedPath=Documentation%2FAPIS.md#tools-and-utilities)   
 
 [Return to Table of Contents](#table-of-contents)
 
