@@ -29,7 +29,7 @@ Keep an eye on your audit specifications and definitions - by means of periodic 
 
 ### SQL Server Backups and Utilities
 
-- **[dbo.backup_databases](?encodedPath=apis%2Fbackup_databases.md):** Execute and easily automate backups. [Make sure to check Best Practices documentation on SQL Server Backups as well.]
+- **[dbo.backup_databases](?encodedPath=Documentation%2Fapis%2Fbackup_databases.md):** Execute and easily automate backups. **Make sure to check [Best Practices documentation](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md) on SQL Server Backups as well.**
 - **dbo.remove_backup_files:** Helper function used by dbo.backup_databases to remove older/expired backups - but can be used 'manually' to cleanup older/expired backups as needed. 
 
 ### SQL Server Configuration Utilities 
@@ -90,8 +90,8 @@ Keep an eye on your audit specifications and definitions - by means of periodic 
 - **dbo.list_transactions:** Live-view of all 'in-flight' transactions along with (optional) detailed metrics about resources being used and held.
 
 ### Restore Operations and Utilities
-- **[dbo.restore_databases](?encodedPath=apis%2Frestore_databases.md):** sdffsd
-- **[dbo.apply_logs](?encodedPath=apis%2Fapply_logs.md):** dfwsfsd
+- **[dbo.restore_databases](?encodedPath=Documentation%2Fapis%2Frestore_databases.md):** sdffsd
+- **[dbo.apply_logs](?encodedPath=Documentation%2Fapis%2Fverify_database_configurations.md):** dfwsfsd
 - **dbo.copy_database:** Leverages S4's dbo.backup_database + dbo.restore_database to create a simple 'wrapper' that enables quick and easy 'copies' of databases to be created 'on the fly' - ideal for multi-tenant use/scenarios (as dbo.copy_database also kicks off a FULL backup as part of the 'copy' process).
 - **dbo.list_recovery_metrics:** Each time dbo.restore_databases is run, it stores meta-data about restore times, included files (i.e., the name/size of each .bak + .trn included as part of the backup), corruption checks, and other metrics/statistics - which can be queried to get a quick and accurate sense of compliance with SLAs.
 

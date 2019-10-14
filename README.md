@@ -308,7 +308,7 @@ A key goal of S4 is to enable best-practices execution in 'weaponized' form - or
   
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]
 
-- [Best-Practices 'Home Page'](?encodedPath=Documentation%2FBESTPRACTICES.md)
+- [Best-Practices 'Home Page'](&encodedPath=Documentation%2FBESTPRACTICES.md)
 
 
 [Return to Table of Contents](#table-of-contents)
