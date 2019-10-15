@@ -1,4 +1,4 @@
-[README](?encodedPath=README.md) > [APIs](?encodedPath=DOCUMENTATION%2FAPIs%2FAPIS.md) > dbo.backup_databases
+[README](?encodedPath=README.md) > [S4 APIs](?encodedPath=Documentation%2FAPIS.md) > dbo.backup_databases
 
 ## dbo.backup_databases
 
@@ -178,26 +178,17 @@ DEFAULT = NULL.
 OPTIONAL. By default, dbo.backup_databases will NOT log successful outcomes to the  dbo.backups_log table (though any time there is an error or problem, details will be logged regardless of this setting). However, if @LogSuccessfulOutcomes is set to true, then succesful outcomes (i.e., those with no errors or problems) will also be logged into the dbo.backups_log table (which can be helpful for gathering metrics and extended details about backup operations if needed).  
 DEFAULT = 0 (false).
 
-**[@OperatorName** = N'sql-server-agent-operator-name-to-send-alerts-to | {DEFAULT} ' ]  
-DEFAULTED.  
-Defaults to 'Alerts'. If 'Alerts' is not a valid Operator name specified/configured on the server, dbo.backup_databases will throw an error BEFORE attempting to backup databases. Otherwise, once this parameter is set to a valid Operator name, then if/when there are any problems during execution, this is the Operator that dbo.backup_databases will send an email alert to - with an overview of problem details. 
-DEFAULT = N'{[DEFAULT]()}'.
+[**@OperatorName** = N'{DEFAULT}' ]  
+[TODO link this doc-blurb into a standardized location - so I only have to write this CORE/CONVENTION'd stuff 1x.]
 
-**[@MailProfileName** = N'name-of-mail-profile-to-use-for-alert-sending | {DEFAULT} ' ]  
-DEFAULTED.  
-If a valid SQL Server Database Mail Profile is not specified, dbo.backup_databases will throw an error BEFORE attempting backups. Otherwise, this is the profile used to send alerts if/when there are problems or errors encountered during backups.   
-DEFAULT = N'{[DEFAULT]()}'.
+[**@MailProfileName** = N'{DEFAULT}' ]  
+[TODO link this doc-blurb into a standardized location - so I only have to write this CORE/CONVENTION'd stuff 1x.]
 
-**[@EmailSubjectPrefix** = N'Email-Subject-Prefix-You-Would-Like-For-Backup-Alert-Messages' ]  
-DEFAULTED.  
-Defaults to '[Database Backups ] ', but can be modified as desired. Otherwise, whenever an error or problem occurs during execution an email will be sent with a Subject that starts with whatever is specified (i.e., if you switch this to '--DB2 BACKUPS PROBLEM!!-- ', you'll get an email with a subject similar to '--DB2 BACKUPS PROBLEM!!-- Failed To complete' - making it easier to set up any rules or specialized alerts you may wish for backup-specific alerts sent by your SQL Server.
-DEFAULT = N'[Database Backups ] '.
+[**@EmailSubjectPrefix** = N'Text Here' ]
+[This also needs a 'standarized-ish' doc blurb... only, there IS a value here that'll be different per each sproc/etc. (And, eventually, these can/will be changed via dbo.Settings as an option as well - i.e., sproc_name_email_alert_prefix (as the key ... with a specified value)))]
 
-
-**[@PrintOnly** = [ 0 | 1 ] ]  
-DEFAULTED.  
-When set to true, processing will complete as normal, HOWEVER, no backup operations or other commands will actually be EXECUTED; instead, all commands will be output to the query window (and SOME validation operations will be skipped). No logging to dbo.backup_log will occur when @PrintOnly = 1. Use of this parameter (i.e., set to true) is primarily intended for debugging operations AND to 'test' or 'see' what dbo.backup_databases would do when handed a set of inputs/parameters.  
-DEFAULT = 0 (false);
+[**@PrintOnly** = { 0 | 1} ]  
+[TODO link this doc-blurb into a standardized location - so I only have to write this CORE/CONVENTION'd stuff 1x.] 
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -372,6 +363,8 @@ If your databases are mirrored or part of AlwaysOn Availability Groups, you pick
 - While you obviously want to keep backing up your (user) databases, they will typically only be 'accessible' for backups on or from the 'primary' server only (unless you're running a multi-server node that is licensed for read-only secondaries (which aren't fully supported by dbo.backup_databases at this time)) - meaning that you'll want to create jobs on 'both' of your servers that run at the same time, but you only want them to TRY and execute a backup against the 'primary' replica/copy of your database at a time (otherwise, if you try to kick off a FULL or T-LOG backup against a 'secondary' database you'll get an error). 
 - Since your (user) backups can 'jump' from one server to another (via failover), 'on-box' backups might not always provide a full backup chain (i.e., you might kick off FULL backups on SERVERA, run on that server for another 4 hours, then a failover will force operations on to SERVERB - where things will run for a few hours and then you may or may not fail back; but, in either case: neither the backups on SERVERA or SERVERB have the 'full backup chain' - so off-box copies of your backups are WAY more important than they normally are. In fact, you MIGHT want to consider setting @BackupDirectory to being a UNC share and @CopyToBackupDirectory to being an additional 'backup' UNC share (on a different host) - as the backups on either SERVERA or SERVERB both run the risk of never actually being a 'true' chain of viable backups). 
 - System backups also run into a couple of issues. Since the master database, for example, keeps details on which databases, logins, linked servers, and other key bits of data are configured or enabled on a specific server, you'll want to create nightly (at least) backups of your system databases for both servers. However, if you specify a backup path of \\\\ServerX\SQLBackups as the path for your FULL [SYSTEM] backups on both SERVERA and SERVERB, each of them will try to create a new subfolder called master (for the master database, and then model for the model db, and so on), and drop in new FULL bakups for their own, respective, master databases. dbo.backup_databases will use a 'uniquifier' in the names of both of these master database backups - so they won't overwrite each other, but... if you were to ever need these backups, you'd have NO IDEA which of the two FULL backups (taken at effectively the same time) would be for SERVERA or for SERVERB. To address, the @AddServerNameToSystemBackupsPath switch has been added to dbo.backup_databases and, when set to 1, will result in a path for system-database backups that further splits backups into sub-folders for the server names. 
+
+[Return to Table of Contents](#table-of-contents)
 
 **Examples**
 
