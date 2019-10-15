@@ -7,7 +7,8 @@
 ### TABLE OF CONTENTS
 - [BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md)
 - [RESTORES](?encodedPath=Documentation%2Fbest-practices%2FRESTORES.md)  
-~~- [JOBS]~~
+~~- [(todo) JOBS]~~
+- [TROUBLESHOOTING](?encodedPath=Documentation%2Fbest-practices%2FTROUBLESHOOTING.md)
 
 
 ### Templates 

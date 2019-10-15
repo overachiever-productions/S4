@@ -18,7 +18,7 @@ EITHER WAY: just make sure to integrate the conventions defined in there ... int
     - [SQL Server Backups and Sub-Directories Per Each Database]() 
     - Vectors. Human-readable 'timespans'/directives used for specifying retention rates, frequencies and so on - i.e., instead of @NumberOfMinutesToAdd, S4 uses @PollingFrequency = '22 minutes' to enable cleaner @ParameterNames (for 'self-documentation') and easier values that 'magic numbers' (i.e., is 111756 a set of milliseconds, seconds, hours? what? ). 
     - {DEFAULTS}. Convention over configuration - but, configuration can be changed at 2x levels - system-wide (dbo.settings) or per execution/call of an S4 module. (This allows for MUCH LESS change/modification if/when something like an email address changes/etc. or the path to backups changes - while also allowing DBAs and users to EASILY specify 'one off', 'test', or other 'exceptional' executions without hassle.
-    - {TOKENS}. ...
+    - {TOKENS}. [Make sure to cover admindb being treated as a {SYSTEM} database and how that's managed/changed via the dbo.settings `admindb_is_system_db` (UNIQUE) key... ]
     - LISTS. (still in use? )
     - @PrintOnly Conventions. 
     - [DOMAINS] (MOSTLY just a documentation convention... )

@@ -111,7 +111,7 @@ REQUIRED. The type of backup to perform (FULL backup, DIFFerential backup, or Tr
 REQUIRED. Either a comma-delimited list of databases to backup by name (e.g., 'db1, dbXyz, Widgets') or a specialized token (enclosed in square-brackets) to specify that either {SYSTEM} databases should be backed up, or {USER} databases should be backed up. 
 
 
-> ***NOTE:*** By default, the admindb is treated by S4 scripts as a {SYSTEM} database (instead of a {USER} database). ~~If you wish/need to modify this behavior, you'll need to modify the @includeAdminDBAsSystemDatabase switch/variable in dbo.load_database_names (i.e., set it to 0 and it'll then be treated as a {USER} database instead of a {SYSTEM} database).~~ [Now changed/modified within dbo.settings table via key/value pair.]
+> ***NOTE:*** By default, the admindb is treated by S4 scripts as a {SYSTEM} database (instead of a {USER} database). To modify this convention, add or update the `admindb_is_system_db` (as a setting_type of UNIQUE) in the dbo.settings table - setting the value to 0 if you wish the `[admindb]` to be treated like a {USER} database. Otherwise, if this key is NOT present, `[admindb]` is treated as a {SYSTEM} database.
 
 **[@DatabasesToExclude** = N'list, of, database, names, to exclude, %wildcards_allowed%']  
 OPTIONAL. Designed to work with {USER} (or {SYSTEM}) tokens (but also works with a specified list of databases). Removes any databases (found on server), from the list of DBs to backup.
