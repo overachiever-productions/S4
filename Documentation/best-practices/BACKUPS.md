@@ -125,7 +125,7 @@ Other generalizations/abstractions, like "PriorityDatabases.FULL Backups" equall
 #### Job Categories
 Job Categories are not important to job outcome or execution. If you'd like to create specialized Job Category Names for your backup jobs (i.e., like "Backups"), you can do so by right-clicking on the SQL Server Agent > Jobs node, and selecting "Manage Job Categories" - where you can then add (or remove) Job Category names as desired. 
 
-![](https://git.overachiever.net/content/images/s4_doc_images/backups_jobcategories.gif)
+![](https://assets.overachiever.net/s4/images/backups_jobcategories.gif)
 
 #### Job Ownership
 When creating jobs, it is a best practice to always make sure the job owner is 'sa' - rather than MACHINE\username or DOMAIN\username - to help provide better continuity of execution through machine/domain rename operations, and other considerations. 
@@ -138,17 +138,17 @@ As with Job Names, job step names should be descripive as well (even if there's 
 
 Likewise, for automated backups, Job Steps should be set to execute within the **admindb** database. 
 
-![](https://git.overachiever.net/content/images/s4_doc_images/backups_jobstep1.gif)
+![](https://assets.overachiever.net/s4/images/backups_jobstep1.gif)
 
 
 #### Jobs with Multiple Job Steps
 When you need to create SQL Server Agent Jobs with multiple Job Steps, you can do so by creating a job (as normal), adding a New/First step, and then adding as many 'New' job steps as you would like. Once you're done adding job steps, however, SSMS will have set up the "On Success" and "On Failure" outcomes of each job-step as outlined in the screenshot below: 
 
-![](https://git.overachiever.net/content/images/s4_doc_images/backups_jobstep_multi.gif)
+![](https://assets.overachiever.net/s4/images/backups_jobstep_multi.gif)
 
 To fix/address, this, you'll need to edit EACH job step, switch to the Advanced tab per each Job step, and switch the "On failure action" to "Go to the next step" from the dropdown - on all steps OTHER than the LAST step defined. 
 
-![](https://git.overachiever.net/content/images/s4_doc_images/backups_jobstep_onfail.gif)
+![](https://assets.overachiever.net/s4/images/backups_jobstep_onfail.gif)
 
 ### Scheduling Jobs
 When setting up Job Schedules for a job, it's usually best to keep things as simple as possible and only use a single schedule per job (though, you can definitely use more than one schedule if you're 100% confident that what you're doing makes sense (there's rarely ever a need to have multiple schedules for the same types of backups)). 
@@ -158,7 +158,7 @@ Furthermore, when scheduling jobs, you'll always want to pay attention to the 3 
 2. Make sure you configure the option needed (i.e., most of the time this'll be Daily).
 3. Occurs once vs Occurs every... are important options/specifications as well. 
 
-![](https://git.overachiever.net/content/images/s4_doc_images/backups_schedule.gif)
+![](https://assets.overachiever.net/s4/images/backups_schedule.gif)
 
 ### Notifications
 While dbo.backup_databases is designed to raise an error/alert (via email) any time a problem is encountered during execution, its possible that a BUG within dbo.backup_databases (or with some of the parameters/inputs you may have specified) will cause the job to NOT execute as expected. As such, 
@@ -262,13 +262,14 @@ At this point, she's effectively done - other than monitoring how much space the
 [Return to Table of Contents](#toc)
 
 ### Troubleshooting Common Backup Problems
+[TODO: move to TROUBLEHSOOTING.md]
 
 #### Backup Folder Permissions
 In order for SQL Server to write backups to a specific folder (on-box or out on the network), you will need to make sure that the Service Account under which SQL Server runs has access to the folder(s) in question. 
 
 To determine which account your SQL Server is running under, launch the SQL Server Configuration Manager, then, on the SQL Server Services tab, find the MSSQLSERVER service (or the service that corresponds to your named instance if you're not on the default SQL Server instance), then double-click on the service to review Log On information. 
 
-![](https://git.overachiever.net/content/images/s4_doc_images/backups_services.gif)
+![](https://assets.overachiever.net/s4/images/backups_services.gif)
 
 Whatever username is specified in the Log On details - is the Windows account name that your SQL Server (instance) is executing under - and will be the account that will need access to any folders or locations where you might be writing backups. 
 
