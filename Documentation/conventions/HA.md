@@ -1,7 +1,7 @@
 ﻿# Synchronized Databases - Mirroring and Availability Groups
 Despite the fact that SQL Server Database Mirroring and it's successor, AlwaysOn Availability Groups, provide fantastic options for addressing high-availability for SQL Server databases, both solutions come with a couple of significant limitations that must be addressed before they can be reliably used to protect mission critical systems.
 
-Challenges Include: 
+## Challenges Include: 
 - Mirroring Scope. [user dbs only - server/host-level stuff isn't addressed. you're on your own - unlike with a cluster.]
 - Failover. GOBS of problems here (probably need sub-lists)
 > [since you're on your own... failover can be ugly - if both servers aren't configured with the same logins... data might failover, but apps/users can't connect.] 

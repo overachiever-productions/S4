@@ -2,17 +2,11 @@
 [Intro blurb]
 
 ## Table of Contents
-[TOC]
 
-[Link back to parent Page in docs (HA/Synchronized DBs)]
-
-[Link back to docs root/main]
 
 
 ## NOTICE
 - [sync checks are exactly what they say - checks. they don't modify anything. ]
-- [if you want something that MODIFIES job states... look at dbo.ensure_job_states... ]
-
 
 ### Context and Background
 [To ensure optimal synchronization of job details (especially during/after failover operations), S4 synchronization functionality uses SQL Server Agent Categories along with S4-defined job scopes... etc.]
