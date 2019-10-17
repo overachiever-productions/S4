@@ -5,62 +5,71 @@
 
 			-- expect exception:
 			EXEC dbo.list_databases 
-				@Targets = N'[READ_FROM_FILESYSTEM]';
+				@Targets = N'{READ_FROM_FILESYSTEM}';
 
 			-- expect exception:
 			EXEC dbo.list_databases 
-				@Exclusions = N'[READ_FROM_FILESYSTEM]';
+				@Exclusions = N'{READ_FROM_FILESYSTEM}';
 
 			-- expect exception:
 			EXEC dbo.list_databases 
-				@Targets = N'[ALL]', 
-				@Exclusions = N'[SYSTEM]';
+				@Targets = N'{ALL}', 
+				@Exclusions = N'{SYSTEM}';
 			GO
 
 			-- expect exception:
 			EXEC dbo.list_databases 
-				@Targets = N'[ALL]', 
-				@Exclusions = N'[USER]';
+				@Targets = N'{ALL}', 
+				@Exclusions = N'{USER}';
 			GO
 
 			EXEC dbo.list_databases;
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[ALL]';
+				@Targets = N'{ALL}';
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[SYSTEM]';
+				@Targets = N'{SYSTEM}';
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[USER]', 
-				@Exclusions = N'[DEV]';
+				@Targets = N'{USER}';
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[USER]', 
-				@Exclusions = N'[DEV]', 
+				@Targets = N'{USER}', 
+				@Exclusions = N'{DEV}';
+			GO
+
+			EXEC dbo.list_databases 
+				@Targets = N'{USER}', 
+				@Exclusions = N'{DEV}', 
 				@Priorities = N'Billing,*,'
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[USER]', 
-				@Priorities = N'Billing,*,[DEV]'
+				@Targets = N'{USER}', 
+				@Priorities = N'Billing,*,{DEV}'
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[USER]';
+				@Targets = N'{ALL}', 
+				@Exclusions = N'Bord%';
 			GO
 
 			EXEC dbo.list_databases 
-				@Targets = N'[ALL]', 
-				@Exclusions = N'BayCar%';
-			GO
+				@Targets = N'{SYSTEM}, {DEV}';
 
 			EXEC dbo.list_databases 
-				@Targets = N'[SYSTEM], [DEV]';
+				@Targets = N'{SYSTEM}, {DEV}', 
+				@Priorities = N'{DEV}, *';
+
+			EXEC dbo.list_databases 
+				@Targets = N'{SYSTEM}, {DEV}', 
+				@Exclusions = N'admin%',
+				@Priorities = N'{DEV}, *';
 
 			EXEC dbo.list_databases 
 				@Targets = N'Billing, SelectEXP,Traces,Utilities, Licensing';
@@ -78,12 +87,11 @@
 				@Priorities = N'SS%, *, B%';
 			GO
 
-
 			EXEC dbo.list_databases 
 				@ExcludeReadOnly = 1;
 			GO
 
-			EXEC dbo.list_databases N'[DEV]';
+			EXEC dbo.list_databases N'{DEV}';
 
 
 -- TODO: 
@@ -108,7 +116,7 @@ IF OBJECT_ID('dbo.list_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_databases
-	@Targets								nvarchar(MAX)	= N'[ALL]',		-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Targets								nvarchar(MAX)	= N'{ALL}',		-- {ALL} | {SYSTEM} | {USER} | {READ_FROM_FILESYSTEM} | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions								nvarchar(MAX)	= NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	= NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@ExcludeClones							bit				= 1, 
@@ -127,39 +135,40 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	IF NULLIF(@Targets, N'') IS NULL BEGIN
-		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], or a comma-delimited list of databases/folders.', 16, 1);
+		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token {ALL}, {SYSTEM}, {USER}, or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
 
-	IF ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) AND (UPPER(@Targets) <> N'[ALL]') BEGIN
-		RAISERROR(N'When the Token [ALL] is specified for @Targets, no ADDITIONAL db-names or tokens may be specified.', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Targets, N'{ALL}')) > 0) AND (UPPER(@Targets) <> N'{ALL}') BEGIN
+		RAISERROR(N'When the Token {ALL} is specified for @Targets, no ADDITIONAL db-names or tokens may be specified.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF (SELECT dbo.[count_matches](@Exclusions, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
-		RAISERROR(N'The [READ_FROM_FILESYSTEM] is NOT a valid exclusion token.', 16, 1);
+	IF (SELECT dbo.[count_matches](@Exclusions, N'{READ_FROM_FILESYSTEM}')) > 0 BEGIN 
+		RAISERROR(N'The {READ_FROM_FILESYSTEM} is NOT a valid exclusion token.', 16, 1);
 		RETURN -2;
 	END;
 
-	IF (SELECT dbo.[count_matches](@Targets, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
-		RAISERROR(N'@Targets may NOT be set to (or contain) [READ_FROM_FILESYSTEM]. The [READ_FROM_FILESYSTEM] token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
+	IF (SELECT dbo.[count_matches](@Targets, N'{READ_FROM_FILESYSTEM}')) > 0 BEGIN 
+		RAISERROR(N'@Targets may NOT be set to (or contain) {READ_FROM_FILESYSTEM}. The {READ_FROM_FILESYSTEM} token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
 		RETURN -3;
 	END;
 
-	IF ((SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) BEGIN
-		RAISERROR(N'[SYSTEM] can NOT be specified as an Exclusion when @Targets is (or contains) [ALL]. Replace [ALL] with [USER] for @Targets and remove [SYSTEM] from @Exclusions instead (to load all databases EXCEPT ''System'' Databases.', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'{SYSTEM}')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'{ALL}')) > 0) BEGIN
+		RAISERROR(N'{SYSTEM} can NOT be specified as an Exclusion when @Targets is (or contains) {ALL}. Replace {ALL} with {USER} for @Targets and remove {SYSTEM} from @Exclusions instead (to load all databases EXCEPT ''System'' Databases.', 16, 1);
 		RETURN -5;
 	END;
 
-	IF ((SELECT dbo.[count_matches](@Exclusions, N'[USER]')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) BEGIN
-		RAISERROR(N'[USER] can NOT be specified as an Exclusion when @Targets is (or contains) [ALL]. Replace [ALL] with [SYSTEM] for @Targets and remove [USER] from @Exclusions instead (to load all databases EXCEPT ''User'' Databases.', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'{USER}')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'{ALL}')) > 0) BEGIN
+		RAISERROR(N'{USER} can NOT be specified as an Exclusion when @Targets is (or contains) {ALL}. Replace {ALL} with {SYSTEM} for @Targets and remove {USER} from @Exclusions instead (to load all databases EXCEPT ''User'' Databases.', 16, 1);
 		RETURN -6;
 	END;
 
-	IF ((SELECT dbo.[count_matches](@Exclusions, N'[USER]')) > 0) OR ((SELECT dbo.[count_matches](@Exclusions, N'[ALL]')) > 0) BEGIN 
-		RAISERROR(N'@Exclusions may NOT be set to [ALL] or [USER].', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'{USER}')) > 0) OR ((SELECT dbo.[count_matches](@Exclusions, N'{ALL}')) > 0) BEGIN 
+		RAISERROR(N'@Exclusions may NOT be set to {ALL} or {USER}.', 16, 1);
 		RETURN -7;
 	END;
+
 
 	-----------------------------------------------------------------------------
 	-- Initialize helper objects:
@@ -184,10 +193,12 @@ AS
 		[database_name] sysname NOT NULL
 	); 	
 
+
+
 	-- load system databases - we'll (potentially) need these in a few evaluations (and avoid nested insert exec): 
 	DECLARE @serializedOutput xml = '';
 	EXEC dbo.[list_databases_matching_token]
-	    @Token = N'[SYSTEM]',
+	    @Token = N'{SYSTEM}',
 	    @SerializedOutput = @serializedOutput OUTPUT;
 	
 	WITH shredded AS ( 
@@ -200,16 +211,16 @@ AS
 	 
 	INSERT INTO @system_databases ([database_name])
 	SELECT [database_name] FROM [shredded] ORDER BY [row_id];
-	
+		
 	-----------------------------------------------------------------------------
 	-- Account for tokens: 
 	DECLARE @tokenReplacementOutcome int;
 	DECLARE @replacedOutput nvarchar(MAX);
-	IF @Targets LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+	IF @Targets LIKE N'%{%}%' BEGIN 
 		EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 			@Input = @Targets, 
 			@Output = @replacedOutput OUTPUT;
-		
+
 		IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
 
 		SET @Targets = @replacedOutput;
@@ -223,7 +234,7 @@ AS
 
 		IF EXISTS (SELECT NULL FROM @deserialized) BEGIN 
 			INSERT INTO @target_databases ([database_name])
-			SELECT RTRIM(LTRIM([result])) FROM @deserialized ORDER BY [row_id];
+			SELECT [result] FROM @deserialized ORDER BY [row_id];
 		END;
 	 END;
 
@@ -295,7 +306,7 @@ AS
 		DELETE FROM @deserialized;
 
 		-- Account for tokens: 
-		IF @Exclusions LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+		IF @Exclusions LIKE N'%{%}%' BEGIN 
 			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Exclusions, 
 				@Output = @replacedOutput OUTPUT;
@@ -319,7 +330,7 @@ AS
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
 
 		-- Account for tokens: 
-		IF @Priorities LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+		IF @Priorities LIKE N'%{%}%' ESCAPE N'~' BEGIN 
 			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Priorities, 
 				@Output = @replacedOutput OUTPUT;
