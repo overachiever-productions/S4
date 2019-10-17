@@ -33,7 +33,7 @@ CREATE PROC dbo.apply_logs
 	@SourceDatabases					nvarchar(MAX)		= NULL,						-- explicitly named dbs - e.g., N'db1, db7, db28' ... and, only works, obviously, if dbs specified are in non-recovered mode (or standby).
 	@Exclusions							nvarchar(MAX)		= NULL,
 	@Priorities							nvarchar(MAX)		= NULL, 
-	@BackupsRootPath					nvarchar(MAX)		= N'[DEFAULT]',
+	@BackupsRootPath					nvarchar(MAX)		= N'{DEFAULT}',
 	@TargetDbMappingPattern				sysname				= N'{0}',					-- MAY not use/allow... 
 	@RecoveryType						sysname				= N'NORECOVERY',			-- options are: NORECOVERY | STANDBY | RECOVERY
 	@StaleAlertThreshold				nvarchar(10)		= NULL,						-- NULL means... don't bother... otherwise, if the restoring_db is > @threshold... raise an alert... 
@@ -108,7 +108,7 @@ AS
 
 	-----------------------------------------------------------------------------
     -- Allow for default paths:
-    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@BackupsRootPath) = N'{DEFAULT}' BEGIN
         SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
     END;
 

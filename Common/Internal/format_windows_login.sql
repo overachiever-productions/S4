@@ -58,7 +58,7 @@ CREATE FUNCTION dbo.format_windows_login (
     @Name                             sysname,                              -- always required.
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
     @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
-    @DefaultLanguage                  sysname         = N'[DEFAULT]'        -- have to specify DEFAULT for this to work... obviously
+    @DefaultLanguage                  sysname         = N'{DEFAULT}'        -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
 AS 

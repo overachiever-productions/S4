@@ -1,7 +1,5 @@
 /*
 
-
-
 	NOTES:
 		- It'd be great to select path info from sys.dm_server_registry
 			https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-server-registry-transact-sql

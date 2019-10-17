@@ -45,15 +45,15 @@ IF OBJECT_ID('dbo.verify_alerting_configuration','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[verify_alerting_configuration]
-	@OperatorName						    sysname									= N'[DEFAULT]',
-	@MailProfileName					    sysname									= N'[DEFAULT]'
+	@OperatorName						    sysname									= N'{DEFAULT}',
+	@MailProfileName					    sysname									= N'{DEFAULT}'
 AS
     SET NOCOUNT ON; 
 
     -- {copyright}
     DECLARE @output sysname;
 
-    IF UPPER(@OperatorName) = N'[DEFAULT]' OR (NULLIF(@OperatorName, N'') IS NULL) BEGIN 
+    IF UPPER(@OperatorName) = N'{DEFAULT}' OR (NULLIF(@OperatorName, N'') IS NULL) BEGIN 
         SET @output = NULL;
         EXEC dbo.load_default_setting 
             @SettingName = N'DEFAULT_OPERATOR', 
@@ -62,7 +62,7 @@ AS
         SET @OperatorName = @output;
     END;
 
-    IF UPPER(@MailProfileName) = N'[DEFAULT]' OR (NULLIF(@MailProfileName, N'') IS NULL) BEGIN
+    IF UPPER(@MailProfileName) = N'{DEFAULT}' OR (NULLIF(@MailProfileName, N'') IS NULL) BEGIN
         SET @output = NULL;
         EXEC dbo.load_default_setting 
             @SettingName = N'DEFAULT_PROFILE', 

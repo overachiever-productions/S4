@@ -19,7 +19,7 @@ IF OBJECT_ID('dbo.list_collisions', 'P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_collisions 
-	@TargetDatabases								nvarchar(max)	= N'[ALL]',  -- allowed values: [ALL] | [SYSTEM] | [USER] | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
+	@TargetDatabases								nvarchar(max)	= N'{ALL}',  -- allowed values: {ALL} | {SYSTEM} | {USER} | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
 	@IncludePlans									bit				= 1, 
 	@IncludeContext									bit				= 1,
 	@UseInputBuffer									bit				= 0,     -- for any statements (query_handles) that couldn't be pulled from sys.dm_exec_requests and then (as a fallback) from sys.sysprocesses, this specifies if we should use DBCC INPUTBUFFER(spid) or not... 

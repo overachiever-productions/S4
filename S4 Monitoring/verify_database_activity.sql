@@ -97,8 +97,8 @@ GO
 
 CREATE PROC dbo.verify_database_activity 
 	@DatabasesToProcess					nvarchar(MAX),
-	@DatabasesToExclude					nvarchar(MAX) = NULL,										-- only allowed if/when using [READ_FROM_FILESYSTEM]
-	@BackupDirectory					nvarchar(2000) = NULL,										-- only allowed if/when using [READ_FROM_FILESYSTEM]
+	@DatabasesToExclude					nvarchar(MAX) = NULL,										
+	@BackupDirectory					nvarchar(2000) = NULL,										
 	@ValidationQuery					nvarchar(MAX), 
 	@VectorTime							datetime = NULL,											-- defaults to GETDATE() but allows for EXPLICITLY defined times. 
 	@SendNotifications					bit	= 0,

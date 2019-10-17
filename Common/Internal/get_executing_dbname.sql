@@ -1,6 +1,6 @@
 /*
     NOTE: 
-        - This sproc adheres to the PROJECT/REPLY usage convention.
+        - This sproc adheres to the PROJECT/RETURN usage convention.
 
         - Does _NOT_ work from within master or tempdb. 
         - DOES work within model and msdb. 
@@ -217,7 +217,7 @@
     USAGE: 
         assume we want the following to work: 
 
-            USE widgets; 
+            USE demo; 
             GO 
 
             EXEC admindb.dbo.list_table_details;
@@ -242,7 +242,7 @@ IF OBJECT_ID('dbo.get_executing_dbname','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[get_executing_dbname]
-    @ExecutingDBName                sysname         = N'#DEFAULT#'      OUTPUT
+    @ExecutingDBName                sysname         = N''      OUTPUT		-- note: NON-NULL default for RETURN or PROJECT convention... 
 AS
     SET NOCOUNT ON; 
 
@@ -282,11 +282,11 @@ AS
         SET @output = (SELECT TOP 1 [db_name] FROM @options);
     END;
 
-    IF @ExecutingDBName = N'#DEFAULT#' BEGIN 
-        SELECT @output [executing_db_name];
+    IF @ExecutingDBName IS NULL BEGIN 
+		SET @ExecutingDBName = @output;
       END;
     ELSE BEGIN 
-        SET @ExecutingDBName = @output;
+        SELECT @output [executing_db_name];
     END;
 
     RETURN 0; 

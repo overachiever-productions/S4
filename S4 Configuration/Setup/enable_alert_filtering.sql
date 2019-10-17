@@ -15,7 +15,7 @@ IF OBJECT_ID('dbo.enable_alert_filtering','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[enable_alert_filtering]
-    @TargetAlerts                   nvarchar(MAX)           = N'[ALL]', 
+    @TargetAlerts                   nvarchar(MAX)           = N'{ALL}', 
     @ExcludedAlerts                 nvarchar(MAX)           = NULL,                        -- N'%18, %4605%, Severity%, etc..'. NOTE: 1480, if present, is filtered automatically.. 
     @AlertsProcessingJobName        sysname                 = N'Filter Alerts', 
     @AlertsProcessingJobCategory    sysname                 = N'Alerting',
@@ -122,7 +122,7 @@ AS
         [name] sysname NOT NULL 
     );
 
-    IF UPPER(@TargetAlerts) = N'[ALL]' BEGIN 
+    IF UPPER(@TargetAlerts) = N'{ALL}' BEGIN 
         INSERT INTO @targets (
             [name] 
         )

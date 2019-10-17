@@ -65,10 +65,10 @@ GO
 
 CREATE PROC dbo.backup_databases 
 	@BackupType							sysname,																-- { FULL|DIFF|LOG }
-	@DatabasesToBackup					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToBackup					nvarchar(MAX),															-- { {SYSTEM} | {USER} |name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
-	@BackupDirectory					nvarchar(2000)							= N'[DEFAULT]',					-- { [DEFAULT] | path_to_backups }
+	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } 
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]

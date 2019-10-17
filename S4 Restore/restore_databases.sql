@@ -83,9 +83,9 @@ CREATE PROC dbo.restore_databases
     @DatabasesToRestore				nvarchar(MAX),
     @DatabasesToExclude				nvarchar(MAX)	= NULL,
     @Priorities						nvarchar(MAX)	= NULL,
-    @BackupsRootPath				nvarchar(MAX)	= N'[DEFAULT]',
-    @RestoredRootDataPath			nvarchar(MAX)	= N'[DEFAULT]',
-    @RestoredRootLogPath			nvarchar(MAX)	= N'[DEFAULT]',
+    @BackupsRootPath				nvarchar(MAX)	= N'{DEFAULT}',
+    @RestoredRootDataPath			nvarchar(MAX)	= N'{DEFAULT}',
+    @RestoredRootLogPath			nvarchar(MAX)	= N'{DEFAULT}',
     @RestoredDbNamePattern			nvarchar(40)	= N'{0}_test',
     @AllowReplace					nchar(7)		= NULL,				-- NULL or the exact term: N'REPLACE'...
     @SkipLogBackups					bit				= 0,
@@ -110,15 +110,15 @@ AS
 
 	-----------------------------------------------------------------------------
     -- Set Defaults:
-    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@BackupsRootPath) = N'{DEFAULT}' BEGIN
         SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
     END;
 
-    IF UPPER(@RestoredRootDataPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@RestoredRootDataPath) = N'{DEFAULT}' BEGIN
         SELECT @RestoredRootDataPath = dbo.load_default_path('DATA');
     END;
 
-    IF UPPER(@RestoredRootLogPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@RestoredRootLogPath) = N'{DEFAULT}' BEGIN
         SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
     END;
 

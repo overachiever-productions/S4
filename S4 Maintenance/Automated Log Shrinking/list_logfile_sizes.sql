@@ -39,7 +39,7 @@ IF OBJECT_ID('dbo.list_logfile_sizes','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_logfile_sizes
-	@TargetDatabases					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@TargetDatabases					nvarchar(MAX),															-- { {ALL} | {SYSTEM} | {USER} | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,
 	--@IgnoreLogFilesWithGBsLessThan	decimal(12,1)							= 0.5,
