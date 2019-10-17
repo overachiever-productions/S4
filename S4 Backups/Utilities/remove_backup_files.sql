@@ -22,7 +22,7 @@
 
 EXEC dbo.remove_backup_files 
 	@BackupType = 'FULL', -- sysname
-    @DatabasesToProcess = N'[READ_FROM_FILESYSTEM]', -- nvarchar(1000)
+    @DatabasesToProcess = N'{READ_FROM_FILESYSTEM}', -- nvarchar(1000)
     @DatabasesToExclude = N'', -- nvarchar(600)
     @TargetDirectory = N'D:\SQLBackups', -- nvarchar(2000)
     @Retention = '12m', -- int
@@ -39,7 +39,7 @@ GO
 
 CREATE PROC [dbo].[remove_backup_files] 
 	@BackupType							sysname,									-- { ALL|FULL|DIFF|LOG }
-	@DatabasesToProcess					nvarchar(1000),								-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
+	@DatabasesToProcess					nvarchar(1000),								-- { {READ_FROM_FILESYSTEM} | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000) = N'{DEFAULT}',				-- { path_to_backups }
 	@Retention							nvarchar(10),								-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
@@ -198,8 +198,8 @@ AS
 	IF @BackupType = N'LOG'
 		SET @excludeSimple = 1;
 
-	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
-	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
@@ -229,7 +229,7 @@ AS
 			@TargetDirectory = @TargetDirectory, 
 			@SerializedOutput = @databases OUTPUT;
 
-		SET @DatabasesToProcess = REPLACE(@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]', @serialized); 
+		SET @DatabasesToProcess = REPLACE(@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
 
 	DECLARE @targetDirectories table (

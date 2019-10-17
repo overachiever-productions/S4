@@ -27,7 +27,7 @@
 
 
 EXEC list_logfile_sizes
-	@TargetDatabases = N'[ALL]';
+	@TargetDatabases = N'{ALL}';
 
 */
 

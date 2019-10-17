@@ -136,7 +136,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@BackupDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@BackupDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @BackupDirectory = dbo.load_default_path('BACKUP');
 	END;
 
@@ -152,8 +152,8 @@ AS
 		RETURN -7;
 	END;
 
-	IF UPPER(@DatabasesToBackup) = N'[READ_FROM_FILESYSTEM]' BEGIN
-		RAISERROR('@DatabasesToBackup may NOT be set to the token [READ_FROM_FILESYSTEM] when processing backups.', 16, 1);
+	IF UPPER(@DatabasesToBackup) = N'{READ_FROM_FILESYSTEM}' BEGIN
+		RAISERROR('@DatabasesToBackup may NOT be set to the token {READ_FROM_FILESYSTEM} when processing backups.', 16, 1);
 		RETURN -9;
 	END
 
@@ -269,7 +269,7 @@ AS
 
 		   END; 
 		ELSE BEGIN
-			PRINT 'Usage: @DatabasesToBackup = [SYSTEM]|[USER]|dbname1,dbname2,dbname3,etc';
+			PRINT 'Usage: @DatabasesToBackup = {SYSTEM}|{USER}|dbname1,dbname2,dbname3,etc';
 			RAISERROR('No databases specified for backup.', 16, 1);
 			RETURN -20;
 		END;

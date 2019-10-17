@@ -230,7 +230,7 @@ AS
 
 			INSERT INTO @allDbsToWalk ([database_name])
 			EXEC dbo.[list_databases]
-				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Targets = N'{ALL}',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1;
 

@@ -11,26 +11,26 @@
 
 		-----------------------------------------------------------------
             -- expect PROJECTion of all dbs:
-			        EXEC dbo.list_databases_matching_token N'[ALL]';
+			        EXEC dbo.list_databases_matching_token N'{ALL}';
 
 		-----------------------------------------------------------------
             -- ditto, but just SYSTEM dbs... 
-			        EXEC dbo.list_databases_matching_token N'[SYSTEM]';
+			        EXEC dbo.list_databases_matching_token N'{SYSTEM}';
 
 		-----------------------------------------------------------------
             -- ditto, but ONLY if DEV has been defined in dbo.settings. 
-			        EXEC dbo.list_databases_matching_token N'[DEV]';
+			        EXEC dbo.list_databases_matching_token N'{DEV}';
 
 		-----------------------------------------------------------------
 			-- expected exception IF there are no [TEST] definitions in dbo.settings: 
 
-			        EXEC dbo.list_databases_matching_token N'[TEST]';
+			        EXEC dbo.list_databases_matching_token N'{TEST}';
 
 		-----------------------------------------------------------------
             -- expect REPLY as serialized xml via @databases.
 			    DECLARE @databases xml;
 			    EXEC dbo.list_databases_matching_token 
-				    @Token = N'[DEV]', 
+				    @Token = N'{DEV}', 
 				    @SerializedOutput = @databases OUTPUT; 
 
 			    SELECT @databases;
@@ -80,7 +80,7 @@ AS
 		INSERT INTO @system_databases ([database_name])
 		SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
 
-		-- Treat admindb as [SYSTEM] if defined as system... : 
+		-- Treat admindb as {SYSTEM} if defined as system... : 
 		IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
 			INSERT INTO @system_databases ([database_name])
 			VALUES ('admindb');

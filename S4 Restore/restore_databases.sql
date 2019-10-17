@@ -53,8 +53,8 @@ here's an EXAMPLE of how to do nightly restore tests on ONLY the primary:
 
             IF (SELECT admindb.dbo.is_primary_server()) = 1 BEGIN
 	            EXEC [admindb].[dbo].[restore_databases]
-		            @DatabasesToRestore = N'[READ_FROM_FILESYSTEM]', 
-		            @DatabasesToExclude = N'[SYSTEM], __certs', 
+		            @DatabasesToRestore = N'{READ_FROM_FILESYSTEM}', 
+		            @DatabasesToExclude = N'{SYSTEM}, __certs', 
 		            @Priorities = N'Motion4', 
 		            @BackupsRootPath = N'\\10.100.213.13\SQLBackups', 
 		            @RestoredRootDataPath = N'C:\SQLData',  
@@ -168,16 +168,16 @@ AS
         RETURN -6;
     END;
 
-    IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN
-        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dbo.restore_databases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
+    IF UPPER(@DatabasesToRestore) IN (N'{SYSTEM}', N'{USER}') BEGIN
+        RAISERROR('The tokens {SYSTEM} and {USER} cannot be used to specify which databases to restore via dbo.restore_databases. Use either {READ_FROM_FILESYSTEM} (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
         RETURN -10;
     END;
 
     IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
         SET @DatabasesToExclude = NULL;
 
-    IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) <> N'[READ_FROM_FILESYSTEM]') BEGIN
-        RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the [READ_FROM_FILESYSTEM] token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
+    IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) <> N'{READ_FROM_FILESYSTEM}') BEGIN
+        RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the {READ_FROM_FILESYSTEM} token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
         RETURN -20;
     END;
 
@@ -273,8 +273,8 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
-	IF ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@DatabasesToRestore, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
@@ -304,13 +304,13 @@ AS
 		ELSE
 			SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
-		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]', @serialized); 
+		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
     
     INSERT INTO @dbsToRestore ([database_name])
     EXEC dbo.list_databases
         @Targets = @DatabasesToRestore,         
-        @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
+        @Exclusions = @DatabasesToExclude,		-- only works if {READ_FROM_FILESYSTEM} is specified for @Input... 
         @Priorities = @Priorities,
 
 		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
@@ -531,7 +531,7 @@ AS
         END;
 
 		-- Check for a FULL backup: 
-		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a [SYSTEM] database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
+		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a {SYSTEM} database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
 		EXEC dbo.load_backup_files 
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 

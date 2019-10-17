@@ -32,7 +32,7 @@ AS
 	-- {copyright}
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
-		SET @TargetDatabases = N'[ALL]';
+		SET @TargetDatabases = N'{ALL}';
 
 	WITH blocked AS (
 		SELECT 
@@ -116,7 +116,7 @@ AS
 		WHERE [command] LIKE 'FT%';
 	END;
 
-	IF @TargetDatabases <> N'[ALL]' BEGIN
+	IF @TargetDatabases <> N'{ALL}' BEGIN
 		
 		DECLARE @dbNames table ( 
 			[database_name] sysname NOT NULL 

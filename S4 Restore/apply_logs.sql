@@ -77,8 +77,8 @@ AS
         END; 
     END;
 
-    IF UPPER(@SourceDatabases) IN (N'[SYSTEM]', N'[USER]') BEGIN
-        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dbo.apply_logs. Only explicitly defined/named databases can be targetted - e.g., N''myDB, anotherDB, andYetAnotherDbName''.', 16, 1);
+    IF UPPER(@SourceDatabases) IN (N'{SYSTEM}', N'{USER}') BEGIN
+        RAISERROR('The tokens {SYSTEM} and {USER} cannot be used to specify which databases to restore via dbo.apply_logs. Only explicitly defined/named databases can be targetted - e.g., N''myDB, anotherDB, andYetAnotherDbName''.', 16, 1);
         RETURN -10;
     END;
 
@@ -135,8 +135,8 @@ AS
 		target_database_name sysname NOT NULL
 	);
 
-	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
-	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
@@ -166,7 +166,7 @@ AS
 			@TargetDirectory = @BackupsRootPath, 
 			@SerializedOutput = @databases OUTPUT;
 
-		SET @SourceDatabases = REPLACE(@SourceDatabases, N'[READ_FROM_FILESYSTEM]', @serialized); 
+		SET @SourceDatabases = REPLACE(@SourceDatabases, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
 
 	DECLARE @possibleDatabases table ( 

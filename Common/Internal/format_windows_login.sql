@@ -142,7 +142,7 @@ GO
         END;
 
         IF NULLIF(@DefaultLanguage, N'') IS NOT NULL BEGIN 
-            IF UPPER(@DefaultLanguage) = N'[DEFAULT]'
+            IF UPPER(@DefaultLanguage) = N'{DEFAULT}'
                 SELECT @DefaultLanguage = [name] FROM sys.syslanguages WHERE 
                     [langid] = (SELECT [value_in_use] FROM sys.[configurations] WHERE [name] = N'default language');
 
