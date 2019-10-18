@@ -21,7 +21,7 @@ CREATE PROC dbo.[get_last_job_completion_by_session_id]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     DECLARE @success int = -1;
     DECLARE @jobName sysname; 

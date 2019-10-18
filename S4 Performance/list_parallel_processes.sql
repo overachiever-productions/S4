@@ -20,7 +20,7 @@ CREATE PROC dbo.[list_parallel_processes]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
 	SELECT 
 		[spid] [session_id],

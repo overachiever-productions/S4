@@ -246,7 +246,7 @@ CREATE PROC dbo.[get_executing_dbname]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     DECLARE @output sysname;
     DECLARE @resultCount int;

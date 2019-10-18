@@ -22,7 +22,7 @@ CREATE PROC dbo.[add_failover_processing]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
     
     DECLARE @errorMessage nvarchar(MAX);
 

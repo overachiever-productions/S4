@@ -21,8 +21,8 @@ CREATE FUNCTION dbo.[get_s4_version](@DefaultValueIfNoHistoryPresent varchar(20)
 RETURNS decimal(3,1)
 AS
     
-    -- {copyright}
-    
+	-- {copyright}
+	
     BEGIN; 
     	
 		DECLARE @output decimal(3,1); 
@@ -46,11 +46,3 @@ AS
     	RETURN @output;
     END;
 GO
-
-
-
-
-SELECT * FROM [dbo].[version_history];
-
-
-

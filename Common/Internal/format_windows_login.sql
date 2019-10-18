@@ -62,7 +62,7 @@ CREATE FUNCTION dbo.format_windows_login (
 )
 RETURNS nvarchar(MAX)
 AS 
-    -- {copyright}
+	-- {copyright}
 
     BEGIN 
 

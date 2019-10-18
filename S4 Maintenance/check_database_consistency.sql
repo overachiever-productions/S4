@@ -52,7 +52,7 @@ CREATE PROC dbo.[check_database_consistency]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

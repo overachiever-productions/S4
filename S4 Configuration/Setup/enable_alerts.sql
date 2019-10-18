@@ -19,7 +19,7 @@ CREATE PROC dbo.[enable_alerts]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     -- TODO: verify that @OperatorName is a valid operator.
 

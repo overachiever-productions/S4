@@ -31,7 +31,7 @@ CREATE PROC dbo.[add_synchronization_partner]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     -- TODO: verify @PartnerName input/parameters. 
 

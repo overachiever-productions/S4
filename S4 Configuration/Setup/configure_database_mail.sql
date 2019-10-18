@@ -37,7 +37,7 @@ CREATE PROC dbo.configure_database_mail
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     -- TODO:
     --      validate all inputs.. 

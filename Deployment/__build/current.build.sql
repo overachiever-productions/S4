@@ -254,7 +254,6 @@ IF (SELECT admindb.dbo.get_s4_version('##{{S4version}}')) < 7.0 BEGIN
 	WHERE 
 		[setting_key] LIKE '~[%~]' ESCAPE '~';
 
-
 	WITH matches AS ( 
 		SELECT 
 			js.[job_id], 
