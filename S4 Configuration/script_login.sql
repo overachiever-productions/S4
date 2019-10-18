@@ -1,7 +1,7 @@
 /*
 
     NOTE: 
-        - This sproc adheres to the PROJECT/REPLY usage convention.
+        - This sproc adheres to the PROJECT/RETURN usage convention.
     
 
     SAMPLES / EXAMPLES: 
@@ -82,7 +82,7 @@ CREATE PROC dbo.script_login
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 
-    @Output                                 nvarchar(MAX)           = 'default'        OUTPUT
+    @Output                                 nvarchar(MAX)           = ''        OUTPUT
 AS 
     SET NOCOUNT ON; 
 
@@ -145,7 +145,7 @@ AS
         @checkPolicy
      );
 
-    IF NULLIF(@Output, N'') IS NULL BEGIN 
+    IF @Output IS NULL BEGIN 
         SET @Output = @formatted;
         RETURN 0;
     END;

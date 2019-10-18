@@ -167,7 +167,7 @@ IF OBJECT_ID('dbo.list_recovery_metrics','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_recovery_metrics 
-	@TargetDatabases				nvarchar(MAX)		= N'[ALL]', 
+	@TargetDatabases				nvarchar(MAX)		= N'{ALL}', 
 	@ExcludedDatabases				nvarchar(MAX)		= NULL,				-- e.g., 'demo, test, %_fake, etc.'
 	@Priorities						nvarchar(MAX)		= NULL,
 	@Mode							sysname				= N'SUMMARY',		-- SUMMARY | SLA | RPO | RTO | ERROR | DEVIATION

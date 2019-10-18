@@ -18,7 +18,7 @@
 	SIGNATURE / EXAMPLE: 
 		
 		EXEC [admindb].[dbo].[script_logins]
-			@TargetDatabases = N'[ALL]',
+			@TargetDatabases = N'{ALL}',
 			@ExcludedDatabases = N'Compression%,Masked%, %_Test',
 			@DatabasePriorities = N'Billing,*,SSVDev',
 			--@ExcludedLogins = N'%illi%', 
@@ -39,7 +39,7 @@ IF OBJECT_ID('dbo.script_logins','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.script_logins 
-	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
+	@TargetDatabases						nvarchar(MAX)			= N'{ALL}',
 	@ExcludedDatabases						nvarchar(MAX)			= NULL,
 	@DatabasePriorities						nvarchar(MAX)			= NULL,
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
@@ -57,7 +57,7 @@ AS
 	-- {copyright}
 
 	IF NULLIF(@TargetDatabases,'') IS NULL 
-        SET @TargetDatabases = N'[ALL]';
+        SET @TargetDatabases = N'{ALL}';
 
 	DECLARE @ignoredDatabases table (
 		[database_name] sysname NOT NULL
@@ -230,7 +230,7 @@ AS
 
 			INSERT INTO @allDbsToWalk ([database_name])
 			EXEC dbo.[list_databases]
-				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Targets = N'{ALL}',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1;
 

@@ -63,7 +63,7 @@ IF OBJECT_ID('dbo.shrink_logfiles','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.shrink_logfiles
-	@TargetDatabases							nvarchar(MAX),																		-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@TargetDatabases							nvarchar(MAX),																		-- { {ALL} | {SYSTEM} | {USER} | name1,name2,etc }
 	@DatabasesToExclude							nvarchar(MAX)							= NULL,										-- { NULL | name1,name2 }  
 	@Priorities									nvarchar(MAX)							= NULL,										
 	@TargetLogPercentageSize					int										= 20,										-- can be > 100? i.e., 200? would be 200% - which ... i guess is legit, right? 

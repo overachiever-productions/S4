@@ -1,6 +1,6 @@
 /*
     NOTE: 
-        - This sproc adheres to the PROJECT/REPLY usage convention.
+        - This sproc adheres to the PROJECT/RETURN usage convention.
 
     OVERVIEW: 
         - Converts value of sys.dm_exec_sessions.program_name to a SQL Server Agent JOB NAME (assuming a valid 'program name' identifier). 
@@ -47,7 +47,7 @@ GO
 CREATE PROC dbo.[translate_program_name_to_agent_job]
     @ProgramName                    sysname, 
     @IncludeJobStepInOutput         bit         = 0, 
-    @JobName                        sysname     = N'default'       OUTPUT
+    @JobName                        sysname     = N''       OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -75,7 +75,7 @@ AS
     IF @IncludeJobStepInOutput = 1
         SET @output = @output + N' (Step ' + @currentStepString + N')';
 
-    IF NULLIF(@JobName, N'') IS NULL
+    IF @JobName IS NULL
         SET @JobName = @output; 
     ELSE 
         SELECT @output [job_name];

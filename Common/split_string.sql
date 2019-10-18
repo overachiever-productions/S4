@@ -8,9 +8,9 @@
 
 
 -- crappy tests... 
-SELECT * FROM dbo.[split_string](N'one', N'e');
-SELECT * FROM dbo.[split_string](N'one', N'twelve');
-SELECT * FROM dbo.[split_string](N'these are some words that i would like to have split and stuff.', N' ');
+SELECT * FROM dbo.[split_string](N'one', N'e', 1);
+SELECT * FROM dbo.[split_string](N'one', N'twelve', 0);
+SELECT * FROM dbo.[split_string](N'these are some words that i would like to have split and stuff.', N' ', 1);
 
 
 */

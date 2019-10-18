@@ -9,17 +9,19 @@
 	SIGNATURES: 
 	
 		-----------------------------------------------------------------
+		-- expect exception - {DEV3} doesn't exist... 
+
 			DECLARE @replaced nvarchar(max);
 			EXEC dbo.replace_dbname_tokens
-				@Input = N'[DEV3],billing,triage', -- doesn't exist
+				@Input = N'{DEV3},billing,triage', -- doesn't exist
 				@Output = @replaced OUTPUT;
 			SELECT @replaced [output];
 
 		-----------------------------------------------------------------
 			DECLARE @replaced nvarchar(max);
 			EXEC dbo.replace_dbname_tokens 
-				@Input = N'[DEV],Billing', 
-				--@AllowedTokens = N'[DEV]',
+				@Input = N'{DEV},Billing', 
+				--@AllowedTokens = N'{DEV}',
 				@Output = @replaced OUTPUT; 
 
 			SELECT @replaced [targets];
@@ -27,8 +29,8 @@
 		-----------------------------------------------------------------
 			DECLARE @replaced nvarchar(max);
 			EXEC dbo.replace_dbname_tokens 
-				@Input = N'[DEV],Meddling, [PRIORITY], Utilities', 
-				--@AllowedTokens = N'[DEV]',
+				@Input = N'{DEV},Meddling, {PRIORITY}, Utilities', 
+				--@AllowedTokens = N'{DEV}',
 				@Output = @replaced OUTPUT; 
 
 			SELECT @replaced [targets];
@@ -70,7 +72,7 @@ AS
 			FROM 
 				dbo.[settings] 
 			WHERE 
-				[setting_key] LIKE '~[%~]' ESCAPE N'~'
+				[setting_key] LIKE '{%}'
 			GROUP BY 
 				[setting_key]
 
@@ -79,7 +81,7 @@ AS
 			SELECT 
 				[token], 
 				[ranking] 
-			FROM (VALUES (N'[ALL]', 1000), (N'[SYSTEM]', 999), (N'[USER]', 998)) [x]([token], [ranking])
+			FROM (VALUES (N'{ALL}', 1000), (N'{SYSTEM}', 999), (N'{USER}', 998)) [x]([token], [ranking])
 		) 
 
 		SELECT @AllowedTokens = @AllowedTokens + [token] + N',' FROM [aggregated] ORDER BY [ranking] DESC;
@@ -101,7 +103,7 @@ AS
 	);
 
 	INSERT INTO @possibleTokens ([token])
-	SELECT [result] FROM dbo.[split_string](@Input, N',', 1) WHERE [result] LIKE N'%~[%~]' ESCAPE N'~' ORDER BY [row_id];
+	SELECT [result] FROM dbo.[split_string](@Input, N',', 1) WHERE [result] LIKE N'%{%}' ORDER BY [row_id];
 
 	IF EXISTS (SELECT NULL FROM @possibleTokens WHERE [token] NOT IN (SELECT [token] FROM @tokensToProcess)) BEGIN
 		RAISERROR('Undefined database-name token specified in @Input. Please ensure that custom database-name tokens are defined in dbo.settings.', 16, 1);

@@ -1,36 +1,36 @@
 /*
     NOTE: 
-        - This sproc adheres to the PROJECT/REPLY usage convention.
+        - This sproc adheres to the PROJECT/RETURN usage convention.
 
 		
 	SIGNATURES:
 		
 		-----------------------------------------------------------------
-			-- expected exception (unless [PRIORITY7] is a defined token in dbo.[settings]):
-			        EXEC dbo.list_databases_matching_token N'[PRIORITY7]';
+			-- expected exception (unless {PRIORITY7} is a defined token in dbo.[settings]):
+			        EXEC dbo.list_databases_matching_token N'{PRIORITY7}';
 
 		-----------------------------------------------------------------
             -- expect PROJECTion of all dbs:
-			        EXEC dbo.list_databases_matching_token N'[ALL]';
+			        EXEC dbo.list_databases_matching_token N'{ALL}';
 
 		-----------------------------------------------------------------
             -- ditto, but just SYSTEM dbs... 
-			        EXEC dbo.list_databases_matching_token N'[SYSTEM]';
+			        EXEC dbo.list_databases_matching_token N'{SYSTEM}';
 
 		-----------------------------------------------------------------
             -- ditto, but ONLY if DEV has been defined in dbo.settings. 
-			        EXEC dbo.list_databases_matching_token N'[DEV]';
+			        EXEC dbo.list_databases_matching_token N'{DEV}';
 
 		-----------------------------------------------------------------
 			-- expected exception IF there are no [TEST] definitions in dbo.settings: 
 
-			        EXEC dbo.list_databases_matching_token N'[TEST]';
+			        EXEC dbo.list_databases_matching_token N'{TEST}';
 
 		-----------------------------------------------------------------
             -- expect REPLY as serialized xml via @databases.
 			    DECLARE @databases xml;
 			    EXEC dbo.list_databases_matching_token 
-				    @Token = N'[DEV]', 
+				    @Token = N'{DEV}', 
 				    @SerializedOutput = @databases OUTPUT; 
 
 			    SELECT @databases;
@@ -47,7 +47,7 @@ IF OBJECT_ID('dbo.list_databases_matching_token','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_databases_matching_token	
-	@Token								sysname			= N'[DEV]',					-- { [DEV] | [TEST] }
+	@Token								sysname			= N'{DEV}',					-- { [DEV] | [TEST] }
 	@SerializedOutput					xml				= N'<default/>'	    OUTPUT
 AS 
 
@@ -58,9 +58,8 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	
-	-- make sure @Token LIKE '~[%~]' ESCAPE '~'
-	IF NOT @Token LIKE N'~[%~]' ESCAPE N'~' BEGIN 
-		RAISERROR(N'@Token names must we ''wrapped'' in [square brackets] (and must also be defined in dbo.setttings).', 16, 1);
+	IF NOT @Token LIKE N'{%}' BEGIN 
+		RAISERROR(N'@Token names must be ''wrapped'' in {curly brackets] (and must also be defined in dbo.setttings).', 16, 1);
 		RETURN -5;
 	END;
 
@@ -71,7 +70,7 @@ AS
 		[database_name] sysname NOT NULL
 	);
 
-	IF UPPER(@Token) IN (N'[ALL]', N'[SYSTEM]', N'[USER]') BEGIN
+	IF UPPER(@Token) IN (N'{ALL}', N'{SYSTEM}', N'{USER}') BEGIN
 		-- define system databases - we'll potentially need this in a number of different cases...
 		DECLARE @system_databases TABLE ( 
 			[entry_id] int IDENTITY(1,1) NOT NULL, 
@@ -81,7 +80,7 @@ AS
 		INSERT INTO @system_databases ([database_name])
 		SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
 
-		-- Treat admindb as [SYSTEM] if defined as system... : 
+		-- Treat admindb as {SYSTEM} if defined as system... : 
 		IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
 			INSERT INTO @system_databases ([database_name])
 			VALUES ('admindb');
@@ -95,12 +94,12 @@ AS
 			END;
 		END;
 
-		IF UPPER(@Token) IN (N'[ALL]', N'[SYSTEM]') BEGIN 
+		IF UPPER(@Token) IN (N'{ALL}', N'{SYSTEM}') BEGIN 
 			INSERT INTO @tokenMatches ([database_name])
 			SELECT [database_name] FROM @system_databases; 
 		END; 
 
-		IF UPPER(@Token) IN (N'[ALL]', N'[USER]') BEGIN 
+		IF UPPER(@Token) IN (N'{ALL}', N'{USER}') BEGIN 
 			INSERT INTO @tokenMatches ([database_name])
 			SELECT [name] FROM sys.databases
 			WHERE [name] NOT IN (SELECT [database_name] COLLATE SQL_Latin1_General_CP1_CI_AS  FROM @system_databases)
