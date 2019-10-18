@@ -412,6 +412,9 @@ GO
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Setup\configure_database_mail.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\enable_alerts.sql
 
 -----------------------------------
@@ -445,6 +448,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Performance\list_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Performance\list_parallel_processes.sql
 
 -----------------------------------
 --##INCLUDE: S4 Performance\list_transactions.sql
