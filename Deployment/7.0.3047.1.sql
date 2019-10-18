@@ -5,14 +5,14 @@
 			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
 
 	NOTES:
-		- This script will either install/deploy S4 version 6.7.3038.1 or upgrade a PREVIOUSLY deployed version of S4 to 6.7.3038.1.
+		- This script will either install/deploy S4 version 7.0.3047.1 or upgrade a PREVIOUSLY deployed version of S4 to 7.0.3047.1.
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
 	Deployment Steps/Overview: 
 		1. Create admindb if not already present.
 		2. Create core S4 tables (and/or ALTER as needed + import data from any previous versions as needed). 
 		3. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		4. Deploy S4 version 6.7.3038.1 code to admindb (overwriting any previous versions). 
+		4. Deploy S4 version 7.0.3047.1 code to admindb (overwriting any previous versions). 
 		5. Report on current + any previous versions of S4 installed. 
 
 */
@@ -60,7 +60,7 @@ IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'6.7.3038.1';
+DECLARE @CurrentVersion varchar(20) = N'7.0.3047.1';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -81,7 +81,7 @@ GO
 USE [admindb];
 GO
 
--- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
 	CREATE TABLE dbo.backup_log  (
@@ -156,7 +156,7 @@ GO
 USE [admindb];
 GO
 
--- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 
@@ -583,8 +583,153 @@ GO
 
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects)
+-- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects and other core 'helper' code)
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.get_engine_version','FN') IS NOT NULL
+	DROP FUNCTION dbo.get_engine_version;
+GO
+
+CREATE FUNCTION dbo.get_engine_version() 
+RETURNS decimal(4,2)
+AS
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	BEGIN 
+		DECLARE @output decimal(4,2);
+		
+		DECLARE @major sysname, @minor sysname, @full sysname;
+		SELECT 
+			@major = CAST(SERVERPROPERTY('ProductMajorVersion') AS sysname), 
+			@minor = CAST(SERVERPROPERTY('ProductMinorVersion') AS sysname), 
+			@full = CAST(SERVERPROPERTY('ProductVersion') AS sysname); 
+
+		IF @major IS NULL BEGIN
+			SELECT @major = LEFT(@full, 2);
+			SELECT @minor = REPLACE((SUBSTRING(@full, LEN(@major) + 2, 2)), N'.', N'');
+		END;
+
+		SET @output = CAST((@major + N'.' + @minor) AS decimal(4,2));
+
+		RETURN @output;
+	END;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+
+IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
+	DROP FUNCTION dbo.split_string;
+GO
+
+CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20), @TrimResults bit)
+RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(MAX))
+	--WITH SCHEMABINDING
+AS 
+	BEGIN
+
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	
+	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
+		IF @delimiter = N' ' BEGIN 
+			-- this approach is going to be MUCH slower, but works for space delimiter... 
+			DECLARE @p int; 
+			DECLARE @s nvarchar(MAX);
+			WHILE CHARINDEX(N' ', @serialized) > 0 BEGIN 
+				SET @p = CHARINDEX(N' ', @serialized);
+				SET @s = SUBSTRING(@serialized, 1, @p - 1); 
+			
+				INSERT INTO @Results ([result])
+				VALUES(@s);
+
+				SELECT @serialized = SUBSTRING(@serialized, @p + 1, LEN(@serialized) - @p);
+			END;
+			
+			INSERT INTO @Results ([result])
+			VALUES (@serialized);
+
+		  END; 
+		ELSE BEGIN
+
+			DECLARE @MaxLength int = LEN(@serialized) + LEN(@delimiter);
+
+			WITH tally (n) AS ( 
+				SELECT TOP (@MaxLength) 
+					ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
+				FROM sys.all_objects o1 
+				CROSS JOIN sys.all_objects o2
+			)
+
+			INSERT INTO @Results ([result])
+			SELECT 
+				SUBSTRING(@serialized, n, CHARINDEX(@delimiter, @serialized + @delimiter, n) - n) [result]
+			FROM 
+				tally 
+			WHERE 
+				n <= LEN(@serialized) AND
+				LEN(@delimiter) <= LEN(@serialized) AND
+				RTRIM(LTRIM(SUBSTRING(@delimiter + @serialized, n, LEN(@delimiter)))) = @delimiter
+			ORDER BY 
+				 n;
+		END;
+
+		IF @TrimResults = 1 BEGIN
+			UPDATE @Results SET [result] = LTRIM(RTRIM([result])) WHERE DATALENGTH([result]) > 0;
+		END;
+
+	END;
+
+	RETURN;
+END
+
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.get_s4_version','FN') IS NOT NULL
+	DROP FUNCTION dbo.[get_s4_version];
+GO
+
+CREATE FUNCTION dbo.[get_s4_version](@DefaultValueIfNoHistoryPresent varchar(20))
+RETURNS decimal(3,1)
+AS
+    
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	
+    BEGIN; 
+    	
+		DECLARE @output decimal(3,1); 
+		DECLARE @currentVersion varchar(20);
+
+		SELECT 
+			@currentVersion = [version_number] 
+		FROM 
+			dbo.[version_history] 
+		WHERE 
+			version_id = (SELECT TOP 1 [version_id] FROM dbo.[version_history] ORDER BY [version_id] DESC);
+
+		IF @currentVersion IS NULL 
+			SET @currentVersion = @DefaultValueIfNoHistoryPresent;
+			
+		DECLARE @majorMinor varchar(10) = N'';
+		SELECT @majorMinor = @majorMinor + [result] + CASE WHEN [row_id] = 1 THEN N'.' ELSE '' END FROM dbo.[split_string](@currentVersion, N'.', 1) WHERE [row_id] < 3 ORDER BY [row_id];
+
+		SET @output = CAST(@majorMinor AS decimal(3,1));
+
+    	RETURN @output;
+    END;
+GO
+
 
 -----------------------------------
 USE [admindb];
@@ -601,7 +746,7 @@ CREATE PROC dbo.drop_obsolete_objects
 AS 
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     IF @Directives IS NULL BEGIN 
         PRINT '-- Attempt to execute dbo.drop_obsolete_objects - but @Directives was NULL.';
@@ -834,6 +979,93 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
 GO
 
+-----------------------------------
+-- v7.0+ - Conversion of [tokens] to {tokens}. (Breaking Change - Raises warnings/alerts via SELECT statements). 
+IF (SELECT admindb.dbo.get_s4_version('7.0.3047.1')) < 7.0 BEGIN
+
+	-- Replace any 'custom' token definitions in dbo.settings: 
+	DECLARE @tokenChanges table (
+		setting_id int NOT NULL, 
+		old_setting_key sysname NOT NULL, 
+		new_setting_key sysname NOT NULL 
+	);
+
+	UPDATE [dbo].[settings]
+	SET 
+		[setting_key] = REPLACE(REPLACE([setting_key], N']', N'}'), N'[', N'{')
+	OUTPUT 
+		[Deleted].[setting_id], [Deleted].[setting_key], [Inserted].[setting_key] INTO @tokenChanges
+	WHERE 
+		[setting_key] LIKE N'~[%~]' ESCAPE '~';
+
+
+	IF EXISTS (SELECT NULL FROM @tokenChanges) BEGIN 
+
+		SELECT 
+			N'WARNING: dbo.settings.setting_key CHANGED from pre 7.0 [token] syntax to 7.0+ {token} syntax' [WARNING], 
+			[setting_id], 
+			[old_setting_key], 
+			[new_setting_key]
+		FROM 
+			@tokenChanges
+	END;
+
+	-- Raise alerts/warnings about any Job-Steps on the server with old-style [tokens] instead of {tokens}:
+	DECLARE @oldTokens table ( 
+		old_token_id int IDENTITY(1,1) NOT NULL, 
+		token_pattern sysname NOT NULL, 
+		is_custom bit DEFAULT 1
+	); 
+
+	INSERT INTO @oldTokens (
+		[token_pattern], [is_custom]
+	)
+	VALUES
+		(N'%~[ALL~]%', 0),
+		(N'%~[SYSTEM~]%', 0),
+		(N'%~[USER~]%', 0),
+		(N'%~[READ_FROM_FILESYSTEM~]%', 0), 
+		(N'%~[READ_FROM_FILE_SYSTEM~]%', 0), 
+		(N'%~[DEFAULT~]%', 0);
+
+	INSERT INTO @oldTokens (
+		[token_pattern]
+	)
+	SELECT DISTINCT
+		N'%~' + REPLACE([setting_key], N']', N'~]') + N'%'
+	FROM 
+		[admindb].[dbo].[settings] 
+	WHERE 
+		[setting_key] LIKE '~[%~]' ESCAPE '~';
+
+	WITH matches AS ( 
+		SELECT 
+			js.[job_id], 
+			js.[step_id], 
+			js.[command], 
+			js.[step_name],
+			x.[token_pattern]
+		FROM 
+			[msdb].dbo.[sysjobsteps] js 
+			INNER JOIN @oldTokens x ON js.[command] LIKE x.[token_pattern] ESCAPE N'~'
+		WHERE 
+			js.[subsystem] = N'TSQL'
+	)
+
+	SELECT 
+		N'WARNING: SQL Server Agent Job-Step uses PRE-7.0 [tokens] which should be changed to {token} syntax instead.' [WARNING],
+		j.[name] [job_name], 
+		--	j.[job_id], 
+		CAST(m.[step_id] AS sysname) + N' - ' + m.[step_name] [Job-Step-With-Invalid-Token],
+		N'TASK: Manually Replace ' + REPLACE(REPLACE(m.[token_pattern], N'~', N''), N'%', N'') 
+			+ N' with ' + REPLACE(REPLACE(( ( REPLACE(REPLACE(m.[token_pattern], N'~', N''), N'%', N'') ) ), N']', N'}'), N'[', N'{') + '.' [Task-To-Execute-Manually]
+		--m.[command]
+	FROM 
+		[matches] m 
+		INNER JOIN [msdb].dbo.[sysjobs] j ON m.[job_id] = j.[job_id];
+
+END;
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -858,7 +1090,7 @@ CREATE PROC dbo.enable_advanced_capabilities
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @xpCmdShellValue bit; 
 	DECLARE @xpCmdShellInUse bit;
@@ -954,7 +1186,7 @@ CREATE PROC dbo.disable_advanced_capabilities
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @xpCmdShellValue bit; 
 	DECLARE @xpCmdShellInUse bit;
@@ -1041,7 +1273,7 @@ CREATE PROC dbo.verify_advanced_capabilities
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @xpCmdShellInUse bit;
 	DECLARE @advancedS4 bit;
@@ -1077,112 +1309,6 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.get_engine_version','FN') IS NOT NULL
-	DROP FUNCTION dbo.get_engine_version;
-GO
-
-CREATE FUNCTION dbo.get_engine_version() 
-RETURNS decimal(4,2)
-AS
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-
-	BEGIN 
-		DECLARE @output decimal(4,2);
-		
-		DECLARE @major sysname, @minor sysname, @full sysname;
-		SELECT 
-			@major = CAST(SERVERPROPERTY('ProductMajorVersion') AS sysname), 
-			@minor = CAST(SERVERPROPERTY('ProductMinorVersion') AS sysname), 
-			@full = CAST(SERVERPROPERTY('ProductVersion') AS sysname); 
-
-		IF @major IS NULL BEGIN
-			SELECT @major = LEFT(@full, 2);
-			SELECT @minor = REPLACE((SUBSTRING(@full, LEN(@major) + 2, 2)), N'.', N'');
-		END;
-
-		SET @output = CAST((@major + N'.' + @minor) AS decimal(4,2));
-
-		RETURN @output;
-	END;
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-
-IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
-	DROP FUNCTION dbo.split_string;
-GO
-
-CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20), @TrimResults bit)
-RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(MAX))
-	--WITH SCHEMABINDING
-AS 
-	BEGIN
-
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
-	
-	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
-		IF @delimiter = N' ' BEGIN 
-			-- this approach is going to be MUCH slower, but works for space delimiter... 
-			DECLARE @p int; 
-			DECLARE @s nvarchar(MAX);
-			WHILE CHARINDEX(N' ', @serialized) > 0 BEGIN 
-				SET @p = CHARINDEX(N' ', @serialized);
-				SET @s = SUBSTRING(@serialized, 1, @p - 1); 
-			
-				INSERT INTO @Results ([result])
-				VALUES(@s);
-
-				SELECT @serialized = SUBSTRING(@serialized, @p + 1, LEN(@serialized) - @p);
-			END;
-			
-			INSERT INTO @Results ([result])
-			VALUES (@serialized);
-
-		  END; 
-		ELSE BEGIN
-
-			DECLARE @MaxLength int = LEN(@serialized) + LEN(@delimiter);
-
-			WITH tally (n) AS ( 
-				SELECT TOP (@MaxLength) 
-					ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
-				FROM sys.all_objects o1 
-				CROSS JOIN sys.all_objects o2
-			)
-
-			INSERT INTO @Results ([result])
-			SELECT 
-				SUBSTRING(@serialized, n, CHARINDEX(@delimiter, @serialized + @delimiter, n) - n) [result]
-			FROM 
-				tally 
-			WHERE 
-				n <= LEN(@serialized) AND
-				LEN(@delimiter) <= LEN(@serialized) AND
-				RTRIM(LTRIM(SUBSTRING(@delimiter + @serialized, n, LEN(@delimiter)))) = @delimiter
-			ORDER BY 
-				 n;
-		END;
-
-		IF @TrimResults = 1 BEGIN
-			UPDATE @Results SET [result] = LTRIM(RTRIM([result])) WHERE DATALENGTH([result]) > 0;
-		END;
-
-	END;
-
-	RETURN;
-END
-
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
 IF OBJECT_ID('dbo.check_paths','P') IS NOT NULL
 	DROP PROC dbo.check_paths;
 GO
@@ -1193,7 +1319,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SET @Exists = 0;
 
@@ -1227,7 +1353,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @output sysname;
 
@@ -1310,11 +1436,11 @@ GO
 
 CREATE PROC dbo.load_default_setting
 	@SettingName			sysname	                    = NULL, 
-	@Result					sysname			            = N''       OUTPUT
+	@Result					sysname			            = N''       OUTPUT			-- NOTE: Non-NULL for PROJECT or REPLY convention
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @output sysname; 
 
@@ -1371,7 +1497,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -1399,7 +1525,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 	RETURNS bit
 AS 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output bit = 0;
@@ -1452,7 +1578,7 @@ CREATE PROC dbo.parse_vector
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	SET @ValidationParameterName = ISNULL(NULLIF(@ValidationParameterName, N''), N'@Vector');
 	IF @ValidationParameterName LIKE N'@%'
@@ -1532,7 +1658,7 @@ CREATE PROC dbo.translate_vector
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 
@@ -1604,7 +1730,7 @@ CREATE PROC dbo.translate_vector_delay
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @difference int;
 
@@ -1649,7 +1775,7 @@ CREATE PROC dbo.translate_vector_datetime
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	IF UPPER(@Operation) NOT IN (N'ADD', N'SUBTRACT') BEGIN 
@@ -1719,15 +1845,16 @@ IF OBJECT_ID('dbo.verify_alerting_configuration','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[verify_alerting_configuration]
-	@OperatorName						    sysname									= N'[DEFAULT]',
-	@MailProfileName					    sysname									= N'[DEFAULT]'
+	@OperatorName						    sysname									= N'{DEFAULT}',
+	@MailProfileName					    sysname									= N'{DEFAULT}'
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
     DECLARE @output sysname;
 
-    IF UPPER(@OperatorName) = N'[DEFAULT]' OR (NULLIF(@OperatorName, N'') IS NULL) BEGIN 
+    IF UPPER(@OperatorName) = N'{DEFAULT}' OR (NULLIF(@OperatorName, N'') IS NULL) BEGIN 
         SET @output = NULL;
         EXEC dbo.load_default_setting 
             @SettingName = N'DEFAULT_OPERATOR', 
@@ -1736,7 +1863,7 @@ AS
         SET @OperatorName = @output;
     END;
 
-    IF UPPER(@MailProfileName) = N'[DEFAULT]' OR (NULLIF(@MailProfileName, N'') IS NULL) BEGIN
+    IF UPPER(@MailProfileName) = N'{DEFAULT}' OR (NULLIF(@MailProfileName, N'') IS NULL) BEGIN
         SET @output = NULL;
         EXEC dbo.load_default_setting 
             @SettingName = N'DEFAULT_PROFILE', 
@@ -1783,20 +1910,19 @@ IF OBJECT_ID('dbo.list_databases_matching_token','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_databases_matching_token	
-	@Token								sysname			= N'[DEV]',					-- { [DEV] | [TEST] }
+	@Token								sysname			= N'{DEV}',					-- { [DEV] | [TEST] }
 	@SerializedOutput					xml				= N'<default/>'	    OUTPUT
 AS 
 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	
-	-- make sure @Token LIKE '~[%~]' ESCAPE '~'
-	IF NOT @Token LIKE N'~[%~]' ESCAPE N'~' BEGIN 
-		RAISERROR(N'@Token names must we ''wrapped'' in [square brackets] (and must also be defined in dbo.setttings).', 16, 1);
+	IF NOT @Token LIKE N'{%}' BEGIN 
+		RAISERROR(N'@Token names must be ''wrapped'' in {curly brackets] (and must also be defined in dbo.setttings).', 16, 1);
 		RETURN -5;
 	END;
 
@@ -1807,7 +1933,7 @@ AS
 		[database_name] sysname NOT NULL
 	);
 
-	IF UPPER(@Token) IN (N'[ALL]', N'[SYSTEM]', N'[USER]') BEGIN
+	IF UPPER(@Token) IN (N'{ALL}', N'{SYSTEM}', N'{USER}') BEGIN
 		-- define system databases - we'll potentially need this in a number of different cases...
 		DECLARE @system_databases TABLE ( 
 			[entry_id] int IDENTITY(1,1) NOT NULL, 
@@ -1817,7 +1943,7 @@ AS
 		INSERT INTO @system_databases ([database_name])
 		SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
 
-		-- Treat admindb as [SYSTEM] if defined as system... : 
+		-- Treat admindb as {SYSTEM} if defined as system... : 
 		IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
 			INSERT INTO @system_databases ([database_name])
 			VALUES ('admindb');
@@ -1831,12 +1957,12 @@ AS
 			END;
 		END;
 
-		IF UPPER(@Token) IN (N'[ALL]', N'[SYSTEM]') BEGIN 
+		IF UPPER(@Token) IN (N'{ALL}', N'{SYSTEM}') BEGIN 
 			INSERT INTO @tokenMatches ([database_name])
 			SELECT [database_name] FROM @system_databases; 
 		END; 
 
-		IF UPPER(@Token) IN (N'[ALL]', N'[USER]') BEGIN 
+		IF UPPER(@Token) IN (N'{ALL}', N'{USER}') BEGIN 
 			INSERT INTO @tokenMatches ([database_name])
 			SELECT [name] FROM sys.databases
 			WHERE [name] NOT IN (SELECT [database_name] COLLATE SQL_Latin1_General_CP1_CI_AS  FROM @system_databases)
@@ -1920,7 +2046,7 @@ CREATE PROC dbo.replace_dbname_tokens
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -1939,7 +2065,7 @@ AS
 			FROM 
 				dbo.[settings] 
 			WHERE 
-				[setting_key] LIKE '~[%~]' ESCAPE N'~'
+				[setting_key] LIKE '{%}'
 			GROUP BY 
 				[setting_key]
 
@@ -1948,7 +2074,7 @@ AS
 			SELECT 
 				[token], 
 				[ranking] 
-			FROM (VALUES (N'[ALL]', 1000), (N'[SYSTEM]', 999), (N'[USER]', 998)) [x]([token], [ranking])
+			FROM (VALUES (N'{ALL}', 1000), (N'{SYSTEM}', 999), (N'{USER}', 998)) [x]([token], [ranking])
 		) 
 
 		SELECT @AllowedTokens = @AllowedTokens + [token] + N',' FROM [aggregated] ORDER BY [ranking] DESC;
@@ -1970,7 +2096,7 @@ AS
 	);
 
 	INSERT INTO @possibleTokens ([token])
-	SELECT [result] FROM dbo.[split_string](@Input, N',', 1) WHERE [result] LIKE N'%~[%~]' ESCAPE N'~' ORDER BY [row_id];
+	SELECT [result] FROM dbo.[split_string](@Input, N',', 1) WHERE [result] LIKE N'%{%}' ORDER BY [row_id];
 
 	IF EXISTS (SELECT NULL FROM @possibleTokens WHERE [token] NOT IN (SELECT [token] FROM @tokensToProcess)) BEGIN
 		RAISERROR('Undefined database-name token specified in @Input. Please ensure that custom database-name tokens are defined in dbo.settings.', 16, 1);
@@ -2045,13 +2171,13 @@ CREATE FUNCTION dbo.format_sql_login (
     @Password                         varchar(256),                         -- NOTE: while not 'strictly' required by ALTER LOGIN statements, @Password is ALWAYS required for dbo.format_sql_login.
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
     @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
-    @DefaultLanguage                  sysname         = N'[DEFAULT]',       -- have to specify DEFAULT for this to work... obviously
+    @DefaultLanguage                  sysname         = N'{DEFAULT}',       -- have to specify DEFAULT for this to work... obviously
     @CheckExpriration                 bit             = 0,                  -- have to specify DEFAULT for this to work... obviously
     @CheckPolicy                      bit             = 0                   -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
 AS 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     BEGIN 
         DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -2139,7 +2265,7 @@ GO
         END;
 
         IF NULLIF(@DefaultLanguage, N'') IS NOT NULL BEGIN 
-            IF UPPER(@DefaultLanguage) = N'[DEFAULT]'
+            IF UPPER(@DefaultLanguage) = N'{DEFAULT}'
                 SELECT @DefaultLanguage = [name] FROM sys.syslanguages WHERE 
                     [langid] = (SELECT [value_in_use] FROM sys.[configurations] WHERE [name] = N'default language');
 
@@ -2193,11 +2319,11 @@ CREATE FUNCTION dbo.format_windows_login (
     @Name                             sysname,                              -- always required.
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
     @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
-    @DefaultLanguage                  sysname         = N'[DEFAULT]'        -- have to specify DEFAULT for this to work... obviously
+    @DefaultLanguage                  sysname         = N'{DEFAULT}'        -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
 AS 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     BEGIN 
 
@@ -2277,7 +2403,7 @@ GO
         END;
 
         IF NULLIF(@DefaultLanguage, N'') IS NOT NULL BEGIN 
-            IF UPPER(@DefaultLanguage) = N'[DEFAULT]'
+            IF UPPER(@DefaultLanguage) = N'{DEFAULT}'
                 SELECT @DefaultLanguage = [name] FROM sys.syslanguages WHERE 
                     [langid] = (SELECT [value_in_use] FROM sys.[configurations] WHERE [name] = N'default language');
 
@@ -2312,7 +2438,7 @@ IF OBJECT_ID('dbo.list_databases','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_databases
-	@Targets								nvarchar(MAX)	= N'[ALL]',		-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Targets								nvarchar(MAX)	= N'{ALL}',		-- {ALL} | {SYSTEM} | {USER} | {READ_FROM_FILESYSTEM} | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions								nvarchar(MAX)	= NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	= NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@ExcludeClones							bit				= 1, 
@@ -2326,44 +2452,45 @@ CREATE PROC dbo.list_databases
 AS 
 	SET NOCOUNT ON; 
 
-	-- {copyright} 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	IF NULLIF(@Targets, N'') IS NULL BEGIN
-		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token [ALL], [SYSTEM], [USER], or a comma-delimited list of databases/folders.', 16, 1);
+		RAISERROR('@Targets cannot be null or empty - it must either be the specialized token {ALL}, {SYSTEM}, {USER}, or a comma-delimited list of databases/folders.', 16, 1);
 		RETURN -1;
 	END
 
-	IF ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) AND (UPPER(@Targets) <> N'[ALL]') BEGIN
-		RAISERROR(N'When the Token [ALL] is specified for @Targets, no ADDITIONAL db-names or tokens may be specified.', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Targets, N'{ALL}')) > 0) AND (UPPER(@Targets) <> N'{ALL}') BEGIN
+		RAISERROR(N'When the Token {ALL} is specified for @Targets, no ADDITIONAL db-names or tokens may be specified.', 16, 1);
 		RETURN -1;
 	END;
 
-	IF (SELECT dbo.[count_matches](@Exclusions, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
-		RAISERROR(N'The [READ_FROM_FILESYSTEM] is NOT a valid exclusion token.', 16, 1);
+	IF (SELECT dbo.[count_matches](@Exclusions, N'{READ_FROM_FILESYSTEM}')) > 0 BEGIN 
+		RAISERROR(N'The {READ_FROM_FILESYSTEM} is NOT a valid exclusion token.', 16, 1);
 		RETURN -2;
 	END;
 
-	IF (SELECT dbo.[count_matches](@Targets, N'[READ_FROM_FILESYSTEM]')) > 0 BEGIN 
-		RAISERROR(N'@Targets may NOT be set to (or contain) [READ_FROM_FILESYSTEM]. The [READ_FROM_FILESYSTEM] token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
+	IF (SELECT dbo.[count_matches](@Targets, N'{READ_FROM_FILESYSTEM}')) > 0 BEGIN 
+		RAISERROR(N'@Targets may NOT be set to (or contain) {READ_FROM_FILESYSTEM}. The {READ_FROM_FILESYSTEM} token is ONLY allowed as an option/token for @TargetDatabases in dbo.restore_databases and dbo.apply_logs.', 16, 1);
 		RETURN -3;
 	END;
 
-	IF ((SELECT dbo.[count_matches](@Exclusions, N'[SYSTEM]')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) BEGIN
-		RAISERROR(N'[SYSTEM] can NOT be specified as an Exclusion when @Targets is (or contains) [ALL]. Replace [ALL] with [USER] for @Targets and remove [SYSTEM] from @Exclusions instead (to load all databases EXCEPT ''System'' Databases.', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'{SYSTEM}')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'{ALL}')) > 0) BEGIN
+		RAISERROR(N'{SYSTEM} can NOT be specified as an Exclusion when @Targets is (or contains) {ALL}. Replace {ALL} with {USER} for @Targets and remove {SYSTEM} from @Exclusions instead (to load all databases EXCEPT ''System'' Databases.', 16, 1);
 		RETURN -5;
 	END;
 
-	IF ((SELECT dbo.[count_matches](@Exclusions, N'[USER]')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'[ALL]')) > 0) BEGIN
-		RAISERROR(N'[USER] can NOT be specified as an Exclusion when @Targets is (or contains) [ALL]. Replace [ALL] with [SYSTEM] for @Targets and remove [USER] from @Exclusions instead (to load all databases EXCEPT ''User'' Databases.', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'{USER}')) > 0) AND ((SELECT dbo.[count_matches](@Targets, N'{ALL}')) > 0) BEGIN
+		RAISERROR(N'{USER} can NOT be specified as an Exclusion when @Targets is (or contains) {ALL}. Replace {ALL} with {SYSTEM} for @Targets and remove {USER} from @Exclusions instead (to load all databases EXCEPT ''User'' Databases.', 16, 1);
 		RETURN -6;
 	END;
 
-	IF ((SELECT dbo.[count_matches](@Exclusions, N'[USER]')) > 0) OR ((SELECT dbo.[count_matches](@Exclusions, N'[ALL]')) > 0) BEGIN 
-		RAISERROR(N'@Exclusions may NOT be set to [ALL] or [USER].', 16, 1);
+	IF ((SELECT dbo.[count_matches](@Exclusions, N'{USER}')) > 0) OR ((SELECT dbo.[count_matches](@Exclusions, N'{ALL}')) > 0) BEGIN 
+		RAISERROR(N'@Exclusions may NOT be set to {ALL} or {USER}.', 16, 1);
 		RETURN -7;
 	END;
+
 
 	-----------------------------------------------------------------------------
 	-- Initialize helper objects:
@@ -2388,10 +2515,12 @@ AS
 		[database_name] sysname NOT NULL
 	); 	
 
+
+
 	-- load system databases - we'll (potentially) need these in a few evaluations (and avoid nested insert exec): 
 	DECLARE @serializedOutput xml = '';
 	EXEC dbo.[list_databases_matching_token]
-	    @Token = N'[SYSTEM]',
+	    @Token = N'{SYSTEM}',
 	    @SerializedOutput = @serializedOutput OUTPUT;
 	
 	WITH shredded AS ( 
@@ -2404,16 +2533,16 @@ AS
 	 
 	INSERT INTO @system_databases ([database_name])
 	SELECT [database_name] FROM [shredded] ORDER BY [row_id];
-	
+		
 	-----------------------------------------------------------------------------
 	-- Account for tokens: 
 	DECLARE @tokenReplacementOutcome int;
 	DECLARE @replacedOutput nvarchar(MAX);
-	IF @Targets LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+	IF @Targets LIKE N'%{%}%' BEGIN 
 		EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 			@Input = @Targets, 
 			@Output = @replacedOutput OUTPUT;
-		
+
 		IF @tokenReplacementOutcome <> 0 GOTO ErrorCondition;
 
 		SET @Targets = @replacedOutput;
@@ -2427,7 +2556,7 @@ AS
 
 		IF EXISTS (SELECT NULL FROM @deserialized) BEGIN 
 			INSERT INTO @target_databases ([database_name])
-			SELECT RTRIM(LTRIM([result])) FROM @deserialized ORDER BY [row_id];
+			SELECT [result] FROM @deserialized ORDER BY [row_id];
 		END;
 	 END;
 
@@ -2499,7 +2628,7 @@ AS
 		DELETE FROM @deserialized;
 
 		-- Account for tokens: 
-		IF @Exclusions LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+		IF @Exclusions LIKE N'%{%}%' BEGIN 
 			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Exclusions, 
 				@Output = @replacedOutput OUTPUT;
@@ -2523,7 +2652,7 @@ AS
 	IF ISNULL(@Priorities, '') IS NOT NULL BEGIN;
 
 		-- Account for tokens: 
-		IF @Priorities LIKE N'%~[%~]%' ESCAPE N'~' BEGIN 
+		IF @Priorities LIKE N'%{%}%' ESCAPE N'~' BEGIN 
 			EXEC @tokenReplacementOutcome = dbo.replace_dbname_tokens 
 				@Input = @Priorities, 
 				@Output = @replacedOutput OUTPUT;
@@ -2606,7 +2735,7 @@ GO
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 AS
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -2639,7 +2768,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @output int = 0;
@@ -2674,7 +2803,7 @@ GO
 
 CREATE PROC dbo.kill_connections_by_hostname
 	@HostName				sysname, 
-	@Interval				sysname			= '3s', 
+	@Interval				sysname			= '3 seconds', 
 	@MaxIterations			int				= 5, 
 
 -- TODO: Add error-handling AND reporting... along with options to 'run silent' and so on... 
@@ -2684,7 +2813,7 @@ CREATE PROC dbo.kill_connections_by_hostname
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -2761,7 +2890,7 @@ CREATE PROC dbo.execute_uncatchable_command
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Dependencies:
@@ -2878,7 +3007,7 @@ CREATE PROC dbo.execute_command
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -3140,7 +3269,7 @@ CREATE PROC dbo.establish_directory
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     IF NULLIF(@TargetDirectory, N'') IS NULL BEGIN 
         SET @Error = N'The @TargetDirectory parameter for dbo.establish_directory may NOT be NULL or empty.';
@@ -3199,12 +3328,12 @@ IF OBJECT_ID('dbo.load_backup_database_names','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_backup_database_names 
-	@TargetDirectory				sysname				= N'[DEFAULT]',		
+	@TargetDirectory				sysname				= N'{DEFAULT}',		
 	@SerializedOutput				xml					= N'<default/>'					OUTPUT
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -3212,7 +3341,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
-	IF UPPER(@TargetDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@TargetDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @TargetDirectory = dbo.load_default_path('BACKUP');
 	END;
 
@@ -3296,7 +3425,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -3408,7 +3537,7 @@ CREATE PROC dbo.print_long_string
 AS
 	SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @totalLen int;
 	SELECT @totalLen = LEN(@Input);
@@ -3442,11 +3571,11 @@ IF OBJECT_ID('dbo.get_executing_dbname','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[get_executing_dbname]
-    @ExecutingDBName                sysname         = N'#DEFAULT#'      OUTPUT
+    @ExecutingDBName                sysname         = N''      OUTPUT		-- note: NON-NULL default for RETURN or PROJECT convention... 
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     DECLARE @output sysname;
     DECLARE @resultCount int;
@@ -3482,11 +3611,11 @@ AS
         SET @output = (SELECT TOP 1 [db_name] FROM @options);
     END;
 
-    IF @ExecutingDBName = N'#DEFAULT#' BEGIN 
-        SELECT @output [executing_db_name];
+    IF @ExecutingDBName IS NULL BEGIN 
+		SET @ExecutingDBName = @output;
       END;
     ELSE BEGIN 
-        SET @ExecutingDBName = @output;
+        SELECT @output [executing_db_name];
     END;
 
     RETURN 0; 
@@ -3507,9 +3636,9 @@ GO
 
 CREATE PROC [dbo].[remove_backup_files] 
 	@BackupType							sysname,									-- { ALL|FULL|DIFF|LOG }
-	@DatabasesToProcess					nvarchar(1000),								-- { [READ_FROM_FILESYSTEM] | name1,name2,etc }
+	@DatabasesToProcess					nvarchar(1000),								-- { {READ_FROM_FILESYSTEM} | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
-	@TargetDirectory					nvarchar(2000) = N'[DEFAULT]',				-- { path_to_backups }
+	@TargetDirectory					nvarchar(2000) = N'{DEFAULT}',				-- { path_to_backups }
 	@Retention							nvarchar(10),								-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
 	@ServerNameInSystemBackupPath		bit = 0,									-- for mirrored servers/etc.
 	@SendNotifications					bit	= 0,									-- { 0 | 1 } Email only sent if set to 1 (true).
@@ -3521,7 +3650,7 @@ CREATE PROC [dbo].[remove_backup_files]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -3571,7 +3700,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@TargetDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@TargetDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @TargetDirectory = dbo.load_default_path('BACKUP');
 	END;
 
@@ -3666,8 +3795,8 @@ AS
 	IF @BackupType = N'LOG'
 		SET @excludeSimple = 1;
 
-	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
-	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
@@ -3697,7 +3826,7 @@ AS
 			@TargetDirectory = @TargetDirectory, 
 			@SerializedOutput = @databases OUTPUT;
 
-		SET @DatabasesToProcess = REPLACE(@DatabasesToProcess, N'[READ_FROM_FILESYSTEM]', @serialized); 
+		SET @DatabasesToProcess = REPLACE(@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
 
 	DECLARE @targetDirectories table (
@@ -4073,10 +4202,10 @@ GO
 
 CREATE PROC dbo.backup_databases 
 	@BackupType							sysname,																-- { FULL|DIFF|LOG }
-	@DatabasesToBackup					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToBackup					nvarchar(MAX),															-- { {SYSTEM} | {USER} |name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
-	@BackupDirectory					nvarchar(2000)							= N'[DEFAULT]',					-- { [DEFAULT] | path_to_backups }
+	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } 
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
@@ -4094,7 +4223,7 @@ CREATE PROC dbo.backup_databases
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -4144,7 +4273,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@BackupDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@BackupDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @BackupDirectory = dbo.load_default_path('BACKUP');
 	END;
 
@@ -4160,8 +4289,8 @@ AS
 		RETURN -7;
 	END;
 
-	IF UPPER(@DatabasesToBackup) = N'[READ_FROM_FILESYSTEM]' BEGIN
-		RAISERROR('@DatabasesToBackup may NOT be set to the token [READ_FROM_FILESYSTEM] when processing backups.', 16, 1);
+	IF UPPER(@DatabasesToBackup) = N'{READ_FROM_FILESYSTEM}' BEGIN
+		RAISERROR('@DatabasesToBackup may NOT be set to the token {READ_FROM_FILESYSTEM} when processing backups.', 16, 1);
 		RETURN -9;
 	END
 
@@ -4277,7 +4406,7 @@ AS
 
 		   END; 
 		ELSE BEGIN
-			PRINT 'Usage: @DatabasesToBackup = [SYSTEM]|[USER]|dbname1,dbname2,dbname3,etc';
+			PRINT 'Usage: @DatabasesToBackup = {SYSTEM}|{USER}|dbname1,dbname2,dbname3,etc';
 			RAISERROR('No databases specified for backup.', 16, 1);
 			RETURN -20;
 		END;
@@ -4804,11 +4933,11 @@ CREATE PROC dbo.script_login
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 
-    @Output                                 nvarchar(MAX)           = 'default'        OUTPUT
+    @Output                                 nvarchar(MAX)           = ''        OUTPUT
 AS 
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     IF NULLIF(@LoginName, N'') IS NULL BEGIN 
         RAISERROR('@LoginName is required.', 16, 1);
@@ -4867,7 +4996,7 @@ AS
         @checkPolicy
      );
 
-    IF NULLIF(@Output, N'') IS NULL BEGIN 
+    IF @Output IS NULL BEGIN 
         SET @Output = @formatted;
         RETURN 0;
     END;
@@ -4886,7 +5015,7 @@ IF OBJECT_ID('dbo.script_logins','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.script_logins 
-	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
+	@TargetDatabases						nvarchar(MAX)			= N'{ALL}',
 	@ExcludedDatabases						nvarchar(MAX)			= NULL,
 	@DatabasePriorities						nvarchar(MAX)			= NULL,
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
@@ -4901,10 +5030,10 @@ CREATE PROC dbo.script_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases,'') IS NULL 
-        SET @TargetDatabases = N'[ALL]';
+        SET @TargetDatabases = N'{ALL}';
 
 	DECLARE @ignoredDatabases table (
 		[database_name] sysname NOT NULL
@@ -5077,7 +5206,7 @@ AS
 
 			INSERT INTO @allDbsToWalk ([database_name])
 			EXEC dbo.[list_databases]
-				@Targets = N'[ALL]',  -- has to be all when looking for login-only logins
+				@Targets = N'{ALL}',  -- has to be all when looking for login-only logins
 				@ExcludeSecondaries = 1,
 				@ExcludeOffline = 1;
 
@@ -5206,12 +5335,12 @@ IF OBJECT_ID('dbo.export_server_logins','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.export_server_logins
-	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
+	@TargetDatabases						nvarchar(MAX)			= N'{ALL}',
 	@ExcludedDatabases						nvarchar(MAX)			= NULL,
 	@DatabasePriorities						nvarchar(MAX)			= NULL,
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
 	@ExcludedUsers							nvarchar(MAX)			= NULL,
-	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
+	@OutputPath								nvarchar(2000)			= N'{DEFAULT}',
 	@CopyToPath								nvarchar(2000)			= NULL, 	
 	@ExcludeMSAndServiceLogins				bit						= 1,
 	@DisablePolicyChecks					bit						= 0,
@@ -5226,7 +5355,7 @@ CREATE PROC dbo.export_server_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -5277,7 +5406,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@OutputPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@OutputPath) = N'{DEFAULT}' BEGIN
 		SELECT @OutputPath = dbo.load_default_path('BACKUP');
 	END;
 
@@ -5475,7 +5604,7 @@ CREATE PROC dbo.script_configuration
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 
@@ -5893,7 +6022,7 @@ IF OBJECT_ID('dbo.export_server_configuration','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.export_server_configuration 
-	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
+	@OutputPath								nvarchar(2000)			= N'{DEFAULT}',
 	@CopyToPath								nvarchar(2000)			= NULL, 
 	@AddServerNameToFileName				bit						= 1, 
 	@OperatorName							sysname					= N'Alerts',
@@ -5904,7 +6033,7 @@ CREATE PROC dbo.export_server_configuration
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -5955,7 +6084,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@OutputPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@OutputPath) = N'{DEFAULT}' BEGIN
 		SELECT @OutputPath = dbo.load_default_path('BACKUP');
 	END;
 
@@ -6116,6 +6245,144 @@ GO
 USE [admindb];
 GO
 
+IF OBJECT_ID('dbo.configure_database_mail','P') IS NOT NULL
+	DROP PROC dbo.configure_database_mail;
+GO
+
+CREATE PROC dbo.configure_database_mail
+    @ProfileName                    sysname             = N'General', 
+    @OperatorName                   sysname             = N'Alerts', 
+    @OperatorEmail                  sysname, 
+    @SmtpAccountName                sysname             = N'Default SMTP Account', 
+    @SmtpAccountDescription         sysname             = N'Defined/Created by S4',
+    @SmtpOutgoingEmailAddress       sysname,
+    @SmtpOutgoingDisplayName        sysname             = NULL,            -- set to @@SERVERNAME if NULL 
+    @SmtpServerName                 sysname, 
+    @SmtpPortNumber                 int                 = 587, 
+    @SmtpRequiresSSL                bit                 = 1, 
+    @SmtpAuthType                   sysname             = N'BASIC',         -- WINDOWS | BASIC | ANONYMOUS
+    @SmptUserName                   sysname,
+    @SmtpPassword                   sysname
+    --@PrintOnly                      bit               = 0     just toooo much of a pain to configure/enable with this particular logic/set-of-operations.
+AS
+    SET NOCOUNT ON; 
+
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+    -- TODO:
+    --      validate all inputs.. 
+    IF NULLIF(@ProfileName, N'') IS NULL OR NULLIF(@OperatorName, N'') IS NULL OR NULLIF(@OperatorEmail, N'') IS NULL BEGIN 
+        RAISERROR(N'@ProfileName, @OperatorName, and @OperatorEmail are all REQUIRED parameters.', 16, 1);
+        RETURN -1;
+    END;
+
+    IF NULLIF(@SmtpOutgoingEmailAddress, N'') IS NULL OR NULLIF(@SmtpServerName, N'') IS NULL OR NULLIF(@SmtpAuthType, N'') IS NULL BEGIN 
+        RAISERROR(N'@SmtpOutgoingEmailAddress, @SmtpServerName, and @SmtpAuthType are all REQUIRED parameters.', 16, 1);
+        RETURN -2;
+    END;
+
+    IF UPPER(@SmtpAuthType) NOT IN (N'WINDOWS', N'BASIC', N'ANONYMOUS') BEGIN 
+        RAISERROR(N'Valid options for @SmtpAuthType are { WINDOWS | BASIC | ANONYMOUS }.', 16, 1);
+        RETURN -3;
+    END;
+
+    IF @SmtpPortNumber IS NULL OR @SmtpRequiresSSL IS NULL OR @SmtpRequiresSSL NOT IN (0, 1) BEGIN 
+        RAISERROR(N'@SmtpPortNumber and @SmtpRequiresSSL are both REQUIRED Parameters. @SmtpRequiresSSL must also have a value of 0 or 1.', 16, 1);
+        RETURN -4;
+    END;
+
+    IF NULLIF(@SmtpOutgoingDisplayName, N'') IS NULL 
+        SELECT @SmtpOutgoingDisplayName = @@SERVERNAME;
+
+    --------------------------------------------------------------
+    -- Enable Mail XPs: 
+    IF EXISTS (SELECT NULL FROM sys.[configurations] WHERE [name] = N'show advanced options' AND [value_in_use] = 0) BEGIN
+        EXEC sp_configure 'show advanced options', 1; 
+        RECONFIGURE;
+    END;
+
+    IF EXISTS (SELECT NULL FROM sys.[configurations] WHERE [name] = N'Database Mail XPs' AND [value_in_use] = 0) BEGIN
+        EXEC sp_configure 'Database Mail XPs', 1; 
+	    RECONFIGURE;
+    END;
+
+    --------------------------------------------------------------
+    -- Create Profile: 
+    DECLARE @profileID int; 
+
+    EXEC msdb.dbo.[sysmail_add_profile_sp] 
+        @profile_name = @ProfileName, 
+        @description = N'S4-Created Profile... ', 
+        @profile_id = @profileID OUTPUT;
+
+    --------------------------------------------------------------
+    -- Create an Account: 
+    DECLARE @AccountID int; 
+    DECLARE @useDefaultCredentials bit = 0;  -- username/password. 
+    IF UPPER(@SmtpAuthType) = N'WINDOWS' SET @useDefaultCredentials = 1;  -- use windows. 
+    IF UPPER(@SmtpAuthType) = N'ANONYMOUS' SET @useDefaultCredentials = NULL;  -- i think that's how this works. it's NOT documented: https://docs.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sysmail-add-account-sp-transact-sql?view=sql-server-2017
+
+    EXEC msdb.dbo.[sysmail_add_account_sp]
+        @account_name = @SmtpAccountName,
+        @email_address = @SmtpOutgoingEmailAddress,
+        @display_name = @SmtpOutgoingDisplayName,
+        --@replyto_address = N'',
+        @description = @SmtpAccountDescription,
+        @mailserver_name = @SmtpServerName,
+        @mailserver_type = N'SMTP',
+        @port = @SmtpPortNumber,
+        @username = @SmptUserName,
+        @password = @SmtpPassword,
+        @use_default_credentials = @useDefaultCredentials,
+        @enable_ssl = @SmtpRequiresSSL,
+        @account_id = @AccountID OUTPUT;
+
+    --------------------------------------------------------------
+    -- Bind Account to Profile: 
+    EXEC msdb.dbo.sysmail_add_profileaccount_sp 
+	    @profile_id = @profileID,
+        @account_id = @AccountID, 
+        @sequence_number = 1;  -- primary/initial... 
+
+
+    --------------------------------------------------------------
+    -- set as default: 
+    EXEC msdb.dbo.sp_set_sqlagent_properties 
+	    @databasemail_profile = @ProfileName,
+        @use_databasemail = 1;
+
+    --------------------------------------------------------------
+    -- Create Operator: 
+    EXEC msdb.dbo.[sp_add_operator]
+        @name = @OperatorName,
+        @enabled = 1,
+        @email_address = @OperatorEmail;
+
+    --------------------------------------------------------------
+    -- Enable SQL Server Agent to use Database Mail and enable tokenization:
+    EXEC msdb.dbo.[sp_set_sqlagent_properties]  -- NON-DOCUMENTED SPROC: 
+        @alert_replace_runtime_tokens = 1,
+        @use_databasemail = 1,
+        @databasemail_profile = @ProfileName;
+
+    -- define a default operator:
+    EXEC master.dbo.sp_MSsetalertinfo 
+        @failsafeoperator = @OperatorName, 
+		@notificationmethod = 1;
+
+    --------------------------------------------------------------
+    -- vNext: bind operator and profile to dbo.settings as 'default' operator/profile details. 
+
+
+
+    RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.enable_alerts','P') IS NOT NULL
 	DROP PROC dbo.[enable_alerts];
 GO
@@ -6127,7 +6394,7 @@ CREATE PROC dbo.[enable_alerts]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -- TODO: verify that @OperatorName is a valid operator.
 
@@ -6227,7 +6494,7 @@ IF OBJECT_ID('dbo.enable_alert_filtering','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[enable_alert_filtering]
-    @TargetAlerts                   nvarchar(MAX)           = N'[ALL]', 
+    @TargetAlerts                   nvarchar(MAX)           = N'{ALL}', 
     @ExcludedAlerts                 nvarchar(MAX)           = NULL,                        -- N'%18, %4605%, Severity%, etc..'. NOTE: 1480, if present, is filtered automatically.. 
     @AlertsProcessingJobName        sysname                 = N'Filter Alerts', 
     @AlertsProcessingJobCategory    sysname                 = N'Alerting',
@@ -6236,7 +6503,7 @@ CREATE PROC dbo.[enable_alert_filtering]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     ------------------------------------
     -- create a 'response' job: 
@@ -6334,7 +6601,7 @@ AS
         [name] sysname NOT NULL 
     );
 
-    IF UPPER(@TargetAlerts) = N'[ALL]' BEGIN 
+    IF UPPER(@TargetAlerts) = N'{ALL}' BEGIN 
         INSERT INTO @targets (
             [name] 
         )
@@ -6438,7 +6705,7 @@ CREATE PROC dbo.load_backup_files
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6540,7 +6807,7 @@ CREATE PROC dbo.load_header_details
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -6660,9 +6927,9 @@ CREATE PROC dbo.restore_databases
     @DatabasesToRestore				nvarchar(MAX),
     @DatabasesToExclude				nvarchar(MAX)	= NULL,
     @Priorities						nvarchar(MAX)	= NULL,
-    @BackupsRootPath				nvarchar(MAX)	= N'[DEFAULT]',
-    @RestoredRootDataPath			nvarchar(MAX)	= N'[DEFAULT]',
-    @RestoredRootLogPath			nvarchar(MAX)	= N'[DEFAULT]',
+    @BackupsRootPath				nvarchar(MAX)	= N'{DEFAULT}',
+    @RestoredRootDataPath			nvarchar(MAX)	= N'{DEFAULT}',
+    @RestoredRootLogPath			nvarchar(MAX)	= N'{DEFAULT}',
     @RestoredDbNamePattern			nvarchar(40)	= N'{0}_test',
     @AllowReplace					nchar(7)		= NULL,				-- NULL or the exact term: N'REPLACE'...
     @SkipLogBackups					bit				= 0,
@@ -6679,7 +6946,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -6687,15 +6954,15 @@ AS
 
 	-----------------------------------------------------------------------------
     -- Set Defaults:
-    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@BackupsRootPath) = N'{DEFAULT}' BEGIN
         SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
     END;
 
-    IF UPPER(@RestoredRootDataPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@RestoredRootDataPath) = N'{DEFAULT}' BEGIN
         SELECT @RestoredRootDataPath = dbo.load_default_path('DATA');
     END;
 
-    IF UPPER(@RestoredRootLogPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@RestoredRootLogPath) = N'{DEFAULT}' BEGIN
         SELECT @RestoredRootLogPath = dbo.load_default_path('LOG');
     END;
 
@@ -6745,16 +7012,16 @@ AS
         RETURN -6;
     END;
 
-    IF UPPER(@DatabasesToRestore) IN (N'[SYSTEM]', N'[USER]') BEGIN
-        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dbo.restore_databases. Use either [READ_FROM_FILESYSTEM] (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
+    IF UPPER(@DatabasesToRestore) IN (N'{SYSTEM}', N'{USER}') BEGIN
+        RAISERROR('The tokens {SYSTEM} and {USER} cannot be used to specify which databases to restore via dbo.restore_databases. Use either {READ_FROM_FILESYSTEM} (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
         RETURN -10;
     END;
 
     IF RTRIM(LTRIM(@DatabasesToExclude)) = N''
         SET @DatabasesToExclude = NULL;
 
-    IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) <> N'[READ_FROM_FILESYSTEM]') BEGIN
-        RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the [READ_FROM_FILESYSTEM] token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
+    IF (@DatabasesToExclude IS NOT NULL) AND (UPPER(@DatabasesToRestore) <> N'{READ_FROM_FILESYSTEM}') BEGIN
+        RAISERROR('@DatabasesToExclude can ONLY be specified when @DatabasesToRestore is defined as the {READ_FROM_FILESYSTEM} token. Otherwise, if you don''t want a database restored, don''t specify it in the @DatabasesToRestore ''list''.', 16, 1);
         RETURN -20;
     END;
 
@@ -6850,8 +7117,8 @@ AS
         [database_name] sysname NOT NULL
     ); 
 
-	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
-	IF ((SELECT dbo.[count_matches](@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@DatabasesToRestore, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
@@ -6881,13 +7148,13 @@ AS
 		ELSE
 			SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
-		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'[READ_FROM_FILESYSTEM]', @serialized); 
+		SET @DatabasesToRestore = REPLACE(@DatabasesToRestore, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
     
     INSERT INTO @dbsToRestore ([database_name])
     EXEC dbo.list_databases
         @Targets = @DatabasesToRestore,         
-        @Exclusions = @DatabasesToExclude,		-- only works if [READ_FROM_FILESYSTEM] is specified for @Input... 
+        @Exclusions = @DatabasesToExclude,		-- only works if {READ_FROM_FILESYSTEM} is specified for @Input... 
         @Priorities = @Priorities,
 
 		-- ALLOW these to be included ... they'll throw exceptions if REPLACE isn't specified. But if it is SPECIFIED, then someone is trying to EXPLICTLY overwrite 'bunk' databases with a restore... 
@@ -7108,7 +7375,7 @@ AS
         END;
 
 		-- Check for a FULL backup: 
-		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a [SYSTEM] database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
+		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a {SYSTEM} database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
 		EXEC dbo.load_backup_files 
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
@@ -7776,10 +8043,10 @@ GO
 CREATE PROC dbo.copy_database 
 	@SourceDatabaseName					sysname, 
 	@TargetDatabaseName					sysname, 
-	@BackupsRootDirectory				nvarchar(2000)	= N'[DEFAULT]', 
+	@BackupsRootDirectory				nvarchar(2000)	= N'{DEFAULT}', 
 	@CopyToBackupDirectory					nvarchar(2000)	= NULL,
-	@DataPath							sysname			= N'[DEFAULT]', 
-	@LogPath							sysname			= N'[DEFAULT]',
+	@DataPath							sysname			= N'{DEFAULT}', 
+	@LogPath							sysname			= N'{DEFAULT}',
 	@RenameLogicalFileNames				bit				= 1, 
 	@OperatorName						sysname			= N'Alerts',
 	@MailProfileName					sysname			= N'General', 
@@ -7787,7 +8054,7 @@ CREATE PROC dbo.copy_database
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@SourceDatabaseName,'') IS NULL BEGIN
 		RAISERROR('@SourceDatabaseName cannot be Empty/NULL. Please specify the name of the database you wish to copy (from).', 16, 1);
@@ -7806,15 +8073,15 @@ AS
 	END;
 
 	-- Allow for default paths:
-	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@BackupsRootDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
 	END;
 
-	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@DataPath) = N'{DEFAULT}' BEGIN
 		SELECT @DataPath = dbo.load_default_path('DATA');
 	END;
 
-	IF UPPER(@LogPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@LogPath) = N'{DEFAULT}' BEGIN
 		SELECT @LogPath = dbo.load_default_path('LOG');
 	END;
 
@@ -7960,7 +8227,7 @@ CREATE PROC dbo.apply_logs
 	@SourceDatabases					nvarchar(MAX)		= NULL,						-- explicitly named dbs - e.g., N'db1, db7, db28' ... and, only works, obviously, if dbs specified are in non-recovered mode (or standby).
 	@Exclusions							nvarchar(MAX)		= NULL,
 	@Priorities							nvarchar(MAX)		= NULL, 
-	@BackupsRootPath					nvarchar(MAX)		= N'[DEFAULT]',
+	@BackupsRootPath					nvarchar(MAX)		= N'{DEFAULT}',
 	@TargetDbMappingPattern				sysname				= N'{0}',					-- MAY not use/allow... 
 	@RecoveryType						sysname				= N'NORECOVERY',			-- options are: NORECOVERY | STANDBY | RECOVERY
 	@StaleAlertThreshold				nvarchar(10)		= NULL,						-- NULL means... don't bother... otherwise, if the restoring_db is > @threshold... raise an alert... 
@@ -7972,7 +8239,7 @@ CREATE PROC dbo.apply_logs
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -8004,8 +8271,8 @@ AS
         END; 
     END;
 
-    IF UPPER(@SourceDatabases) IN (N'[SYSTEM]', N'[USER]') BEGIN
-        RAISERROR('The tokens [SYSTEM] and [USER] cannot be used to specify which databases to restore via dbo.apply_logs. Only explicitly defined/named databases can be targetted - e.g., N''myDB, anotherDB, andYetAnotherDbName''.', 16, 1);
+    IF UPPER(@SourceDatabases) IN (N'{SYSTEM}', N'{USER}') BEGIN
+        RAISERROR('The tokens {SYSTEM} and {USER} cannot be used to specify which databases to restore via dbo.apply_logs. Only explicitly defined/named databases can be targetted - e.g., N''myDB, anotherDB, andYetAnotherDbName''.', 16, 1);
         RETURN -10;
     END;
 
@@ -8035,7 +8302,7 @@ AS
 
 	-----------------------------------------------------------------------------
     -- Allow for default paths:
-    IF UPPER(@BackupsRootPath) = N'[DEFAULT]' BEGIN
+    IF UPPER(@BackupsRootPath) = N'{DEFAULT}' BEGIN
         SELECT @BackupsRootPath = dbo.load_default_path('BACKUP');
     END;
 
@@ -8062,8 +8329,8 @@ AS
 		target_database_name sysname NOT NULL
 	);
 
-	-- If the [READ_FROM_FILESYSTEM] token is specified, replace [READ_FROM_FILESYSTEM] in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
-	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'[READ_FROM_FILESYSTEM]')) > 0) BEGIN
+	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
@@ -8093,7 +8360,7 @@ AS
 			@TargetDirectory = @BackupsRootPath, 
 			@SerializedOutput = @databases OUTPUT;
 
-		SET @SourceDatabases = REPLACE(@SourceDatabases, N'[READ_FROM_FILESYSTEM]', @serialized); 
+		SET @SourceDatabases = REPLACE(@SourceDatabases, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
 
 	DECLARE @possibleDatabases table ( 
@@ -8532,7 +8799,7 @@ IF OBJECT_ID('dbo.list_recovery_metrics','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_recovery_metrics 
-	@TargetDatabases				nvarchar(MAX)		= N'[ALL]', 
+	@TargetDatabases				nvarchar(MAX)		= N'{ALL}', 
 	@ExcludedDatabases				nvarchar(MAX)		= NULL,				-- e.g., 'demo, test, %_fake, etc.'
 	@Priorities						nvarchar(MAX)		= NULL,
 	@Mode							sysname				= N'SUMMARY',		-- SUMMARY | SLA | RPO | RTO | ERROR | DEVIATION
@@ -8540,7 +8807,7 @@ CREATE PROC dbo.list_recovery_metrics
 AS 
 	SET NOCOUNT ON;
 
-	-- {copyright} 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -8896,7 +9163,7 @@ AS
 		RETURN -1;
 	END;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_source] sysname NOT NULL,
@@ -9421,6 +9688,92 @@ GO
 USE [admindb];
 GO
 
+IF OBJECT_ID('dbo.list_parallel_processes','P') IS NOT NULL
+	DROP PROC dbo.[list_parallel_processes];
+GO
+
+CREATE PROC dbo.[list_parallel_processes]
+
+AS
+    SET NOCOUNT ON; 
+
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
+	SELECT 
+		[spid] [session_id],
+		[ecid] [execution_id],
+		[blocked],
+		[dbid] [database_id],
+		[cmd] [command],
+		[lastwaittype] [wait_type],
+		[waitresource] [wait_resource],
+		[waittime] [wait_time],
+		[status],
+		[open_tran],
+		[cpu],
+		[physical_io],
+		[memusage],
+		[login_time],
+		[last_batch],
+		
+		[hostname],
+		[program_name],
+		[loginame],
+		[sql_handle],
+		[stmt_start],
+		[stmt_end]
+	INTO
+		#ecids
+	FROM 
+		sys.[sysprocesses] 
+	WHERE 
+		spid IN (SELECT session_id FROM sys.[dm_os_waiting_tasks] WHERE [session_id] IS NOT NULL GROUP BY [session_id] HAVING COUNT(*) > 1);
+
+	IF NOT EXISTS(SELECT NULL FROM [#ecids]) BEGIN 
+		-- short circuit.
+		RETURN 0;
+	END;
+
+
+	--TODO: if 2016+ get dop from sys.dm_exec_requests... (or is waiting_tasks?)
+	--TODO: execute a cleanup/sanitization of this info + extract code and so on... 
+	SELECT 
+		[session_id],
+		[execution_id],
+		[blocked],
+		DB_NAME([database_id]) [database_name],
+		[command],
+		[wait_type],
+		[wait_resource],
+		[wait_time],
+		[status],
+		[open_tran],
+		[cpu],
+		[physical_io],
+		[memusage],
+		[login_time],
+		[last_batch],
+		[hostname],
+		[program_name],
+		[loginame]--,
+		--[sql_handle],
+		--[stmt_start],
+		--[stmt_end]
+	FROM 
+		[#ecids] 
+	ORDER BY 
+		-- TODO: whoever is using the most CPU (by session_id) then by ecid... 
+		[session_id], 
+		[execution_id];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.list_transactions','P') IS NOT NULL
 	DROP PROC dbo.list_transactions;
 GO
@@ -9441,7 +9794,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -9894,7 +10247,7 @@ IF OBJECT_ID('dbo.list_collisions', 'P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_collisions 
-	@TargetDatabases								nvarchar(max)	= N'[ALL]',  -- allowed values: [ALL] | [SYSTEM] | [USER] | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
+	@TargetDatabases								nvarchar(max)	= N'{ALL}',  -- allowed values: {ALL} | {SYSTEM} | {USER} | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
 	@IncludePlans									bit				= 1, 
 	@IncludeContext									bit				= 1,
 	@UseInputBuffer									bit				= 0,     -- for any statements (query_handles) that couldn't be pulled from sys.dm_exec_requests and then (as a fallback) from sys.sysprocesses, this specifies if we should use DBCC INPUTBUFFER(spid) or not... 
@@ -9904,10 +10257,10 @@ CREATE PROC dbo.list_collisions
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
-		SET @TargetDatabases = N'[ALL]';
+		SET @TargetDatabases = N'{ALL}';
 
 	WITH blocked AS (
 		SELECT 
@@ -9991,7 +10344,7 @@ AS
 		WHERE [command] LIKE 'FT%';
 	END;
 
-	IF @TargetDatabases <> N'[ALL]' BEGIN
+	IF @TargetDatabases <> N'{ALL}' BEGIN
 		
 		DECLARE @dbNames table ( 
 			[database_name] sysname NOT NULL 
@@ -10243,7 +10596,7 @@ CREATE PROC dbo.verify_backup_execution
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -10660,7 +11013,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -10701,7 +11054,7 @@ AS
 	
 	INSERT INTO @databasesToCheck ([name])
 	EXEC dbo.list_databases 
-		@Targets = N'[USER]',
+		@Targets = N'{USER}',
 		@Exclusions = @DatabasesToExclude;
 
 	DECLARE @excludedComptabilityDatabases table ( 
@@ -10959,7 +11312,7 @@ CREATE PROC dbo.verify_drivespace
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -11066,7 +11419,7 @@ CREATE PROC dbo.process_alerts
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
@@ -11163,7 +11516,7 @@ DECLARE @monitor_transaction_durations nvarchar(MAX) = N'ALTER PROC dbo.monitor_
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -11482,7 +11835,7 @@ IF OBJECT_ID('dbo.check_database_consistency','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[check_database_consistency]
-	@Targets								nvarchar(MAX)	                        = N'[ALL]',		-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Targets								nvarchar(MAX)	                        = N'{ALL}',		-- {ALL} | {SYSTEM} | {USER} | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions								nvarchar(MAX)	                        = NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	                        = NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@IncludeExtendedLogicalChecks           bit                                     = 0,
@@ -11493,7 +11846,7 @@ CREATE PROC dbo.[check_database_consistency]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -11636,7 +11989,7 @@ IF OBJECT_ID('dbo.list_logfile_sizes','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_logfile_sizes
-	@TargetDatabases					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@TargetDatabases					nvarchar(MAX),															-- { {ALL} | {SYSTEM} | {USER} | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,
 	--@IgnoreLogFilesWithGBsLessThan	decimal(12,1)							= 0.5,
@@ -11645,7 +11998,7 @@ CREATE PROC dbo.list_logfile_sizes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -11837,7 +12190,7 @@ IF OBJECT_ID('dbo.shrink_logfiles','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.shrink_logfiles
-	@TargetDatabases							nvarchar(MAX),																		-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@TargetDatabases							nvarchar(MAX),																		-- { {ALL} | {SYSTEM} | {USER} | name1,name2,etc }
 	@DatabasesToExclude							nvarchar(MAX)							= NULL,										-- { NULL | name1,name2 }  
 	@Priorities									nvarchar(MAX)							= NULL,										
 	@TargetLogPercentageSize					int										= 20,										-- can be > 100? i.e., 200? would be 200% - which ... i guess is legit, right? 
@@ -11853,7 +12206,7 @@ CREATE PROC dbo.shrink_logfiles
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Validate Dependencies:
@@ -12295,7 +12648,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -12399,7 +12752,7 @@ CREATE PROC dbo.extract_statement
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @sql nvarchar(2000) = N'
 SELECT 
@@ -12438,7 +12791,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -12639,7 +12992,7 @@ RETURNS bit
 	--WITH RETURNS NULL ON NULL INPUT  -- note, this WORKS ... but... uh, busts functionality cuz we don't want NULL if empty, we want 1... 
 AS
     
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
     
     BEGIN; 
     	
@@ -12690,7 +13043,7 @@ DECLARE @list_running_jobs nvarchar(MAX) = N'ALTER PROC dbo.[list_running_jobs]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -12870,7 +13223,7 @@ RETURNS bit
 	WITH RETURNS NULL ON NULL INPUT
 AS 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN;
 		
@@ -12909,11 +13262,11 @@ GO
 CREATE PROC dbo.[translate_program_name_to_agent_job]
     @ProgramName                    sysname, 
     @IncludeJobStepInOutput         bit         = 0, 
-    @JobName                        sysname     = N'default'       OUTPUT
+    @JobName                        sysname     = N''       OUTPUT
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     DECLARE @jobID uniqueidentifier;
 
@@ -12937,7 +13290,7 @@ AS
     IF @IncludeJobStepInOutput = 1
         SET @output = @output + N' (Step ' + @currentStepString + N')';
 
-    IF NULLIF(@JobName, N'') IS NULL
+    IF @JobName IS NULL
         SET @JobName = @output; 
     ELSE 
         SELECT @output [job_name];
@@ -12963,7 +13316,7 @@ CREATE PROC dbo.[get_last_job_completion]
 AS
     SET NOCOUNT ON; 
     
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     IF NULLIF(@JobName, N'') IS NULL AND @JobID IS NULL BEGIN 
         RAISERROR(N'Please specify either the @JobName or @JobID parameter to execute.', 16, 1);
@@ -13041,7 +13394,7 @@ CREATE PROC dbo.[get_last_job_completion_by_session_id]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     DECLARE @success int = -1;
     DECLARE @jobName sysname; 
@@ -13144,7 +13497,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN;
 
@@ -13180,7 +13533,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	 
 	BEGIN;
 
@@ -13222,7 +13575,7 @@ GO
 CREATE FUNCTION dbo.is_primary_server()
 RETURNS bit
 AS 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN
 		DECLARE @output bit = 0;
@@ -13258,7 +13611,7 @@ GO
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -13284,7 +13637,7 @@ DECLARE @is_primary_database nvarchar(MAX) = N'
 ALTER FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -13336,7 +13689,7 @@ CREATE PROC dbo.compare_jobs
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -14123,7 +14476,7 @@ CREATE PROC dbo.verify_job_states
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
@@ -14326,7 +14679,7 @@ CREATE PROC dbo.[populate_trace_flags]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	TRUNCATE TABLE dbo.[server_trace_flags];
 
@@ -14372,7 +14725,8 @@ CREATE PROC dbo.[verify_partner]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+
 	DECLARE @return int;
 	DECLARE @output nvarchar(MAX);
 
@@ -14417,7 +14771,7 @@ CREATE PROC [dbo].[verify_job_synchronization]
 AS 
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Dependencies Validation:
@@ -15223,7 +15577,7 @@ CREATE PROC dbo.verify_server_synchronization
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -16237,7 +16591,7 @@ CREATE PROC dbo.verify_data_synchronization
 AS
 	SET NOCOUNT ON;
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	---------------------------------------------
 	-- Dependencies Validation:
@@ -16488,20 +16842,18 @@ AS
 			END;
 		END;
 
-		-- now that we have the info, start working through various checks/validations and raise any alerts if needed: 
-
-		-- make sure that metrics are even working - if we get any NULLs in transaction_delay/average_delay, 
-		--		then it's NOT working correctly (i.e. it's somehow not seeing everything it needs to in order
-		--		to report - and we need to throw an error):
-		SELECT @transdelay = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
-		WHERE time_recorded >= @lastCheckupExecutionTime;
-
 		DELETE FROM @output; 
 		INSERT INTO @output
 		EXEC msdb.sys.sp_dbmmonitorresults 
 			@database_name = @currentMirroredDB,
 			@mode = 1,  -- give us rows from the last 2 hours:
 			@update_table = 0;
+
+		-- make sure that metrics are even working - if we get any NULLs in transaction_delay/average_delay, 
+		--		then it's NOT working correctly (i.e. it's somehow not seeing everything it needs to in order
+		--		to report - and we need to throw an error):
+		SELECT @transdelay = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
+		WHERE local_time >= @lastCheckupExecutionTime;
 
 		IF @transdelay < 0 BEGIN 
 			SET @errorMessage = N'Mirroring Failure - Synchronization Metrics Unavailable'
@@ -16513,7 +16865,7 @@ AS
 
 		-- check for problems with transaction delay:
 		SELECT @transdelay = MAX(ISNULL(transaction_delay,0)) FROM @output
-		WHERE time_recorded >= @lastCheckupExecutionTime;
+		WHERE local_time >= @lastCheckupExecutionTime;
 		IF @transdelay > @rpoSeconds BEGIN 
 			SET @errorMessage = N'Mirroring Alert - Delays Applying Data to Secondary'
 				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@rpoSeconds as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
@@ -16524,7 +16876,7 @@ AS
 
 		-- check for problems with transaction delays on the primary:
 		SELECT @averagedelay = MAX(ISNULL(average_delay,0)) FROM @output
-		WHERE time_recorded >= @lastCheckupExecutionTime;
+		WHERE local_time >= @lastCheckupExecutionTime;
 		IF @averagedelay > @rtoSeconds BEGIN 
 
 			SET @errorMessage = N'Mirroring Alert - Transactions Delayed on Primary'
@@ -16862,7 +17214,7 @@ CREATE PROC dbo.[add_synchronization_partner]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     -- TODO: verify @PartnerName input/parameters. 
 
@@ -16953,7 +17305,7 @@ CREATE PROC dbo.[add_failover_processing]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
     
     DECLARE @errorMessage nvarchar(MAX);
 
@@ -17063,7 +17415,7 @@ GO'
 
     IF @ExecuteSetupOnPartnerServer = 1 BEGIN
 
-        DECLARE @command nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.add_failover_alerts
+        DECLARE @command nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.[add_failover_processing]
     @SqlServerAgentFailoverResponseJobName = @SqlServerAgentFailoverResponseJobName,
     @SqlServerAgentJobNameCategory = @SqlServerAgentJobNameCategory,      
     @MailProfileName = @MailProfileName,
@@ -17104,7 +17456,7 @@ CREATE PROC dbo.[verify_synchronization_setup]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
     IF OBJECT_ID('tempdb..#ERRORs') IS NOT NULL
 	    DROP TABLE #Errors;
@@ -17231,7 +17583,7 @@ AS
     INSERT INTO @ObjectNames (name)
     VALUES 
     (N'server_trace_flags'),
-    (N'respond_to_db_failover');
+    (N'process_synchronization_failover');
 
     INSERT INTO #Errors (SectionID, Severity, ErrorText)
     SELECT 
@@ -17273,9 +17625,9 @@ AS
     END
 
     -- Warn if no job to respond to failover:
-    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%respond_to_db_failover%') BEGIN 
+    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%process_synchronization_failover%') BEGIN 
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	    SELECT 3, N'WARNING', N'A SQL Server Agent Job that calls [respond_to_db_failover] (to handle database failover) was not found.';
+	    SELECT 3, N'WARNING', N'A SQL Server Agent Job that calls [process_synchronization_failover] (to handle database failover) was not found.';
     END 
 
 
@@ -17400,7 +17752,7 @@ DECLARE @generate_audit_signature nvarchar(MAX) = N'ALTER PROC dbo.generate_audi
 AS
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -17472,7 +17824,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -17649,7 +18001,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -17767,7 +18119,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v6.7.3038.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- [v7.0.3047.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -17911,8 +18263,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 5. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'6.7.3038.1';
-DECLARE @VersionDescription nvarchar(200) = N'Major overhaul of dbo.verify_data_synchronization logic for AG data/sync checks';
+DECLARE @CurrentVersion varchar(20) = N'7.0.3047.1';
+DECLARE @VersionDescription nvarchar(200) = N'Major rewrite of S4 documentation (formatting/layout/etc. + changing [tokens] to {tokens}';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
