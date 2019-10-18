@@ -13,7 +13,7 @@
 					@TargetDirectory = NULL;
 			
 			---------------------------------------
-				EXEC load_backup_database_names; 
+				EXEC dbo.load_backup_database_names; 
 				GO
 
 			---------------------------------------
@@ -96,7 +96,7 @@ IF OBJECT_ID('dbo.load_backup_database_names','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.load_backup_database_names 
-	@TargetDirectory				sysname				= N'[DEFAULT]',		
+	@TargetDirectory				sysname				= N'{DEFAULT}',		
 	@SerializedOutput				xml					= N'<default/>'					OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -109,7 +109,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
-	IF UPPER(@TargetDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@TargetDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @TargetDirectory = dbo.load_default_path('BACKUP');
 	END;
 

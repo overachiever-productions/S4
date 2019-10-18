@@ -92,8 +92,17 @@ GO
 --##INCLUDE: Common\tables\alert_responses.sql
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects)
+-- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects and other core 'helper' code)
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: Common\get_engine_version.sql
+
+-----------------------------------
+--##INCLUDE: Common\split_string.sql
+
+-----------------------------------
+--##INCLUDE: Common\internal\get_s4_version.sql
 
 -----------------------------------
 --##INCLUDE: Common\internal\drop_obsolete_objects.sql
@@ -186,6 +195,93 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
 GO
 
+-----------------------------------
+-- v7.0+ - Conversion of [tokens] to {tokens}. (Breaking Change - Raises warnings/alerts via SELECT statements). 
+IF (SELECT admindb.dbo.get_s4_version('##{{S4version}}')) < 7.0 BEGIN
+
+	-- Replace any 'custom' token definitions in dbo.settings: 
+	DECLARE @tokenChanges table (
+		setting_id int NOT NULL, 
+		old_setting_key sysname NOT NULL, 
+		new_setting_key sysname NOT NULL 
+	);
+
+	UPDATE [dbo].[settings]
+	SET 
+		[setting_key] = REPLACE(REPLACE([setting_key], N']', N'}'), N'[', N'{')
+	OUTPUT 
+		[Deleted].[setting_id], [Deleted].[setting_key], [Inserted].[setting_key] INTO @tokenChanges
+	WHERE 
+		[setting_key] LIKE N'~[%~]' ESCAPE '~';
+
+
+	IF EXISTS (SELECT NULL FROM @tokenChanges) BEGIN 
+
+		SELECT 
+			N'WARNING: dbo.settings.setting_key CHANGED from pre 7.0 [token] syntax to 7.0+ {token} syntax' [WARNING], 
+			[setting_id], 
+			[old_setting_key], 
+			[new_setting_key]
+		FROM 
+			@tokenChanges
+	END;
+
+	-- Raise alerts/warnings about any Job-Steps on the server with old-style [tokens] instead of {tokens}:
+	DECLARE @oldTokens table ( 
+		old_token_id int IDENTITY(1,1) NOT NULL, 
+		token_pattern sysname NOT NULL, 
+		is_custom bit DEFAULT 1
+	); 
+
+	INSERT INTO @oldTokens (
+		[token_pattern], [is_custom]
+	)
+	VALUES
+		(N'%~[ALL~]%', 0),
+		(N'%~[SYSTEM~]%', 0),
+		(N'%~[USER~]%', 0),
+		(N'%~[READ_FROM_FILESYSTEM~]%', 0), 
+		(N'%~[READ_FROM_FILE_SYSTEM~]%', 0), 
+		(N'%~[DEFAULT~]%', 0);
+
+	INSERT INTO @oldTokens (
+		[token_pattern]
+	)
+	SELECT DISTINCT
+		N'%~' + REPLACE([setting_key], N']', N'~]') + N'%'
+	FROM 
+		[admindb].[dbo].[settings] 
+	WHERE 
+		[setting_key] LIKE '~[%~]' ESCAPE '~';
+
+	WITH matches AS ( 
+		SELECT 
+			js.[job_id], 
+			js.[step_id], 
+			js.[command], 
+			js.[step_name],
+			x.[token_pattern]
+		FROM 
+			[msdb].dbo.[sysjobsteps] js 
+			INNER JOIN @oldTokens x ON js.[command] LIKE x.[token_pattern] ESCAPE N'~'
+		WHERE 
+			js.[subsystem] = N'TSQL'
+	)
+
+	SELECT 
+		N'WARNING: SQL Server Agent Job-Step uses PRE-7.0 [tokens] which should be changed to {token} syntax instead.' [WARNING],
+		j.[name] [job_name], 
+		--	j.[job_id], 
+		CAST(m.[step_id] AS sysname) + N' - ' + m.[step_name] [Job-Step-With-Invalid-Token],
+		N'TASK: Manually Replace ' + REPLACE(REPLACE(m.[token_pattern], N'~', N''), N'%', N'') 
+			+ N' with ' + REPLACE(REPLACE(( ( REPLACE(REPLACE(m.[token_pattern], N'~', N''), N'%', N'') ) ), N']', N'}'), N'[', N'{') + '.' [Task-To-Execute-Manually]
+		--m.[command]
+	FROM 
+		[matches] m 
+		INNER JOIN [msdb].dbo.[sysjobs] j ON m.[job_id] = j.[job_id];
+
+END;
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -209,12 +305,6 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Common and Utilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
---##INCLUDE: Common\get_engine_version.sql
-
------------------------------------
---##INCLUDE: Common\split_string.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\check_paths.sql
@@ -321,6 +411,9 @@ GO
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Setup\configure_database_mail.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\enable_alerts.sql
 
 -----------------------------------
@@ -354,6 +447,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Performance\list_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Performance\list_parallel_processes.sql
 
 -----------------------------------
 --##INCLUDE: S4 Performance\list_transactions.sql

@@ -45,7 +45,7 @@ RETURNS bit
 	--WITH RETURNS NULL ON NULL INPUT  -- note, this WORKS ... but... uh, busts functionality cuz we don't want NULL if empty, we want 1... 
 AS
     
-    -- {copyright}
+	-- {copyright}
     
     BEGIN; 
     	

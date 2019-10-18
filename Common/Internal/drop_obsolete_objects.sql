@@ -100,7 +100,7 @@ CREATE PROC dbo.drop_obsolete_objects
 AS 
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     IF @Directives IS NULL BEGIN 
         PRINT '-- Attempt to execute dbo.drop_obsolete_objects - but @Directives was NULL.';

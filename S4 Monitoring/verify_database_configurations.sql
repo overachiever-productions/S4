@@ -80,7 +80,7 @@ AS
 	
 	INSERT INTO @databasesToCheck ([name])
 	EXEC dbo.list_databases 
-		@Targets = N'[USER]',
+		@Targets = N'{USER}',
 		@Exclusions = @DatabasesToExclude;
 
 	DECLARE @excludedComptabilityDatabases table ( 

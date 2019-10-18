@@ -13,7 +13,7 @@
 USE [admindb];
 GO
 
--- {copyright}
+	-- {copyright}
 
 IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
 	CREATE TABLE dbo.backup_log  (

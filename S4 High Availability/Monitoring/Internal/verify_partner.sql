@@ -37,7 +37,8 @@ CREATE PROC dbo.[verify_partner]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
+
 	DECLARE @return int;
 	DECLARE @output nvarchar(MAX);
 

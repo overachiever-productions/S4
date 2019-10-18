@@ -376,20 +376,18 @@ AS
 			END;
 		END;
 
-		-- now that we have the info, start working through various checks/validations and raise any alerts if needed: 
-
-		-- make sure that metrics are even working - if we get any NULLs in transaction_delay/average_delay, 
-		--		then it's NOT working correctly (i.e. it's somehow not seeing everything it needs to in order
-		--		to report - and we need to throw an error):
-		SELECT @transdelay = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
-		WHERE time_recorded >= @lastCheckupExecutionTime;
-
 		DELETE FROM @output; 
 		INSERT INTO @output
 		EXEC msdb.sys.sp_dbmmonitorresults 
 			@database_name = @currentMirroredDB,
 			@mode = 1,  -- give us rows from the last 2 hours:
 			@update_table = 0;
+
+		-- make sure that metrics are even working - if we get any NULLs in transaction_delay/average_delay, 
+		--		then it's NOT working correctly (i.e. it's somehow not seeing everything it needs to in order
+		--		to report - and we need to throw an error):
+		SELECT @transdelay = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
+		WHERE local_time >= @lastCheckupExecutionTime;
 
 		IF @transdelay < 0 BEGIN 
 			SET @errorMessage = N'Mirroring Failure - Synchronization Metrics Unavailable'
@@ -401,7 +399,7 @@ AS
 
 		-- check for problems with transaction delay:
 		SELECT @transdelay = MAX(ISNULL(transaction_delay,0)) FROM @output
-		WHERE time_recorded >= @lastCheckupExecutionTime;
+		WHERE local_time >= @lastCheckupExecutionTime;
 		IF @transdelay > @rpoSeconds BEGIN 
 			SET @errorMessage = N'Mirroring Alert - Delays Applying Data to Secondary'
 				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N' in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@rpoSeconds as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
@@ -412,7 +410,7 @@ AS
 
 		-- check for problems with transaction delays on the primary:
 		SELECT @averagedelay = MAX(ISNULL(average_delay,0)) FROM @output
-		WHERE time_recorded >= @lastCheckupExecutionTime;
+		WHERE local_time >= @lastCheckupExecutionTime;
 		IF @averagedelay > @rtoSeconds BEGIN 
 
 			SET @errorMessage = N'Mirroring Alert - Transactions Delayed on Primary'

@@ -18,10 +18,10 @@ GO
 CREATE PROC dbo.copy_database 
 	@SourceDatabaseName					sysname, 
 	@TargetDatabaseName					sysname, 
-	@BackupsRootDirectory				nvarchar(2000)	= N'[DEFAULT]', 
+	@BackupsRootDirectory				nvarchar(2000)	= N'{DEFAULT}', 
 	@CopyToBackupDirectory					nvarchar(2000)	= NULL,
-	@DataPath							sysname			= N'[DEFAULT]', 
-	@LogPath							sysname			= N'[DEFAULT]',
+	@DataPath							sysname			= N'{DEFAULT}', 
+	@LogPath							sysname			= N'{DEFAULT}',
 	@RenameLogicalFileNames				bit				= 1, 
 	@OperatorName						sysname			= N'Alerts',
 	@MailProfileName					sysname			= N'General', 
@@ -48,15 +48,15 @@ AS
 	END;
 
 	-- Allow for default paths:
-	IF UPPER(@BackupsRootDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@BackupsRootDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @BackupsRootDirectory = dbo.load_default_path('BACKUP');
 	END;
 
-	IF UPPER(@DataPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@DataPath) = N'{DEFAULT}' BEGIN
 		SELECT @DataPath = dbo.load_default_path('DATA');
 	END;
 
-	IF UPPER(@LogPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@LogPath) = N'{DEFAULT}' BEGIN
 		SELECT @LogPath = dbo.load_default_path('LOG');
 	END;
 

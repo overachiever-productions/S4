@@ -58,11 +58,11 @@ CREATE FUNCTION dbo.format_windows_login (
     @Name                             sysname,                              -- always required.
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
     @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
-    @DefaultLanguage                  sysname         = N'[DEFAULT]'        -- have to specify DEFAULT for this to work... obviously
+    @DefaultLanguage                  sysname         = N'{DEFAULT}'        -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
 AS 
-    -- {copyright}
+	-- {copyright}
 
     BEGIN 
 
@@ -142,7 +142,7 @@ GO
         END;
 
         IF NULLIF(@DefaultLanguage, N'') IS NOT NULL BEGIN 
-            IF UPPER(@DefaultLanguage) = N'[DEFAULT]'
+            IF UPPER(@DefaultLanguage) = N'{DEFAULT}'
                 SELECT @DefaultLanguage = [name] FROM sys.syslanguages WHERE 
                     [langid] = (SELECT [value_in_use] FROM sys.[configurations] WHERE [name] = N'default language');
 

@@ -19,7 +19,7 @@ IF OBJECT_ID('dbo.list_collisions', 'P') IS NOT NULL
 GO
 
 CREATE PROC dbo.list_collisions 
-	@TargetDatabases								nvarchar(max)	= N'[ALL]',  -- allowed values: [ALL] | [SYSTEM] | [USER] | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
+	@TargetDatabases								nvarchar(max)	= N'{ALL}',  -- allowed values: {ALL} | {SYSTEM} | {USER} | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
 	@IncludePlans									bit				= 1, 
 	@IncludeContext									bit				= 1,
 	@UseInputBuffer									bit				= 0,     -- for any statements (query_handles) that couldn't be pulled from sys.dm_exec_requests and then (as a fallback) from sys.sysprocesses, this specifies if we should use DBCC INPUTBUFFER(spid) or not... 
@@ -32,7 +32,7 @@ AS
 	-- {copyright}
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
-		SET @TargetDatabases = N'[ALL]';
+		SET @TargetDatabases = N'{ALL}';
 
 	WITH blocked AS (
 		SELECT 
@@ -116,7 +116,7 @@ AS
 		WHERE [command] LIKE 'FT%';
 	END;
 
-	IF @TargetDatabases <> N'[ALL]' BEGIN
+	IF @TargetDatabases <> N'{ALL}' BEGIN
 		
 		DECLARE @dbNames table ( 
 			[database_name] sysname NOT NULL 

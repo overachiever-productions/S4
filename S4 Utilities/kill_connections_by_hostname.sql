@@ -18,7 +18,7 @@ GO
 
 CREATE PROC dbo.kill_connections_by_hostname
 	@HostName				sysname, 
-	@Interval				sysname			= '3s', 
+	@Interval				sysname			= '3 seconds', 
 	@MaxIterations			int				= 5, 
 
 -- TODO: Add error-handling AND reporting... along with options to 'run silent' and so on... 

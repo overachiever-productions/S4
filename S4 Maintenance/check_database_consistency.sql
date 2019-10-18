@@ -41,7 +41,7 @@ IF OBJECT_ID('dbo.check_database_consistency','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[check_database_consistency]
-	@Targets								nvarchar(MAX)	                        = N'[ALL]',		-- [ALL] | [SYSTEM] | [USER] | [READ_FROM_FILESYSTEM] | comma,delimited,list, of, databases, where, spaces, do,not,matter
+	@Targets								nvarchar(MAX)	                        = N'{ALL}',		-- {ALL} | {SYSTEM} | {USER} | comma,delimited,list, of, databases, where, spaces, do,not,matter
 	@Exclusions								nvarchar(MAX)	                        = NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	                        = NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@IncludeExtendedLogicalChecks           bit                                     = 0,
@@ -52,7 +52,7 @@ CREATE PROC dbo.[check_database_consistency]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:

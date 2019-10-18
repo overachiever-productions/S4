@@ -62,13 +62,13 @@ CREATE FUNCTION dbo.format_sql_login (
     @Password                         varchar(256),                         -- NOTE: while not 'strictly' required by ALTER LOGIN statements, @Password is ALWAYS required for dbo.format_sql_login.
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
     @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
-    @DefaultLanguage                  sysname         = N'[DEFAULT]',       -- have to specify DEFAULT for this to work... obviously
+    @DefaultLanguage                  sysname         = N'{DEFAULT}',       -- have to specify DEFAULT for this to work... obviously
     @CheckExpriration                 bit             = 0,                  -- have to specify DEFAULT for this to work... obviously
     @CheckPolicy                      bit             = 0                   -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
 AS 
-    -- {copyright}
+	-- {copyright}
 
     BEGIN 
         DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -156,7 +156,7 @@ GO
         END;
 
         IF NULLIF(@DefaultLanguage, N'') IS NOT NULL BEGIN 
-            IF UPPER(@DefaultLanguage) = N'[DEFAULT]'
+            IF UPPER(@DefaultLanguage) = N'{DEFAULT}'
                 SELECT @DefaultLanguage = [name] FROM sys.syslanguages WHERE 
                     [langid] = (SELECT [value_in_use] FROM sys.[configurations] WHERE [name] = N'default language');
 

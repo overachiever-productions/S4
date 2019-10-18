@@ -1,4 +1,6 @@
 /*
+	NOTE: Adheres to the PROJECT or RETURN convention.
+	
 
     USAGE: 
         - Internal 
@@ -48,7 +50,7 @@ GO
 
 CREATE PROC dbo.load_default_setting
 	@SettingName			sysname	                    = NULL, 
-	@Result					sysname			            = N''       OUTPUT
+	@Result					sysname			            = N''       OUTPUT			-- NOTE: Non-NULL for PROJECT or REPLY convention
 AS
 	SET NOCOUNT ON; 
 	

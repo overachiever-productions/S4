@@ -97,8 +97,8 @@ GO
 
 CREATE PROC dbo.verify_database_activity 
 	@DatabasesToProcess					nvarchar(MAX),
-	@DatabasesToExclude					nvarchar(MAX) = NULL,										-- only allowed if/when using [READ_FROM_FILESYSTEM]
-	@BackupDirectory					nvarchar(2000) = NULL,										-- only allowed if/when using [READ_FROM_FILESYSTEM]
+	@DatabasesToExclude					nvarchar(MAX) = NULL,										
+	@BackupDirectory					nvarchar(2000) = NULL,										
 	@ValidationQuery					nvarchar(MAX), 
 	@VectorTime							datetime = NULL,											-- defaults to GETDATE() but allows for EXPLICITLY defined times. 
 	@SendNotifications					bit	= 0,
@@ -159,7 +159,7 @@ AS
 		END;
 	END;
 
-	IF UPPER(@DatabasesToProcess) = N'[READ_FROM_FILESYSTEM]' BEGIN
+	IF UPPER(@DatabasesToProcess) = N'{READ_FROM_FILESYSTEM}' BEGIN
 		IF NULLIF(@BackupDirectory, N'') IS NULL BEGIN
 			RAISERROR('@BackupsDirectory cannot be NULL and must be a valid path.', 16, 1);
 			RETURN -6;
@@ -177,12 +177,12 @@ AS
 	ELSE BEGIN -- not reading from the file system:
 
 		IF NULLIF(@BackupDirectory,'') IS NOT NULL BEGIN
-			RAISERROR('@BackupsDirectory may NOT be specified unless @DatabasesToProcess is set as ''[READ_FROM_FILESYSTEM]''.', 16, 1);
+			RAISERROR('@BackupsDirectory may NOT be specified unless @DatabasesToProcess is set as ''{READ_FROM_FILESYSTEM}''.', 16, 1);
 			RETURN -7;
 		END;
 
 		IF NULLIF(@DatabasesToExclude,'') IS NOT NULL BEGIN
-			RAISERROR('@DatabasesToExclude may NOT be specified unless @DatabasesToProcess is set as ''[READ_FROM_FILESYSTEM]''.', 16, 1);
+			RAISERROR('@DatabasesToExclude may NOT be specified unless @DatabasesToProcess is set as ''{READ_FROM_FILESYSTEM}''.', 16, 1);
 			RETURN -7;
 		END
 	END;

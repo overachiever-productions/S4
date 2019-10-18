@@ -22,7 +22,7 @@ CREATE PROC dbo.[add_failover_processing]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
     
     DECLARE @errorMessage nvarchar(MAX);
 
@@ -132,7 +132,7 @@ GO'
 
     IF @ExecuteSetupOnPartnerServer = 1 BEGIN
 
-        DECLARE @command nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.add_failover_alerts
+        DECLARE @command nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.[add_failover_processing]
     @SqlServerAgentFailoverResponseJobName = @SqlServerAgentFailoverResponseJobName,
     @SqlServerAgentJobNameCategory = @SqlServerAgentJobNameCategory,      
     @MailProfileName = @MailProfileName,

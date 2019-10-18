@@ -65,10 +65,10 @@ GO
 
 CREATE PROC dbo.backup_databases 
 	@BackupType							sysname,																-- { FULL|DIFF|LOG }
-	@DatabasesToBackup					nvarchar(MAX),															-- { [SYSTEM]|[USER]|name1,name2,etc }
+	@DatabasesToBackup					nvarchar(MAX),															-- { {SYSTEM} | {USER} |name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
-	@BackupDirectory					nvarchar(2000)							= N'[DEFAULT]',					-- { [DEFAULT] | path_to_backups }
+	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } 
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
@@ -136,7 +136,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@BackupDirectory) = N'[DEFAULT]' BEGIN
+	IF UPPER(@BackupDirectory) = N'{DEFAULT}' BEGIN
 		SELECT @BackupDirectory = dbo.load_default_path('BACKUP');
 	END;
 
@@ -152,8 +152,8 @@ AS
 		RETURN -7;
 	END;
 
-	IF UPPER(@DatabasesToBackup) = N'[READ_FROM_FILESYSTEM]' BEGIN
-		RAISERROR('@DatabasesToBackup may NOT be set to the token [READ_FROM_FILESYSTEM] when processing backups.', 16, 1);
+	IF UPPER(@DatabasesToBackup) = N'{READ_FROM_FILESYSTEM}' BEGIN
+		RAISERROR('@DatabasesToBackup may NOT be set to the token {READ_FROM_FILESYSTEM} when processing backups.', 16, 1);
 		RETURN -9;
 	END
 
@@ -269,7 +269,7 @@ AS
 
 		   END; 
 		ELSE BEGIN
-			PRINT 'Usage: @DatabasesToBackup = [SYSTEM]|[USER]|dbname1,dbname2,dbname3,etc';
+			PRINT 'Usage: @DatabasesToBackup = {SYSTEM}|{USER}|dbname1,dbname2,dbname3,etc';
 			RAISERROR('No databases specified for backup.', 16, 1);
 			RETURN -20;
 		END;

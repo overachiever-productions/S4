@@ -17,7 +17,7 @@ IF OBJECT_ID('dbo.export_server_configuration','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.export_server_configuration 
-	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
+	@OutputPath								nvarchar(2000)			= N'{DEFAULT}',
 	@CopyToPath								nvarchar(2000)			= NULL, 
 	@AddServerNameToFileName				bit						= 1, 
 	@OperatorName							sysname					= N'Alerts',
@@ -79,7 +79,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@OutputPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@OutputPath) = N'{DEFAULT}' BEGIN
 		SELECT @OutputPath = dbo.load_default_path('BACKUP');
 	END;
 

@@ -12,12 +12,12 @@
 	SIGNATURE / SAMPLE EXECUTION: 
 
 		EXEC admindb.dbo.[export_server_logins]
-   			@TargetDatabases = N'[ALL]',
+   			@TargetDatabases = N'{ALL}',
 			@ExcludedDatabases = N'Compression%,Masked%, %_Test',
 			@DatabasePriorities = N'Billing,*,SSVDev',
 			--@ExcludedLogins = N'%illi%', 
 			@ExcludedUsers = NULL, 
-			@OutputPath = N'[DEFAULT]', -- nvarchar(2000)
+			@OutputPath = N'{DEFAULT}', -- nvarchar(2000)
 			@CopyToPath = N'D:\Dropbox\Server\SQLBackups', -- nvarchar(2000)
 			@ExcludeMSAndServiceLogins = 1,
 			@DisablePolicyChecks = 1, 
@@ -40,12 +40,12 @@ IF OBJECT_ID('dbo.export_server_logins','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.export_server_logins
-	@TargetDatabases						nvarchar(MAX)			= N'[ALL]',
+	@TargetDatabases						nvarchar(MAX)			= N'{ALL}',
 	@ExcludedDatabases						nvarchar(MAX)			= NULL,
 	@DatabasePriorities						nvarchar(MAX)			= NULL,
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
 	@ExcludedUsers							nvarchar(MAX)			= NULL,
-	@OutputPath								nvarchar(2000)			= N'[DEFAULT]',
+	@OutputPath								nvarchar(2000)			= N'{DEFAULT}',
 	@CopyToPath								nvarchar(2000)			= NULL, 	
 	@ExcludeMSAndServiceLogins				bit						= 1,
 	@DisablePolicyChecks					bit						= 0,
@@ -111,7 +111,7 @@ AS
 		END; 
 	END;
 
-	IF UPPER(@OutputPath) = N'[DEFAULT]' BEGIN
+	IF UPPER(@OutputPath) = N'{DEFAULT}' BEGIN
 		SELECT @OutputPath = dbo.load_default_path('BACKUP');
 	END;
 
