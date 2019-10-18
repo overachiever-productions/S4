@@ -24,7 +24,7 @@ CREATE PROC dbo.[enable_alert_filtering]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     ------------------------------------
     -- create a 'response' job: 

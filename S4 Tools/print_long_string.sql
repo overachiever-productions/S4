@@ -40,7 +40,7 @@ CREATE PROC dbo.print_long_string
 AS
 	SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
 	DECLARE @totalLen int;
 	SELECT @totalLen = LEN(@Input);

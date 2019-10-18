@@ -86,7 +86,7 @@ CREATE PROC dbo.script_login
 AS 
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
     IF NULLIF(@LoginName, N'') IS NULL BEGIN 
         RAISERROR('@LoginName is required.', 16, 1);

@@ -9,7 +9,7 @@
 USE [admindb];
 GO
 
--- {copyright}
+	-- {copyright}
 
 IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 

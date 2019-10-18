@@ -175,7 +175,7 @@ CREATE PROC dbo.list_recovery_metrics
 AS 
 	SET NOCOUNT ON;
 
-	-- {copyright} 
+	-- {copyright}
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 

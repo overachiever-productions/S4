@@ -31,7 +31,7 @@ CREATE PROC dbo.[populate_trace_flags]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
 
 	TRUNCATE TABLE dbo.[server_trace_flags];
 

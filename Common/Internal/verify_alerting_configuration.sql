@@ -50,7 +50,8 @@ CREATE PROC dbo.[verify_alerting_configuration]
 AS
     SET NOCOUNT ON; 
 
-    -- {copyright}
+	-- {copyright}
+
     DECLARE @output sysname;
 
     IF UPPER(@OperatorName) = N'{DEFAULT}' OR (NULLIF(@OperatorName, N'') IS NULL) BEGIN 
