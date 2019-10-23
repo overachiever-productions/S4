@@ -1,4 +1,4 @@
-<div class="stub">
+﻿<div class="stub">
 [NOTE TO SELF: Philosophies needs to be a big part of this doc. Specifically, the doc should have the following 'resources' in it: a) breadcrumbs/title. b) TOC (and return to main), c) overview of conventions - they're the key to getting S4 to work. d) philosophy. e) specific conventions/implemetnations of philosophy and a break-down/documetnation of each convention.]
 
 [ANOTHER NOTE TO SELF: I've actually... got a few 'pages' of convention DOCs in the \documentation\conventions\ folder ... and I should use those for Job Sync Conventions. The others... I think I'll just want to inline them here. (MEaning that \documentation\conventions\ MIGHT make more sense to implement as \documentation\ha\ or something a bit more 'specific'). 
@@ -8,6 +8,12 @@ EITHER WAY: just make sure to integrate the conventions defined in there ... int
 </div>
 
 [README](?encodedPath=README.md) > CONVENTIONS
+
+<div class="stub">
+TODO: check out the T-SQL Conventions as a sample for how to best document/define conventions: 
+https://docs.microsoft.com/en-us/sql/t-sql/language-elements/transact-sql-syntax-conventions-transact-sql?view=sql-server-ver15
+</div>
+
 
 > ### <i class="fa fa-warning"></i> WARNING:
 > As of version 7.0 this content is BARELY even a viable 'draft' or outline (i.e., it's primarily a place-holder/pensieve (at best).)
