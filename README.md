@@ -1,12 +1,6 @@
-﻿# S4
-
-<span style="font-size: 26px">**S**imple **S**QL **S**erver **S**cripts -> **S4**</span>
-
+﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 ## TABLE OF CONTENTS
   
-> ### <i class="fa fa-random"></i> Work in Progress  
-> S4 documentation is a work in progress. Any content [surrounded by square brackets] represents a DRAFT version of documentation.
-
 - [License](#license)
 - [Requirements](#requirements)
 - [Setup](#setup)
@@ -26,6 +20,9 @@
     - [Alerting](#alerting-conventions)
 - [S4 Best Practices](#s4-best-practices)
 
+> ### <i class="fa fa-random"></i> Work in Progress  
+> S4 documentation is a work in progress. Any content [surrounded by square brackets] represents a DRAFT version of documentation.
+
 ## License
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
@@ -33,19 +30,18 @@
 ## Requirements
 **SQL Server Requirements:**
 
-- SQL Server 2012+. *(MOST (but not all) S4 functionality ALSO works with SQL Server 2008 / SQL Server 2008 R2.)* 
+- SQL Server 2012+. 
+    - (MOST (but not all) S4 functionality ALSO works with SQL Server 2008 / SQL Server 2008 R2.)
 - Some advanced functionality does not work on Express and/or Web Versions of SQL Server.
-- Windows Server Only. (Not yet tested on Azure/Linux.)
-
-**Setup Requirements:**
-- To deploy, you'll need the ability to run T-SQL scripts against your server and create a database.
-- Advanced error handling (for backups and other automation) requires xp_cmdshell to be enabled - as per the steps outlined in [Enabling Advanced S4 Features](#enabling-advanced-s4-features).
-- SMTP (SQL Server Database Mail) for advanced S4 automation and alerts.
+- Windows Server Only. 
+    - Not yet tested on Azure/Linux.
 
 ## SETUP 
 **Setup is trivial:** run a [T-SQL script ](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment) "e.g.7.0.3042.sql" against your target server and S4 will create a new `[admindb]` database - as the new home for all S4 code and functionality.  
 
 Advanced S4 automation and error handling requires a server-level change - which has to be explicitly enabled via the step outlined in [Enabling Advanced S4 Features](#enabling-advanced-s4-features). 
+
+Likewise, you'll also need to set up (or configure) SQL Server's Database Mail so that S4 can send alerts via email. 
 
 Once deployed, it's easy to [keep S4 updated](#updates) - just grab new releases of the deployment file, and run them against your target server (where they'll see your exising deployment and update code as needed).
 
@@ -70,7 +66,7 @@ To deploy S4:
 Once S4 has been deployed (i.e., after the admindb has been created), to deploy advanced error-handling features, simply run the following: 
 
 ```sql
-    EXEC [admindb].dbo.[enable_advanced_capabilities];
+    EXEC admindb.dbo.enable_advanced_capabilities;
     GO
 ```
 #### Common Questions and Concerns about enabling xp_cmdshell 
@@ -79,7 +75,7 @@ Meh. There's a lot of [FUD](https://en.wikipedia.org/wiki/Fear,_uncertainty_and_
 To checkup-on/view current S4 advanced functionality and configuration settings, run the following: 
 
 ```sql
-    EXEC dbo.verifiy_advanced_capabilities;
+    EXEC admindb.dbo.verifiy_advanced_capabilities;
     GO
 ```
 
@@ -294,12 +290,11 @@ For specific details, see the following:
 [Return to Table of Contents](#table-of-contents)
 
 ## USING S4 Conventions
-S4 favors convention over configuration. [TODO: find a link that does a good job of explaining what this means i.e., it attempts to address the most commonly-used and most-commonly needed configuration options and 'choices' by means of standardized/conventionalized defaults - yet, still allows customization (explicit configuration) of key or core configuration choices.]
+S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Convention_over_configuration) - or the notion of 'sensible' defaults. This allows for S4 to be as simple and easy as possible to use (out of the box), while still allowing it to address customized or specialized scenarios and needs. 
 
-[To accomodate conventions based on standards/etc. as well as address a few internal paradigms/problem-solving-somethings, S4 explicitly defines and uses the following conventions - which are key to understand and be familiar with if/when using them as production management tools.] 
-[NOTE: this'll be a TOC, but it'll link out to the CONVENTIONS.md page which'll cover as many of these conventions as needed in that .md and if/when a convention is more 'complex'... that convention will get its own .md page for further clarification/context.]
+To accomodate `convention over configuration` as well as to address other common problems and scenarios, S4 explicitly defines and uses the fullowing conventions:
 
-- [S4 Conventions 'Home Page'](?encodedPath=Documentation%2FCONVENTIONS.md)
+- [S4 Conventions](?encodedPath=Documentation%2FCONVENTIONS.md)
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -309,7 +304,6 @@ A key goal of S4 is to enable best-practices execution in 'weaponized' form - or
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]
 
 - [Best-Practices 'Home Page'](&encodedPath=Documentation%2FBESTPRACTICES.md)
-
 
 [Return to Table of Contents](#table-of-contents)
 

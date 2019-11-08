@@ -1,35 +1,27 @@
-﻿<div class="stub">
-[NOTE TO SELF: Philosophies needs to be a big part of this doc. Specifically, the doc should have the following 'resources' in it: a) breadcrumbs/title. b) TOC (and return to main), c) overview of conventions - they're the key to getting S4 to work. d) philosophy. e) specific conventions/implemetnations of philosophy and a break-down/documetnation of each convention.]
-
-[ANOTHER NOTE TO SELF: I've actually... got a few 'pages' of convention DOCs in the \documentation\conventions\ folder ... and I should use those for Job Sync Conventions. The others... I think I'll just want to inline them here. (MEaning that \documentation\conventions\ MIGHT make more sense to implement as \documentation\ha\ or something a bit more 'specific'). 
-
-EITHER WAY: just make sure to integrate the conventions defined in there ... into this doc and/or the finalized/overall documentation.
-]
-</div>
-
-[README](?encodedPath=README.md) > CONVENTIONS
+﻿[README](?encodedPath=README.md) > CONVENTIONS
 
 <div class="stub">
 TODO: check out the T-SQL Conventions as a sample for how to best document/define conventions: 
 https://docs.microsoft.com/en-us/sql/t-sql/language-elements/transact-sql-syntax-conventions-transact-sql?view=sql-server-ver15
 </div>
 
-
 > ### <i class="fa fa-warning"></i> WARNING:
-> As of version 7.0 this content is BARELY even a viable 'draft' or outline (i.e., it's primarily a place-holder/pensieve (at best).)
+> As of S4 version 7.0 this content is BARELY even a viable 'draft' or outline (i.e., it's primarily a place-holder/pensieve (at best).)
 
 ### TABLE OF CONTENTS
-- [Philosophy]()
-- [IDIOMATIC CONVENTIONS]()
+- [Philosophical Conventions](#philosophical-conventions)
+- [**Practical Conventions**](#practical-conventions)
     - [SQL Server Backups and Sub-Directories Per Each Database]() 
     - Vectors. Human-readable 'timespans'/directives used for specifying retention rates, frequencies and so on - i.e., instead of @NumberOfMinutesToAdd, S4 uses @PollingFrequency = '22 minutes' to enable cleaner @ParameterNames (for 'self-documentation') and easier values that 'magic numbers' (i.e., is 111756 a set of milliseconds, seconds, hours? what? ). 
-    - {DEFAULTS}. Convention over configuration - but, configuration can be changed at 2x levels - system-wide (dbo.settings) or per execution/call of an S4 module. (This allows for MUCH LESS change/modification if/when something like an email address changes/etc. or the path to backups changes - while also allowing DBAs and users to EASILY specify 'one off', 'test', or other 'exceptional' executions without hassle.
-    - {TOKENS}. [Make sure to cover admindb being treated as a {SYSTEM} database and how that's managed/changed via the dbo.settings `admindb_is_system_db` (UNIQUE) key... ]
-    - LISTS. (still in use? )
     - @PrintOnly Conventions. 
+    - {TOKENS}. [Make sure to cover admindb being treated as a {SYSTEM} database and how that's managed/changed via the dbo.settings `admindb_is_system_db` (UNIQUE) key... ]
+    - {DEFAULTS}. Convention over configuration - but, configuration can be changed at 2x levels - system-wide (dbo.settings) or per execution/call of an S4 module. (This allows for MUCH LESS change/modification if/when something like an email address changes/etc. or the path to backups changes - while also allowing DBAs and users to EASILY specify 'one off', 'test', or other 'exceptional' executions without hassle.
+    <div class="stub">
+    - LISTS. (still in use? )
     - [DOMAINS] (MOSTLY just a documentation convention... )
-- [FUNCTIONAL CONVENTIONS]  [each of these is 'big enough' to merit its OWN .md file and details.]
-    - Error Handling.
+    </div>
+- **Functional Conventions**
+    - Advanced Error Handling.
     - Alerting and 'Email'/Database Mail Conventions.
     - PROJECT or RETURN modules. 
     - Process BUS functionality. 
@@ -37,23 +29,25 @@ https://docs.microsoft.com/en-us/sql/t-sql/language-elements/transact-sql-syntax
     - XE Extraction Mappings and TraceViews Conventions.
     - HA Job Synchronization Conventions. 
     - HA Coding Conventions. (Dynamic AG/Mirroring Detection and 'PRIMARY') 
+    - Version History. 
+- [Coding Conventions](#link)
     - SQL Server Agent Job Management Conventions.
     - Coding Standards(??? yeah... probably goes here.)
 
 
-### Philosophy 
-[key things to know about S4... 
-- **Convention over Configuration.** favors convention over configuration - but still attempts to be extensible
-- **Errors and Failures - Fail Fast.** Fail 'early' in terms of config... if config of sprocs doing things isn't right... parameter validation will raise an error. 
-- **Errors and Failures - Resiliency.** When doing batch operations (i.e., something against multiple similar targets/etc... )... failure in one operation usually shouldn't mean that the entire process fails/crashes/terminates... 
-- **Signal vs Noise.** instead... problems are logged and or recorded, and when operation completes, any errors or isseus encountered along the way will be raised via a single message or output.
-- ???? 
-- etc.. 
-]
+### Philosophical Conventions 
+S4 skews heavily towards the following philosophical ideals:
 
-## S4 Conventions 
-[S4 favors convention over configuration - but, enables configuration if/and/when/as needed.]
-
+- **Convention over Configuration.** S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Convention_over_configuration). This is most apparent relative to defaults/conventions associated with notifications and alerts, 'standardized defaults' for many/most S4 modules, and paths + filenames for SQL Server backups. [Learn more...](?encodedPath=Documentation%2Fconventions%2FConventionOverConfiguration.md)
+- **Errors and Failures.** S4 favors the following conventions relative to failures and errors.
+    - **Fail Fast.** Fail 'early' in terms of config... if config of sprocs doing things isn't right... parameter validation will raise an error. 
+    - **Fail Safe.** dslkfjsldflsdl
+    - **Fail Responsibly.** ... caller inform vs caller confuse or caller beware. 
+    - **Fail Minimally.** Resiliency. When doing batch operations (i.e., something against multiple similar targets/etc... )... failure in one operation usually shouldn't mean that the entire process fails/crashes/terminates...
+    - **Caller Inform vs Caller Beware or Caller Confuse.** sdflkdslfsjlkkfd
+- **Alerting and Notifications.** S4 favors the following conventions and paradigms relative to alerting and notifications. 
+    - **Avoid Silent Failures.** [Silent failures/alerts suck... and shouldn't happen. SQL Server makes these easy to avoid. S4 routines are built to try and and handle errors when/as needed ... but... 'backup' is that S4 routines scheduled as SQL Server Agent Jobs should be set to raise alerts/notifications if/when there are failures (screenshot/link).]
+    - **Favor Signal over Noise.** [alerts are great... until they're not - and they're just noise. at which ... people set up rules... and ... we're back to 'silent failures'. S4 attempts to minimize alerts/failures and provides a number of techniques/tools for filtering and decreasing 'noise'.]
 
 
 <div class="stub" meta="this is content 'pulled' from setup - that now belongs in CONVENTIONS - because advanced error handling is a major convention">[LINK to CONVENTIONS about how S4 doesn't want to just 'try' things and throw up hands if/when there's an error. it strives for caller-inform. So that troubleshooting is easy and natural - as DBAs/admins will have immediate access to specific exceptions and errors - without having to spend tons of time debugging and so on... ]
