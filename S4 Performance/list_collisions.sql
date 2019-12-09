@@ -39,7 +39,7 @@ AS
 			session_id, 
 			blocking_session_id
 		FROM 
-			sys.dm_exec_requests
+			sys.[dm_os_waiting_tasks]
 		WHERE 
 			ISNULL(blocking_session_id, 0) <> 0
 	), 
@@ -57,6 +57,8 @@ AS
 
 	SELECT 
 		s.session_id, 
+--MKC: todo, this is actually (frequently) quite expensive to extract - so... do it AFTER the fact if/as needed - i.e., just determining if there's even something to process or grab here can make this 'predicate' query take 1-2 seconds in some cases. 
+--			so, comment it out, and then use a 'back-fill' approach-later on/down-below.
 		ISNULL(r.database_id, (SELECT [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	--MKC: S4-1. Pre-2012, s.database_id didn't exist. I MAY want to define this dynamically (based on version..) but that would require the entire statement to be 'dynamicized'.
 		r.wait_time, 
 		ISNULL(r.blocking_session_id, 0) blocking_session_id, 
@@ -95,7 +97,8 @@ AS
 			ELSE NULL
 		END [isolation_level],
 		CASE WHEN dtst.is_user_transaction = 1 THEN 'EXPLICIT' ELSE 'IMPLICIT' END [transaction_type], 
-		(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
+--MKC: ditto as above - i.e., this can/will 'lag' the overall query quite a bit. and... there should be a better way to find this crud. (sys.dm_os_tran_locks...? or ... something?)
+		--(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
 		CAST(N'REQUEST' AS sysname) [statement_source],
 		r.sql_handle [statement_handle], 
 		r.plan_handle, 
@@ -105,11 +108,10 @@ AS
 		#core
 	FROM 
 		sys.[dm_exec_sessions] s 
+		INNER JOIN [collisions] c ON s.[session_id] = c.[session_id]
 		LEFT OUTER JOIN sys.[dm_exec_requests] r ON s.[session_id] = r.[session_id]
 		LEFT OUTER JOIN sys.dm_tran_session_transactions dtst ON r.session_id = dtst.session_id
-		LEFT OUTER JOIN sys.dm_tran_active_transactions dtat ON dtst.transaction_id = dtat.transaction_id
-	WHERE 
-		s.session_id IN (SELECT session_id FROM collisions);
+		LEFT OUTER JOIN sys.dm_tran_active_transactions dtat ON dtst.transaction_id = dtat.transaction_id;
 
 	IF @ExcludeFullTextCollisions = 1 BEGIN 
 		DELETE FROM [#core]
@@ -309,8 +311,8 @@ AS
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
         [c].[isolation_level],
-        [c].[transaction_type],
-        [c].[open_transaction_count]
+        [c].[transaction_type]--,
+--        [c].[open_transaction_count]
 		{context}
 		{query_plan}
 	FROM 
