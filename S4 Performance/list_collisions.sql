@@ -39,9 +39,10 @@ AS
 			session_id, 
 			blocking_session_id
 		FROM 
-			sys.dm_exec_requests
+			sys.[dm_os_waiting_tasks]
 		WHERE 
-			ISNULL(blocking_session_id, 0) <> 0
+			session_id <> blocking_session_id
+			AND blocking_session_id IS NOT NULL
 	), 
 	collisions AS ( 
 		SELECT 
@@ -53,17 +54,19 @@ AS
 			blocking_session_id
 		FROM 
 			blocked
+		WHERE 
+			blocked.blocking_session_id NOT IN (SELECT session_id FROM blocked)  
 	)
 
 	SELECT 
 		s.session_id, 
-		ISNULL(r.database_id, (SELECT [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	--MKC: S4-1. Pre-2012, s.database_id didn't exist. I MAY want to define this dynamically (based on version..) but that would require the entire statement to be 'dynamicized'.
+		ISNULL(r.database_id, (SELECT TOP (1) [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	
 		r.wait_time, 
-		ISNULL(r.blocking_session_id, 0) blocking_session_id, 
 		s.session_id [blocked_session_id],
+		r.blocking_session_id,
 		r.command,
 		ISNULL(r.[status], 'connected') [status],
-		ISNULL(r.[total_elapsed_time], DATEDIFF(MILLISECOND, s.last_request_start_time, GETDATE())) [duration],
+		ISNULL(r.[total_elapsed_time], CASE WHEN s.last_request_start_time IS NULL THEN NULL ELSE DATEDIFF(MILLISECOND, s.last_request_start_time, GETDATE()) END) [duration],
 		ISNULL(r.wait_resource, '') wait_resource,
 		r.[last_wait_type] [wait_type],
 		CASE [dtat].[transaction_type]
@@ -95,9 +98,10 @@ AS
 			ELSE NULL
 		END [isolation_level],
 		CASE WHEN dtst.is_user_transaction = 1 THEN 'EXPLICIT' ELSE 'IMPLICIT' END [transaction_type], 
-		(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
+--MKC: This needs a bit more work... 
+		--(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
 		CAST(N'REQUEST' AS sysname) [statement_source],
-		r.sql_handle [statement_handle], 
+		r.[sql_handle] [statement_handle], 
 		r.plan_handle, 
 		r.statement_start_offset, 
 		r.statement_end_offset
@@ -105,11 +109,10 @@ AS
 		#core
 	FROM 
 		sys.[dm_exec_sessions] s 
+		INNER JOIN [collisions] c ON s.[session_id] = c.[session_id]
 		LEFT OUTER JOIN sys.[dm_exec_requests] r ON s.[session_id] = r.[session_id]
 		LEFT OUTER JOIN sys.dm_tran_session_transactions dtst ON r.session_id = dtst.session_id
-		LEFT OUTER JOIN sys.dm_tran_active_transactions dtat ON dtst.transaction_id = dtat.transaction_id
-	WHERE 
-		s.session_id IN (SELECT session_id FROM collisions);
+		LEFT OUTER JOIN sys.dm_tran_active_transactions dtat ON dtst.transaction_id = dtat.transaction_id;
 
 	IF @ExcludeFullTextCollisions = 1 BEGIN 
 		DELETE FROM [#core]
@@ -132,6 +135,24 @@ AS
 		WHERE 
 			database_id NOT IN (SELECT database_id FROM sys.databases WHERE [name] IN (SELECT [database_name] FROM @dbNames));
 	END; 
+
+	-- HACK: roll this logic up into the parent query (if the perf is better) ... sometime when it's not 2AM and I'm not working in a hotel...	
+	DELETE FROM #core 
+	WHERE 
+		session_id IS NULL
+		OR (blocking_session_id IS NULL AND session_id NOT IN (
+			SELECT blocking_session_id FROM #core WHERE blocking_session_id IS NOT NULL AND blocking_session_id <> 0
+			)
+		);
+
+	--NOTE: this is part of both the PROBLEM... and the hack above:
+	UPDATE #core SET blocking_session_id = 0 WHERE blocking_session_id IS NULL;	
+
+	--NOTE: this is no longer a hack, there's just something stupid going on with my core/main CTEs and 'collisions' detection logic... it's returning 'false' positives
+	--			likely due to the fact that I'm being a moron with regards to NULLs and ISNULL(x, 0) and so on... 
+	--		at any rate the hack continues: 
+	--			(or, in other words, pretend this is TDD.. the code in this sproc is red/green .. done but needs a MAJOR refactor (to make it less ugly/tedious/perf-heavy).
+	DELETE FROM #core WHERE blocking_session_id = 0 AND blocked_session_id NOT IN (SELECT blocking_session_id FROM #core);
 
 	IF NOT EXISTS(SELECT NULL FROM [#core]) BEGIN
 		RETURN 0; -- short-circuit.
@@ -304,13 +325,13 @@ AS
 		[c].[wait_time],
 		[c].[wait_type],
 		[c].[wait_resource],
-	[c].[duration],		-- some sort of a bug here... 
+		[c].[duration],		
         
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
         [c].[isolation_level],
-        [c].[transaction_type],
-        [c].[open_transaction_count]
+        [c].[transaction_type]--,
+--        [c].[open_transaction_count]
 		{context}
 		{query_plan}
 	FROM 
@@ -320,7 +341,7 @@ AS
 		LEFT OUTER JOIN [#statements] s ON c.[session_id] = s.[session_id] 
 		LEFT OUTER JOIN [#plans] p ON [c].[session_id] = [p].[session_id]
 	ORDER BY 
-		x.level, c.wait_time DESC;
+		x.level, c.duration DESC;
 	';
 
 	IF @IncludeContext = 1

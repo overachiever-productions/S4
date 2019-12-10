@@ -1,6 +1,12 @@
 /*
 
+	TODO: this needs the 'execute in calling-context' convention
+		as in ... it needs to do MORE than just run this query against roles in the admindb... 
+			it can/should be able to run against ... other dbs and their roles. 
 
+			which means 2 changes: 
+				1. get the context ... via 'dynamic' detection + and/or via @TargetDatabase (if that's null, then dynamic... and if we can't tell after @TargetDB and dynamic... then error). 
+				2. the query then needs to be DYNAMIC... 
 
 */
 
@@ -17,7 +23,6 @@ AS
     SET NOCOUNT ON; 
 
     -- {copyright}
-
 
 
    WITH RoleMembers (member_principal_id, role_principal_id) 
@@ -50,3 +55,7 @@ AS
     --      maybe look for roles that are members of this role - i.e., if I made a role called ExymAdmins and ... made them a member of the admins role
     --          i'd like to see a 'nested_role_members' xml do-hickie that would show these permissions/memberships in greater detail... 
     --              and... use the above via something like .. @IncludeChildRoleMembers or something like that... 
+
+
+	RETURN 0;
+GO

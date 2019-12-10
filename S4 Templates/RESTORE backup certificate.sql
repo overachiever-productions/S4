@@ -70,9 +70,9 @@ END;
 --------------------------------------------------------------------------------------------------------------------
 -- Restore the Backup Encryption Certificate: 
 CREATE CERTIFICATE [<backupCertName, sysname, EncryptedBackupsCertificate>]
-	FROM FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<backupCertName, sysname, EncryptedBackupsCertificate>.cer'
+	FROM FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<certFileNamePattern, sysname, CertFileName>.cer'
 	WITH PRIVATE KEY (
-		FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<backupCertName, sysname, EncryptedBackupsCertificate>_private.key', 
+		FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<certFileNamePattern, sysname, CertFileName>_PrivateKey.key', 
 		DECRYPTION BY PASSWORD = '<backupCertEncryptionPassword, sysname, xxxxxx>'
 	);
 GO

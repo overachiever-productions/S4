@@ -1,7 +1,4 @@
-
 /*
-	v4.7.2556.1
-		Signatures.
 
 
 */
@@ -11,7 +8,7 @@ EXEC [admindb].dbo.[backup_databases]
     @DatabasesToBackup = N'',  
     --@DatabasesToExclude = N'', 
     --@Priorities = N'',		-- N'first, *, last'
-    @BackupDirectory = N'[DEFAULT]', 
+    @BackupDirectory = N'{DEFAULT}', 
     @CopyToBackupDirectory = N'', 
     @BackupRetention = N'', 
     @CopyToRetention = N'', 
@@ -28,7 +25,7 @@ EXEC [admindb].dbo.[backup_databases]
 
 
 EXEC [admindb].[dbo].[restore_databases]
-    @DatabasesToRestore = N'', -- options include: N'dbname1, dbname2, dbnameN, etc' | N'[READ_FROM_FILESYSTEM]' i.e., iterate over @BackupsRootPath and restore a backup for each db found (unless excluded by @DatabasesToExclude). 
+    @DatabasesToRestore = N'', -- options include: N'dbname1, dbname2, dbnameN, etc' | N'{READ_FROM_FILESYSTEM}' i.e., iterate over @BackupsRootPath and restore a backup for each db found (unless excluded by @DatabasesToExclude). 
     @DatabasesToExclude = N'', 
     @Priorities = N'', -- N'dbName3, dbname2, *, dbnameTest' -- where anything 'before' the * is prioritized (in order) for priority restore operations, anything not explicitly defined is 'covered' by * and done alphabetically, and anything 'after' * is lowest priority... 
     @BackupsRootPath = N'', 
@@ -57,7 +54,7 @@ EXEC [admindb].[dbo].[list_processes]
     --@ExcludeMirroringWaits = 1,  -- AG/Mirroring/etc. waites. 
     @ExcludeNegativeDurations = 1,  -- system-level processes, service broker, and rollback ops/etc. 
     @ExcludeFTSDaemonProcesses = 1,  
-    @ExcludeSystemProcesses = 1,  -- exclude spids < 50
+    @ExcludeSystemProcesses = 1,  
     @ExcludeSelf = 1;  
 
 
