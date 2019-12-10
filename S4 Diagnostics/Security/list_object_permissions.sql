@@ -1,4 +1,6 @@
 /*
+	-- TODO: add the 'use executing db-context'... uh, convention. (what4ver that's called).
+
 
 */
 IF OBJECT_ID('dbo.list_object_permissions','P') IS NOT NULL

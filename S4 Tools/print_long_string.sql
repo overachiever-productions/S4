@@ -1,4 +1,11 @@
 /*
+	Hmmmmmm
+		https://docs.microsoft.com/en-us/sql/t-sql/language-elements/sql-server-utilities-statements-backslash?view=sql-server-ver15
+
+			interesting... what about using the \ character as a line-continuation character? 
+
+
+
 	Obviously, PRINT 'xyz' is how to print. 
 	Only, sometimes you'll need to print something with a LENGTH > 4K characters. 
 

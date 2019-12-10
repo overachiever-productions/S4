@@ -75,7 +75,7 @@ GO
 BACKUP CERTIFICATE [<backupCertName, sysname, EncryptedBackupsCertificate>]
 	TO FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<backupCertName, sysname, EncryptedBackupsCertificate>.cer'
 	WITH PRIVATE KEY (
-		FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<backupCertName, sysname, EncryptedBackupsCertificate>_private.key', 
+		FILE = N'<certBackupsPath, sysname, D:\SQLBackups>\<backupCertName, sysname, EncryptedBackupsCertificate>_PrivateKey.key', 
 		ENCRYPTION BY PASSWORD = N'<backupCertEncryptionPassword, sysname, xxxxxx>'
 	);
 GO

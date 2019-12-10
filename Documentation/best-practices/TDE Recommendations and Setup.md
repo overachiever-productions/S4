@@ -1,5 +1,15 @@
 ﻿# TDE Recommendations and Setup
 
+<div class="stub">
+    TODO: 
+        Integrate the following 3x links into the mix relative to TDE 'strength'. 
+            - https://simonmcauliffe.com/technology/tde/
+            - https://matthewmcgiffen.com/2018/01/03/how-secure-is-transparent-data-encryption-tde-and-how-to-prevent-hacking/
+            - https://dba.stackexchange.com/questions/225049/will-tde-encryption-protect-my-sql-database-from-hacker-in-this-scenario
+
+</div>
+
+
 ## Official Microsoft Documentation
 
 Primary Documentation for Transparent Data Encryption (TDE) can be found here:
@@ -335,4 +345,9 @@ As outlined above, you'll typically be better off by creating FULL backups of yo
 
 Either way, you SHOULD be able to fully restore and recover a FULL (+ any DIFFs if you didn't execute a NEW full after TDE) + any t-logs without any problems issues. Otherwise, you've done something wrong and will need to either re-export/backup+restore your TDE 'certificate' and/or REMOVE TDE encryption, re-sign/re-create certificates and VERIFY that you can restore as needed. 
 
-**Otherwise, you will be gauranteed to lose data during a disaster.** 
+**Otherwise, you will be gauranteed to lose data during a disaster.**
+
+
+<style>
+    div.stub { display: none; }
+</style>
