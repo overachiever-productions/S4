@@ -60,9 +60,7 @@ AS
 
 	SELECT 
 		s.session_id, 
---MKC: todo, this is actually (frequently) quite expensive to extract - so... do it AFTER the fact if/as needed - i.e., just determining if there's even something to process or grab here can make this 'predicate' query take 1-2 seconds in some cases. 
---			so, comment it out, and then use a 'back-fill' approach-later on/down-below.
-		ISNULL(r.database_id, (SELECT TOP (1) [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	--MKC: S4-1. Pre-2012, s.database_id didn't exist. I MAY want to define this dynamically (based on version..) but that would require the entire statement to be 'dynamicized'.
+		ISNULL(r.database_id, (SELECT TOP (1) [dbid] FROM sys.sysprocesses WHERE spid = s.[session_id])) [database_id],	
 		r.wait_time, 
 		s.session_id [blocked_session_id],
 		r.blocking_session_id,
@@ -100,7 +98,7 @@ AS
 			ELSE NULL
 		END [isolation_level],
 		CASE WHEN dtst.is_user_transaction = 1 THEN 'EXPLICIT' ELSE 'IMPLICIT' END [transaction_type], 
---MKC: ditto as above - i.e., this can/will 'lag' the overall query quite a bit. and... there should be a better way to find this crud. (sys.dm_os_tran_locks...? or ... something?)
+--MKC: This needs a bit more work... 
 		--(SELECT MAX(open_tran) FROM sys.sysprocesses p WHERE s.session_id = p.spid) [open_transaction_count], 
 		CAST(N'REQUEST' AS sysname) [statement_source],
 		r.[sql_handle] [statement_handle], 

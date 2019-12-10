@@ -15,6 +15,7 @@ GO
 
 CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
+WITH RETURNS NULL ON NULL INPUT
 AS
 	-- {copyright}
 	BEGIN
