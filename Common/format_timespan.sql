@@ -1,6 +1,29 @@
 /*
 
 
+TODO: 
+	- Account for the following details/'spans' - as in ... currently just assuming hhh:mm:ss as 'max-ish' inputs. 
+		instead... allow for 'stupid' inputs - cuz they can/will happen. and... even 'non-stupid' things like... days, weeks, or months could and SHOULD be viable as values passed into this piglet. 
+			e.g., "22.8 days" should be a VIABLE output, and even "18.7 months" or ... "22.56 years" and so on... 
+
+	SELECT DATEDIFF_BIG(MILLISECOND, '1900-01-01', GETDATE());
+	-- 2147483647  -- int...   < 1 month... 
+	-- 31557600000 -- 1 year
+	-- 3785241531386 -- roughly 120 years... 
+	-- 9223372036854775806 -- bigint
+
+
+
+	-- BIGINT: 9223372036854775806 (milliseconds). 
+	-- 1 years' worth of milliseconds: 
+	-- 1000 * 60 * 60 * 24 * 3645.25 = 31557600000
+
+
+	SELECT 9223372036854775806 / 31557600000
+	-- 292,271,023   - so... 292M years... 
+
+
+	SELECT DATEADD(MILLISECOND, -2147483647, GETDATE())
 
 
 

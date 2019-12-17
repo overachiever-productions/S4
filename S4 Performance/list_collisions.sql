@@ -66,7 +66,7 @@ AS
 		r.blocking_session_id,
 		r.command,
 		ISNULL(r.[status], 'connected') [status],
-		ISNULL(r.[total_elapsed_time], CASE WHEN s.last_request_start_time IS NULL THEN NULL ELSE DATEDIFF(MILLISECOND, s.last_request_start_time, GETDATE()) END) [duration],
+		ISNULL(CAST(r.[total_elapsed_time] AS bigint), CASE WHEN NULLIF(s.last_request_start_time, '1900-01-01 00:00:00.000') IS NULL THEN NULL ELSE DATEDIFF_BIG(MILLISECOND, s.last_request_start_time, GETDATE()) END) [duration],
 		ISNULL(r.wait_resource, '') wait_resource,
 		r.[last_wait_type] [wait_type],
 		CASE [dtat].[transaction_type]
@@ -325,7 +325,7 @@ AS
 		[c].[wait_time],
 		[c].[wait_type],
 		[c].[wait_resource],
-		[c].[duration],		
+		dbo.format_timespan([c].[duration]) [duration],		
         
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
