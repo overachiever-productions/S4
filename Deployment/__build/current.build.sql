@@ -417,6 +417,9 @@ GO
 --##INCLUDE: S4 Configuration\Setup\configure_database_mail.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Setup\manage_server_history.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\enable_alerts.sql
 
 -----------------------------------
