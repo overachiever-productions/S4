@@ -165,7 +165,7 @@ SELECT @scheduleFrequencyType [FreqType], @schedFrequencyInterval [FrequencyInte
 	DECLARE @scheduleName sysname = N'Schedule: ' + @DriveCheckJobName;
 
 	EXEC msdb.dbo.sp_add_jobschedule 
-		@job_id = @jobID,
+		@job_id = @jobId,
 		@name = @scheduleName,
 		@enabled = 1, 
 		@freq_type = @scheduleFrequencyType,										
@@ -206,7 +206,7 @@ SELECT @scheduleFrequencyType [FreqType], @schedFrequencyInterval [FrequencyInte
 		SET @stepBody = REPLACE(@stepBody, N'{Prefix}', N'');
 
 	EXEC msdb..sp_add_jobstep
-		@job_id = @jobID,
+		@job_id = @jobId,
 		@step_id = 1,
 		@step_name = N'Check on Disk Space and Send Alerts',
 		@subsystem = N'TSQL',
