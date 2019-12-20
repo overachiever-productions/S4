@@ -8,7 +8,8 @@
                 @SmtpOutgoingEmailAddress = N'alerts@overachiever.net',
                 @SmtpServerName = N'email-smtp.us-east-1.amazonaws.com',
                 @SmptUserName = N'A***************27',
-                @SmtpPassword = N'Akb*********************************x';        
+                @SmtpPassword = N'Akb*********************************x', 
+				@SmtpOutgoingDisplayName = N'SQL01';  -- or POD7-SQL2, etc... 
 
 */
 
@@ -32,8 +33,8 @@ CREATE PROC dbo.configure_database_mail
     @SmtpRequiresSSL                bit                 = 1, 
     @SmtpAuthType                   sysname             = N'BASIC',         -- WINDOWS | BASIC | ANONYMOUS
     @SmptUserName                   sysname,
-    @SmtpPassword                   sysname
-    --@PrintOnly                      bit               = 0     just toooo much of a pain to configure/enable with this particular logic/set-of-operations.
+    @SmtpPassword                   sysname, 
+	@SendTestEmailUponCompletion	bit					= 1
 AS
     SET NOCOUNT ON; 
 
@@ -143,7 +144,43 @@ AS
     --------------------------------------------------------------
     -- vNext: bind operator and profile to dbo.settings as 'default' operator/profile details. 
 
+	/*
+	
+		UPSERT... 
+			dbo.settings: 
+				setting_type	= SINGLETON
+				setting_key		= s4_default_profile
+				setting_value	= @ProfileName
 
 
+		UPSERT 
+			dbo.settings: 
+				setting_type	= SINGLETON
+				setting_key		= s4_default_operator
+				setting_value	= @OperatorName				
+	
+		THEN... 
+			need some sort of check/validation/CYA at the start of this processs
+				that avoids configuring mail IF the values above are already set? 
+					or something along those lines... 
+
+
+			because... this process isn't super idempotent (or is it?)
+
+	*/
+
+	--------------------------------------------------------------
+	-- Send a test email - to verify that the SQL Server Agent can correctly send email... 
+
+	DECLARE @body nvarchar(MAX) = N'Test Email - triggered by dbo.configure_database_mail.
+
+If you''re seeing this, the SQL Server Agent on ' + @SmtpOutgoingDisplayName + N' has been correctly configured to 
+allow alerts via the SQL Server Agent.
+';
+	EXEC msdb.dbo.[sp_notify_operator] 
+		@profile_name = @ProfileName, 
+		@name = @OperatorName, 
+		@subject = N'', 
+		@body = @body;
     RETURN 0;
 GO
