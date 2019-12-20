@@ -53,7 +53,7 @@ To deploy S4:
 
 ![](https://assets.overachiever.net/s4/images/install_get_latest_file.gif)
 
-2. Execute the contents of the `latest-version.sql` (e.g., "5.5.2816.2.sql") file against your target server. 
+2. Execute the contents of the `latest-version.sql` (e.g., "7.2.3100.1.sql") file against your target server. 
 3. The script will do everything necessary to create a new database (the `[admindb]`) and populate it with all S4 entities and code needed.
 4. At script completion, information about the current version(s) installed on your server instance will be displayed 
 
@@ -158,7 +158,7 @@ Similarly, the following command will ONLY execute DIFF backups of the `[Billing
     GO
 ```
 
-For more information, see API documentation for [dbo.backup_databases](?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md) as well. 
+For more information, see API documentation for [dbo.backup_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md) as well. 
 
 ### Simplified Restore Operations and Automated Restore-Testing
 With a standardized convention defining how SQL Server Backups are stored (i.e., implemented via dbo.backup_databases), RESTORE operations become trivial. 
@@ -193,7 +193,7 @@ Similarly, the following command could be used to REPLACE nightly dev/test datab
     GO
 ```
 
-For more info, see API documentation for [dbo.restore_databases](?encodedPath=Documentation%2Fapis%2restore_databases.md) and be sture to checkout documented [best-practices for RESTORE operations](?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well.
+For more info, see API documentation for [dbo.restore_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2restore_databases.md) and be sture to checkout documented [best-practices for RESTORE operations](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well.
 
 <div class="stub">### Listing Databases
 [common to need lists of DBs to iterate over ... or to tackle - especially if/when need to remove certain kinds, define a priority/order/etc. ... all has been codified into a highly extensible sproc in the form of dbo.list_databases - which adheres to DB token-naming convention.]
@@ -276,16 +276,16 @@ SELECT dbo.format_timespan(147894); -- 000:02:27.894;
 The majority of S4 functionality is made accessible via a number of 'public' modules (sprocs and UDFs) that are designed to be used either in stand-along scenarios (e.g., BACKUPs or some forms or perf-monitoring), as re-usable logic/functionality that can easily be integrated into your own administrative routines and functions (like generating lists of specific types of databases, or as part of a QA/DEV provisioning process, etc.).
 
 For specific details, see the following: 
-- [SQL Server Audit Signature Monitoring and Verification](?encodedPath=Documentation%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
-- [SQL Server BACKUPs and Utilities](?encodedPath=Documentation%2FAPIS.md#sql-server-backups-and-utilities)
-- [SQL Server Configuration Utilities](?encodedPath=Documentation%2FAPIS.md#sql-server-configuration-utilities)
-- [High Availability Configuration, Monitoring, and Management](?encodedPath=Documentation%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
-- [SQL Server Agent Jobs](?encodedPath=Documentation%2FAPIS.md#sql-server-agent-jobs)
-- [SQL Server Maintenance](?encodedPath=Documentation%2FAPIS.md#sql-server-maintenance)
-- [Monitoring](?encodedPath=Documentation%2FAPIS.md#monitoring)
-- [Performance](?encodedPath=Documentation%2FAPIS.md#performance)
-- [RESTORE Operations and Utilities](?encodedPath=Documentation%2FAPIS.md#restore-operations-and-utilities)
-- [Tools and Utilities](?encodedPath=Documentation%2FAPIS.md#tools-and-utilities)   
+- [SQL Server Audit Signature Monitoring and Verification](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
+- [SQL Server BACKUPs and Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-backups-and-utilities)
+- [SQL Server Configuration Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-configuration-utilities)
+- [High Availability Configuration, Monitoring, and Management](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
+- [SQL Server Agent Jobs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-agent-jobs)
+- [SQL Server Maintenance](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-maintenance)
+- [Monitoring](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#monitoring)
+- [Performance](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#performance)
+- [RESTORE Operations and Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#restore-operations-and-utilities)
+- [Tools and Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#tools-and-utilities)   
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -294,7 +294,7 @@ S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Conventi
 
 To accomodate `convention over configuration` as well as to address other common problems and scenarios, S4 explicitly defines and uses the fullowing conventions:
 
-- [S4 Conventions](?encodedPath=Documentation%2FCONVENTIONS.md)
+- [S4 Conventions](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FCONVENTIONS.md)
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -303,10 +303,19 @@ A key goal of S4 is to enable best-practices execution in 'weaponized' form - or
   
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]
 
-- [Best-Practices 'Home Page'](&encodedPath=Documentation%2FBESTPRACTICES.md)
+- [Best-Practices 'Home Page'](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639&encodedPath=Documentation%2FBESTPRACTICES.md)
 
 [Return to Table of Contents](#table-of-contents)
 
 <style>
     div.stub { display: none; }
 </style>
+
+<script type="text/javascript">
+    $(document).ready(function() {
+        
+       alert('worky') ;
+        
+    });
+
+</script>
