@@ -12,7 +12,7 @@
 - [SQL Server Configuration Utilities](#sql-server-configuration-utilities)
 - [High Availability Configuration, Monitoring, and Management](#high-availability-configuration,-monitoring,-and-management)
 - [SQL Server Agent Jobs](#sql-server-agent-jobs)
-- [SQL Server Maintenance](#sql-server-maintenance)
+- [SQL Server Maintenance](#sql-server-maintenance-routines)
 - [Monitoring](#monitoring)
 - [Performance](#performance)
 - [RESTORE Operations and Utilities](#restore-operations-and-utilities)
