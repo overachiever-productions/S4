@@ -25,7 +25,7 @@ IF OBJECT_ID('dbo.verify_drivespace','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_drivespace 
-	@WarnWhenFreeGBsGoBelow				decimal(12,1)		= 12.0,				-- 
+	@WarnWhenFreeGBsGoBelow				decimal(12,1)		= 22.0,				-- 
 	@HalveThresholdAgainstCDrive		bit					= 0,				-- In RARE cases where some (piddly) dbs are on the C:\ drive, and there's not much space on the C:\ drive overall, it can make sense to treat the C:\ drive's available space as .5x what we'd see on a 'normal' drive.
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',

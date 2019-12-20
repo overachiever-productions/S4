@@ -1,4 +1,4 @@
-﻿[README](?encodedPath=README.md) > CONVENTIONS
+﻿[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > CONVENTIONS
 
 <div class="stub">
 TODO: check out the T-SQL Conventions as a sample for how to best document/define conventions: 
@@ -38,7 +38,7 @@ https://docs.microsoft.com/en-us/sql/t-sql/language-elements/transact-sql-syntax
 ### Philosophical Conventions 
 S4 skews heavily towards the following philosophical ideals:
 
-- **Convention over Configuration.** S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Convention_over_configuration). This is most apparent relative to defaults/conventions associated with notifications and alerts, 'standardized defaults' for many/most S4 modules, and paths + filenames for SQL Server backups. [Learn more...](?encodedPath=Documentation%2Fconventions%2FConventionOverConfiguration.md)
+- **Convention over Configuration.** S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Convention_over_configuration). This is most apparent relative to defaults/conventions associated with notifications and alerts, 'standardized defaults' for many/most S4 modules, and paths + filenames for SQL Server backups. [Learn more...](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fconventions%2FConventionOverConfiguration.md)
 - **Errors and Failures.** S4 favors the following conventions relative to failures and errors.
     - **Fail Fast.** Fail 'early' in terms of config... if config of sprocs doing things isn't right... parameter validation will raise an error. 
     - **Fail Safe.** dslkfjsldflsdl
@@ -165,7 +165,7 @@ used to keep tabs on which versions have been deployed. easy to verify what vers
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](?encodedPath=README.md)
+[Return to README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md)
 
 <style>
     div.stub { display: none; }

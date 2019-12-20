@@ -1,7 +1,7 @@
 ﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
-## TABLE OF CONTENTS
+## TABLE OF CONTENTS 
   
-- [License](#license)
+- [License](#license)<a name="table-of-contents"></a>
 - [Requirements](#requirements)
 - [Setup](#setup)
     - [Step By Step Installation Instructions](#step-by-step-installation)
@@ -23,11 +23,11 @@
 > ### <i class="fa fa-random"></i> Work in Progress  
 > S4 documentation is a work in progress. Any content [surrounded by square brackets] represents a DRAFT version of documentation.
 
-## License
+## License <a name="license"></a>
 
 [MIT LICENSE](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedName=master&encodedPath=LICENSE)
 
-## Requirements
+## Requirements <a name="requirements"></a>
 **SQL Server Requirements:**
 
 - SQL Server 2012+. 
@@ -36,7 +36,7 @@
 - Windows Server Only. 
     - Not yet tested on Azure/Linux.
 
-## SETUP 
+## SETUP <a name="setup"></a>
 **Setup is trivial:** run a [T-SQL script ](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment) "e.g.7.0.3042.sql" against your target server and S4 will create a new `[admindb]` database - as the new home for all S4 code and functionality.  
 
 Advanced S4 automation and error handling requires a server-level change - which has to be explicitly enabled via the step outlined in [Enabling Advanced S4 Features](#enabling-advanced-s4-features). 
@@ -47,13 +47,13 @@ Once deployed, it's easy to [keep S4 updated](#updates) - just grab new releases
 
 If (for whatever reason) you no longer want/need S4, you can 'Undo' advanced functionality via the instructions found in [Removing S4](#removing-s4) - and then DROP the `[admindb]` database.
 
-### Steb By Step Installation
+### Steb By Step Installation <a name="step-by-step-installation"></a>
 To deploy S4:
 1. Grab the `latest-release.sql` S4 deployment script. By convention, the LATEST version of S4 will be available in the [\Deployment\ ](/Repository/00aeb933-08e0-466e-a815-db20aa979639/master/Tree/Deployment) folder - and will be the only T-SQL file present (e.g., 5.5.2816.2.sql - as per the screenshot below).
 
 ![](https://assets.overachiever.net/s4/images/install_get_latest_file.gif)
 
-2. Execute the contents of the `latest-version.sql` (e.g., "5.5.2816.2.sql") file against your target server. 
+2. Execute the contents of the `latest-version.sql` (e.g., "7.2.3100.1.sql") file against your target server. 
 3. The script will do everything necessary to create a new database (the `[admindb]`) and populate it with all S4 entities and code needed.
 4. At script completion, information about the current version(s) installed on your server instance will be displayed 
 
@@ -62,7 +62,7 @@ To deploy S4:
 > #### <i class="fa fa-bolt"></i> Existing Deployments
 > *If S4 has **already** been deployed to your target SQL Server Instance, the deployment script will detect this and simply UPDATE all code in the [admindb] to the latest version - adding a new entry into admindb.dbo.version_history.* 
 
-### Enabling Advanced S4 Features
+### Enabling Advanced S4 Features <a name="enabling-advanced-s4-features"></a>
 Once S4 has been deployed (i.e., after the admindb has been created), to deploy advanced error-handling features, simply run the following: 
 
 ```sql
@@ -85,7 +85,7 @@ To checkup-on/view current S4 advanced functionality and configuration settings,
 
 [Return to Table of Contents](#table-of-contents)
 
-### UPDATES
+### UPDATES <a name="updates"></a>
 Keeping S4 up-to-date is simple - just grab and run the `latest-release.sql` file against your target server.
 
 To Update S4: 
@@ -99,7 +99,7 @@ To Update S4:
 
 ![](https://assets.overachiever.net/s4/images/install_update_completed.gif)
 
-### Removing S4
+### Removing S4 <a name="removing-s4"></a>
 To remove S4:
 1. If you have enabled advanced capabilities (and WANT/NEED xp_cmdshell to be disabled as part of the cleanup process), you'll need to run the following code to disable them (please do this BEFORE DROP'ing the `[admindb]` database):   
 ```  
@@ -123,10 +123,10 @@ To remove S4:
 
 [Return to Table of Contents](#table-of-contents)
 
-## FEATURES AND BENEFITS
+## FEATURES AND BENEFITS <a name="features-and-benefits"></a>
 The entire point of S4 is to simplify common DBA and other administrative tasks - by 'weaponizing' commonly-needed operations into a set of standardized scripts. 
 
-### Simplified and Robust Backups
+### Simplified and Robust Backups <a name="simplified-and-robust-backups"></a>
 S4 backup functionality streamlines the most-commonly used parts of the T-SQL BACKUP command into a simplified interface that provides simplified setup/management, enables easy automation (with high-context error details and alerts), and integration 'cleanup' or retention policies - all through a simplified interface. 
 
 On a SQL Server with the following user databases: `[Billing]`, `[Customers]`, `[Products]`, `[Questionaires]`, and `[Widgets]`, 
@@ -158,9 +158,9 @@ Similarly, the following command will ONLY execute DIFF backups of the `[Billing
     GO
 ```
 
-For more information, see API documentation for [dbo.backup_databases](?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md) as well. 
+For more information, see API documentation for [dbo.backup_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2Fbackup_databases.md) and be sure to check out documented [best-practices for BACKUPS](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md) as well. 
 
-### Simplified Restore Operations and Automated Restore-Testing
+### Simplified Restore Operations and Automated Restore-Testing <a name="simplified-restore-operations-and-automated-restore-testing"></a>
 With a standardized convention defining how SQL Server Backups are stored (i.e., implemented via dbo.backup_databases), RESTORE operations become trivial. 
 
 The following command will run FULL restore operations (FULL + DIFF (if present) and ALL T-LOGs avaialable) against all backups found in the @BackupsRootPath (e.g., D:\SQLBackups) for 'side-by-side' restore-verification tests (i.e., Billing will be restored as Billing_justChecking), run corruption checks, and then DROP each database (each database is processed serially) after testing and report on any problems or errors: 
@@ -193,13 +193,13 @@ Similarly, the following command could be used to REPLACE nightly dev/test datab
     GO
 ```
 
-For more info, see API documentation for [dbo.restore_databases](?encodedPath=Documentation%2Fapis%2restore_databases.md) and be sture to checkout documented [best-practices for RESTORE operations](?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well.
+For more info, see API documentation for [dbo.restore_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2restore_databases.md) and be sture to checkout documented [best-practices for RESTORE operations](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FBACKUPs.md) as well.
 
 <div class="stub">### Listing Databases
 [common to need lists of DBs to iterate over ... or to tackle - especially if/when need to remove certain kinds, define a priority/order/etc. ... all has been codified into a highly extensible sproc in the form of dbo.list_databases - which adheres to DB token-naming convention.]
 </div>
 
-### Performance Monitoring
+### Performance Monitoring <a name="performance-monitoring"></a>
 S4 Includes a number of performance diagnostics that can be used in real-time to determine exactly what is using system resources and/or causing problems at a given moment. 
 
 Examples include: 
@@ -223,7 +223,7 @@ Examples include:
 - y
 </div>
 
-### S4 Utilities 
+### S4 Utilities <a name="s4-utilities"></a>
 S4 was primarily built to facilitate the automation of backups, restores, and disaster recovery testing - but contains a number of utilities that can be used to make many typical administrative T-SQL Tasks easier. 
 ```sql
 ------------------------------------------------------------------------
@@ -272,38 +272,38 @@ SELECT dbo.format_timespan(147894); -- 000:02:27.894;
 
 [Return to Table of Contents](#table-of-contents)
 
-## APIs
+## APIs <a name="apis"></a>
 The majority of S4 functionality is made accessible via a number of 'public' modules (sprocs and UDFs) that are designed to be used either in stand-along scenarios (e.g., BACKUPs or some forms or perf-monitoring), as re-usable logic/functionality that can easily be integrated into your own administrative routines and functions (like generating lists of specific types of databases, or as part of a QA/DEV provisioning process, etc.).
 
 For specific details, see the following: 
-- [SQL Server Audit Signature Monitoring and Verification](?encodedPath=Documentation%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
-- [SQL Server BACKUPs and Utilities](?encodedPath=Documentation%2FAPIS.md#sql-server-backups-and-utilities)
-- [SQL Server Configuration Utilities](?encodedPath=Documentation%2FAPIS.md#sql-server-configuration-utilities)
-- [High Availability Configuration, Monitoring, and Management](?encodedPath=Documentation%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
-- [SQL Server Agent Jobs](?encodedPath=Documentation%2FAPIS.md#sql-server-agent-jobs)
-- [SQL Server Maintenance](?encodedPath=Documentation%2FAPIS.md#sql-server-maintenance)
-- [Monitoring](?encodedPath=Documentation%2FAPIS.md#monitoring)
-- [Performance](?encodedPath=Documentation%2FAPIS.md#performance)
-- [RESTORE Operations and Utilities](?encodedPath=Documentation%2FAPIS.md#restore-operations-and-utilities)
-- [Tools and Utilities](?encodedPath=Documentation%2FAPIS.md#tools-and-utilities)   
+- [SQL Server Audit Signature Monitoring and Verification](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-audit-signature-monitoring-and-verification)
+- [SQL Server BACKUPs and Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-backups-and-utilities)
+- [SQL Server Configuration Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-configuration-utilities)
+- [High Availability Configuration, Monitoring, and Management](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#high-availability-configuration,-monitoring,-and-management)
+- [SQL Server Agent Jobs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-agent-jobs)
+- [SQL Server Maintenance](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#sql-server-maintenance)
+- [Monitoring](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#monitoring)
+- [Performance](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#performance)
+- [RESTORE Operations and Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#restore-operations-and-utilities)
+- [Tools and Utilities](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md#tools-and-utilities)   
 
 [Return to Table of Contents](#table-of-contents)
 
-## USING S4 Conventions
+## Using S4 Conventions <a name="using-s4-conventions"></a>
 S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Convention_over_configuration) - or the notion of 'sensible' defaults. This allows for S4 to be as simple and easy as possible to use (out of the box), while still allowing it to address customized or specialized scenarios and needs. 
 
 To accomodate `convention over configuration` as well as to address other common problems and scenarios, S4 explicitly defines and uses the fullowing conventions:
 
-- [S4 Conventions](?encodedPath=Documentation%2FCONVENTIONS.md)
+- [S4 Conventions](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FCONVENTIONS.md)
 
 [Return to Table of Contents](#table-of-contents)
 
-## S4 BEST PRACTICES
+## S4 BEST PRACTICES <a name="s4-best-practices"></a>
 A key goal of S4 is to enable best-practices execution in 'weaponized' form - or best-practices implementations in codified, easy-to-use, re-usable, code or modules. 
   
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]
 
-- [Best-Practices 'Home Page'](&encodedPath=Documentation%2FBESTPRACTICES.md)
+- [Best-Practices 'Home Page'](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639&encodedPath=Documentation%2FBESTPRACTICES.md)
 
 [Return to Table of Contents](#table-of-contents)
 
