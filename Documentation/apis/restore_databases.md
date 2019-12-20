@@ -1,4 +1,4 @@
-﻿[README](?encodedPath=README.md) > [S4 APIs](?encodedPath=Documentation%2FAPIS.md) > dbo.restore_databases
+﻿[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > [S4 APIs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md) > dbo.restore_databases
 
 ## dbo.restore_databases
 
@@ -17,7 +17,7 @@ Key Benefits provided by S4 Restore:
 - **Instrumentation.**  After setting up regular restore-check jobs, you can easily query metrics about the duration for restore operations (and consistency checks) for trend-analysis and to help ensure RTO compliance.
 - **Portability.** Easy setup and configuration - with no dependency on 'outside' resources (other than access to your backup files), S4 is easy to deploy and use pretty much anywhere.
 
-### Table of Contents
+### Table of Contents <a name="table-of-contents"></a>
 - [Application](#application)
 - [Syntax](#syntax)
 - [Remarks](#remarks)
@@ -30,7 +30,7 @@ Key Benefits provided by S4 Restore:
 - [See Also](#see-also)
 
 
-### Application
+### Application <a name="application"></a>
 
 | Platforms | SQL Server Versions | 
 | :-------- | :-----------------  |
@@ -40,7 +40,9 @@ Key Benefits provided by S4 Restore:
 
 :warning: Requires Advanced S4 Error Handling 
 
-### Syntax
+[Return to Table of Contents](#table-of-contents)
+
+### Syntax <a name="syntax"></a>
 ```sql
 EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'[ {READ_FROM_FILESYSTEM} | list,of,db-names,to,restore ]' ],
@@ -153,7 +155,7 @@ Defaults to 0 (false). When set to 1 (true), processing will complete as normal,
 
 [Return to Table of Contents](#table-of-contents)
 
-### Remarks 
+### Remarks  <a name="remarks"></a>
 #### Intended Usage Scenarios
 
 S4 Restore was primarily designed for use in the following automated and ad-hoc scenarios. 
@@ -200,7 +202,7 @@ While it is a best-practice to provide developers with development, testing, and
 
 [Return to Table of Contents](#table-of-contents)
 
-### Examples
+### Examples <a name="Examples"></a>
 [TODO: some of these details should PROBABLY end up in the RESTOREs.md doc for best-practices.]
 
 #### A. Configuring a Simplified Execution.
@@ -255,7 +257,7 @@ EXEC admindb.dbo.restore databases
     @DropDatabasesAfterRestore = 1;
 ```
 
-sdflksajfal
+[TODO... finish documenting the above details... ]
 
 #### D. Nightly, Off-Box, Restore Tests.
 Assume you've got multiple SQL Servers, each with different databases - used for various purposes. Then assume you've got a server where you can run backup tests (this could be one of your 'less loaded' production servers, a specifically configured 'restore server' that MIGHT be used as a failover/contingency server (as a CYA option in cases where HA options/solutions somehow don't work as expected, or whatever) - where you can regularly (i.e., nightly) test your backups. 
@@ -376,13 +378,12 @@ Use of the @PrintOnly command can be helpful for troubleshooting and/or testing 
 [Return to Table of Contents](#table-of-contents)
 
 ### See Also
-- [best practices for such and such]()
-- [related code/functionality]()
+- [TODO:] [best practices for such and such]()
+- [TODO:] [related code/functionality]()
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](?encodedPath=README.md)
-
+[Return to README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md)
 
 <style>
     div.stub { display: none; }

@@ -1,4 +1,4 @@
-[README](?encodedPath=README.md) > [S4 APIs](?encodedPath=Documentation%2FAPIS.md) > dbo.backup_databases
+[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > [S4 APIs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md) > dbo.backup_databases
 
 ## dbo.backup_databases
 
@@ -37,7 +37,7 @@ TODO: synthesize these (overly detailed details... ) into a quick overview of WH
 
 
 
-## S4 Backups
+## S4 Backups <a name="s4-backups"></a>
 S4 Backups were designed to provide:
 
 - **Simplicity.** Streamlines the most commonly used features needed for backing up mission-critical databases into a set of simplified parameters that make automating backups of databases easy and efficient - while still vigorously ensuring disaster recovery best-practices.
@@ -45,7 +45,7 @@ S4 Backups were designed to provide:
 - **Transparency** Uses (low-level) error-handling to log problems in a centralized logging table (for trend-analysis and improved troubleshooting) and send email alerts with concise details about each failure or problem encountered during execution so that DBAs can quickly ascertain the impact and severity of any errors incurred during execution without having to wade through messy 'debugging' and troubleshooting procedures.
 
 
-## Benefits of S4 Backups
+## Benefits of S4 Backups <a name="benefits-of-s4-backups"></a>
 Key Benefits Provided by S4 Backups:
 
 - **Simplicity, Resiliency, and Transparency.** Commonly needed features and capabilities - streamlined into a set of simple to use scripts. 
@@ -57,12 +57,12 @@ Key Benefits Provided by S4 Backups:
 - **Fault Tolerance.** Supports Mirrored and 'Simple 2-Node' (Failover only) Availability Group databases.
 
 
-### Table of Contents
+### Table of Contents <a name="table-of-contents"></a>
 - [Application](#application)
 - [Syntax](#syntax)
 - [Remarks](#remarks)
 - [Examples](#examples)
-- [BACKUPS Best Practices](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md)
+- [BACKUPS Best Practices](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md)
 - [See Also](#see-also)
 
 
@@ -461,7 +461,7 @@ EXEC admindb.dbo.dbo.backup_databases
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](?encodedPath=README.md)
+[Return to README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md)
 
 <style>
     div.stub { display: none; }

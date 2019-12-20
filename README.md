@@ -1,7 +1,7 @@
 ﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
-## TABLE OF CONTENTS
+## TABLE OF CONTENTS 
   
-- [License](#license)
+- [License](#license)<a name="table-of-contents"></a>
 - [Requirements](#requirements)
 - [Setup](#setup)
     - [Step By Step Installation Instructions](#step-by-step-installation)

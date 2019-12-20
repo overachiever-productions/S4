@@ -1,4 +1,4 @@
-﻿[README](?encodedPath=README.md) > dbo.apply_logs
+﻿[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > dbo.apply_logs
 
 ## dbo.apply_logs
 
@@ -8,7 +8,7 @@ S4's dbo.apply_logs helps:
 
 > **NOTE:** *dbo.apply_logs relies VERY heavily upon S4 Conventions - to the point where this stored procedure can only be used in conjunction with backups created  by S4's dbo.backup_databases.* 
 
-### Table of Contents
+### Table of Contents <a name="table-of-contents"></a>
 - [Application](#application)
 - [Syntax](#syntax)
 - [Remarks](#remarks)
@@ -24,7 +24,7 @@ S4's dbo.apply_logs helps:
 - [See Also](#see-also)
 
 
-### Application
+### Application <a name="application"></a>
 
 | Platforms | SQL Server Versions | 
 | :-------- | :-----------------  |
@@ -34,7 +34,9 @@ S4's dbo.apply_logs helps:
 
 :warning: Requires Advanced S4 Error Handling 
 
-### Syntax
+[Return to Table of Contents](#table-of-contents)
+
+### Syntax <a name="syntax"></a>
 ```sql
 EXEC admindb.dbo.[apply_logs]
     @SourceDatabases = N'list,of,db-names,to,apply-logs-against', 
@@ -110,7 +112,9 @@ DEFAULT = 0;
 [**@PrintOnly** = { 0 | 1} ]  
 [TODO link this doc-blurb into a standardized location - so I only have to write this CORE/CONVENTION'd stuff 1x.] 
 
-### Remarks 
+[Return to Table of Contents](#table-of-contents)
+
+### Remarks <a name="remarks"></a>
 #### Intended Usage Scenarios 
 S4 Apply Logs functionality is intented to be used in conjunction with both: 
 - **dbo.backup_databases** - which creates and stores backups according to naming conventions used by S4 functionality)
@@ -148,7 +152,7 @@ dbo.apply_logs attempts to account for this by making 'apply' operations idempot
 
 [Return to Table of Contents](#table-of-contents)
 
-### Examples
+### Examples <a name="examples"></a>
 
 > ***NOTE:** In the following examples, it is assumed that all backups (FULL/DIFF and T-LOG) will be stored in the D:\SQLBackups folder - on all secondary/target servers. (S4's dbo.backup_databases can copy backups from one box to another but if that can't be used or you're pushing backups between environments or off-site, you'll need to find/create another mechanism that allows the secondary to have access to up-to-date backups copied from production for execution to work (and, of course, the path to these backups in your environment may obviously be different)).*
 
@@ -349,14 +353,14 @@ With the code configured above, a SQL Server Agent job could be created on the '
 
 [Return to Table of Contents](#table-of-contents)
 
-### See Also
-- [Best-Practices for RESTORE operations]()
-- [dbo.backup_databases]()
-- [dbo.restore_databases]()
+### See Also <a name="see-also"></a>
+- [TODO:] [Best-Practices for RESTORE operations]()
+- [dbo.backup_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2Fbackup_databases.md)
+- [dbo.restore_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2Frestore_databases.md)
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](?encodedPath=README.md)
+[Return to README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md)
 
 <style>
     div.stub { display: none; }

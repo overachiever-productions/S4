@@ -1,14 +1,14 @@
-[README](?encodedPath=README.md) > BEST-PRACTICES
+[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > BEST-PRACTICES
 
 
-## BEST PRACTICES 
+## BEST PRACTICES <a name="table-of-contents"></a>
 
 
 ### TABLE OF CONTENTS
-- [BACKUPS](?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md)
-- [RESTORES](?encodedPath=Documentation%2Fbest-practices%2FRESTORES.md)  
+- [BACKUPS](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FBACKUPS.md)
+- [RESTORES](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FRESTORES.md)  
 ~~- [(todo) JOBS]~~
-- [TROUBLESHOOTING](?encodedPath=Documentation%2Fbest-practices%2FTROUBLESHOOTING.md)
+- [TROUBLESHOOTING](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fbest-practices%2FTROUBLESHOOTING.md)
 
 
 ### Templates 
@@ -40,7 +40,7 @@ https://wiki.postgresql.org/wiki/Don%27t_Do_This ]
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](?encodedPath=README.md)
+[Return to README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md)
 
 <style>
     div.stub { display: none; }
