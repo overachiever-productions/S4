@@ -86,7 +86,7 @@ CREATE PROC dbo.restore_databases
     @BackupsRootPath				nvarchar(MAX)	= N'{DEFAULT}',
     @RestoredRootDataPath			nvarchar(MAX)	= N'{DEFAULT}',
     @RestoredRootLogPath			nvarchar(MAX)	= N'{DEFAULT}',
-    @RestoredDbNamePattern			nvarchar(40)	= N'{0}_test',
+    @RestoredDbNamePattern			nvarchar(40)	= N'{0}_s4test',
     @AllowReplace					nchar(7)		= NULL,				-- NULL or the exact term: N'REPLACE'...
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
@@ -106,7 +106,10 @@ AS
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
-    EXEC dbo.verify_advanced_capabilities;
+	DECLARE @return int;
+    EXEC @return = dbo.verify_advanced_capabilities;
+	IF @return <> 0 
+		RETURN @return;
 
 	-----------------------------------------------------------------------------
     -- Set Defaults:
@@ -493,35 +496,60 @@ AS
 
 			-- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
 			IF @AllowReplace = N'REPLACE' BEGIN
-				IF EXISTS(SELECT NULL FROM sys.databases WHERE name = @restoredName AND state_desc = 'ONLINE') BEGIN
+				
 
-					BEGIN TRY 
+				BEGIN TRY 
+
+					IF EXISTS(SELECT NULL FROM sys.databases WHERE [name] = @restoredName AND state_desc = 'ONLINE') BEGIN
+
 						SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
 							+ N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';' + @crlf + @crlf;
 							
 						IF @PrintOnly = 1 BEGIN
 							PRINT @command;
-						  END;
+							END;
 						ELSE BEGIN
 							
 							EXEC @execOutcome = dbo.[execute_command]
-							    @Command = @command, 
-							    @DelayBetweenAttempts = N'8 seconds',
-							    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
-							    @Results = @execResults OUTPUT;
+								@Command = @command, 
+								@DelayBetweenAttempts = N'8 seconds',
+								@IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
+								@Results = @execResults OUTPUT;
 
 							IF @execOutcome <> 0 
 								SET @statusDetail = N'Error with SINGLE_USER > DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
 						END;
 
-					END TRY
-					BEGIN CATCH
-						SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode and/or attempting to DROP target database for explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-					END CATCH
+					  END;
+					ELSE BEGIN -- at this point, the targetDB exists ... and it's NOT 'ONLINE' so... it's restoring, suspect, whatever, and we've been given explicit instructions to replace it:
+						
+						SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';' + @crlf + @crlf;
 
-					IF @statusDetail IS NOT NULL
-						GOTO NextDatabase;
-				END;
+						IF @PrintOnly = 1 BEGIN 
+							PRINT @command;
+						  END;
+						ELSE BEGIN 
+							
+							EXEC @execOutcome = dbo.[execute_command]
+								@Command = @command, 
+								@DelayBetweenAttempts = N'8 seconds',
+								@IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
+								@Results = @execResults OUTPUT;
+							
+							IF @execOutcome <> 0 
+								SET @statusDetail = N'Error with DROP DATABASE: ' + CAST(@execResults AS nvarchar(MAX));
+
+						END;
+
+					END;
+
+				END TRY
+				BEGIN CATCH
+					SELECT @statusDetail = N'Unexpected Exception while setting target database: [' + @restoredName + N'] into SINGLE_USER mode and/or attempting to DROP target database for explicit REPLACE operation. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				END CATCH
+
+				IF @statusDetail IS NOT NULL
+					GOTO NextDatabase;
 
 			  END;
 			ELSE BEGIN

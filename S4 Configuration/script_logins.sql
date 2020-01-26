@@ -280,14 +280,13 @@ AS
                             l.[enabled], 
                             @BehaviorIfLoginExists, 
                             l.[name], 
-                            N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                             l.[default_database_name], 
                             l.[default_language_name]
                         )
                     ELSE 
                         '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
                 END
-                 + @crlf
+                 + @crlf + N'GO' + @crlf
             FROM 
 				[#Logins] l
 			WHERE 
@@ -321,14 +320,13 @@ AS
                         l.[enabled], 
                         @BehaviorIfLoginExists, 
                         l.[name], 
-                        N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                         l.[default_database_name], 
                         l.[default_language_name]
                     )
                 ELSE 
                     '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
             END
-                + @crlf
+                + @crlf + N'GO' + @crlf
 		FROM 
 			#Users u
 			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]

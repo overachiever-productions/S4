@@ -2,6 +2,8 @@
     TODO: 
         - add error handling (try/catch/etc.)
 
+		- ALL is a bad-ish default. Might make more sense to use tokens ... e.g.., SEVERITY and IO and so on ... and default to jsut SEVERITY?
+
     vNEXT: 
         - at least 2x ... inline/in-code... 
 

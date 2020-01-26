@@ -1,6 +1,6 @@
 /*
 
-	DEPENDENCIES:
+	NOTE:
 		- SQL Server 2008 R2 and above. (Won't work on SQL Server 2008.)
 
 	TODO:

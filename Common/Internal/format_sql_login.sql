@@ -97,9 +97,7 @@ AS
         DECLARE @template nvarchar(MAX) = N'
 IF NOT EXISTS (SELECT NULL FROM [master].[sys].[server_principals] WHERE [name] = ''{Name}'') BEGIN 
     CREATE LOGIN [{Name}] WITH {Attributes} {Disable} {ElseClause} {SidReplacementDrop}{CreateOrAlter} {Attributes2} {Disable2}
-END;
-GO
-';
+END; ';
         -- Main logic flow:
         IF UPPER(@BehaviorIfLoginExists) = N'NONE' BEGIN 
             SET @template = REPLACE(@template, N'{SidReplacementDrop}', N'');

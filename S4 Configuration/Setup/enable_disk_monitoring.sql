@@ -95,8 +95,7 @@ AS
 		SET @translationSet = 1;
 	END;
 
-
-SELECT @scheduleFrequencyType [FreqType], @schedFrequencyInterval [FrequencyInterval], @schedSubdayType [subdayType], @schedSubdayInteval [subDayInterval];
+--SELECT @scheduleFrequencyType [FreqType], @schedFrequencyInterval [FrequencyInterval], @schedSubdayType [subdayType], @schedSubdayInteval [subDayInterval];
 --RETURN 0;
 
 	IF @translationSet = 0 BEGIN
@@ -104,64 +103,18 @@ SELECT @scheduleFrequencyType [FreqType], @schedFrequencyInterval [FrequencyInte
 		RETURN -30;
 	END;
 
-	DECLARE @existingJob sysname; 
-
-	SELECT 
-		@existingJob = [name]
-	FROM 
-		msdb.dbo.sysjobs
-	WHERE 
-		[name] = @DriveCheckJobName;
-
-	IF @existingJob IS NOT NULL BEGIN 
-		IF @OverWriteExistingJob = 1 BEGIN 
-			-- vNEXT: So, this gets rid of the job's history. The vNext version of this will be to: a) gut the schedule and all other core details of this job, b) remove all of the job steps... 
-			--			and then, c) hand this thing 'off' to the rest of the sproc as a new/blank-template of a job (so that we keep the history).
-			
-			-- vNEXT: as per the above, create an S4 sproc called... dbo.clear_job_details... which'll just gut everything in a job except for .. the name and the history.
-			--		NOTE that I have job-step removal code already defined in Exym Repl3.0 ... maintenance script for consolidated nightly integration and so on... 
-			
-			
-			EXEC msdb..sp_delete_job 
-			    @job_name = @DriveCheckJobName,              -- sysname
-			    @delete_history = 1,			-- bit
-			    @delete_unused_schedule = 1;	-- bit
-		  END;
-		ELSE BEGIN
-			RAISERROR(N'Specified @DriveCheckJobName (''%s'') already exists. Set @OverWriteExistingJob = 1 to replace/overwrite existing job.', 16, 1, @DriveCheckJobName);
-			RETURN -5;
-		END;
-	END;	
+	DECLARE @jobId uniqueidentifier;
+	EXEC dbo.[create_agent_job]
+		@TargetJobName = @DriveCheckJobName,
+		@JobCategoryName = @JobCategoryName,
+		@AddBlankInitialJobStep = 0,	-- this isn't usually a long-running job - so it doesn't need this... 
+		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OverWriteExistingJobDetails = @OverWriteExistingJob,
+		@JobID = @jobId OUTPUT;
 	
-	-- Ensure that the Job Category exists:
-	IF NOT EXISTS(SELECT NULL FROM msdb..syscategories WHERE [name] = @JobCategoryName) BEGIN 
-		EXEC msdb..sp_add_category 
-			@class = N'JOB',
-			@type = 'LOCAL',  
-		    @name = @JobCategoryName;
-	END;
-
-	-- create the job: 
-	DECLARE @jobId UNIQUEIDENTIFIER;
-	EXEC msdb.dbo.sp_add_job
-		@job_name = @DriveCheckJobName,                     
-	    @enabled = 1,                         
-	    @description = N'Regular Disk-Space Checkup.',                   
-	    @category_name = @JobCategoryName,                
-	    @owner_login_name = N'sa',             
-	    @notify_level_eventlog = 0,           
-	    @notify_level_email = 2,              
-	    @notify_email_operator_name = @JobOperatorToAlertOnErrors,   
-	    @delete_level = 0,                    
-	    @job_id = @jobID OUTPUT;
-
-	EXEC msdb.dbo.[sp_add_jobserver] 
-		@job_id = @jobId, 
-		@server_name = N'(LOCAL)';
-
 	-- create a schedule:
-	DECLARE @dateAsInt INT = CAST(CONVERT(sysname, GETDATE(), 112) AS INT);
-	DECLARE @startTimeAsInt INT = CAST((LEFT(REPLACE(CONVERT(sysname, @DailyStartTime, 108), N':', N''), 6)) AS INT);
+	DECLARE @dateAsInt int = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
+	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @DailyStartTime, 108), N':', N''), 6)) AS int);
 	DECLARE @scheduleName sysname = N'Schedule: ' + @DriveCheckJobName;
 
 	EXEC msdb.dbo.sp_add_jobschedule 

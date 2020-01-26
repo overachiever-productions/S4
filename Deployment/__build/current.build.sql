@@ -349,6 +349,15 @@ GO
 --##INCLUDE: Common\Internal\format_windows_login.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\script_sql_login.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\script_windows_login.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\create_agent_job.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
@@ -399,6 +408,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\update_server_name.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\script_login.sql
 
 -----------------------------------
@@ -414,6 +426,9 @@ GO
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Setup\configure_instance.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\configure_database_mail.sql
 
 -----------------------------------
@@ -427,6 +442,15 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\Setup\enable_disk_monitoring.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\create_backup_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\create_restore_test_job.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Setup\define_masterkey_encryption.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
@@ -614,6 +638,9 @@ END;
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Setup & Configuration\add_failover_processing.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Setup & Configuration\create_sync_check_jobs.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Setup & Configuration\verify_synchronization_setup.sql
