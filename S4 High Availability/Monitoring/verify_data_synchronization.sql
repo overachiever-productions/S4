@@ -660,51 +660,51 @@ AS
 				INNER JOIN [db_iterations] x ON m.[row_id] = x.[row_id];
 		END;
 
-	END;
+		WITH violations AS ( 
+			SELECT 
+				[database_name],
+				CAST(AVG([synchronization_delay (RPO)]) AS decimal(20, 2)) [rpo (seconds)],
+				CAST(AVG([recovery_time (RTO)]) AS decimal(20,2 )) [rto (seconds)], 
+				CAST((
+					SELECT 
+						[x].[iteration] [@iteration], 
+						[x].[timestamp] [@timestamp],
+						[x].[ignore_rpo_as_anomalous],
+						[x].[synchronization_delay (RPO)] [rpo], 
+						[x].[recovery_time (RTO)] [rto],
+						[x].[redo_queue_size], 
+						[x].[redo_rate], 
+						[x].[primary_last_commit], 
+						[x].[secondary_last_commit]
+					FROM 
+						[#metrics] x 
+					WHERE 
+						x.[database_name] = m.[database_name]
+					ORDER BY 
+						[x].[row_id] 
+					FOR XML PATH('detail'), ROOT('details')
+				) AS xml) [raw_data]
+			FROM 
+				[#metrics] m
+			WHERE 
+				m.[ignore_rpo_as_anomalous] = 0  -- note: these don't count towards rpo values - but they ARE included in serialized xml output (for review/analysis purposes). 
+			GROUP BY
+				[database_name]
+		) 
 
-	WITH violations AS ( 
+		INSERT INTO @errors (
+			[errorMessage]
+		)
 		SELECT 
-			[database_name],
-			CAST(AVG([synchronization_delay (RPO)]) AS decimal(20, 2)) [rpo (seconds)],
-			CAST(AVG([recovery_time (RTO)]) AS decimal(20,2 )) [rto (seconds)], 
-			CAST((
-				SELECT 
-					[x].[iteration] [@iteration], 
-					[x].[timestamp] [@timestamp],
-					[x].[ignore_rpo_as_anomalous],
-					[x].[synchronization_delay (RPO)] [rpo], 
-					[x].[recovery_time (RTO)] [rto],
-					[x].[redo_queue_size], 
-					[x].[redo_rate], 
-					[x].[primary_last_commit], 
-					[x].[secondary_last_commit]
-				FROM 
-					[#metrics] x 
-				WHERE 
-					x.[database_name] = m.[database_name]
-				ORDER BY 
-					[x].[row_id] 
-				FOR XML PATH('detail'), ROOT('details')
-			) AS xml) [raw_data]
+			N'AG Alert - SLA Warning(s) for ' + QUOTENAME([database_name]) + @crlf + @tab + @tab + N'RPO and RTO values are currently set at [' + @RPOThreshold + N'] and [' + @RTOThreshold + N'] - but are currently polling at an AVERAGE of [' + CAST([rpo (seconds)] AS sysname) + N' seconds] AND [' + CAST([rto (seconds)] AS sysname) + N' seconds] for database ' + QUOTENAME([database_name])  + N'. Raw XML Data: ' + CAST([raw_data] AS nvarchar(MAX))
 		FROM 
-			[#metrics] m
+			[violations]
 		WHERE 
-			m.[ignore_rpo_as_anomalous] = 0  -- note: these don't count towards rpo values - but they ARE included in serialized xml output (for review/analysis purposes). 
-		GROUP BY
-			[database_name]
-	) 
+			[violations].[rpo (seconds)] > @rpoSeconds OR [violations].[rto (seconds)] > @rtoSeconds
+		ORDER BY 
+			[database_name];
 
-	INSERT INTO @errors (
-		[errorMessage]
-	)
-	SELECT 
-		N'AG Alert - SLA Warning(s) for ' + QUOTENAME([database_name]) + @crlf + @tab + @tab + N'RPO and RTO values are currently set at [' + @RPOThreshold + N'] and [' + @RTOThreshold + N'] - but are currently polling at an AVERAGE of [' + CAST([rpo (seconds)] AS sysname) + N' seconds] AND [' + CAST([rto (seconds)] AS sysname) + N' seconds] for database ' + QUOTENAME([database_name])  + N'. Raw XML Data: ' + CAST([raw_data] AS nvarchar(MAX))
-	FROM 
-		[violations]
-	WHERE 
-		[violations].[rpo (seconds)] > @rpoSeconds OR [violations].[rto (seconds)] > @rtoSeconds
-	ORDER BY 
-		[database_name];
+	END;
 
 REPORTING:
 	-- 
