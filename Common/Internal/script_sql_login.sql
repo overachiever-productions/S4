@@ -7,30 +7,30 @@
     SAMPLES / EXAMPLES: 
         
             Expect Exception: 
-                    EXEC admindb.dbo.script_login;
+                    EXEC admindb.dbo.script_sql_login;
                     GO
 
             Expect Error - No such Login: 
-                    EXEC admindb.dbo.script_login '716CECA6-52EF-4F74-89EF-03BB5B550A6B;'
+                    EXEC admindb.dbo.script_sql_login '716CECA6-52EF-4F74-89EF-03BB5B550A6B;'
                     GO
 
             PROJECT the sa login - if it exists: 
-                    EXEC admindb.dbo.script_login 'sa';
+                    EXEC admindb.dbo.script_sql_login 'sa';
 
             As above, but ALLOW password ALTER IF exists: 
-                    EXEC admindb.dbo.script_login 
+                    EXEC admindb.dbo.script_sql_login 
                         @LoginName = 'sa', 
                         @BehaviorIfLoginExists = N'ALTER';
                     GO
 
             Similar, but with the 'test' login - if it exists - and ... allow it to be DROPed and CREATEd if it already exists: 
-                    EXEC admindb.dbo.script_login 
+                    EXEC admindb.dbo.script_sql_login 
                         @LoginName = 'test', 
                         @BehaviorIfLoginExists = N'DROP_AND_CREATE';
                     GO  
 
             PROJECT a sample login - forcing the default db to master and disabling the policy checks... 
-                    EXEC admindb.dbo.script_login 
+                    EXEC admindb.dbo.script_sql_login 
                         @LoginName = 'periscope_demo', 
                         @DisableExpiryChecks = 1, 
                         @DisablePolicyChecks = 1,
@@ -42,7 +42,7 @@
                     DECLARE @loginDefinition nvarchar(MAX); -- must be NULL; 
                     DECLARE @outcome int;
 
-                    EXEC @outcome = dbo.script_login 
+                    EXEC @outcome = dbo.script_sql_login 
                         @LoginName = 'xxxxxxxx', 
                         @Output = @loginDefinition OUTPUT; 
 
@@ -56,7 +56,7 @@
                     DECLARE @definition nvarchar(MAX); 
                     DECLARE @outcome int;
 
-                    EXEC @outcome = dbo.script_login 
+                    EXEC @outcome = dbo.script_sql_login 
                         @LoginName = 'sa', 
                         @BehaviorIfLoginExists = N'ALTER',
                         @Output = @definition OUTPUT; 
@@ -72,16 +72,17 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.script_login','P') IS NOT NULL
-	DROP PROC dbo.script_login;
+IF OBJECT_ID('dbo.script_sql_login','P') IS NOT NULL
+	DROP PROC dbo.script_sql_login;
 GO
 
-CREATE PROC dbo.script_login
+CREATE PROC dbo.script_sql_login
     @LoginName                              sysname,       
     @BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_AND_CREATE }
 	@DisableExpiryChecks					bit						= 0, 
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 
+	@IncludeDefaultLanguage					bit						= 0,
     @Output                                 nvarchar(MAX)           = ''        OUTPUT
 AS 
     SET NOCOUNT ON; 
@@ -130,13 +131,16 @@ AS
     IF @DisablePolicyChecks = 1 
         SET @checkPolicy = 0;
 
+	IF @IncludeDefaultLanguage = 0
+		SET @defaultLang = NULL;
+
     ---------------------------------------------------------
     -- load output:
     DECLARE @formatted nvarchar(MAX);
     SELECT @formatted = dbo.[format_sql_login](
         @enabled, 
         @BehaviorIfLoginExists,
-        @LoginName, 
+        @name, 
         @password, 
         @sid, 
         @defaultDB,
