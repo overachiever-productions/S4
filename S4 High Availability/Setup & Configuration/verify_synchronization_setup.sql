@@ -13,10 +13,10 @@
 
 USE [admindb];
 GO
+
 IF OBJECT_ID('dbo.verify_synchronization_setup','P') IS NOT NULL
 	DROP PROC dbo.[verify_synchronization_setup];
 GO
-
 
 CREATE PROC dbo.[verify_synchronization_setup]
 
@@ -119,17 +119,22 @@ AS
     WHERE 
 	    o.name IS NULL;
 
-    -- warn if there aren't any job steps with server_synchronization_checks or job_synchronization_checks referenced.
-    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%server_synchronization_checks%') BEGIN 
+    -- warn if there aren't any job steps with verify_server_synchronization or verify_job_synchronization referenced.
+    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%verify_server_synchronization%') BEGIN 
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	    SELECT 2, N'WARNING', N'A SQL Server Agent Job that calls [server_synchronization_checks] was not found.';
+	    SELECT 2, N'WARNING', N'A SQL Server Agent Job that calls [dbo].[verify_server_synchronization] was not found.';
     END 
 
-    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%job_synchronization_checks%') BEGIN 
+    IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%verify_job_synchronization%') BEGIN 
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
-	    SELECT 2, N'WARNING', N'A SQL Server Agent Job that calls [job_synchronization_checks] was not found.';
+	    SELECT 2, N'WARNING', N'A SQL Server Agent Job that calls [dbo].[verify_job_synchronization] was not found.';
     END 
 
+	-- ditto on data-synch checks: 
+	IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysjobsteps WHERE command LIKE '%verify_data_synchronization%') BEGIN 
+	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
+	    SELECT 2, N'WARNING', N'A SQL Server Agent Job that calls [dbo].[verify_data_synchronization] was not found.';
+    END 
     -------------------------------------------------------------------------------------
     -- 3. Mirroring Failover
 

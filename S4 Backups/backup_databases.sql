@@ -90,7 +90,10 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
-	EXEC dbo.verify_advanced_capabilities;
+	DECLARE @return int;
+    EXEC @return = dbo.verify_advanced_capabilities;
+	IF @return <> 0 
+		RETURN @return;
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -104,7 +107,9 @@ AS
 
 	IF @Edition = N'STANDARD' OR @Edition IS NULL BEGIN
 		-- check for Web:
-		IF @@VERSION LIKE '%web%' SET @Edition = 'WEB';
+		IF @@VERSION LIKE '%web%' SET @Edition = N'WEB';
+
+		IF @@VERSION LIKE '%Workgroup Edition%' SET @Edition = N'WORKGROUP';
 	END;
 	
 	IF @Edition IS NULL BEGIN
@@ -416,7 +421,7 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{type}', N'LOG');
 
-		IF @Edition IN (N'EXPRESS',N'WEB') OR ((SELECT dbo.[get_engine_version]()) < 10.5 AND @Edition NOT IN ('ENTERPRISE'))
+		IF @Edition IN (N'EXPRESS',N'WEB',N'WORKGROUP') OR ((SELECT dbo.[get_engine_version]()) < 10.5 AND @Edition NOT IN ('ENTERPRISE'))
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'');
 		ELSE 
 			SET @command = REPLACE(@command, N'{COMPRESSION}', N'COMPRESSION, ');

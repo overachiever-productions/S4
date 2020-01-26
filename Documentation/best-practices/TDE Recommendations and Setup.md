@@ -1,6 +1,13 @@
 ﻿# TDE Recommendations and Setup
 
 <div class="stub">
+    NOTE: 
+        Images for 'missing' images below have been saved to the following location: 
+            D:\Dropbox\Repositories\S4\Documentation\best-practices\Content-Images folder from old git.oa.net site.zip
+            
+            i.e., I 'extracted' the images specified in the paths below... and pushed them here. 
+
+
     TODO: 
         Integrate the following 3x links into the mix relative to TDE 'strength'. 
             - https://simonmcauliffe.com/technology/tde/
@@ -201,6 +208,9 @@ This is the 'master' certificate that you'll use to sign the encryption keys for
 **WARNING: If you LOSE this certificate, you will NOT be able to access your data** (on a different server/etc - or should the key SOMEHOW be dropped from your system).
 
 ```sql
+USE [master];
+GO
+
 CREATE CERTIFICATE DataEncryptionCertificate
 WITH 
 	SUBJECT = 'Data Encyrption (TDE) Certificate', 
@@ -287,7 +297,29 @@ Otherwise, background threads will begin the process of encrypting/decrypting th
 To monitor overall encryption (or decryption) progress, you can use the following query (focusing on the **[percent_completed]** column):
 
 ```sql
-SELECT * FROM sys.dm_database_encryption_keys;
+SELECT 
+	DB_NAME([database_id]) [database_name],
+	CASE [encryption_state] 
+		WHEN 0 THEN 'Not Configured for Encryption'
+		WHEN 1 THEN 'Not Encrypted'
+		WHEN 2 THEN 'Encryption in progress...'
+		WHEN 3 THEN 'Fully Encrypted'
+		WHEN 4 THEN 'Key Change in progress...'
+		WHEN 5 THEN 'Decryption in progress...'
+		WHEN 6 THEN 'Cert or Symmetric-key change in progress...'
+		ELSE 'Unknown'
+	END [encryption_state],
+	CASE
+		WHEN [encryption_state] = 3 THEN CAST(100.0 AS real) 
+		ELSE [percent_complete] 
+	END [percent_complete],
+	[set_date],
+	[key_algorithm],
+	[key_length],
+	[encryptor_thumbprint],
+	[encryptor_type]
+FROM 
+	sys.dm_database_encryption_keys;
 ```
 
 #### 5.d Kick off a FULL Backup When Possible

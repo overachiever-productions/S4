@@ -145,7 +145,8 @@ AS
 		ORDER BY 
 			[row_id];
 
-		SET @serialized = LEFT(@serialized, LEN(@serialized) -1); 
+		IF NULLIF(@serialized, N'') IS NOT NULL
+			SET @serialized = LEFT(@serialized, LEN(@serialized) -1); 
 
 		SET @intermediateResults = REPLACE(@intermediateResults, @currentToken, @serialized);
 

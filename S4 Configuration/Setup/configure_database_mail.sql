@@ -1,6 +1,32 @@
 /*
 
+	TODO: 
+		Test how anonymouse SMTP works (or is configured) 
+			as in ... i don't even NEED to have some 'relayed' server setup somewhere... 
+				I just need to verify how to correctly set/configure database mail to 'talk' to a server that's ONLY using anonymous/opem-relays/etc.
+
+		- Make Idempotent... 
+			e.g., say we're able to create 'General' as a profile... then everything crashes/burns from there ... can't let a re-run of this sproc crash/burn on PK violation of 'General' as an ADDED profile - and so on.
     
+	NOTE: 
+		for 'mass' deploy operations (i.e., multiple nodes in an AG...)
+			it'd be spiffy to either a) create a new sproc or b) wire in an @param that'd enable something like an array of definitions for the display name. 
+				e.g., say I'm installing / deploying this sproc against 2x AG nodes via Registered Servers/Multi-Server 'query'.
+					boxes are WIN-XXX1 and WIN-UUXY2 ... and have respective IPs of *.111.110 and *.112.110 or whatever... 
+						it'd be cool to specify either of the following 'strings' as @SmtpOutgoingDisplayName: 
+							by IP			=> N'%.111.110|SQLA, %.112.110|SQLB' 
+							or, by name		=> N'%XXX1|SQLA, %XY2|SQLB' ... and have this tackle these details as needed... 
+
+								SELECT 
+									CONNECTIONPROPERTY('local_net_address'), 
+									CONNECTIONPROPERTY('client_net_address'); ... i.e., as examples of how to parse IPs and such... (not sure how we account for multiple IPs but... then again, whatever we're CONNECTED to would be the client_net_address and should be good enough. 
+
+																and... of course, there's always @@SERVERNAME... 
+																SELECT SERVERPROPERTY('ComputerNamePhysicalNetBIOS'), @@SERVERNAME;
+
+				
+
+
     EXAMPLE EXECUTION   (favoring convention over configuration):
             EXEC dbo.[configure_database_mail]
                 @OperatorEmail = N'mike@overachiever.net',
@@ -10,6 +36,10 @@
                 @SmptUserName = N'A***************27',
                 @SmtpPassword = N'Akb*********************************x', 
 				@SmtpOutgoingDisplayName = N'SQL01';  -- or POD7-SQL2, etc... 
+
+
+
+	
 
 */
 
@@ -27,21 +57,35 @@ CREATE PROC dbo.configure_database_mail
     @SmtpAccountName                sysname             = N'Default SMTP Account', 
     @SmtpAccountDescription         sysname             = N'Defined/Created by S4',
     @SmtpOutgoingEmailAddress       sysname,
-    @SmtpOutgoingDisplayName        sysname             = NULL,            -- set to @@SERVERNAME if NULL 
+    @SmtpOutgoingDisplayName        sysname             = NULL,            -- e.g., SQL1 or POD2-SQLA, etc.  Will be set to @@SERVERNAME if NULL 
     @SmtpServerName                 sysname, 
     @SmtpPortNumber                 int                 = 587, 
     @SmtpRequiresSSL                bit                 = 1, 
     @SmtpAuthType                   sysname             = N'BASIC',         -- WINDOWS | BASIC | ANONYMOUS
-    @SmptUserName                   sysname,
-    @SmtpPassword                   sysname, 
+    @SmptUserName                   sysname				= N'',
+    @SmtpPassword                   sysname				= N'', 
 	@SendTestEmailUponCompletion	bit					= 1
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
-    -- TODO:
-    --      validate all inputs.. 
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+	DECLARE @return int;
+    EXEC @return = dbo.verify_advanced_capabilities;
+	IF @return <> 0 
+		RETURN @return;
+
+	-----------------------------------------------------------------------------
+	-- Verify that the SQL Server Agent is running
+	IF NOT EXISTS (SELECT NULL FROM sys.[dm_server_services] WHERE [servicename] LIKE '%Agent%' AND [status_desc] = N'Running') BEGIN
+		RAISERROR('SQL Server Agent Service is NOT running. Please ensure that it is running (and/or that this is not an Express Edition of SQL Server) before continuing.', 16, 1);
+		RETURN -100;
+	END;
+
+	-----------------------------------------------------------------------------
+    -- TODO: validate all inputs.. 
     IF NULLIF(@ProfileName, N'') IS NULL OR NULLIF(@OperatorName, N'') IS NULL OR NULLIF(@OperatorEmail, N'') IS NULL BEGIN 
         RAISERROR(N'@ProfileName, @OperatorName, and @OperatorEmail are all REQUIRED parameters.', 16, 1);
         RETURN -1;
@@ -67,20 +111,28 @@ AS
 
     --------------------------------------------------------------
     -- Enable Mail XPs: 
+	DECLARE @reconfigure bit = 0;
     IF EXISTS (SELECT NULL FROM sys.[configurations] WHERE [name] = N'show advanced options' AND [value_in_use] = 0) BEGIN
         EXEC sp_configure 'show advanced options', 1; 
-        RECONFIGURE;
+        
+		SET @reconfigure = 1;
     END;
 
     IF EXISTS (SELECT NULL FROM sys.[configurations] WHERE [name] = N'Database Mail XPs' AND [value_in_use] = 0) BEGIN
         EXEC sp_configure 'Database Mail XPs', 1; 
-	    RECONFIGURE;
+	    
+		SET @reconfigure = 1;
     END;
+
+	IF @reconfigure = 1 BEGIN
+		RECONFIGURE;
+	END;
 
     --------------------------------------------------------------
     -- Create Profile: 
     DECLARE @profileID int; 
-
+	  
+	-- TODO: attempt to load @profileID from queries to see if it @exists (so to speak). If it does, move on. If not, create the profile and 'load' @profileID in the process.
     EXEC msdb.dbo.[sysmail_add_profile_sp] 
         @profile_name = @ProfileName, 
         @description = N'S4-Created Profile... ', 
@@ -91,7 +143,7 @@ AS
     DECLARE @AccountID int; 
     DECLARE @useDefaultCredentials bit = 0;  -- username/password. 
     IF UPPER(@SmtpAuthType) = N'WINDOWS' SET @useDefaultCredentials = 1;  -- use windows. 
-    IF UPPER(@SmtpAuthType) = N'ANONYMOUS' SET @useDefaultCredentials = NULL;  -- i think that's how this works. it's NOT documented: https://docs.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sysmail-add-account-sp-transact-sql?view=sql-server-2017
+    IF UPPER(@SmtpAuthType) = N'ANONYMOUS' SET @useDefaultCredentials = 0;  
 
     EXEC msdb.dbo.[sysmail_add_account_sp]
         @account_name = @SmtpAccountName,
@@ -172,10 +224,14 @@ AS
 	--------------------------------------------------------------
 	-- Send a test email - to verify that the SQL Server Agent can correctly send email... 
 
-	DECLARE @body nvarchar(MAX) = N'Test Email - triggered by dbo.configure_database_mail.
+	DECLARE @version sysname = (SELECT [version_number] FROM dbo.version_history WHERE [version_id] = (SELECT MAX([version_id]) FROM dbo.[version_history]));
+	DECLARE @body nvarchar(MAX) = N'Test Email - Configuration Validation.
 
 If you''re seeing this, the SQL Server Agent on ' + @SmtpOutgoingDisplayName + N' has been correctly configured to 
 allow alerts via the SQL Server Agent.
+
+Triggered by dbo.configure_database_mail. S4 version ' + @version + N'.
+
 ';
 	EXEC msdb.dbo.[sp_notify_operator] 
 		@profile_name = @ProfileName, 

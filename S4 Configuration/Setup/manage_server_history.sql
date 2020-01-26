@@ -1,3 +1,11 @@
+/*
+
+
+
+
+
+*/
+
 USE [admindb];
 GO
 
@@ -94,59 +102,14 @@ AS
 		RETURN -2;
 	END;
 	   	 
-	DECLARE @existingJob sysname; 
-	SELECT 
-		@existingJob = [name]
-	FROM 
-		msdb.dbo.sysjobs
-	WHERE 
-		[name] = @HistoryCleanupJobName;
-
-	IF @existingJob IS NOT NULL BEGIN 
-		IF @OverWriteExistingJob = 1 BEGIN 
-			-- vNEXT: So, this gets rid of the job's history. The vNext version of this will be to: a) gut the schedule and all other core details of this job, b) remove all of the job steps... 
-			--			and then, c) hand this thing 'off' to the rest of the sproc as a new/blank-template of a job (so that we keep the history).
-			
-			-- vNEXT: as per the above, create an S4 sproc called... dbo.clear_job_details... which'll just gut everything in a job except for .. the name and the history.
-			--		NOTE that I have job-step removal code already defined in Exym Repl3.0 ... maintenance script for consolidated nightly integration and so on... 
-			
-			
-			EXEC msdb..sp_delete_job 
-			    @job_name = @HistoryCleanupJobName,              -- sysname
-			    @delete_history = 1,			-- bit
-			    @delete_unused_schedule = 1;	-- bit
-		  END;
-		ELSE BEGIN
-			RAISERROR(N'Specified @HistoryCleanupJobName (''%s'') already exists. Set @OverWriteExistingJob = 1 to replace/overwrite existing job.', 16, 1, @HistoryCleanupJobName);
-			RETURN -5;
-		END;
-	END;
-
-	-- Ensure that the Job Category exists:
-	IF NOT EXISTS(SELECT NULL FROM msdb..syscategories WHERE [name] = @JobCategoryName) BEGIN 
-		EXEC msdb..sp_add_category 
-			@class = N'JOB',
-			@type = 'LOCAL',  
-		    @name = @JobCategoryName;
-	END;
-
-	-- create the job: 
-	DECLARE @jobId UNIQUEIDENTIFIER;
-	EXEC msdb.dbo.sp_add_job
-		@job_name = @HistoryCleanupJobName,                     
-	    @enabled = 1,                         
-	    @description = N'Regular History Cleanup and other history-related cleanup and management tasks.',                   
-	    @category_name = @JobCategoryName,                
-	    @owner_login_name = N'sa',             
-	    @notify_level_eventlog = 0,           
-	    @notify_level_email = 2,              
-	    @notify_email_operator_name = @JobOperatorToAlertOnErrors,   
-	    @delete_level = 0,                    
-	    @job_id = @jobId OUTPUT;	
-
-	EXEC msdb.dbo.[sp_add_jobserver] 
-		@job_id = @jobId, 
-		@server_name = N'(LOCAL)';
+	DECLARE @jobId uniqueidentifier;
+	EXEC [dbo].[create_agent_job]
+		@TargetJobName = @HistoryCleanupJobName,
+		@JobCategoryName = @JobCategoryName,
+		@AddBlankInitialJobStep = 1,
+		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OverWriteExistingJobDetails = @OverWriteExistingJob,
+		@JobID = @jobId OUTPUT;
 
 	-- create a schedule:
 	DECLARE @dayMap int;
@@ -172,7 +135,7 @@ AS
 	-- Start adding job-steps:
 	DECLARE @currentStepName sysname;
 	DECLARE @currentCommand nvarchar(MAX);
-	DECLARE @currentStepId int = 1;
+	DECLARE @currentStepId int = 2;		-- job step ID 1 is the placeholder... 
 
 	-- Remove Job History
 	SET @currentStepName = N'Truncate Job History';
@@ -221,8 +184,7 @@ EXEC msdb.dbo.sp_delete_backuphistory
 	    @retry_interval = 1;			
 	
 	SET @currentStepId += 1;
-
-
+	
 	-- Remove Email History:
 	IF NULLIF(@EmailHistoryRetention, N'') IS NOT NULL BEGIN 
 
@@ -253,92 +215,92 @@ EXEC msdb.dbo.sysmail_delete_mailitems_sp
 	END;
 
 	-- Remove FTCrawlHistory:
-	IF @CycleFTCrawlLogsInDatabases IS NOT NULL BEGIN
+--	IF @CycleFTCrawlLogsInDatabases IS NOT NULL BEGIN
 
-		DECLARE @ftStepNameTemplate sysname = N'{dbName} - Truncate FT Crawl History';
-		SET @currentCommand = N'SET NOCOUNT ON;
+--		DECLARE @ftStepNameTemplate sysname = N'{dbName} - Truncate FT Crawl History';
+--		SET @currentCommand = N'SET NOCOUNT ON;
 
-DECLARE @catalog sysname; 
-DECLARE @command nvarchar(300); 
-DECLARE @template nvarchar(200) = N''EXEC sp_fulltext_recycle_crawl_log ''''{0}''''; '';
+--DECLARE @catalog sysname; 
+--DECLARE @command nvarchar(300); 
+--DECLARE @template nvarchar(200) = N''EXEC sp_fulltext_recycle_crawl_log ''''{0}''''; '';
 
-DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
-SELECT 
-	[name]
-FROM 
-	sys.[fulltext_catalogs]
-ORDER BY 
-	[name];
+--DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
+--SELECT 
+--	[name]
+--FROM 
+--	sys.[fulltext_catalogs]
+--ORDER BY 
+--	[name];
 
-OPEN walker; 
-FETCH NEXT FROM walker INTO @catalog;
+--OPEN walker; 
+--FETCH NEXT FROM walker INTO @catalog;
 
-WHILE @@FETCH_STATUS = 0 BEGIN
+--WHILE @@FETCH_STATUS = 0 BEGIN
 
-	SET @command = REPLACE(@template, N''{0}'', @catalog);
+--	SET @command = REPLACE(@template, N''{0}'', @catalog);
 
-	--PRINT @command;
-	EXEC sys.[sp_executesql] @command;
+--	--PRINT @command;
+--	EXEC sys.[sp_executesql] @command;
 
-	FETCH NEXT FROM walker INTO @catalog;
-END;
+--	FETCH NEXT FROM walker INTO @catalog;
+--END;
 
-CLOSE walker;
-DEALLOCATE walker; ';
+--CLOSE walker;
+--DEALLOCATE walker; ';
 
-		DECLARE @currentDBName sysname;
-		DECLARE @targets table (
-			row_id int IDENTITY(1, 1) NOT NULL,
-			[db_name] sysname NOT NULL
-		);
+--		DECLARE @currentDBName sysname;
+--		DECLARE @targets table (
+--			row_id int IDENTITY(1, 1) NOT NULL,
+--			[db_name] sysname NOT NULL
+--		);
 
-		INSERT INTO @targets 
-		EXEC dbo.list_databases 
-			@Targets = @CycleFTCrawlLogsInDatabases, 
-			@ExcludeClones = 1, 
-			@ExcludeSecondaries = 1, 
-			@ExcludeSimpleRecovery = 0, 
-			@ExcludeReadOnly = 1, 
-			@ExcludeRestoring = 1, 
-			@ExcludeRecovering = 1, 
-			@ExcludeOffline = 1;
+--		INSERT INTO @targets 
+--		EXEC dbo.list_databases 
+--			@Targets = @CycleFTCrawlLogsInDatabases, 
+--			@ExcludeClones = 1, 
+--			@ExcludeSecondaries = 1, 
+--			@ExcludeSimpleRecovery = 0, 
+--			@ExcludeReadOnly = 1, 
+--			@ExcludeRestoring = 1, 
+--			@ExcludeRecovering = 1, 
+--			@ExcludeOffline = 1;
 
-		DECLARE [cycler] CURSOR LOCAL FAST_FORWARD FOR 
-		SELECT
-			[db_name]
-		FROM 
-			@targets 
-		ORDER BY 
-			[row_id];
+--		DECLARE [cycler] CURSOR LOCAL FAST_FORWARD FOR 
+--		SELECT
+--			[db_name]
+--		FROM 
+--			@targets 
+--		ORDER BY 
+--			[row_id];
 
-		OPEN [cycler];
-		FETCH NEXT FROM [cycler] INTO @currentDBName;
+--		OPEN [cycler];
+--		FETCH NEXT FROM [cycler] INTO @currentDBName;
 		
-		WHILE @@FETCH_STATUS = 0 BEGIN
+--		WHILE @@FETCH_STATUS = 0 BEGIN
 		
-			SET @currentStepName = REPLACE(@ftStepNameTemplate, N'{dbName}', @currentDBName);
+--			SET @currentStepName = REPLACE(@ftStepNameTemplate, N'{dbName}', @currentDBName);
 
-			EXEC msdb..sp_add_jobstep 
-				@job_id = @jobId,               
-				@step_id = @currentStepId,		
-				@step_name = @currentStepName,	
-				@subsystem = N'TSQL',			
-				@command = @currentCommand,		
-				@on_success_action = 3,			
-				@on_fail_action = 3, 
-				@database_name = @currentDBName,
-				@retry_attempts = 2,
-				@retry_interval = 1;			
+--			EXEC msdb..sp_add_jobstep 
+--				@job_id = @jobId,               
+--				@step_id = @currentStepId,		
+--				@step_name = @currentStepName,	
+--				@subsystem = N'TSQL',			
+--				@command = @currentCommand,		
+--				@on_success_action = 3,			
+--				@on_fail_action = 3, 
+--				@database_name = @currentDBName,
+--				@retry_attempts = 2,
+--				@retry_interval = 1;			
 	
-			SET @currentStepId += 1;
+--			SET @currentStepId += 1;
 		
-			FETCH NEXT FROM [cycler] INTO @currentDBName;
-		END;
+--			FETCH NEXT FROM [cycler] INTO @currentDBName;
+--		END;
 		
-		CLOSE [cycler];
-		DEALLOCATE [cycler];
+--		CLOSE [cycler];
+--		DEALLOCATE [cycler];
 
-	END;
+--	END;
 
 	-- Cycle Error Logs: 
 	SET @currentStepName = N'Cycle Logs';
