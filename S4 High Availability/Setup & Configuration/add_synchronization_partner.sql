@@ -8,12 +8,17 @@
     
     EXAMPLE / TEST:
 
-                
+            Hard-coded PartnerName:
+				EXEC dbo.add_synchronization_partner
+					@PartnerName = N'SQL-130-2B', 
+					@ExecuteSetupOnPartnerServer = 1;
 
-            NOTE: make sure to change the PARTNER name... 
-            EXEC dbo.add_synchronization_partner
-                N'SQL-130-2B', 
-                1;
+
+			Specifying BOTH server names - and executing on both servers independantly: 
+				EXEC dbo.add_synchronization_partner
+					@PartnerNames = N'AWS-SQL-1, AWS-SQL-2', 
+					@ExecuteSetupOnPartnerServer = 0;
+				
 
 
 */
@@ -26,7 +31,8 @@ IF OBJECT_ID('dbo.add_synchronization_partner','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[add_synchronization_partner]
-    @PartnerName                            sysname, 
+    @PartnerName                            sysname		= NULL,			-- hard-coded name of partner - e.g., SQL2 (if we're running on SQL1).
+	@PartnerNames							sysname		= NULL,			-- specify 2x server names, e.g., SQL1 and SQL2 - and the sproc will figure out self and partner accordingly. 
     @ExecuteSetupOnPartnerServer            bit         = 1     -- by default, attempt to create a 'PARTNER' on the PARTNER, that... points back here... 
 AS
     SET NOCOUNT ON; 
@@ -34,6 +40,33 @@ AS
 	-- {copyright}
 
     -- TODO: verify @PartnerName input/parameters. 
+	SET @PartnerName = NULLIF(@PartnerName, N'');
+	SET @PartnerNames = NULLIF(@PartnerNames, N'');
+
+	IF @PartnerName IS NULL AND @PartnerNames IS NULL BEGIN 
+		RAISERROR('Please Specify a value for either @PartnerName (e.g., ''SQL2'' if executing on SQL1) or for @PartnerNames (e.g., ''SQL1,SQL2'' if running on either SQL1 or SQL2).', 16, 1);
+		RETURN - 2;
+	END;
+
+	IF @PartnerName IS NULL BEGIN 
+		DECLARE @serverNames table ( 
+			server_name sysname NOT NULL
+		);
+
+		INSERT INTO @serverNames (
+			server_name
+		)
+		SELECT CAST([result] AS sysname) FROM dbo.[split_string](@PartnerNames, N',', 1);
+
+		DELETE FROM @serverNames WHERE [server_name] = @@SERVERNAME;
+
+		IF(SELECT COUNT(*) FROM @serverNames) <> 1 BEGIN
+			RAISERROR('Invalid specification for @PartnerNames specified - please specify 2 server names, where one is the name of the currently executing server.', 16, 1);
+			RETURN -10;
+		END;
+
+		SET @PartnerName = (SELECT TOP 1 server_name FROM @serverNames);
+	END;
 
     -- TODO: account for named instances... 
     DECLARE @remoteHostName sysname = N'tcp:' + @PartnerName;
