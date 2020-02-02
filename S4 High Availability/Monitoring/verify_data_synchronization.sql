@@ -216,7 +216,7 @@ AS
 		RETURN -1;
 	END;
 
-	SET @rpoSeconds = @vectorOutput / 1000;
+	SET @rpoSeconds = @vectorOutput / 1000.0;
 	
     EXEC dbo.translate_vector 
         @Vector = @RTOThreshold, 
@@ -229,14 +229,14 @@ AS
 		RETURN -1;
 	END;
 
-	SET @rtoSeconds = @vectorOutput / 1000;
+	SET @rtoSeconds = @vectorOutput / 1000.0;
 
-	IF @rtoSeconds > 2764800 OR @rpoSeconds > 2764800 BEGIN 
+	IF @rtoSeconds > 2764800.0 OR @rpoSeconds > 2764800.0 BEGIN 
 		RAISERROR(N'@RPOThreshold and @RTOThreshold values can not be set to > 1 month.', 16, 1);
 		RETURN -10;
 	END;
 
-	IF @rtoSeconds < 2 OR @rpoSeconds < 2 BEGIN 
+	IF @rtoSeconds < 2.0 OR @rpoSeconds < 2.0 BEGIN 
 		RAISERROR(N'@RPOThreshold and @RTOThreshold values can not be set to less than 2 seconds.', 16, 1);
 		RETURN -10;
 	END;
@@ -315,7 +315,7 @@ AS
 	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
 	DECLARE @tab nchar(1) = CHAR(9);
 	DECLARE @errorMessage nvarchar(MAX);
-	DECLARE @transdelay int;
+	DECLARE @transdelayMilliseconds int;
 	DECLARE @averagedelay int;
 
 	----------------------------------------------
@@ -386,10 +386,10 @@ AS
 		-- make sure that metrics are even working - if we get any NULLs in transaction_delay/average_delay, 
 		--		then it's NOT working correctly (i.e. it's somehow not seeing everything it needs to in order
 		--		to report - and we need to throw an error):
-		SELECT @transdelay = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
+		SELECT @transdelayMilliseconds = MIN(ISNULL(transaction_delay,-1)) FROM	@output 
 		WHERE local_time >= @lastCheckupExecutionTime;
 
-		IF @transdelay < 0 BEGIN 
+		IF @transdelayMilliseconds < 0 BEGIN 
 			SET @errorMessage = N'Mirroring Failure - Synchronization Metrics Unavailable'
 				+ @crlf + @tab + @tab + N'Metrics for transaction_delay and average_delay unavailable for monitoring (i.e., SQL Server Mirroring Monitor is ''busted'') for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
@@ -398,11 +398,11 @@ AS
 		END;
 
 		-- check for problems with transaction delay:
-		SELECT @transdelay = MAX(ISNULL(transaction_delay,0)) FROM @output
+		SELECT @transdelayMilliseconds = MAX(ISNULL(transaction_delay,0)) FROM @output
 		WHERE local_time >= @lastCheckupExecutionTime;
-		IF @transdelay > @rpoSeconds BEGIN 
+		IF @transdelayMilliseconds > (@rpoSeconds * 1000.0) BEGIN 
 			SET @errorMessage = N'Mirroring Alert - Delays Applying Data to Secondary'
-				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelay AS nvarchar(30)) + N'ms in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@rpoSeconds as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
+				+ @crlf + @tab + @tab + N'Max Trans Delay of ' + CAST(@transdelayMilliseconds AS nvarchar(30)) + N'ms in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST((@rpoSeconds * 1000.0) as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
 			VALUES (@errorMessage);
@@ -411,10 +411,10 @@ AS
 		-- check for problems with transaction delays on the primary:
 		SELECT @averagedelay = MAX(ISNULL(average_delay,0)) FROM @output
 		WHERE local_time >= @lastCheckupExecutionTime;
-		IF @averagedelay > @rtoSeconds BEGIN 
+		IF @averagedelay > (@rtoSeconds * 1000.0) BEGIN 
 
 			SET @errorMessage = N'Mirroring Alert - Transactions Delayed on Primary'
-				+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N'ms in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST(@rtoSeconds as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
+				+ @crlf + @tab + @tab + N'Max(Avg) Trans Delay of ' + CAST(@averagedelay AS nvarchar(30)) + N'ms in last ' + CAST(@syncCheckSpanMinutes as sysname) + N' minutes is greater than allowed threshold of ' + CAST((@rtoSeconds * 1000.0) as sysname) + N'ms for database: ' + @currentMirroredDB + N' on Server: ' + @localServerName + N'.';
 
 			INSERT INTO @errors (errorMessage)
 			VALUES (@errorMessage);
@@ -428,7 +428,7 @@ AS
 	
 	----------------------------------------------
 	-- Process AG'd Databases: 
-	IF EXISTS (SELECT NULL FROM (SELECT SERVERPROPERTY('ProductMajorVersion') AS [ProductMajorVersion]) x WHERE CAST(x.ProductMajorVersion AS int) <= '10')
+	IF (SELECT dbo.[get_engine_version]()) <= 10.5
 		GOTO REPORTING;
 
 	DECLARE @downNodes nvarchar(MAX);
