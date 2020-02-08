@@ -14,7 +14,7 @@ IF OBJECT_ID('dbo.add_failover_processing','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[add_failover_processing]
-    @SqlServerAgentFailoverResponseJobName              sysname         = N'Synchronization Failover Response',
+    @SqlServerAgentFailoverResponseJobName              sysname         = N'Synchronization - Failover Response',
     @SqlServerAgentJobNameCategory                      sysname         = N'Synchronization',
 	@MailProfileName			                        sysname         = N'General',
 	@OperatorName				                        sysname         = N'Alerts', 
