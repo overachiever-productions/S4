@@ -29,7 +29,7 @@ CREATE PROC dbo.[create_backup_jobs]
 	@FullUserBackupsStartTime					sysname					= N'00:02:00',		-- hmm... does it even make sense to let this be empty/null-ish? 
 	@LogBackupsStartTime						sysname					= N'00:12:00',		-- ditto ish
 	@LogBackupsRunEvery							sysname					= N'10 minutes',	-- vector, but only allows minutes (i think).
-	@JobsNamePrefix								sysname					= N'Backups.',		-- e.g., "Backups.USER - FULL" or "Backups.USER - LOG" or "Backups.SYSTEM - FULL"
+	@JobsNamePrefix								sysname					= N'Database Backups - ',		-- e.g., "Database Backups - USER - FULL" or "Database Backups - USER - LOG" or "Database Backups - SYSTEM - FULL"
 	@JobsCategoryName							sysname					= N'Backups',							
 	@JobOperatorToAlertOnErrors					sysname					= N'Alerts',	
 	@ProfileToUseForAlerts						sysname					= N'General',

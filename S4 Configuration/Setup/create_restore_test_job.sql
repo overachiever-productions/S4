@@ -30,7 +30,7 @@ IF OBJECT_ID('dbo.create_restore_test_job','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[create_restore_test_job]
-    @JobName						sysname				= N'Backups.Restore - Test',
+    @JobName						sysname				= N'Database Backups - Regular Restore Tests',
 	@RestoreTestStartTime			time				= N'22:05:00',
 	@JobCategoryName				sysname				= N'Backups',
 	@AllowForSecondaries			bit					= 0,									-- IF AG/Mirrored environment (secondaries), then wrap restore-test in IF is_primary_server check... 
