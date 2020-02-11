@@ -31,7 +31,7 @@ CREATE PROC dbo.[create_sync_check_jobs]
 	@AGSyncCheckIterationCount						int					= 8, 
 	@AGSyncCheckDelayBetweenChecks					sysname				= N'1800 milliseconds',
 	@ExcludeAnomolousSyncDeviations					bit					= 0,    -- Primarily for Ghosted Records Cleanup... 	
-	@JobsNamePrefix									sysname				= N'Sync-Check.',		
+	@JobsNamePrefix									sysname				= N'Synchronization - ',		
 	@JobsCategoryName								sysname				= N'SynchronizationChecks',							
 	@JobOperatorToAlertOnErrors						sysname				= N'Alerts',	
 	@ProfileToUseForAlerts							sysname				= N'General',

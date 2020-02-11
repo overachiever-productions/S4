@@ -18,8 +18,6 @@
 		@TargetDbMappingPattern = N'{0}_test';
 
 
-
-
 */
 
 USE [admindb];
@@ -214,6 +212,10 @@ AS
 	DECLARE @logsWereApplied bit = 0;
 	DECLARE @operationSuccess bit;
 	DECLARE @noFilesApplied bit = 0;
+
+	DECLARE @outputSummary nvarchar(MAX);
+    DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
+    DECLARE @tab char(1) = CHAR(9);
 
 	DECLARE @offset sysname;
 	DECLARE @tufPath sysname;
@@ -514,6 +516,17 @@ NextDatabase:
 			END;
 		END;
 
+		SET @outputSummary = N'Applied the following Logs: ' + @crlf;
+
+		SELECT 
+			@outputSummary = @outputSummary + @tab + [FileName] + @crlf
+		FROM 
+			@appliedFiles 
+		ORDER BY 
+			ID;
+
+		EXEC [dbo].[print_long_string] @outputSummary;
+
 		FETCH NEXT FROM [restorer] INTO @sourceDbName, @targetDbName;
 	END; 
 
@@ -530,8 +543,6 @@ FINALIZE:
 
 	DECLARE @messageSeverity sysname = N'';
 	DECLARE @message nvarchar(MAX); 
-    DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
-    DECLARE @tab char(1) = CHAR(9);
 
 	IF EXISTS (SELECT NULL FROM @warnings) BEGIN 
 		SET @messageSeverity = N'WARNING';
