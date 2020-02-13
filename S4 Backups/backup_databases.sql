@@ -181,7 +181,7 @@ AS
 
 	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
 
-		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER' BEGIN
+		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
 			RAISERROR('THe {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
 			RETURN -20;
 		END;
