@@ -535,7 +535,8 @@ DoneRemovingFilesBeforeBackup:
 				DECLARE @copyOutput TABLE ([output] nvarchar(2000));
 				DELETE FROM @copyOutput;
 
-				SET @command = 'EXEC xp_cmdshell ''COPY "' + @backupPath + N'\' + @backupName + '" "' + @copyToBackupPath + '\"''';
+				-- XCOPY supported on Windows 2003+; robocopy is supported on Windows 2008+
+				SET @command = 'EXEC xp_cmdshell ''XCOPY "' + @backupPath + N'\' + @backupName + '" "' + @copyToBackupPath + '\"''';
 
 				IF @PrintOnly = 1
 					PRINT @command;
