@@ -180,6 +180,12 @@ AS
 	--END;
 
 	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
+
+		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER' BEGIN
+			RAISERROR('THe {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
+			RETURN -20;
+		END;
+
 		DECLARE @partnerName sysname; 
 		SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);		
 
