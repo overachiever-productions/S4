@@ -42,6 +42,11 @@ AS
 		REG_DWORD, 
 		@NumberOfServerLogsToKeep;
 
+	-- Toggle Agent History Retention (i.e., get rid of 'silly' 1000/100 limits: 
+	EXEC [msdb].[dbo].[sp_set_sqlagent_properties]			-- undocumented, but... pretty 'solid'/obvious: EXEC msdb.dbo.sp_helptext 'sp_set_sqlagent_properties';
+		@jobhistory_max_rows = -1, 
+		@jobhistory_max_rows_per_job = -1;
+
 	DECLARE @historyDaysBack int; 
 	EXEC @outcome = dbo.[translate_vector]
 		@Vector = @AgentJobHistoryRetention,
