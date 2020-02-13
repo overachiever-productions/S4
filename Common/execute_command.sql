@@ -220,17 +220,6 @@ v6.5 Refactor / REWRITE
 
 
 
-
-
-
-
-
-
-
-
-
-
-
                                 c) I get rid of EXEC as an option... 
 
 

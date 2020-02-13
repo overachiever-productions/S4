@@ -69,9 +69,11 @@ CREATE PROC dbo.backup_databases
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
 	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
-	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } 
+	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } NOTE {PARTNER} allowed as a token (if a PARTNER is defined).
+	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., N'S3:\\bucket-name\path\'
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
+	@OffSiteRetention					nvarchar(10)							= NULL,							-- { vector | n backups | infinite }
 	@RemoveFilesBeforeBackup			bit										= 0,							-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
 	@EncryptionCertName					sysname									= NULL,							-- Ignored if not specified. 
 	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
@@ -179,6 +181,19 @@ AS
 	--	END;
 	--END;
 
+	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
+
+		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
+			RAISERROR('THe {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
+			RETURN -20;
+		END;
+
+		DECLARE @partnerName sysname; 
+		SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);		
+
+		SET @CopyToBackupDirectory = REPLACE(@CopyToBackupDirectory, N'{PARTNER}', @partnerName);
+	END;
+
 	IF NULLIF(@EncryptionCertName, '') IS NOT NULL BEGIN
 		IF (CHARINDEX(N'[', @EncryptionCertName) > 0) OR (CHARINDEX(N']', @EncryptionCertName) > 0) 
 			SET @EncryptionCertName = REPLACE(REPLACE(@EncryptionCertName, N']', N''), N'[', N'');
@@ -245,6 +260,13 @@ AS
 		END;
 	END;
 
+	IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
+		IF @OffSiteBackupPath NOT LIKE 'S3::%' BEGIN 
+			RAISERROR('S3 Backups are the only OffSite Backup Types currently supported. Please use the format S3::bucket-name:path\sub-path', 16, 1);
+			RETURN -200;
+		END;
+	END;
+
 	-----------------------------------------------------------------------------
 	DECLARE @excludeSimple bit = 0;
 
@@ -286,11 +308,32 @@ AS
 	END;
 
 	-- normalize paths: 
-	IF(RIGHT(@BackupDirectory, 1) = '\')
+	IF(RIGHT(@BackupDirectory, 1) = N'\')
 		SET @BackupDirectory = LEFT(@BackupDirectory, LEN(@BackupDirectory) - 1);
 
-	IF(RIGHT(ISNULL(@CopyToBackupDirectory, N''), 1) = '\')
+	IF(RIGHT(ISNULL(@CopyToBackupDirectory, N''), 1) = N'\')
 		SET @CopyToBackupDirectory = LEFT(@CopyToBackupDirectory, LEN(@CopyToBackupDirectory) - 1);
+
+	IF(RIGHT(ISNULL(@OffSiteBackupPath, N''), 1) = N'\')
+		SET @OffSiteBackupPath = LEFT(@OffSiteBackupPath, LEN(@OffSiteBackupPath) - 1);
+
+	IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
+		DECLARE @s3BucketName sysname; 
+		DECLARE @s3KeyPath sysname;
+		DECLARE @s3FullFileKey sysname;
+		DECLARE @s3fullOffSitePath sysname;
+
+		DECLARE @s3Parts table (row_id int NOT NULL, result nvarchar(MAX) NOT NULL);
+
+		INSERT INTO @s3Parts (
+			[row_id],
+			[result]
+		)
+		SELECT [row_id], [result] FROM dbo.[split_string](REPLACE(@OffSiteBackupPath, N'S3::', N''), N':', 1)
+
+		SELECT @s3BucketName = [result] FROM @s3Parts WHERE [row_id] = 1;
+		SELECT @s3KeyPath = [result] FROM @s3Parts WHERE [row_id] = 2;
+	END;
 
 	----------------------------------------------------------------------------------------------------------------------------------------------------------
 	-----------------------------------------------------------------------------
@@ -318,8 +361,11 @@ AS
 	DECLARE @copyStart datetime;
 	DECLARE @outcome varchar(4000);
 
+	DECLARE @offSiteCopyStart datetime;
+	DECLARE @offSiteCopyMessage nvarchar(MAX);
+
 	DECLARE @command nvarchar(MAX);
-	
+
 	-- Begin the backups:
 	DECLARE backups CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
@@ -510,7 +556,7 @@ DoneRemovingFilesBeforeBackup:
 
 		-----------------------------------------------------------------------------
 		-- Now that the backup (and, optionally/ideally) verification are done, copy the file to a secondary location if specified:
-		IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
+		IF NULLIF(@CopyToBackupDirectory, N'') IS NOT NULL BEGIN
 			
 			SET @copyStart = GETDATE();
             SET @copyMessage = NULL;
@@ -532,10 +578,11 @@ DoneRemovingFilesBeforeBackup:
 			-- if we didn't run into validation errors, we can go ahead and try the copyTo process: 
 			IF @copyMessage IS NULL BEGIN
 
-				DECLARE @copyOutput TABLE ([output] nvarchar(2000));
+				DECLARE @copyOutput table ([output] nvarchar(2000));
 				DELETE FROM @copyOutput;
 
-				SET @command = 'EXEC xp_cmdshell ''COPY "' + @backupPath + N'\' + @backupName + '" "' + @copyToBackupPath + '\"''';
+				-- XCOPY supported on Windows 2003+; robocopy is supported on Windows 2008+
+				SET @command = 'EXEC xp_cmdshell ''XCOPY "' + @backupPath + N'\' + @backupName + '" "' + @copyToBackupPath + '\"''';
 
 				IF @PrintOnly = 1
 					PRINT @command;
@@ -581,9 +628,83 @@ DoneRemovingFilesBeforeBackup:
 					copy_succeeded = 0, 
 					copy_seconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
 					failed_copy_attempts = 1, 
-					copy_details = @copyMessage
+					copy_details = @copyMessage, 
+					[error_details] = CASE WHEN [error_details] IS NULL THEN N'File Copy Failure.' ELSE 'File Copy Failure. ' + [error_details] END
 				WHERE 
 					backup_id = @currentOperationID;
+			END;
+		END;
+
+		-----------------------------------------------------------------------------
+		-- Process @OffSite backups as necessary: 
+		IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
+			
+			SET @offSiteCopyStart = GETDATE();
+			SET @offSiteCopyMessage = NULL; 
+
+			DECLARE @offsiteCopy table ([row_id] int IDENTITY(1, 1) NOT NULL, [output] nvarchar(2000));
+			DELETE FROM @offsiteCopy;
+
+			SET @s3FullFileKey = @s3KeyPath + '\' + @currentDatabase + N'\' + @backupName;
+			SET @s3fullOffSitePath = N'S3::' + @s3BucketName + N':' + @s3FullFileKey;
+
+			SET @command = 'EXEC xp_cmdshell ''PowerShell.exe -Command "Write-S3Object -BucketName ''''' + @s3BucketName + ''''' -Key ''''' + @s3FullFileKey + ''''' -File ''''' + @backupPath + '\' + @backupName + ''''' " ''; ';
+
+			IF @PrintOnly = 1 
+				PRINT @command;
+			ELSE BEGIN 
+				BEGIN TRY
+					INSERT INTO @offsiteCopy ([output])
+					EXEC sys.sp_executesql @command;
+
+					DELETE FROM @offsiteCopy WHERE [output] IS NULL;
+
+					IF EXISTS (SELECT NULL FROM @offsiteCopy) BEGIN -- error, which we need to capture/document:
+						SET @offSiteCopyMessage = N'ERROR: ';
+						SELECT 
+							@offSiteCopyMessage = @offSiteCopyMessage + [output] + @crlf
+						FROM 
+							@offsiteCopy 
+						ORDER BY 
+							[row_id];
+					END;
+
+					IF @LogSuccessfulOutcomes = 1 BEGIN 
+						UPDATE dbo.backup_log
+						SET 
+							offsite_path = @s3fullOffSitePath,
+							offsite_succeeded = 1,
+							offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
+							failed_offsite_attempts = 0
+						WHERE
+							backup_id = @currentOperationID;
+					END;
+
+				END TRY
+				BEGIN CATCH
+
+					SET @offSiteCopyMessage = ISNULL(@offSiteCopyMessage, N'') + N'Unexpected error copying backup to OffSite Location [' + @s3fullOffSitePath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+				END CATCH;
+			END;
+			
+			IF @offSiteCopyMessage IS NOT NULL BEGIN
+				IF @currentOperationID IS NULL BEGIN
+					-- if we weren't already logging successful outcomes, need to create a new entry for this failure/problem:
+					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, offsite_path, backup_start, backup_end, backup_succeeded)
+					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @s3fullOffSitePath, @operationStart, GETDATE(),0);
+					
+					SELECT @currentOperationID = SCOPE_IDENTITY();
+				END
+
+				UPDATE dbo.backup_log
+				SET 
+					offsite_succeeded = 0, 
+					offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
+					failed_offsite_attempts = 1, 
+					offsite_details = @offSiteCopyMessage, 
+					[error_details] = CASE WHEN [error_details] IS NULL THEN N'OffSite File Copy Failure.' ELSE 'OffSite File Copy Failure. ' + [error_details] END
+				WHERE 
+					backup_id = @currentOperationID;				
 			END;
 		END;
 
@@ -664,6 +785,30 @@ RemoveOlderFiles:
 							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
 					END
 				END
+
+				IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
+
+					IF @PrintOnly = 1 BEGIN 
+						PRINT '-- EXEC dbo.remove_offsite_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @OffSiteBackupPath = ''' + @OffSiteBackupPath + ''', @OffSiteRetention = ''' + @OffSiteRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
+					  END; 
+					ELSE BEGIN 
+						SET @outcome = NULL;
+
+						EXEC dbo.[remove_offsite_backup_files]
+							@BackupType = @BackupType,
+							@DatabasesToProcess = @currentDatabase,
+							@OffSiteBackupPath = @OffSiteBackupPath,
+							@Retention = @OffSiteRetention,
+							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
+							@OperatorName = @OperatorName,
+							@MailProfileName = @DatabaseMailProfile,
+							@Output = @outcome OUTPUT;
+						
+						IF @outcome IS NOT NULL
+							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
+					END;
+				END;
+
 			END TRY 
 			BEGIN CATCH 
 				SET @errorMessage = ISNULL(@errorMessage, '') + 'Unexpected Error removing backups. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
@@ -721,7 +866,6 @@ NextDatabase:
 		DEALLOCATE backups;
 	END;
 
-
 	-- MKC:
 --			need to add some additional logic/processing here. 
 --			a) look for failed copy operations up to X hours ago? 
@@ -737,8 +881,6 @@ NextDatabase:
 --				and, this covers... the current rows as well. i.e., they'll have errors... which will then get picked up by the logic below. 
 --			f) for any true 'errors', those get picked up below. 
 --			g) for any non-errors - but failures to copy, there needs to be a 'warning' email sent - with a summary (list) of each db that hasn't copied - current number of attempts, how long it's been, etc. 
-
-
 
 	DECLARE @emailErrorMessage nvarchar(MAX);
 
