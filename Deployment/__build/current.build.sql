@@ -401,6 +401,9 @@ GO
 --##INCLUDE: S4 Backups\Utilities\remove_backup_files.sql
 
 -----------------------------------
+--##INCLUDE: S4 Backups\Utilities\remove_offsite_backup_files.sql
+
+-----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
