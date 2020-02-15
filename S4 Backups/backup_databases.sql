@@ -189,7 +189,10 @@ AS
 		END;
 
 		DECLARE @partnerName sysname; 
-		SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);		
+		EXEC sys.[sp_executesql]
+			N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
+			N'@partnerName sysname OUTPUT', 
+			@partnerName = @partnerName OUTPUT;
 
 		SET @CopyToBackupDirectory = REPLACE(@CopyToBackupDirectory, N'{PARTNER}', @partnerName);
 	END;
@@ -458,7 +461,7 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N'{FILE|FILEGROUP} TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
-		{COPY_ONLY}{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION}NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
+		{COPY_ONLY}{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION}NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, MAXTRANSFERSIZE = 2097152, CHECKSUM;
 	
 	';
 
@@ -798,7 +801,7 @@ RemoveOlderFiles:
 							@BackupType = @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@OffSiteBackupPath = @OffSiteBackupPath,
-							@Retention = @OffSiteRetention,
+							@OffSiteRetention = @OffSiteRetention,
 							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName = @DatabaseMailProfile,
