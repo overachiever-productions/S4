@@ -18,8 +18,9 @@ CREATE PROC dbo.[create_backup_jobs]
 	@EncryptionCertName							sysname					= NULL,
 	@BackupsDirectory							sysname					= N'{DEFAULT}', 
 	@CopyToBackupDirectory						sysname					= N'',
-	@SystemBackupRetention						sysname					= N'3 days', 
-	@CopyToSystemBackupRetention				sysname					= N'3 days', 
+	--@OffSiteBackupPath						sysname					= NULL, 
+	@SystemBackupRetention						sysname					= N'4 days', 
+	@CopyToSystemBackupRetention				sysname					= N'4 days', 
 	@UserFullBackupRetention					sysname					= N'3 days', 
 	@CopyToUserFullBackupRetention				sysname					= N'3 days',
 	@LogBackupRetention							sysname					= N'73 hours', 
@@ -27,8 +28,11 @@ CREATE PROC dbo.[create_backup_jobs]
 	@AllowForSecondaryServers					bit						= 0,				-- Set to 1 for Mirrored/AG'd databases. 
 	@FullSystemBackupsStartTime					sysname					= N'18:50:00',		-- if '', then system backups won't be created... 
 	@FullUserBackupsStartTime					sysname					= N'02:00:00',		
+	--@DiffBackupsStartTime						sysname					= NULL, 
+	--@DiffBackupsRunEvery						sysname					= NULL,				-- minutes or hours ... e.g., N'4 hours' or '180 minutes', etc. 
 	@LogBackupsStartTime						sysname					= N'00:02:00',		-- ditto ish
 	@LogBackupsRunEvery							sysname					= N'10 minutes',	-- vector, but only allows minutes (i think).
+	@TimeZoneForUtcOffset						sysname					= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@JobsNamePrefix								sysname					= N'Database Backups - ',		-- e.g., "Database Backups - USER - FULL" or "Database Backups - USER - LOG" or "Database Backups - SYSTEM - FULL"
 	@JobsCategoryName							sysname					= N'Backups',							
 	@JobOperatorToAlertOnErrors					sysname					= N'Alerts',	
@@ -38,6 +42,17 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	-- TODO: validate inputs... 
+
+	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
+		DECLARE @utc datetime = GETUTCDATE();
+		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+
+		SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
+		SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
+		SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
+	END;
 
 	DECLARE @systemStart time, @userStart time, @logStart time;
 	SELECT 
