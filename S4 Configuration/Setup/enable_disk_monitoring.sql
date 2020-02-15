@@ -22,11 +22,23 @@ CREATE PROC dbo.[enable_disk_monitoring]
 	@EmailSubjectPrefix					nvarchar(50)		= N'[DriveSpace Checks] ',
 	@CheckFrequencyInterval				sysname				= N'20 minutes', 
 	@DailyStartTime						time				= '00:03', 
+	@TimeZoneForUtcOffset				sysname				= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@OverWriteExistingJob				bit					= 0
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	-- TODO: validate inputs... 
+
+	-- translate 'local' timezone to UTC-zoned servers:
+	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
+		DECLARE @utc datetime = GETUTCDATE();
+		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+
+		SET @DailyStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DailyStartTime);
+	END;
+
 
 	-- translate/validate job start/frequency:
 	DECLARE @frequencyMinutes int;
@@ -45,7 +57,6 @@ AS
 		RAISERROR(@error, 16, 1); 
 		RETURN @outcome;
 	END;
-
 
 	DECLARE @scheduleFrequencyType int = 4;  -- daily (in all scenarios below)
 	DECLARE @schedFrequencyInterval int;   
@@ -168,7 +179,7 @@ AS
 		@on_success_step_id = 0,
 		@on_fail_action = 2,
 		@on_fail_step_id = 0,
-		@database_name = N'msdb',
+		@database_name = N'admindb',
 		@retry_attempts = 1,
 		@retry_interval = 1;
 	

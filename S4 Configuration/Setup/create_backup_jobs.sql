@@ -45,6 +45,7 @@ AS
 
 	-- TODO: validate inputs... 
 
+	-- translate 'local' timezone to UTC-zoned servers:
 	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
 		DECLARE @utc datetime = GETUTCDATE();
 		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
