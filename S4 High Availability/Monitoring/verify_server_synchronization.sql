@@ -541,7 +541,13 @@ AS
 		@localPrincipals [local]
 	WHERE 
 		ISNULL([local].[simplified_name], [local].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT ISNULL([simplified_name], [name]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remotePrincipals)
-		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+		AND [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+			SELECT 
+				x.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@localPrincipals x 
+				INNER JOIN @ignoredLoginName i ON x.[name] LIKE i.[name]
+		);
 
 	-- remote only:
     INSERT INTO [#bus] (
@@ -556,7 +562,13 @@ AS
 		@remotePrincipals [remote]
 	WHERE 
 		ISNULL([remote].[simplified_name], [remote].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT ISNULL([simplified_name], [name]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localPrincipals)
-		AND [remote].[name] NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+		AND [remote].[name] NOT IN (
+			SELECT 
+				x.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@remotePrincipals x 
+				INNER JOIN @ignoredLoginName i ON x.[name] LIKE i.[name]
+		);
 
 	-- differences
     INSERT INTO [#bus] (
@@ -571,7 +583,13 @@ AS
         @localPrincipals [local]
         INNER JOIN @remotePrincipals [remote] ON ISNULL([local].[simplified_name], [local].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS = ISNULL([remote].[simplified_name], [remote].[name]) COLLATE SQL_Latin1_General_CP1_CI_AS
 	WHERE
-		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName)
+		[local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+			SELECT 
+				x.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@localPrincipals x 
+				INNER JOIN @ignoredLoginName i ON x.[name] LIKE i.[name]			
+		)
 		AND (
 			[local].[sid] <> [remote].[sid]
 			OR [local].password_hash <> [remote].password_hash  
@@ -649,7 +667,13 @@ AS
         (ISNULL([local].[simplified_name], [local].[login_name]) + N'.' + [local].[role]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
             SELECT (ISNULL([simplified_name], [login_name]) + N'.' + [role]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remoteMemberRoles
         )
-        AND [local].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
+        AND [local].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+			SELECT 
+				x.[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@localMemberRoles x 
+				INNER JOIN @ignoredLoginName i ON x.[login_name] LIKE i.[name]
+		);
 
     -- remote not in local:
     INSERT INTO [#bus] (
@@ -665,8 +689,13 @@ AS
         (ISNULL([remote].[simplified_name], [remote].[login_name]) + N'.' + [remote].[role]) COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
             SELECT (ISNULL([simplified_name], [login_name]) + N'.' + [role]) COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localMemberRoles
         )
-        AND [remote].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @ignoredLoginName);
-
+        AND [remote].[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+			SELECT 
+				x.[login_name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@remoteMemberRoles x 
+				INNER JOIN @ignoredLoginName i ON x.[login_name] LIKE i.[name]
+		);
     
     ---------------------------------------
 	-- Endpoints? 
