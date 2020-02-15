@@ -26,8 +26,8 @@ CREATE PROC dbo.[create_backup_jobs]
 	@CopyToLogBackupRetention					sysname					= N'73 hours',
 	@AllowForSecondaryServers					bit						= 0,				-- Set to 1 for Mirrored/AG'd databases. 
 	@FullSystemBackupsStartTime					sysname					= N'18:50:00',		-- if '', then system backups won't be created... 
-	@FullUserBackupsStartTime					sysname					= N'00:02:00',		-- hmm... does it even make sense to let this be empty/null-ish? 
-	@LogBackupsStartTime						sysname					= N'00:12:00',		-- ditto ish
+	@FullUserBackupsStartTime					sysname					= N'02:00:00',		
+	@LogBackupsStartTime						sysname					= N'00:02:00',		-- ditto ish
 	@LogBackupsRunEvery							sysname					= N'10 minutes',	-- vector, but only allows minutes (i think).
 	@JobsNamePrefix								sysname					= N'Database Backups - ',		-- e.g., "Database Backups - USER - FULL" or "Database Backups - USER - LOG" or "Database Backups - SYSTEM - FULL"
 	@JobsCategoryName							sysname					= N'Backups',							
@@ -72,7 +72,8 @@ AS
 
 	DECLARE @backupsTemplate nvarchar(MAX) = N'EXEC admindb.dbo.[backup_databases]
 	@BackupType = N''{backupType}'',
-	@DatabasesToBackup = N''{targets}'',{exclusions}
+	@DatabasesToBackup = N''{targets}'',
+	@DatabasesToExclude = N''{exclusions}'',
 	@BackupDirectory = N''{backupsDirectory}'',{copyToDirectory}
 	@BackupRetention = N''{retention}'',{copyToRetention}{encryption}{secondaries}{operator}{profile}
 	@PrintOnly = 0;';
@@ -120,11 +121,15 @@ AS
 	SET @sysBackups = REPLACE(@sysBackups, N'{retention}', @SystemBackupRetention);
 	SET @sysBackups = REPLACE(@sysBackups, N'{copyRetention}', ISNULL(@CopyToSystemBackupRetention, N''));
 
-	-- user backups (exclusions): 
+	-- Make sure to exclude _s4test dbs from USER backups: 
 	IF NULLIF(@FullAndLogUserDBExclusions, N'') IS NULL 
-		SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', N'');
-	ELSE 
-		SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', @crlfTab + N'@DatabasesToExclude = N''{exclusions}'', ');
+		SET @FullAndLogUserDBExclusions = N'%s4test';
+	ELSE BEGIN 
+		IF @FullAndLogUserDBExclusions NOT LIKE N'%s4test%'
+			SET @FullAndLogUserDBExclusions = @FullAndLogUserDBExclusions + N', %s4test';
+	END;
+
+	SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', @FullAndLogUserDBExclusions);
 
 	-- full user backups: 
 	SET @userBackups = @backupsTemplate;
@@ -236,7 +241,7 @@ AS
 		SET @scheduleName = @currentJobName + N' Schedule';
 
 		IF @currentJobName LIKE '%log%' BEGIN 
-			SET @schedSubdayType = 1; -- every N minutes
+			SET @schedSubdayType = 4; -- every N minutes
 			SET @schedSubdayInteval = @frequencyMinutes;	 -- N... 
 		  END; 
 		ELSE BEGIN 
