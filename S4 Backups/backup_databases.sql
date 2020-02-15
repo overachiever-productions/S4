@@ -904,7 +904,10 @@ NextDatabase:
 	DECLARE @emailErrorMessage nvarchar(MAX);
 
 	IF EXISTS (SELECT NULL FROM dbo.backup_log WHERE execution_id = @executionID AND error_details IS NOT NULL) BEGIN;
-		SET @emailErrorMessage = N'The following errors were encountered: ' + @crlf;
+		SET @emailErrorMessage = N'BACKUP TYPE: ' + @BackupType + @crlf
+			+ N'TARGETS: ' + @DatabasesToBackup + @crlf
+			+ @crlf 
+			+ N'The following errors were encountered: ' + @crlf;
 
 		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Target Database: [' + [database] + N']. Error: ' + error_details + @crlf + @crlf
 		FROM 
