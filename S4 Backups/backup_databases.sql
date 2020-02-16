@@ -189,7 +189,10 @@ AS
 		END;
 
 		DECLARE @partnerName sysname; 
-		SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);		
+		EXEC sys.[sp_executesql]
+			N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
+			N'@partnerName sysname OUTPUT', 
+			@partnerName = @partnerName OUTPUT;
 
 		SET @CopyToBackupDirectory = REPLACE(@CopyToBackupDirectory, N'{PARTNER}', @partnerName);
 	END;
@@ -458,7 +461,7 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N'{FILE|FILEGROUP} TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
-		{COPY_ONLY}{COMPRESSION}{DIFFERENTIAL}{ENCRYPTION}NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
+		{COPY_ONLY}{COMPRESSION}{DIFFERENTIAL}{MAXTRANSFER}{ENCRYPTION}NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
 	
 	';
 
@@ -488,6 +491,22 @@ DoneRemovingFilesBeforeBackup:
 		  END;
 		ELSE 
 			SET @command = REPLACE(@command, N'{ENCRYPTION}','');
+
+		-- Account for TDE and 2016+ Compression: 
+		IF EXISTS (SELECT NULL FROM sys.[dm_database_encryption_keys] WHERE [database_id] = DB_ID(@currentDatabase) AND [encryption_state] <> 0) BEGIN 
+
+			IF (SELECT dbo.[get_engine_version]()) > 13.0
+				SET @command = REPLACE(@command, N'{MAXTRANSFER}', N'MAXTRANSFERSIZE = 2097152, ');
+			ELSE BEGIN 
+				-- vNEXT / when adding processing-bus implementation and 'warnings' channel... output the following into WARNINGS: 
+				PRINT 'Disabling Database Compression for database [' + @currentDatabase + N'] because TDE is enabled on pre-2016 SQL Server instance.';
+				SET @command = REPLACE(@command, N'COMPRESSION, ', N'');
+				SET @command = REPLACE(@command, N'{MAXTRANSFER}', N'');
+			END;
+		  END;
+		ELSE BEGIN 
+			SET @command = REPLACE(@command, N'{MAXTRANSFER}', N'');
+		END;
 
 		-- account for 'partial' backups: 
 		SET @command = REPLACE(@command, N'{FILE|FILEGROUP}', @fileOrFileGroupDirective);
@@ -798,7 +817,7 @@ RemoveOlderFiles:
 							@BackupType = @BackupType,
 							@DatabasesToProcess = @currentDatabase,
 							@OffSiteBackupPath = @OffSiteBackupPath,
-							@Retention = @OffSiteRetention,
+							@OffSiteRetention = @OffSiteRetention,
 							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName = @DatabaseMailProfile,
@@ -885,7 +904,10 @@ NextDatabase:
 	DECLARE @emailErrorMessage nvarchar(MAX);
 
 	IF EXISTS (SELECT NULL FROM dbo.backup_log WHERE execution_id = @executionID AND error_details IS NOT NULL) BEGIN;
-		SET @emailErrorMessage = N'The following errors were encountered: ' + @crlf;
+		SET @emailErrorMessage = N'BACKUP TYPE: ' + @BackupType + @crlf
+			+ N'TARGETS: ' + @DatabasesToBackup + @crlf
+			+ @crlf 
+			+ N'The following errors were encountered: ' + @crlf;
 
 		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Target Database: [' + [database] + N']. Error: ' + error_details + @crlf + @crlf
 		FROM 

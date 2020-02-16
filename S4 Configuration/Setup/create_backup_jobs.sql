@@ -1,8 +1,14 @@
 /*
 		
+	vNEXT:
+		- Refactor @FullAndLog* ... no longer makes sense it's @UserDB*... 
+		- DIFF backups
+		- OffSite Path + retentions
+		- Logging on/off as in... 	@LogSuccessfulOutcomes = 1 or ... not... that's kind of a big deal...  or... maybe... f-it.. yeah. just DEFAULT that into play. 
+			so... yeah. 	@LogSuccessfulOutcomes = 1, just needs to be added to the default 'pit of success' signature... 
 	
-
-	
+		- Create the Jobs as Disabled (i.e., NOT enabled)
+			that way... a) create them via the script, b) double-check/review, c) enable (is the the workflow).
 */
 
 USE [admindb];
@@ -18,17 +24,21 @@ CREATE PROC dbo.[create_backup_jobs]
 	@EncryptionCertName							sysname					= NULL,
 	@BackupsDirectory							sysname					= N'{DEFAULT}', 
 	@CopyToBackupDirectory						sysname					= N'',
-	@SystemBackupRetention						sysname					= N'3 days', 
-	@CopyToSystemBackupRetention				sysname					= N'3 days', 
+	--@OffSiteBackupPath						sysname					= NULL, 
+	@SystemBackupRetention						sysname					= N'4 days', 
+	@CopyToSystemBackupRetention				sysname					= N'4 days', 
 	@UserFullBackupRetention					sysname					= N'3 days', 
 	@CopyToUserFullBackupRetention				sysname					= N'3 days',
 	@LogBackupRetention							sysname					= N'73 hours', 
 	@CopyToLogBackupRetention					sysname					= N'73 hours',
 	@AllowForSecondaryServers					bit						= 0,				-- Set to 1 for Mirrored/AG'd databases. 
 	@FullSystemBackupsStartTime					sysname					= N'18:50:00',		-- if '', then system backups won't be created... 
-	@FullUserBackupsStartTime					sysname					= N'00:02:00',		-- hmm... does it even make sense to let this be empty/null-ish? 
-	@LogBackupsStartTime						sysname					= N'00:12:00',		-- ditto ish
+	@FullUserBackupsStartTime					sysname					= N'02:00:00',		
+	--@DiffBackupsStartTime						sysname					= NULL, 
+	--@DiffBackupsRunEvery						sysname					= NULL,				-- minutes or hours ... e.g., N'4 hours' or '180 minutes', etc. 
+	@LogBackupsStartTime						sysname					= N'00:02:00',		-- ditto ish
 	@LogBackupsRunEvery							sysname					= N'10 minutes',	-- vector, but only allows minutes (i think).
+	@TimeZoneForUtcOffset						sysname					= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@JobsNamePrefix								sysname					= N'Database Backups - ',		-- e.g., "Database Backups - USER - FULL" or "Database Backups - USER - LOG" or "Database Backups - SYSTEM - FULL"
 	@JobsCategoryName							sysname					= N'Backups',							
 	@JobOperatorToAlertOnErrors					sysname					= N'Alerts',	
@@ -38,6 +48,18 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	-- TODO: validate inputs... 
+
+	-- translate 'local' timezone to UTC-zoned servers:
+	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
+		DECLARE @utc datetime = GETUTCDATE();
+		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+
+		SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
+		SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
+		SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
+	END;
 
 	DECLARE @systemStart time, @userStart time, @logStart time;
 	SELECT 
@@ -72,7 +94,8 @@ AS
 
 	DECLARE @backupsTemplate nvarchar(MAX) = N'EXEC admindb.dbo.[backup_databases]
 	@BackupType = N''{backupType}'',
-	@DatabasesToBackup = N''{targets}'',{exclusions}
+	@DatabasesToBackup = N''{targets}'',
+	@DatabasesToExclude = N''{exclusions}'',
 	@BackupDirectory = N''{backupsDirectory}'',{copyToDirectory}
 	@BackupRetention = N''{retention}'',{copyToRetention}{encryption}{secondaries}{operator}{profile}
 	@PrintOnly = 0;';
@@ -120,11 +143,15 @@ AS
 	SET @sysBackups = REPLACE(@sysBackups, N'{retention}', @SystemBackupRetention);
 	SET @sysBackups = REPLACE(@sysBackups, N'{copyRetention}', ISNULL(@CopyToSystemBackupRetention, N''));
 
-	-- user backups (exclusions): 
+	-- Make sure to exclude _s4test dbs from USER backups: 
 	IF NULLIF(@FullAndLogUserDBExclusions, N'') IS NULL 
-		SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', N'');
-	ELSE 
-		SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', @crlfTab + N'@DatabasesToExclude = N''{exclusions}'', ');
+		SET @FullAndLogUserDBExclusions = N'%s4test';
+	ELSE BEGIN 
+		IF @FullAndLogUserDBExclusions NOT LIKE N'%s4test%'
+			SET @FullAndLogUserDBExclusions = @FullAndLogUserDBExclusions + N', %s4test';
+	END;
+
+	SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', @FullAndLogUserDBExclusions);
 
 	-- full user backups: 
 	SET @userBackups = @backupsTemplate;
@@ -236,7 +263,7 @@ AS
 		SET @scheduleName = @currentJobName + N' Schedule';
 
 		IF @currentJobName LIKE '%log%' BEGIN 
-			SET @schedSubdayType = 1; -- every N minutes
+			SET @schedSubdayType = 4; -- every N minutes
 			SET @schedSubdayInteval = @frequencyMinutes;	 -- N... 
 		  END; 
 		ELSE BEGIN 

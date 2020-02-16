@@ -172,7 +172,11 @@ AS
 		END;
 	END;
 
-	IF @PrintOnly = 1 BEGIN
+	DECLARE @routeInfoAsOutput bit = 0;
+	IF @Output IS NULL
+		SET @routeInfoAsOutput = 1; 
+
+	IF @PrintOnly = 1 AND @routeInfoAsOutput = 1 BEGIN
 		IF @retentionType = 'b'
 			PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
 		ELSE 
@@ -192,10 +196,6 @@ AS
 	END
 
 	-----------------------------------------------------------------------------
-	DECLARE @routeInfoAsOutput bit = 0;
-	IF @Output IS NULL
-		SET @routeInfoAsOutput = 1; 
-
 	SET @Output = NULL;
 
 	DECLARE @excludeSimple bit = 0;
@@ -322,7 +322,7 @@ AS
 
 			SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
 
-			IF @PrintOnly = 1
+			IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
 				PRINT N'--' + @command;
 
 			INSERT INTO @files (subdirectory, depth, isfile)
@@ -406,7 +406,7 @@ AS
 
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), GETDATE(), 120), ' ', 'T') + ''', 0;';
 
-				IF @PrintOnly = 1 
+				IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
 					PRINT @command;
 				ELSE BEGIN; 
 
@@ -443,7 +443,7 @@ AS
 			
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
 
-				IF @PrintOnly = 1 
+				IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
 					PRINT @command;
 				ELSE BEGIN 
 					BEGIN TRY
@@ -473,7 +473,7 @@ AS
 				DELETE FROM @files;
 				SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
 
-				IF @PrintOnly = 1
+				IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
 					PRINT N'--' + @command;
 
 				INSERT INTO @files (subdirectory, depth, isfile)
@@ -506,7 +506,7 @@ AS
 
 					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 0;';
 
-					IF @PrintOnly = 1 
+					IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
 						PRINT @command;
 					ELSE BEGIN; 
 

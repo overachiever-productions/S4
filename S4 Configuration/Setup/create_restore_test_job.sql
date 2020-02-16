@@ -32,6 +32,7 @@ GO
 CREATE PROC dbo.[create_restore_test_job]
     @JobName						sysname				= N'Database Backups - Regular Restore Tests',
 	@RestoreTestStartTime			time				= N'22:05:00',
+	@TimeZoneForUtcOffset			sysname				= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@JobCategoryName				sysname				= N'Backups',
 	@AllowForSecondaries			bit					= 0,									-- IF AG/Mirrored environment (secondaries), then wrap restore-test in IF is_primary_server check... 
     @DatabasesToRestore				nvarchar(MAX)		= N'{READ_FROM_FILESYSTEM}', 
@@ -53,6 +54,20 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	-- TODO: validate inputs... 
+
+	-- translate 'local' timezone to UTC-zoned servers:
+	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
+		DECLARE @utc datetime = GETUTCDATE();
+		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+
+		SET @RestoreTestStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @RestoreTestStartTime);
+	END;
+
+	DECLARE @restoreStart time;
+	SELECT 
+		@restoreStart	= CAST(@RestoreTestStartTime AS time);
 
 	-- Typical Use-Case/Pattern: 
 	IF UPPER(@AllowReplace) <> N'REPLACE' AND @DropDatabasesAfterRestore IS NULL 
@@ -145,7 +160,7 @@ END;'
 	
 	-- create a schedule:
 	DECLARE @dateAsInt int = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
-	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @RestoreTestStartTime, 108), N':', N''), 6)) AS int);
+	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @restoreStart, 108), N':', N''), 6)) AS int);
 	DECLARE @scheduleName sysname = @JobName + ' Schedule';
 
 	EXEC msdb.dbo.sp_add_jobschedule 

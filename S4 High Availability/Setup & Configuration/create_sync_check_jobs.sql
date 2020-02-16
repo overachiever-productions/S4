@@ -16,6 +16,7 @@ CREATE PROC dbo.[create_sync_check_jobs]
 	@Action											sysname				= N'TEST',				-- 'TEST | CREATE' are the 2x options - i.e., test/output what we'd see... or ... create the jobs. 	
 	@ServerAndJobsSyncCheckJobStart					sysname				= N'00:01:00', 
 	@DataSyncCheckJobStart							sysname				= N'00:03:00', 
+	@TimeZoneForUtcOffset							sysname				= NULL,					-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@ServerAndJobsSyncCheckJobRunsEvery				sysname				= N'30 minutes', 
 	@DataSyncCheckJobRunsEvery						sysname				= N'20 minutes',
 	@IgnoreSynchronizedDatabaseOwnership			bit		            = 0,					
@@ -40,6 +41,22 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	-- TODO: validate inputs... 
+
+	-- translate 'local' timezone to UTC-zoned servers:
+	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
+		DECLARE @utc datetime = GETUTCDATE();
+		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+
+		SET @ServerAndJobsSyncCheckJobStart = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @ServerAndJobsSyncCheckJobStart);
+		SET @DataSyncCheckJobStart = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DataSyncCheckJobStart);
+	END;
+
+	DECLARE @serverAndJobsStart time, @dataStart time;
+	SELECT 
+		@serverAndJobsStart		= CAST(@ServerAndJobsSyncCheckJobStart AS time), 
+		@dataStart				= CAST(@DataSyncCheckJobStart AS time);
 
 	IF NULLIF(@Action, N'') IS NULL SET @Action = N'TEST';
 
@@ -72,7 +89,6 @@ AS
 		END;
 	END;
 
-
 --vNEXT:
 	--IF UPPER(@Action) = N'TEST' BEGIN
 	--	PRINT 'TODO: Output all parameters - to make config easier... ';
@@ -81,7 +97,7 @@ AS
 	
 	DECLARE @crlfTab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
 
-	DECLARE @serverSyncTemplate nvarchar(MAX) = N'EXEC dbo.[verify_server_synchronization]
+	DECLARE @serverSyncTemplate nvarchar(MAX) = N'EXEC admindb.dbo.[verify_server_synchronization]
 	@IgnoreSynchronizedDatabaseOwnership = {ingoreOwnership},
 	@IgnoredMasterDbObjects = {ignoredMasterObjects},
 	@IgnoredLogins = {ignoredLogins},
@@ -90,11 +106,11 @@ AS
 	@IgnorePrincipalNames = {ignorePrincipals},{operator}{profile}
 	@PrintOnly = {printOnly}; ';
 
-	DECLARE @jobsSyncTemplate nvarchar(MAX) = N'EXEC dbo.[verify_job_synchronization] 
+	DECLARE @jobsSyncTemplate nvarchar(MAX) = N'EXEC admindb.dbo.[verify_job_synchronization] 
 	@IgnoredJobs = {ignoredJobs},{operator}{profile}
 	@PrintOnly = {printOnly}; ';
 
-	DECLARE @dataSyncTemplate nvarchar(MAX) = N'EXEC [dbo].[verify_data_synchronization]
+	DECLARE @dataSyncTemplate nvarchar(MAX) = N'EXEC admindb.dbo.[verify_data_synchronization]
 	@IgnoredDatabases = {ignoredDatabases},{rpo}{rto}{checkCount}{checkDelay}{excludeAnomalies}{operator}{profile}
 	@PrintOnly = {printOnly}; ';
 	
@@ -220,7 +236,6 @@ AS
 		SET @dataBody = REPLACE(@dataBody, N'{profile}', N'');
 	ELSE 
 		SET @dataBody = REPLACE(@dataBody, N'{profile}', @crlfTab + N'@MailProfileName = N''' + @ProfileToUseForAlerts + N''', ');
-
 	
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
@@ -246,6 +261,7 @@ AS
 
 		RETURN 0;
 	END;
+
 	-----------------------------------------------------------------------------
 	-- Create the Server and Jobs Sync-Check Job:
 	DECLARE @jobID uniqueidentifier; 
@@ -258,10 +274,10 @@ AS
 		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 		@JobID = @jobID OUTPUT;
-
+	
 	-- Add a schedule: 
 	DECLARE @dateAsInt int = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
-	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @ServerAndJobsSyncCheckJobStart, 108), N':', N''), 6)) AS int);
+	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @serverAndJobsStart, 108), N':', N''), 6)) AS int);
 	DECLARE @scheduleName sysname = @currentJobName + ' Schedule';
 
 	DECLARE @frequencyMinutes int;
@@ -280,7 +296,7 @@ AS
 		RAISERROR(@error, 16, 1); 
 		RETURN @outcome;
 	END;
-
+		   	
 	-- TODO: scheduling logic here isn't as robust as it is in ...dbo.enable_disk_monitoring (and... i should expand the logic in THAT sproc, and move it out to it's own sub-sproc - i.e., pass in an @JobID and other params to a sproc called something like dbo.add_agent_job_schedule
 	EXEC msdb.dbo.sp_add_jobschedule 
 		@job_id = @jobID,
@@ -331,7 +347,7 @@ AS
 
 	-- Add a schedule: 
 
-	SET @startTimeAsInt = CAST((LEFT(REPLACE(CONVERT(sysname, @DataSyncCheckJobStart, 108), N':', N''), 6)) AS int);
+	SET @startTimeAsInt = CAST((LEFT(REPLACE(CONVERT(sysname, @dataStart, 108), N':', N''), 6)) AS int);
 	SET @scheduleName = @currentJobName + ' Schedule';
 
 	EXEC @outcome = dbo.[translate_vector]
