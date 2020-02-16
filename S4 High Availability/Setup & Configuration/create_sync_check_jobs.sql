@@ -334,7 +334,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Create the Data Sync-Check Job:
 
-	SET @currentJobName = @JobsNamePrefix + N'Data-Sync Verification';
+	SET @currentJobName = @JobsNamePrefix + N'Verify Data-Sync';
 	SET @jobID = NULL;
 
 	EXEC dbo.[create_agent_job]
