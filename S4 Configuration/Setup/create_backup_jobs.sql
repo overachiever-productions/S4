@@ -1,8 +1,14 @@
 /*
 		
+	vNEXT:
+		- Refactor @FullAndLog* ... no longer makes sense it's @UserDB*... 
+		- DIFF backups
+		- OffSite Path + retentions
+		- Logging on/off as in... 	@LogSuccessfulOutcomes = 1 or ... not... that's kind of a big deal...  or... maybe... f-it.. yeah. just DEFAULT that into play. 
+			so... yeah. 	@LogSuccessfulOutcomes = 1, just needs to be added to the default 'pit of success' signature... 
 	
-
-	
+		- Create the Jobs as Disabled (i.e., NOT enabled)
+			that way... a) create them via the script, b) double-check/review, c) enable (is the the workflow).
 */
 
 USE [admindb];

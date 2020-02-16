@@ -39,7 +39,6 @@ AS
 		SET @DailyStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DailyStartTime);
 	END;
 
-
 	-- translate/validate job start/frequency:
 	DECLARE @frequencyMinutes int;
 	DECLARE @outcome int; 

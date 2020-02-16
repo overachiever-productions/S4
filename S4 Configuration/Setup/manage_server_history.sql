@@ -19,18 +19,29 @@ CREATE PROC dbo.[manage_server_history]
 	@JobOperatorToAlertOnErrors			sysname			= N'Alerts',
 	@NumberOfServerLogsToKeep			int				= 24, 
 	@StartDayOfWeekForCleanupJob		sysname			= N'Sunday',
-	@StartTimeForCleanupJob				time			= N'09:45',			-- AM/24-hour time (i.e. defaults to morning)
+	@StartTimeForCleanupJob				time			= N'09:45',				-- AM/24-hour time (i.e. defaults to morning)
+	@TimeZoneForUtcOffset				sysname			= NULL,					-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@AgentJobHistoryRetention			sysname			= N'4 weeks', 
 	@BackupHistoryRetention				sysname			= N'4 weeks', 
 	@EmailHistoryRetention				sysname			= N'', 
 	@CycleFTCrawlLogsInDatabases		nvarchar(MAX)	= NULL,
 	@CleanupS4History					sysname			= N'', 
-	@OverWriteExistingJob				bit				= 0					-- Exactly as it sounds. Used for cases where we want to force an exiting job into a 'new' shap.e... 
+	@OverWriteExistingJob				bit				= 0						-- Exactly as it sounds. Used for cases where we want to force an exiting job into a 'new' shap.e... 
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
+	-- TODO: validate inputs... 
+
+	-- translate 'local' timezone to UTC-zoned servers:
+	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
+		DECLARE @utc datetime = GETUTCDATE();
+		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+
+		SET @StartTimeForCleanupJob = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @StartTimeForCleanupJob);
+	END;
+
 	DECLARE @outcome int;
 	DECLARE @error nvarchar(MAX);
 
