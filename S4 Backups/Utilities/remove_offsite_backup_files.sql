@@ -41,7 +41,7 @@ AS
 
 	-- {copyright}
 	
-	IF UPPER(@Retention) = N'INFINITE' BEGIN 
+	IF UPPER(@OffSiteRetention) = N'INFINITE' BEGIN 
 		PRINT N'-- INFINITE retention detected. Terminating off-site cleanup process.';
 		RETURN 0; -- success
 	END;
