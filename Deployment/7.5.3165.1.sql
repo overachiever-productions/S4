@@ -4614,7 +4614,7 @@ AS
 
 	-- [v7.5.3165.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
 	
-	IF UPPER(@Retention) = N'INFINITE' BEGIN 
+	IF UPPER(@OffSiteRetention) = N'INFINITE' BEGIN 
 		PRINT N'-- INFINITE retention detected. Terminating off-site cleanup process.';
 		RETURN 0; -- success
 	END;
@@ -4658,7 +4658,7 @@ CREATE PROC dbo.backup_databases
 AS
 	SET NOCOUNT ON;
 
-	-- [v7.5.3165.1.1] - License/Code/Details/Docs: https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639 
+	-- {copyright}
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -4759,7 +4759,10 @@ AS
 		END;
 
 		DECLARE @partnerName sysname; 
-		SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);		
+		EXEC sys.[sp_executesql]
+			N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
+			N'@partnerName sysname OUTPUT', 
+			@partnerName = @partnerName OUTPUT;
 
 		SET @CopyToBackupDirectory = REPLACE(@CopyToBackupDirectory, N'{PARTNER}', @partnerName);
 	END;
