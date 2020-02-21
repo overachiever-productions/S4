@@ -14,10 +14,7 @@ GO
 
 CREATE PROC dbo.[create_sync_check_jobs]
 	@Action											sysname				= N'TEST',				-- 'TEST | CREATE' are the 2x options - i.e., test/output what we'd see... or ... create the jobs. 	
-	@ServerAndJobsSyncCheckJobStart					sysname				= N'00:01:00', 
-	@DataSyncCheckJobStart							sysname				= N'00:03:00', 
-	@TimeZoneForUtcOffset							sysname				= NULL,					-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
-	@ServerAndJobsSyncCheckJobRunsEvery				sysname				= N'30 minutes', 
+	@ServerAndJobsSyncCheckJobRunsEvery				sysname				= N'20 minutes', 
 	@DataSyncCheckJobRunsEvery						sysname				= N'20 minutes',
 	@IgnoreSynchronizedDatabaseOwnership			bit		            = 0,					
 	@IgnoredMasterDbObjects							nvarchar(MAX)       = NULL,
@@ -44,19 +41,8 @@ AS
 
 	-- TODO: validate inputs... 
 
-	-- translate 'local' timezone to UTC-zoned servers:
-	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
-		DECLARE @utc datetime = GETUTCDATE();
-		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
-
-		SET @ServerAndJobsSyncCheckJobStart = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @ServerAndJobsSyncCheckJobStart);
-		SET @DataSyncCheckJobStart = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DataSyncCheckJobStart);
-	END;
-
-	DECLARE @serverAndJobsStart time, @dataStart time;
-	SELECT 
-		@serverAndJobsStart		= CAST(@ServerAndJobsSyncCheckJobStart AS time), 
-		@dataStart				= CAST(@DataSyncCheckJobStart AS time);
+	DECLARE @serverAndJobsStart time = '00:01:00';
+	DECLARE @dataStart time = '00:02:00';
 
 	IF NULLIF(@Action, N'') IS NULL SET @Action = N'TEST';
 
@@ -334,7 +320,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Create the Data Sync-Check Job:
 
-	SET @currentJobName = @JobsNamePrefix + N'Data-Sync Verification';
+	SET @currentJobName = @JobsNamePrefix + N'Verify Data-Sync';
 	SET @jobID = NULL;
 
 	EXEC dbo.[create_agent_job]

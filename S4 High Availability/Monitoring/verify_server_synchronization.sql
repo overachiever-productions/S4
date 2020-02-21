@@ -57,6 +57,12 @@ AS
 	-- {copyright}
 
 	-----------------------------------------------------------------------------
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;
+
+	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	DECLARE @return int, @returnMessage nvarchar(MAX);
     IF @PrintOnly = 0 BEGIN 
@@ -109,11 +115,6 @@ AS
 		RAISERROR('Linked Server ''PARTNER'' not detected. Comparisons between this server and its peer can not be processed.', 16, 1);
 		RETURN -5;
 	END; 
-
-	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
-	END;
 
 	IF OBJECT_ID('admindb.dbo.server_trace_flags', 'U') IS NULL BEGIN 
 		RAISERROR('Table dbo.server_trace_flags is not present in master. Synchronization check can not be processed.', 16, 1);

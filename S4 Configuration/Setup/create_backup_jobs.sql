@@ -2,13 +2,8 @@
 		
 	vNEXT:
 		- Refactor @FullAndLog* ... no longer makes sense it's @UserDB*... 
-		- DIFF backups
 		- OffSite Path + retentions
-		- Logging on/off as in... 	@LogSuccessfulOutcomes = 1 or ... not... that's kind of a big deal...  or... maybe... f-it.. yeah. just DEFAULT that into play. 
-			so... yeah. 	@LogSuccessfulOutcomes = 1, just needs to be added to the default 'pit of success' signature... 
 	
-		- Create the Jobs as Disabled (i.e., NOT enabled)
-			that way... a) create them via the script, b) double-check/review, c) enable (is the the workflow).
 */
 
 USE [admindb];
@@ -19,8 +14,8 @@ IF OBJECT_ID('dbo.create_backup_jobs','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[create_backup_jobs]
-	@FullAndLogUserDBTargets					sysname					= N'{USER}',
-	@FullAndLogUserDBExclusions					sysname					= N'',
+	@UserDBTargets								sysname					= N'{USER}',
+	@UserDBExclusions							sysname					= N'',
 	@EncryptionCertName							sysname					= NULL,
 	@BackupsDirectory							sysname					= N'{DEFAULT}', 
 	@CopyToBackupDirectory						sysname					= N'',
@@ -34,8 +29,8 @@ CREATE PROC dbo.[create_backup_jobs]
 	@AllowForSecondaryServers					bit						= 0,				-- Set to 1 for Mirrored/AG'd databases. 
 	@FullSystemBackupsStartTime					sysname					= N'18:50:00',		-- if '', then system backups won't be created... 
 	@FullUserBackupsStartTime					sysname					= N'02:00:00',		
-	--@DiffBackupsStartTime						sysname					= NULL, 
-	--@DiffBackupsRunEvery						sysname					= NULL,				-- minutes or hours ... e.g., N'4 hours' or '180 minutes', etc. 
+	@DiffBackupsStartTime						sysname					= NULL, 
+	@DiffBackupsRunEvery						sysname					= NULL,				-- minutes or hours ... e.g., N'4 hours' or '180 minutes', etc. 
 	@LogBackupsStartTime						sysname					= N'00:02:00',		-- ditto ish
 	@LogBackupsRunEvery							sysname					= N'10 minutes',	-- vector, but only allows minutes (i think).
 	@TimeZoneForUtcOffset						sysname					= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
@@ -49,7 +44,12 @@ AS
 
 	-- {copyright}
 
-	-- TODO: validate inputs... 
+	-- TODO: validate inputs: 
+
+	IF NULLIF(@DiffBackupsStartTime, N'') IS NOT NULL AND @DiffBackupsRunEvery IS NULL BEGIN 
+		RAISERROR('@DiffBackupsRunEvery must be set/specified when a @DiffBackupsStartTime is specified.', 16, 1);
+		RETURN -2;
+	END;
 
 	-- translate 'local' timezone to UTC-zoned servers:
 	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
@@ -59,23 +59,18 @@ AS
 		SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
 		SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
 		SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
+		SET @DiffBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DiffBackupsStartTime);
 	END;
 
-	DECLARE @systemStart time, @userStart time, @logStart time;
+	DECLARE @systemStart time, @userStart time, @logStart time, @diffStart time;
 	SELECT 
 		@systemStart	= CAST(@FullSystemBackupsStartTime AS time), 
 		@userStart		= CAST(@FullUserBackupsStartTime AS time), 
-		@logStart		= CAST(@LogBackupsStartTime AS time);
+		@logStart		= CAST(@LogBackupsStartTime AS time), 
+		@diffStart		= CAST(@DiffBackupsStartTime AS time);
 
-	-- Verify minutes-only for T-Log Backups: 
-	IF @logStart IS NOT NULL AND @LogBackupsRunEvery IS NOT NULL BEGIN 
-		IF @LogBackupsRunEvery NOT LIKE '%minute%' BEGIN 
-			RAISERROR('@LogBackupsRunEvery can only specify values defined in minutes - e.g., N''5 minutes'', or N''10 minutes'', etc.', 16, 1);
-			RETURN -2;
-		END;
-	END;
-
-	DECLARE @frequencyMinutes int;
+	DECLARE @logFrequencyMinutes int;
+	DECLARE @diffFrequencyMinutes int;
 	DECLARE @outcome int; 
 	DECLARE @error nvarchar(MAX);
 
@@ -84,7 +79,7 @@ AS
 		@ValidationParameterName = N'@LogBackupsRunEvery',
 		@ProhibitedIntervals = N'MILLISECOND,SECOND,HOUR,DAY,WEEK,MONTH,YEAR',
 		@TranslationDatePart = 'MINUTE',
-		@Output = @frequencyMinutes OUTPUT,
+		@Output = @logFrequencyMinutes OUTPUT,
 		@Error = @error OUTPUT;
 
 	IF @outcome <> 0 BEGIN 
@@ -92,12 +87,42 @@ AS
 		RETURN @outcome;
 	END;
 
+	IF @diffStart IS NOT NULL BEGIN 
+
+		EXEC @outcome = dbo.[translate_vector]
+			@Vector = @DiffBackupsRunEvery,
+			@ValidationParameterName = N'@DiffBackupsRunEvery',
+			@ProhibitedIntervals = N'MILLISECOND,SECOND,DAY,WEEK,MONTH,YEAR',
+			@TranslationDatePart = 'MINUTE',
+			@Output = @diffFrequencyMinutes OUTPUT,
+			@Error = @error OUTPUT;
+
+		IF @outcome <> 0 BEGIN 
+			RAISERROR(@error, 16, 1); 
+			RETURN @outcome;
+		END;
+
+		IF @diffFrequencyMinutes > 90 BEGIN
+			DECLARE @remainder int = (SELECT @diffFrequencyMinutes % 60);
+			IF @remainder <> 0 BEGIN 
+				RAISERROR(N'@DiffBackupsRunEvery can only be specified in minutes up to a max of 90 minutes - otherwise, they must be specified in hours (e.g., 2 hours, 4 hours, or 28 minutes are all valid inputs).', 16, 1);
+				RETURN - 100;
+			END;
+
+			IF @diffFrequencyMinutes > 1200 BEGIN 
+				RAISERROR(N'@DiffBackupsRunEvery can not be > 1200 minutes.', 16, 1);
+				RETURN -101;
+			END;
+		END;
+	END;
+
 	DECLARE @backupsTemplate nvarchar(MAX) = N'EXEC admindb.dbo.[backup_databases]
 	@BackupType = N''{backupType}'',
 	@DatabasesToBackup = N''{targets}'',
 	@DatabasesToExclude = N''{exclusions}'',
 	@BackupDirectory = N''{backupsDirectory}'',{copyToDirectory}
-	@BackupRetention = N''{retention}'',{copyToRetention}{encryption}{secondaries}{operator}{profile}
+	@BackupRetention = N''{retention}'',{copyToRetention}{encryption}
+	@LogSuccessfulOutcomes = 1,{secondaries}{operator}{profile}
 	@PrintOnly = 0;';
 
 	DECLARE @sysBackups nvarchar(MAX), @userBackups nvarchar(MAX), @logBackups nvarchar(MAX);
@@ -144,15 +169,16 @@ AS
 	SET @sysBackups = REPLACE(@sysBackups, N'{copyRetention}', ISNULL(@CopyToSystemBackupRetention, N''));
 
 	-- Make sure to exclude _s4test dbs from USER backups: 
-	IF NULLIF(@FullAndLogUserDBExclusions, N'') IS NULL 
-		SET @FullAndLogUserDBExclusions = N'%s4test';
+	IF NULLIF(@UserDBExclusions, N'') IS NULL 
+		SET @UserDBExclusions = N'%s4test';
 	ELSE BEGIN 
-		IF @FullAndLogUserDBExclusions NOT LIKE N'%s4test%'
-			SET @FullAndLogUserDBExclusions = @FullAndLogUserDBExclusions + N', %s4test';
+		IF @UserDBExclusions NOT LIKE N'%s4test%'
+			SET @UserDBExclusions = @UserDBExclusions + N', %s4test';
 	END;
 
-	SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', @FullAndLogUserDBExclusions);
+	SET @backupsTemplate = REPLACE(@backupsTemplate, N'{exclusions}', @UserDBExclusions);
 
+	-- MKC: this code is terrible (i.e., the copy/paste/tweak of 3x roughly similar calls - for full, diff, log - but with slightly diff parameters.
 	-- full user backups: 
 	SET @userBackups = @backupsTemplate;
 
@@ -162,10 +188,24 @@ AS
 		SET @userBackups = REPLACE(@userBackups, N'{secondaries}', @crlfTab + N'@AllowNonAccessibleSecondaries = 1, ');
 
 	SET @userBackups = REPLACE(@userBackups, N'{backupType}', N'FULL');
-	SET @userBackups = REPLACE(@userBackups, N'{targets}', N'{USER}');
+	SET @userBackups = REPLACE(@userBackups, N'{targets}', @UserDBTargets);
 	SET @userBackups = REPLACE(@userBackups, N'{retention}', @UserFullBackupRetention);
 	SET @userBackups = REPLACE(@userBackups, N'{copyRetention}', ISNULL(@CopyToUserFullBackupRetention, N''));
-	SET @userBackups = REPLACE(@userBackups, N'{exclusions}', @FullAndLogUserDBExclusions);
+	SET @userBackups = REPLACE(@userBackups, N'{exclusions}', @UserDBExclusions);
+
+	-- diff user backups: 
+	SET @userBackups = @backupsTemplate;
+
+	IF @AllowForSecondaryServers = 0 
+		SET @userBackups = REPLACE(@userBackups, N'{secondaries}', N'');
+	ELSE 
+		SET @userBackups = REPLACE(@userBackups, N'{secondaries}', @crlfTab + N'@AllowNonAccessibleSecondaries = 1, ');
+
+	SET @userBackups = REPLACE(@userBackups, N'{backupType}', N'DIFF');
+	SET @userBackups = REPLACE(@userBackups, N'{targets}', @UserDBTargets);
+	SET @userBackups = REPLACE(@userBackups, N'{retention}', @UserFullBackupRetention);
+	SET @userBackups = REPLACE(@userBackups, N'{copyRetention}', ISNULL(@CopyToUserFullBackupRetention, N''));
+	SET @userBackups = REPLACE(@userBackups, N'{exclusions}', @UserDBExclusions);
 
 	-- log backups: 
 	SET @logBackups = @backupsTemplate;
@@ -176,10 +216,10 @@ AS
 		SET @logBackups = REPLACE(@logBackups, N'{secondaries}', @crlfTab + N'@AllowNonAccessibleSecondaries = 1, ');
 
 	SET @logBackups = REPLACE(@logBackups, N'{backupType}', N'LOG');
-	SET @logBackups = REPLACE(@logBackups, N'{targets}', N'{USER}');
+	SET @logBackups = REPLACE(@logBackups, N'{targets}', @UserDBTargets);
 	SET @logBackups = REPLACE(@logBackups, N'{retention}', @LogBackupRetention);
 	SET @logBackups = REPLACE(@logBackups, N'{copyRetention}', ISNULL(@CopyToLogBackupRetention, N''));
-	SET @logBackups = REPLACE(@logBackups, N'{exclusions}', @FullAndLogUserDBExclusions);
+	SET @logBackups = REPLACE(@logBackups, N'{exclusions}', @UserDBExclusions);
 
 	DECLARE @jobs table (
 		job_id int IDENTITY(1,1) NOT NULL, 
@@ -207,6 +247,12 @@ AS
 		N'FULL Backup of USER Databases', 
 		@userBackups, 
 		@userStart
+	), 
+	(
+		N'USER - Diff', 
+		N'DIFF Backup of USER Databases', 
+		@userBackups, 
+		@diffStart
 	), 
 	(
 		N'USER - Log', 
@@ -252,6 +298,7 @@ AS
 		EXEC [admindb].[dbo].[create_agent_job]
 			@TargetJobName = @currentJobName,
 			@JobCategoryName = @JobsCategoryName,
+			@JobEnabled = 0, -- create backup jobs as disabled (i.e., require admin review + manual intervention to enable... 
 			@AddBlankInitialJobStep = 1,
 			@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
 			@OverWriteExistingJobDetails = @OverWriteExistingJobs,
@@ -262,9 +309,22 @@ AS
 		SET @startTimeAsInt = CAST((LEFT(REPLACE(CONVERT(sysname, @currentJobStart, 108), N':', N''), 6)) AS int);
 		SET @scheduleName = @currentJobName + N' Schedule';
 
-		IF @currentJobName LIKE '%log%' BEGIN 
-			SET @schedSubdayType = 4; -- every N minutes
-			SET @schedSubdayInteval = @frequencyMinutes;	 -- N... 
+		IF (@currentJobName LIKE '%Log%') OR (@currentJobName LIKE '%Diff%') BEGIN 
+			IF (@currentJobName LIKE '%Log%') BEGIN
+				SET @schedSubdayType = 4; -- every N minutes
+				SET @schedSubdayInteval = @logFrequencyMinutes;
+			
+			  END;
+			 ELSE BEGIN
+				IF @diffFrequencyMinutes > 90 BEGIN
+					SET @schedSubdayType = 8; -- every N hours
+					SET @schedSubdayInteval = @diffFrequencyMinutes / 60;
+				  END;
+				ELSE BEGIN 
+					SET @schedSubdayType = 4;
+					SET @schedSubdayInteval = @diffFrequencyMinutes;
+				END;
+			END;
 		  END; 
 		ELSE BEGIN 
 			SET @schedSubdayType = 1; -- at the specified (start) time. 

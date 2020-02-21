@@ -21,8 +21,7 @@ CREATE PROC dbo.[enable_disk_monitoring]
 	@MailProfileName					sysname				= N'General',
 	@EmailSubjectPrefix					nvarchar(50)		= N'[DriveSpace Checks] ',
 	@CheckFrequencyInterval				sysname				= N'20 minutes', 
-	@DailyStartTime						time				= '00:03', 
-	@TimeZoneForUtcOffset				sysname				= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
+	
 	@OverWriteExistingJob				bit					= 0
 AS
     SET NOCOUNT ON; 
@@ -30,14 +29,8 @@ AS
 	-- {copyright}
 
 	-- TODO: validate inputs... 
-
-	-- translate 'local' timezone to UTC-zoned servers:
-	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
-		DECLARE @utc datetime = GETUTCDATE();
-		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
-
-		SET @DailyStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DailyStartTime);
-	END;
+	
+	DECLARE @dailyJobStartTime	time = '00:03';
 
 	-- translate/validate job start/frequency:
 	DECLARE @frequencyMinutes int;
@@ -124,7 +117,7 @@ AS
 	
 	-- create a schedule:
 	DECLARE @dateAsInt int = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
-	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @DailyStartTime, 108), N':', N''), 6)) AS int);
+	DECLARE @startTimeAsInt int = CAST((LEFT(REPLACE(CONVERT(sysname, @dailyJobStartTime, 108), N':', N''), 6)) AS int);
 	DECLARE @scheduleName sysname = N'Schedule: ' + @DriveCheckJobName;
 
 	EXEC msdb.dbo.sp_add_jobschedule 

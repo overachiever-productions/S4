@@ -14,6 +14,7 @@ GO
 CREATE PROC dbo.[create_agent_job]
 	@TargetJobName							sysname, 
 	@JobCategoryName						sysname					= NULL, 
+	@JobEnabled								bit						= 1,					-- Default to creation of the job in Enabled state.
 	@AddBlankInitialJobStep					bit						= 1, 
 	@OperatorToAlertOnErrorss				sysname					= N'Alerts',
 	@OverWriteExistingJobDetails			bit						= 0,					-- NOTE: Initially, this means: DROP/CREATE. Eventually, this'll mean: repopulate the 'guts' of the job if/as needed... 
@@ -63,7 +64,7 @@ AS
 	
 	EXEC msdb.dbo.sp_add_job
 		@job_name = @TargetJobName,                     
-		@enabled = 1,                         
+		@enabled = @JobEnabled,                         
 		@description = N'',                   
 		@category_name = @JobCategoryName,                
 		@owner_login_name = N'sa',             
