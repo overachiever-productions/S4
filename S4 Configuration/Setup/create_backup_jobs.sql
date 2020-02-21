@@ -252,6 +252,7 @@ AS
 		EXEC [admindb].[dbo].[create_agent_job]
 			@TargetJobName = @currentJobName,
 			@JobCategoryName = @JobsCategoryName,
+			@JobEnabled = 0, -- create backup jobs as disabled (i.e., require admin review + manual intervention to enable... 
 			@AddBlankInitialJobStep = 1,
 			@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
 			@OverWriteExistingJobDetails = @OverWriteExistingJobs,
