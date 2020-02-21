@@ -153,6 +153,7 @@ END;'
 	EXEC [dbo].[create_agent_job]
 		@TargetJobName = @JobName,
 		@JobCategoryName = @JobCategoryName,
+		@JobEnabled = 0, -- create restore-test job as disabled (i.e., require admin review + manual intervention to enable... 
 		@AddBlankInitialJobStep = 1,
 		@OperatorToAlertOnErrorss = @OperatorName,
 		@OverWriteExistingJobDetails = @OverWriteExistingJob,

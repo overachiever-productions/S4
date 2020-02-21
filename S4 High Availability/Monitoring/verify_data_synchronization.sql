@@ -127,6 +127,13 @@ AS
 
 	-- {copyright}
 
+	----------------------------------------------
+	-- Determine which server to run checks on. 
+	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
+		PRINT 'Server is Not Primary.';
+		RETURN 0;
+	END;
+
 	---------------------------------------------
 	-- Dependencies Validation:
 	DECLARE @return int, @returnMessage nvarchar(MAX);
@@ -172,13 +179,6 @@ AS
 				@body = @hackMessage;
 		END;
 
-		RETURN 0;
-	END;
-
-	----------------------------------------------
-	-- Determine which server to run checks on. 
-	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
 		RETURN 0;
 	END;
         

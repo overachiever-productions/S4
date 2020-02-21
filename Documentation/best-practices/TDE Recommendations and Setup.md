@@ -23,7 +23,7 @@ Primary Documentation for Transparent Data Encryption (TDE) can be found here:
 
 https://docs.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-2017
 
-***NOTE:** TDE is an Enterprise Edition ONLY feature.*
+**NOTE:** *Prior to SQL Server 2019, TDE is an Enterprise Edition ONLY feature.*
 
 ## Key Considerations and Warnings
 
