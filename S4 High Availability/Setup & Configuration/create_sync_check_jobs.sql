@@ -256,6 +256,7 @@ AS
 	EXEC dbo.[create_agent_job]
 		@TargetJobName = @currentJobName,
 		@JobCategoryName = @JobsCategoryName,
+		@JobEnabled = 0, -- create jobs in disabled state - so that admins have to review and manually enable... 
 		@AddBlankInitialJobStep = 0,  -- not for these jobs, they should be fairly short in execution... 
 		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
