@@ -431,7 +431,8 @@ AS
 			OR (
 				CASE 
 					WHEN [local].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = 'PARTNER' AND [local].[data_source] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[data_source] THEN 0 -- non-true (i.e., non-'different' or non-problematic)
-					ELSE 1  -- there's a problem (because data sources are different, but the name is NOT 'Partner'
+					WHEN [local].[data_source] COLLATE SQL_Latin1_General_CP1_CI_AS <> [remote].[data_source] COLLATE SQL_Latin1_General_CP1_CI_AS THEN 1
+					ELSE 0 
 				END 
 				 = 1  
 			)

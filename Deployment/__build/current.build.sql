@@ -453,6 +453,9 @@ GO
 --##INCLUDE: S4 Configuration\Setup\create_restore_test_job.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Setup\create_index_maintenance_jobs.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\define_masterkey_encryption.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -464,6 +467,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Utilities\load_header_details.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\parse_backup_filename_timestamp.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\restore_databases.sql

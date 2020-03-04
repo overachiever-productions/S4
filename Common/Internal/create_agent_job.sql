@@ -75,13 +75,13 @@ AS
 		@job_id = @JobID OUTPUT;
 
 	EXEC msdb.dbo.[sp_add_jobserver] 
-		@job_id = @jobId, 
+		@job_id = @JobID, 
 		@server_name = N'(LOCAL)';
 
 
 	IF @AddBlankInitialJobStep = 1 BEGIN
 		EXEC msdb..sp_add_jobstep
-			@job_id = @jobId,
+			@job_id = @JobID,
 			@step_id = 1,
 			@step_name = N'Initialize Job History',
 			@subsystem = N'TSQL',
