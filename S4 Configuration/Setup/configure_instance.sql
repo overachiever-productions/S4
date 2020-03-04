@@ -13,7 +13,8 @@ GO
 CREATE PROC dbo.[configure_instance]
 	@MaxDOP									int, 
 	@CostThresholdForParallelism			int, 
-	@MaxServerMemoryGBs						decimal(8,1)
+	@MaxServerMemoryGBs						decimal(8,1),
+	@OptimizeForAdhocWorkloads				bit				= 1
 AS
     SET NOCOUNT ON; 
 
@@ -73,6 +74,24 @@ AS
 			SET @changesMade = 1;
 		END;
 	END;
+
+	DECLARE @currentOptimizeForAdhocValue int;
+	SELECT @currentOptimizeForAdhocValue = CAST([value_in_use] AS int) FROM sys.[configurations] WHERE [name] LIKE N'optimize for ad hoc workloads';
+	IF @OptimizeForAdhocWorkloads = 1 BEGIN 
+		IF @currentOptimizeForAdhocValue = 0 BEGIN
+			EXEC sp_configure 'optimize for ad hoc workloads', 1;
+
+			SET @changesMade = 1;
+		END;
+	  END;
+	ELSE BEGIN 
+		IF @currentOptimizeForAdhocValue = 1 BEGIN
+			EXEC sp_configure 'optimize for ad hoc workloads', 0;
+
+			SET @changesMade = 1;
+		END;
+	END;
+
 
 	IF @changesMade = 1 BEGIN
 		RECONFIGURE;
