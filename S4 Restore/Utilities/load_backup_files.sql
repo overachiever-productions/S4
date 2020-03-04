@@ -72,7 +72,7 @@ AS
 		RETURN -1;
 	END 
 
-	DECLARE @results table ([id] int IDENTITY(1,1) NOT NULL, [output] varchar(500));
+	DECLARE @results table ([id] int IDENTITY(1,1) NOT NULL, [output] varchar(500), [timestamp] datetime NULL);
 
 	DECLARE @command varchar(2000);
 	SET @command = 'dir "' + @SourcePath + '\" /B /A-D /OD';
@@ -98,33 +98,59 @@ AS
 		DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
 	END;
 
+	UPDATE @results
+	SET 
+		[timestamp] = dbo.[parse_backup_filename_timestamp]([output])
+	WHERE 
+		[output] IS NOT NULL;
+
+	DECLARE @orderedResults table ( 
+		[id] int IDENTITY(1,1) NOT NULL, 
+		[output] varchar(500) NOT NULL, 
+		[timestamp] datetime NOT NULL 
+	);
+
+	INSERT INTO @orderedResults (
+		[output],
+		[timestamp]
+	)
+	SELECT 
+		[output], 
+		[timestamp]
+	FROM 
+		@results 
+	WHERE 
+		[output] IS NOT NULL
+	ORDER BY 
+		[timestamp];
+
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'FULL' BEGIN
 		-- most recent full only: 
-		DELETE FROM @results WHERE id <> ISNULL((SELECT MAX(id) FROM @results WHERE [output] LIKE 'FULL%'), -1);
+		DELETE FROM @orderedResults WHERE id <> ISNULL((SELECT MAX(id) FROM @orderedResults WHERE [output] LIKE 'FULL%'), -1);
 	END;
 
 	IF UPPER(@Mode) = N'DIFF' BEGIN 
 		-- start by deleting since the most recent file processed: 
-		DELETE FROM @results WHERE id <= (SELECT id FROM @results WHERE [output] = @LastAppliedFile);
+		DELETE FROM @orderedResults WHERE id <= (SELECT id FROM @orderedResults WHERE [output] = @LastAppliedFile);
 
 		-- now dump everything but the most recent DIFF - if there is one: 
-		IF EXISTS(SELECT NULL FROM @results WHERE [output] LIKE 'DIFF%')
-			DELETE FROM @results WHERE id <> (SELECT MAX(id) FROM @results WHERE [output] LIKE 'DIFF%'); 
+		IF EXISTS(SELECT NULL FROM @orderedResults WHERE [output] LIKE 'DIFF%')
+			DELETE FROM @orderedResults WHERE id <> (SELECT MAX(id) FROM @orderedResults WHERE [output] LIKE 'DIFF%'); 
 		ELSE
-			DELETE FROM @results;
+			DELETE FROM @orderedResults;
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
 		
-		DELETE FROM @results WHERE id <= (SELECT MIN(id) FROM @results WHERE [output] = @LastAppliedFile);
-		DELETE FROM @results WHERE [output] NOT LIKE 'LOG%';
+		DELETE FROM @orderedResults WHERE id <= (SELECT MIN(id) FROM @orderedResults WHERE [output] = @LastAppliedFile);
+		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
 
     IF NULLIF(@Output, N'') IS NULL BEGIN -- if @Output has been EXPLICITLY initialized as NULL/empty... then REPLY... 
         
 	    SET @Output = N'';
-	    SELECT @Output = @Output + [output] + N',' FROM @results ORDER BY [id];
+	    SELECT @Output = @Output + [output] + N',' FROM @orderedResults ORDER BY [id];
 
 	    IF ISNULL(@Output,'') <> ''
 		    SET @Output = LEFT(@Output, LEN(@Output) - 1);
@@ -136,7 +162,7 @@ AS
     SELECT 
         [output]
     FROM 
-        @results
+        @orderedResults
     ORDER BY 
         [id];
 
