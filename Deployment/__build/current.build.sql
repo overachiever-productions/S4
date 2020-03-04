@@ -466,6 +466,9 @@ GO
 --##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Utilities\parse_backup_filename_timestamp.sql
+
+-----------------------------------
 --##INCLUDE: S4 Restore\restore_databases.sql
 
 -----------------------------------
