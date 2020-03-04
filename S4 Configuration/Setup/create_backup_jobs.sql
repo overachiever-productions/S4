@@ -257,7 +257,7 @@ AS
 	(
 		N'USER - Log', 
 		N'TLOG Backup of USER Databases', 
-		@LogBackups, 
+		@logBackups, 
 		@logStart
 	);
 	
@@ -332,7 +332,7 @@ AS
 		END;
 
 		EXEC msdb.dbo.sp_add_jobschedule 
-			@job_id = @jobId,
+			@job_id = @jobID,
 			@name = @scheduleName,
 			@enabled = 1, 
 			@freq_type = 4,  -- daily										
@@ -346,7 +346,7 @@ AS
 
 		-- now add the job step:
 		EXEC msdb..sp_add_jobstep
-			@job_id = @jobId,
+			@job_id = @jobID,
 			@step_id = 2,		-- place-holder already defined for step 1
 			@step_name = @currentJobStep,
 			@subsystem = N'TSQL',
