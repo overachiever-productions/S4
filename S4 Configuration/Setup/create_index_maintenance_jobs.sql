@@ -6,6 +6,17 @@
 			i.e., make it so that it's easy to update/deploy newer versions of hallengren's code. 
 
 
+	NOTE: 
+		- This is effectively an MVP implementation at this point.
+
+
+
+	SAMPLE EXECUTION: 
+
+		EXEC [admindb].dbo.[create_index_maintenance_jobs]
+			@DailyJobRunsOnDays = N'M,W,F',
+			@WeekendJobRunsOnDays = N'Su',
+			@OverWriteExistingJobs = 1;
 
 */
 
