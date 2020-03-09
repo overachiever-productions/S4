@@ -125,7 +125,7 @@ AS
 	@LogSuccessfulOutcomes = 1,{secondaries}{operator}{profile}
 	@PrintOnly = 0;';
 
-	DECLARE @sysBackups nvarchar(MAX), @userBackups nvarchar(MAX), @logBackups nvarchar(MAX);
+	DECLARE @sysBackups nvarchar(MAX), @userBackups nvarchar(MAX), @diffBackups nvarchar(MAX), @logBackups nvarchar(MAX);
 	DECLARE @crlfTab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
 
 	-- 'global' template config settings/options: 
@@ -194,18 +194,18 @@ AS
 	SET @userBackups = REPLACE(@userBackups, N'{exclusions}', @UserDBExclusions);
 
 	-- diff user backups: 
-	SET @userBackups = @backupsTemplate;
+	SET @diffBackups = @backupsTemplate;
 
 	IF @AllowForSecondaryServers = 0 
-		SET @userBackups = REPLACE(@userBackups, N'{secondaries}', N'');
+		SET @diffBackups = REPLACE(@diffBackups, N'{secondaries}', N'');
 	ELSE 
-		SET @userBackups = REPLACE(@userBackups, N'{secondaries}', @crlfTab + N'@AllowNonAccessibleSecondaries = 1, ');
+		SET @diffBackups = REPLACE(@diffBackups, N'{secondaries}', @crlfTab + N'@AllowNonAccessibleSecondaries = 1, ');
 
-	SET @userBackups = REPLACE(@userBackups, N'{backupType}', N'DIFF');
-	SET @userBackups = REPLACE(@userBackups, N'{targets}', @UserDBTargets);
-	SET @userBackups = REPLACE(@userBackups, N'{retention}', @UserFullBackupRetention);
-	SET @userBackups = REPLACE(@userBackups, N'{copyRetention}', ISNULL(@CopyToUserFullBackupRetention, N''));
-	SET @userBackups = REPLACE(@userBackups, N'{exclusions}', @UserDBExclusions);
+	SET @diffBackups = REPLACE(@diffBackups, N'{backupType}', N'DIFF');
+	SET @diffBackups = REPLACE(@diffBackups, N'{targets}', @UserDBTargets);
+	SET @diffBackups = REPLACE(@diffBackups, N'{retention}', @UserFullBackupRetention);
+	SET @diffBackups = REPLACE(@diffBackups, N'{copyRetention}', ISNULL(@CopyToUserFullBackupRetention, N''));
+	SET @diffBackups = REPLACE(@diffBackups, N'{exclusions}', @UserDBExclusions);
 
 	-- log backups: 
 	SET @logBackups = @backupsTemplate;
@@ -251,7 +251,7 @@ AS
 	(
 		N'USER - Diff', 
 		N'DIFF Backup of USER Databases', 
-		@userBackups, 
+		@diffBackups, 
 		@diffStart
 	), 
 	(
