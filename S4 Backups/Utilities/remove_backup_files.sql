@@ -4,6 +4,9 @@
 
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
 
+		- NOTE: this script/logic will NEVER delete the most-recent FULL backup for any database... 
+			(vNEXT: probably want to put an @EnsureSafetyBackups bit = 1 as a default or something... i.e., need an option for nuking/removing/doing-cleanup in some cases.,..)
+
 		- Not yet documented. 
 			-	Behaves, essentially, like dba_BackupDatabases - only it doesn't do backups... it just removes files from ONE root directory for 1st level of child directories NOT excluded. 
 			- Main Differences:
@@ -176,11 +179,13 @@ AS
 	IF @Output IS NULL
 		SET @routeInfoAsOutput = 1; 
 
-	IF @PrintOnly = 1 AND @routeInfoAsOutput = 1 BEGIN
-		IF @retentionType = 'b'
-			PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
-		ELSE 
-			PRINT '-- Retention specification is to remove backups older than [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
+	IF @PrintOnly = 1 BEGIN 
+		IF @routeInfoAsOutput = 1 BEGIN
+			IF @retentionType = 'b'
+				PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+			ELSE 
+				PRINT '-- Retention specification is to remove backups created before [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
+		END;
 	END;
 
 	-- normalize paths: 
@@ -194,7 +199,7 @@ AS
 		RAISERROR('Invalid @TargetDirectory specified - either the path does not exist, or SQL Server''s Service Account does not have permissions to access the specified directory.', 16, 1);
 		RETURN -10;
 	END
-
+	
 	-----------------------------------------------------------------------------
 	SET @Output = NULL;
 
@@ -242,6 +247,7 @@ AS
         [directory_name] sysname NOT NULL
     ); 
 
+	-- S4-349: https://overachieverllc.atlassian.net/browse/S4-349 ... 
 	INSERT INTO @targetDirectories ([directory_name])
 	EXEC dbo.list_databases
 	    @Targets = @DatabasesToProcess,
@@ -304,7 +310,6 @@ AS
 		[entry_id];
 
 	OPEN processor;
-
 	FETCH NEXT FROM processor INTO @currentDirectory;
 
 	WHILE @@FETCH_STATUS = 0 BEGIN;
@@ -322,8 +327,10 @@ AS
 
 			SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
 
-			IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
-				PRINT N'--' + @command;
+			IF @PrintOnly = 1 BEGIN
+				IF @routeInfoAsOutput = 1
+					PRINT N'--' + @command;
+			END;
 
 			INSERT INTO @files (subdirectory, depth, isfile)
 			EXEC sys.sp_executesql @command;
@@ -406,8 +413,10 @@ AS
 
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), GETDATE(), 120), ' ', 'T') + ''', 0;';
 
-				IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
-					PRINT @command;
+				IF @PrintOnly = 1 BEGIN 
+					IF @routeInfoAsOutput = 1
+						PRINT @command;
+				  END;
 				ELSE BEGIN; 
 
 					BEGIN TRY
@@ -443,8 +452,10 @@ AS
 			
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
 
-				IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
-					PRINT @command;
+				IF @PrintOnly = 1 BEGIN
+					IF @routeInfoAsOutput = 1
+						PRINT @command;
+				  END;
 				ELSE BEGIN 
 					BEGIN TRY
 						EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
@@ -473,8 +484,10 @@ AS
 				DELETE FROM @files;
 				SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
 
-				IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
-					PRINT N'--' + @command;
+				IF @PrintOnly = 1 BEGIN 
+					IF @routeInfoAsOutput = 1
+						PRINT N'--' + @command;
+				END; 
 
 				INSERT INTO @files (subdirectory, depth, isfile)
 				EXEC sys.sp_executesql @command;
@@ -506,8 +519,10 @@ AS
 
 					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 0;';
 
-					IF @PrintOnly = 1 AND @routeInfoAsOutput = 1
-						PRINT @command;
+					IF @PrintOnly = 1 BEGIN 
+						IF @routeInfoAsOutput = 1
+							PRINT @command;
+					  END;
 					ELSE BEGIN; 
 
 						BEGIN TRY
