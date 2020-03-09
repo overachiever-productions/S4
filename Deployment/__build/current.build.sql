@@ -420,6 +420,9 @@ GO
 --##INCLUDE: S4 Configuration\script_logins.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\configure_tempdb_files.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\export_server_logins.sql
 
 -----------------------------------
