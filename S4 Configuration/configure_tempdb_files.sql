@@ -73,6 +73,7 @@ AS
 				[tempdb].sys.[database_files] 
 			WHERE 
 				[type] = 0 
+				AND [physical_name] NOT LIKE @TargetDataFilePath + N'%' 
 			ORDER BY 
 				[file_id];
 
