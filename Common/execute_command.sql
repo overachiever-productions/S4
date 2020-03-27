@@ -40,6 +40,13 @@
 				meaning that ... if a remote server is set up... we should be able to work against it ... 
 
 
+	FODDER: 
+		additional info on how there's a known error/busted/problem with SQL Server: 
+			https://feedback.azure.com/forums/908035-sql-server/suggestions/32901061-make-is-possible-to-retrieve-all-error-messages-in
+
+			https://feedback.azure.com/forums/908035-sql-server/suggestions/33673684-try-catch-should-always-work
+
+
 
 v6.5 Refactor / REWRITE 
 
