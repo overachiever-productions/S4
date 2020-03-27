@@ -123,7 +123,7 @@ AS
 
 	-- create a schedule:
 	SET @dateAsInt = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
-	SET @startTimeAsInt = CAST((LEFT(REPLACE(CONVERT(sysname, @IXMaintenanceJobStartTime, 108), N':', N''), 6)) AS int);
+	SET @startTimeAsInt = CAST((LEFT(REPLACE(CONVERT(sysname, CAST(@IXMaintenanceJobStartTime AS datetime), 108), N':', N''), 6)) AS int);
 	SET @scheduleName = @jobName + N' Schedule';
 	
 	SELECT 

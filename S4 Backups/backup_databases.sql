@@ -52,6 +52,56 @@
 		- vNEXT: Potentially look at an @NumberOfFiles option - for striping backups across multiple files
 			Note that this would also require changes to dbo.dba_RestoreDatabases (i.e., to allow multiple files per 'logical' file) and
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
+
+	FODDER: 
+		- Non-Scientific metrics for S3 CPU usage and timing. 
+			CONTEXT: Write-S3Object defaults to using 10 concurrent connections - which, for larger files, can HAMMER the CPU on BIG boxes. 
+				Specifically, on 8+ core boxes, the upload of a 1-2GB+ file can/will spike CPU usage up into the 80 or 90% range. (Which is ridiculous.) 
+				Metrics below are non-scientific assessments of file-sizes and timings: 
+
+				1GB File - 8 core VM
+					10 threads 
+						80-90% CPU usage - ~12 seconds
+					6 threads 
+						~62% CPU Usage - ~9 seconds
+					2 threads 
+						20-25% CPU usage - ~24 seconds 
+					1 thread 
+						~13% CPU usage - ~50 seconds 
+
+				45 GB File - 8 core VM
+					10 threads
+						75 - 82% CPU Usage - ~280 seconds
+					6 threads 
+						48 - 70% CPU Usage - 395 seconds 
+					2 threads 
+						16-25% CPU usage - 1100 seconds 
+					1 thread 
+						8 - 14% CPU usage - ... doh, didn't collect (2 threads is optimal anyhow). 
+
+
+				aws cli metrics - i.e., for the same tests (ish) above... here's how the aws cli performed: 
+
+				1GB File  - 8 Core VM
+					6 threads 
+						30-50% CPU usage - 11 seconds - (slight less CPU usage, slightly longer upload). 
+					2 threads 
+						20% CPU Usage - 25 seconds (slightly tamer CPU)
+			
+				45 GB File - 8 Core VM
+					6 Threads 
+						30 - 46% CPU usage - 450 seconds (much better CPU usage - fair bit longer duration)
+					2 threads 
+						25% CPU Usage - 1146 seconds (again, better CPU, slightly longer duration)
+
+
+				AWS CLI commands - sample/example operations: 
+
+					aws s3 cp "G:\SQLBackups\DIFF_WidgetsAB8_backup_2020_03_11_002313_5580517.bak" "s3://ts-database-backup/mike_test2/DIFF_WidgetsAB8_backup_2020_03_11_002313_5580517.bak"
+
+					i.e., the exact syntax above 100% schleps a file up into S3. 
+
+
 */
 
 
