@@ -16,7 +16,7 @@ Snippets and Docs for S4 Documentation (i.e., meta-docs) - to ease standardizati
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](?encodedPath=README.md)
+[Return to README](/README.md)
 
 ## BreadCrumbs
 
