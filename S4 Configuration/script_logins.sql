@@ -107,6 +107,11 @@ AS
 	WHERE 
 		sp.[type] NOT IN ('R');
 
+	DECLARE @count int; 
+	SET @count = (SELECT COUNT(*) FROM [#Logins]); 
+
+	PRINT N'--- ' + CAST(@count AS sysname) + N' total logins detected (before filters/exclusions).';
+
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @output nvarchar(MAX);
@@ -133,6 +138,8 @@ AS
 	DECLARE @currentDatabase sysname;
 	DECLARE @command nvarchar(MAX);
 	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
+
+	DECLARE @serializedLogin nvarchar(MAX) = N'';
 
 	DECLARE @dbsToWalk table ( 
 		row_id int IDENTITY(1,1) NOT NULL,
@@ -270,17 +277,17 @@ AS
                             l.[name], 
                             N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
                             N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
-                            l.[default_database_name], 
+                            CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END,
                             l.[default_language_name], 
-                            CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
-                            CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
+                            CASE WHEN @DisableExpiryChecks = 1 THEN 0 ELSE l.[is_expiration_checked] END,
+                            CASE WHEN @DisablePolicyChecks = 1 THEN 0 ELSE l.[is_policy_checked] END
                          )
                     WHEN l.[type] IN (N'U', N'G') THEN 
                         dbo.[format_windows_login] (
                             l.[enabled], 
                             @BehaviorIfLoginExists, 
                             l.[name], 
-                            l.[default_database_name], 
+                            CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END,
                             l.[default_language_name]
                         )
                     ELSE 
@@ -298,10 +305,8 @@ AS
 		END; 
 
 		-- Output LOGINS:
-		SET @output = N'';
-
+		DECLARE [login_walker] CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
-            @output = @output + 
             CASE 
                 WHEN [l].[type] = N'S' THEN 
                     dbo.[format_sql_login] (
@@ -310,32 +315,79 @@ AS
                         l.[name], 
                         N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
                         N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
-                        l.[default_database_name], 
+                        CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END, 
                         l.[default_language_name], 
-                        CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
-                        CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
+                        CASE WHEN @DisableExpiryChecks = 1 THEN 0 ELSE l.[is_expiration_checked] END,
+                        CASE WHEN @DisablePolicyChecks = 1 THEN 0 ELSE l.[is_policy_checked] END
                         )
                 WHEN l.[type] IN (N'U', N'G') THEN 
                     dbo.[format_windows_login] (
                         l.[enabled], 
                         @BehaviorIfLoginExists, 
                         l.[name], 
-                        l.[default_database_name], 
+                        CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END,
                         l.[default_language_name]
                     )
                 ELSE 
                     '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
             END
-                + @crlf + N'GO' + @crlf
+                + @crlf + N'GO' + @crlf [serialized_login]
 		FROM 
 			#Users u
 			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
 		WHERE 
 			u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
-			AND u.[name] NOT IN (SELECT name FROM #Orphans);
+			AND u.[name] NOT IN (SELECT name FROM #Orphans);		
+		
+		OPEN [login_walker];
+		FETCH NEXT FROM [login_walker] INTO @serializedLogin;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			PRINT @serializedLogin;
+		
+			FETCH NEXT FROM [login_walker] INTO @serializedLogin;
+		END;
+		
+		CLOSE [login_walker];
+		DEALLOCATE [login_walker];
+			   
+--		SELECT 
+  --          --@output = @output + 
+  --          CASE 
+  --              WHEN [l].[type] = N'S' THEN 
+  --                  dbo.[format_sql_login] (
+  --                      l.[enabled], 
+  --                      @BehaviorIfLoginExists, 
+  --                      l.[name], 
+  --                      N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
+  --                      N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
+  --                      l.[default_database_name], 
+  --                      l.[default_language_name], 
+  --                      CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
+  --                      CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
+  --                      )
+  --              WHEN l.[type] IN (N'U', N'G') THEN 
+  --                  dbo.[format_windows_login] (
+  --                      l.[enabled], 
+  --                      @BehaviorIfLoginExists, 
+  --                      l.[name], 
+  --                      l.[default_database_name], 
+  --                      l.[default_language_name]
+  --                  )
+  --              ELSE 
+  --                  '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
+  --          END
+  --              + @crlf + N'GO' + @crlf
+		--FROM 
+		--	#Users u
+		--	INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
+		--WHERE 
+		--	u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
+		--	AND u.[name] NOT IN (SELECT name FROM #Orphans);
 			
-		IF NULLIF(@output, N'') IS NOT NULL
-			PRINT @output;
+		--IF NULLIF(@output, N'') IS NOT NULL
+		--	PRINT @output;
 
 		PRINT @crlf;
 
