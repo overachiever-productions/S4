@@ -26,8 +26,7 @@
 			@ExcludeMSAndServiceLogins = 1,
 			@DisablePolicyChecks = 1, 
 			@DisableExpiryChecks = 1, 
-			@ForceMasterAsDefaultDB = 0, 
-			@WarnOnLoginsHomedToOtherDatabases = 1; 
+			@ForceMasterAsDefaultDB = 0; 
 
 */
 
@@ -48,9 +47,7 @@ CREATE PROC dbo.script_logins
 	@BehaviorIfLoginExists                  sysname                 = N'NONE',            -- { NONE | ALTER | DROP_AND_CREATE }
     @DisablePolicyChecks					bit						= 0,
 	@DisableExpiryChecks					bit						= 0, 
-	@ForceMasterAsDefaultDB					bit						= 0,
--- TODO: remove this functionality - and... instead, have a sproc that lists logins that have access to MULTIPLE databases... 
-	@WarnOnLoginsHomedToOtherDatabases		bit						= 0				-- warns when a) set to 1, and b) default_db is NOT master NOR the current DB where the user is defined... (for a corresponding login).
+	@ForceMasterAsDefaultDB					bit						= 0
 AS
 	SET NOCOUNT ON; 
 
@@ -82,12 +79,6 @@ AS
 		[sid] varbinary(85) NOT NULL
 	);
 
-	CREATE TABLE #Vagrants ( 
-		[name] sysname NOT NULL, 
-		[sid] varbinary(85) NOT NULL, 
-		[default_database] sysname NOT NULL
-	);
-
 	SELECT 
         CASE WHEN sp.[is_disabled] = 1 THEN 0 ELSE 1 END [enabled],
 		sp.[name], 
@@ -98,7 +89,8 @@ AS
 		sl.[password_hash], 
 		sl.[is_expiration_checked], 
 		sl.[is_policy_checked], 
-		sp.[default_language_name]
+		sp.[default_language_name], 
+		CAST(0 AS bit) [login_only]
 	INTO 
 		#Logins
 	FROM 
@@ -140,6 +132,9 @@ AS
 	DECLARE @principalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 
 	DECLARE @serializedLogin nvarchar(MAX) = N'';
+	DECLARE @login_only bit;
+	DECLARE @usersCount int; 
+	DECLARE @orphansCount int;
 
 	DECLARE @dbsToWalk table ( 
 		row_id int IDENTITY(1,1) NOT NULL,
@@ -162,12 +157,7 @@ AS
 
 	WHILE @@FETCH_STATUS = 0 BEGIN
 
-		PRINT '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
-		PRINT '-- DATABASE: ' + @currentDatabase 
-		PRINT '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
-
 		DELETE FROM [#Users];
-		DELETE FROM [#Orphans];
 
 		SET @command = REPLACE(@principalsTemplate, N'{0}', @currentDatabase); 
 		INSERT INTO #Users ([name], [sid], [type])
@@ -179,6 +169,7 @@ AS
 		INNER JOIN 
 			@ingoredUsers i ON i.[user_name] LIKE u.[name];
 
+		-- identify orphans:
 		INSERT INTO #Orphans ([name], [sid])
 		SELECT 
 			u.[name], 
@@ -189,39 +180,14 @@ AS
 		WHERE
 			l.[name] IS NULL OR l.[sid] IS NULL;
 
-		SET @output = N'';
+		SET @usersCount = (SELECT COUNT(*) FROM [#Users]);
+		SET @orphansCount = (SELECT COUNT(*) FROM [#Orphans]);
 
-		-- Report on Orphans:
-		SELECT @output = @output + 
-			N'-- ORPHAN DETECTED: ' + [name] + N' (SID: ' + CONVERT(nvarchar(MAX), [sid], 2) + N')' + @crlf
-		FROM 
-			[#Orphans]
-		ORDER BY 
-			[name]; 
+		PRINT '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
+		PRINT '-- DATABASE: ' + @currentDatabase + N' Total-Users: ' + CAST(@usersCount AS sysname) + N' - Orphans: ' + CAST(@orphansCount AS sysname);
+		PRINT '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
 
-		IF NULLIF(@output, '') IS NOT NULL
-			PRINT @output; 
-
-		-- Report on differently-homed logins if/as directed:
-		IF @WarnOnLoginsHomedToOtherDatabases = 1 BEGIN
-			SET @output = N'';
-
-			SELECT @output = @output +
-				N'-- NOTE: Login ' + u.[name] + N' is set to use [' + l.[default_database_name] + N'] as its default database instead of [' + @currentDatabase + N'].'
-			FROM 
-				[#Users] u
-				LEFT OUTER JOIN [#Logins] l ON u.[sid] = l.[sid]
-			WHERE 
-				u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
-				AND u.[name] NOT IN (SELECT [name] FROM #Orphans)
-				AND l.default_database_name <> 'master'  -- master is fine... 
-				AND l.default_database_name <> @currentDatabase; 				
-				
-			IF NULLIF(@output, N'') IS NOT NULL 
-				PRINT @output;
-		END;
-
-		-- Process 'logins only' logins (i.e., not mapped to any databases as users): 
+		-- Process 'login only' logins (i.e., not mapped to any databases as users): 
 		IF LOWER(@currentDatabase) = N'master' BEGIN
 
 			CREATE TABLE #SIDs (
@@ -265,43 +231,11 @@ AS
 			CLOSE [looper];
 			DEALLOCATE [looper];
 
-			SET @output = N'';
-			
-            SELECT 
-                @output = @output + 
-                CASE 
-                    WHEN [l].[type] = N'S' THEN 
-                        dbo.[format_sql_login] (
-                            l.[enabled], 
-                            @BehaviorIfLoginExists, 
-                            l.[name], 
-                            N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
-                            N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
-                            CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END,
-                            l.[default_language_name], 
-                            CASE WHEN @DisableExpiryChecks = 1 THEN 0 ELSE l.[is_expiration_checked] END,
-                            CASE WHEN @DisablePolicyChecks = 1 THEN 0 ELSE l.[is_policy_checked] END
-                         )
-                    WHEN l.[type] IN (N'U', N'G') THEN 
-                        dbo.[format_windows_login] (
-                            l.[enabled], 
-                            @BehaviorIfLoginExists, 
-                            l.[name], 
-                            CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END,
-                            l.[default_language_name]
-                        )
-                    ELSE 
-                        '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
-                END
-                 + @crlf + N'GO' + @crlf
-            FROM 
-				[#Logins] l
+			UPDATE [#Logins] 
+			SET 
+				[login_only] = 1 
 			WHERE 
-				l.[sid] NOT IN (SELECT [sid] FROM [#SIDs]);                
-
-			IF NULLIF(@output, '') IS NOT NULL BEGIN 
-				PRINT @output + @crlf;
-			END 
+				[sid] NOT IN (SELECT [sid] FROM [#SIDs]); 
 		END; 
 
 		-- Output LOGINS:
@@ -331,22 +265,27 @@ AS
                 ELSE 
                     '-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
             END
-                + @crlf + N'GO' + @crlf [serialized_login]
+                + @crlf + N'GO' + @crlf [serialized_login], 
+				[l].[login_only]
 		FROM 
 			#Users u
 			INNER JOIN [#Logins] l ON u.[sid] = l.[sid]
 		WHERE 
 			u.[sid] NOT IN (SELECT [sid] FROM #Orphans)
-			AND u.[name] NOT IN (SELECT name FROM #Orphans);		
+			AND u.[name] NOT IN (SELECT [name] FROM #Orphans);		
 		
 		OPEN [login_walker];
-		FETCH NEXT FROM [login_walker] INTO @serializedLogin;
+		FETCH NEXT FROM [login_walker] INTO @serializedLogin, @login_only;
 		
 		WHILE @@FETCH_STATUS = 0 BEGIN
 		
+			IF @login_only = 1 BEGIN
+				PRINT '-- Login Only Login:'
+			END; 
+
 			PRINT @serializedLogin;
 		
-			FETCH NEXT FROM [login_walker] INTO @serializedLogin;
+			FETCH NEXT FROM [login_walker] INTO @serializedLogin, @login_only;
 		END;
 		
 		CLOSE [login_walker];

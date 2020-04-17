@@ -50,7 +50,6 @@ CREATE PROC dbo.export_server_logins
 	@DisablePolicyChecks					bit						= 0,
 	@DisableExpiryChecks					bit						= 0, 
 	@ForceMasterAsDefaultDB					bit						= 0,
-	@WarnOnLoginsHomedToOtherDatabases		bit						= 0,
 	@AddServerNameToFileName				bit						= 1,
 	@OperatorName							sysname					= N'Alerts',
 	@MailProfileName						sysname					= N'General',
@@ -131,8 +130,7 @@ AS
 			@BehaviorIfLoginExists = @BehaviorIfLoginExists,
 		    @DisablePolicyChecks = @DisablePolicyChecks, 
 		    @DisableExpiryChecks = @DisableExpiryChecks, 
-		    @ForceMasterAsDefaultDB = @ForceMasterAsDefaultDB, 
-		    @WarnOnLoginsHomedToOtherDatabases = @WarnOnLoginsHomedToOtherDatabases; 
+		    @ForceMasterAsDefaultDB = @ForceMasterAsDefaultDB; 
 
 		RETURN 0; 
 	END; 
@@ -167,7 +165,7 @@ AS
 	-- Set up a 'translation' of the sproc call (for execution via xp_cmdshell): 
 	DECLARE @sqlCommand varchar(MAX); 
 	SET @sqlCommand = N'EXEC admindb.dbo.script_logins @TargetDatabases = N''{0}'', @ExcludedDatabases = N''{1}'', @DatabasePriorities = N''{2}'', @ExcludedLogins = N''{3}'', @ExcludedUsers = N''{4}'', '
-		+ '@ExcludeMSAndServiceLogins = {5}, @BehaviorIfLoginExists = N''{10}'', @DisablePolicyChecks = {6}, @DisableExpiryChecks = {7}, @ForceMasterAsDefaultDB = {8}, @WarnOnLoginsHomedToOtherDatabases = {9};';
+		+ '@ExcludeMSAndServiceLogins = {5}, @BehaviorIfLoginExists = N''{9}'', @DisablePolicyChecks = {6}, @DisableExpiryChecks = {7}, @ForceMasterAsDefaultDB = {8};';
 
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{0}', CAST(@TargetDatabases AS varchar(MAX)));
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{1}', CAST(ISNULL(@ExcludedDatabases, N'') AS varchar(MAX)));
@@ -178,22 +176,20 @@ AS
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{6}', CASE WHEN @DisablePolicyChecks = 1 THEN '1' ELSE '0' END);
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{7}', CASE WHEN @DisableExpiryChecks = 1 THEN '1' ELSE '0' END);
 	SET @sqlCommand = REPLACE(@sqlCommand, N'{8}', CASE WHEN @ForceMasterAsDefaultDB = 1 THEN '1' ELSE '0' END);
-	SET @sqlCommand = REPLACE(@sqlCommand, N'{9}', CASE WHEN @WarnOnLoginsHomedToOtherDatabases = 1 THEN '1' ELSE '0' END);
-	SET @sqlCommand = REPLACE(@sqlCommand, N'{10}', ISNULL(@BehaviorIfLoginExists, N'NONE'));
+	SET @sqlCommand = REPLACE(@sqlCommand, N'{9}', ISNULL(@BehaviorIfLoginExists, N'NONE'));
 
 	IF LEN(@sqlCommand) > 8000 BEGIN 
 		INSERT INTO @errors (error) VALUES ('Combined length of all input parameters to dbo.script_logins exceeds 8000 characters and can NOT be executed dynamically. Export of logins can not and did NOT proceed as expected.')
 		GOTO REPORTING;
 	END; 
 
-	DECLARE @command varchar(8000) = 'sqlcmd {0} -q "{1}" -o "{2}"';
+	DECLARE @command varchar(8000) = 'sqlcmd {0} -Q "{1}" -o "{2}" ';
 
 	-- replace parameters: 
 	SET @command = REPLACE(@command, '{0}', CASE WHEN UPPER(@@SERVICENAME) = 'MSSQLSERVER' THEN '' ELSE ' -S .\' + UPPER(@@SERVICENAME) END);
 	SET @command = REPLACE(@command, '{1}', @sqlCommand);
 	SET @command = REPLACE(@command, '{2}', @outputFileName);
 
-PRINT @command;
 	BEGIN TRY
 
 		INSERT INTO @xpCmdShellOutput ([result])
