@@ -131,7 +131,7 @@ DECLARE @obsoleteObjects xml = CONVERT(xml, N'
     
     <entry schema="dbo" name="dba_AvailabilityGroups_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
     <entry schema="dbo" name="dba_Mirroring_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-    
+
     <entry schema="dbo" name="dba_FilterAndSendAlerts" type="P" comment="FORMER version of alert filtering.">
         <notification>
             <content>NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.</content>
@@ -190,6 +190,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
     <entry schema="dbo" name="respond_to_db_failover" type="P" comment="v6.5 refactoring (changed to dbo.process_synchronization_failover)" />
 
 	<entry schema="dbo" name="server_trace_flags" type="U" comment="v6.6 - Direct Query for Trace Flags vs delayed/table-checks." />
+
+	<entry schema="dbo" name="script_configuration" type="P" comment="v8.0 - Renamed to dbo.script_server_configuration - better alignment with scope." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -429,7 +431,7 @@ GO
 --##INCLUDE: S4 Configuration\export_server_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_configuration.sql
+--##INCLUDE: S4 Configuration\script_server_configuration.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\export_server_configuration.sql

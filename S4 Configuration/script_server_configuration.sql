@@ -12,11 +12,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.script_configuration','P') IS NOT NULL
-	DROP PROC dbo.script_configuration;
+IF OBJECT_ID('dbo.script_server_configuration','P') IS NOT NULL
+	DROP PROC dbo.script_server_configuration;
 GO
 
-CREATE PROC dbo.script_configuration 
+CREATE PROC dbo.script_server_configuration 
 
 AS
 	SET NOCOUNT ON;
