@@ -67,8 +67,8 @@ AS
 
 	INSERT INTO @core (drive, available_gbs)
 	SELECT DISTINCT
-		s.volume_mount_point [Drive],
-		CAST(s.available_bytes / 1073741824 as decimal(12,2)) [AvailableMBs]
+		s.volume_mount_point [drive],
+		CAST(s.available_bytes / 1073741824 as decimal(24,2)) [available_gbs]
 	FROM 
 		sys.master_files f
 		CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.[file_id]) s;
