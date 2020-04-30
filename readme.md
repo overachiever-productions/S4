@@ -1,4 +1,5 @@
 ﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
+
 # S4 - Simple SQL Server Scripts    
 
 ## Table of Contents
