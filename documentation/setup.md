@@ -58,7 +58,7 @@ To checkup-on/view current S4 advanced functionality and configuration settings,
 
 **Note that S4 ships with Advanced Capabilities DISABLED by default.**
 
-For more information on WHY xp_cmdshell makes lots of sense to use for 'advanced' capabilities AND to learn more about why xp_cmdshell is NOT the panic-attack many assume it to be, make sure to review [S4 notes on xp_cmdshell](/documentation/notes/xp_cmdshell_notes.md).
+For more information on WHY xp_cmdshell makes lots of sense to use for 'advanced' capabilities AND to learn more about why xp_cmdshell is NOT the panic-attack many assume it to be, make sure to review [S4 notes on xp_cmdshell](/documentation/notes/xp_cmdshell.md).
 
 ### Configuring SQL Server Database Mail
 In order to take advantage of advanced alerting and monitoring capabilities - including the ablity to execute backups and run restore-tests - you'll need to configure SQL Server's Database Mail capabilities AND instruct or define how S4 communicates with SQL Server Agent Operators in the case of problems.

@@ -36,7 +36,7 @@
 ### Simplified Installation
 1. Grab the `admindb_latest.sql` file from the [S4 releases directory](https://github.com/overachiever-productions/s4/releases/latest) 
 2. Run or execute `admindb_latest.sql` against your environment (you'll need SysAdmin permissions - and executing `admindb_latest.sql` will create a new database, the `admindb`.)
-3. Many of the [key benefits or features of S4](#features-and-benefits) require that you enable advanced-error-handling-functionality (which is facilitated largely by enabling [xp_cmdshell](/documentation/notes/xp_cmdshell_notes.md)). Once you've installed/deployed S4 into your environment, you can enable advanced functionality by running the following command: 
+3. Many of the [key benefits or features of S4](#features-and-benefits) require that you enable advanced-error-handling-functionality (which is facilitated largely by enabling [xp_cmdshell](/documentation/notes/xp_cmdshell.md)). Once you've installed/deployed S4 into your environment, you can enable advanced functionality by running the following command: 
 
 ```sql****
     EXEC admindb.dbo.enable_advanced_capabilities;
