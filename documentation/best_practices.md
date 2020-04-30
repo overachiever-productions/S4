@@ -44,6 +44,14 @@ References and guidance to help ensure adherence to SQL Server Best-Practices wh
 
 </section>
 
+<section style="visibility:hidden; display:none;">
+
+## S4 Worst Practices 
+
+[Place-Holder for "don't do this" type of documentation/details for common stumbling-blocks and 'mistakes' that people might otherwise be tempted to make... ]
+
+</section>
+
 [Return to Table of Contents](#table-of-contents)
 
 [S4 Docs Home](/readme.md)
