@@ -4,15 +4,21 @@
 # Installing, Updating, and Removing S4
 
 ## Table of Contents
-- [Step-by-Step Installation Instructions and FAQs](#step-by-step-installation-instructions)
-- [Enabling Advanced S4 Features](#enabling-advanced-S4-features) 
-- [Common Questions and Concerns about enabling xp_cmdshell](#common-questions-and-concerns-about-enabling-xp_cmdshell)
-- [Keeping S4 Updated](#updating-S4)
-- [Removing S4](#removing-S4)
+- [Requirements and Version Support](#requirements-and-version-support)
+- [Step-by-Step Installation Instructions](#step-by-step-installation-instructions)
+- [Enabling Advanced S4 Features](#enabling-advanced-s4-features) 
+    - [Common Questions and Concerns about enabling xp_cmdshell](#common-questions-and-concerns-about-enabling-xp_cmdshell)
+    - [Configuring SQL Server Database Mail](#configuring-sql-server-database-mail)
+- [Keeping S4 Updated](#updating-s4)
+- [Removing S4](#removing-s4)
 - [Installation via PowerShell](#installation-via-powershell)
 
-## Requirements 
-[Move 'Requirements' from 'front-page'/readme - they're just noise there and belong here.]
+## Requirements And Version Support
+
+### Requirements
+- S4 is designed for DBAs. 
+    - SysAdmin permissions are needed for S4 deployment.
+- Advanced Capabilities (low-level error handling and alerting/notifications) further depend upon [xp_cmdshell](#enabling-advanced-s4-features) and SQL Server's native [Database Mail](#Configuring-sql-server-database-mail) capabilities.
 
 ## Step-By-Step Installation Instructions
 To deploy S4:
@@ -32,8 +38,10 @@ To deploy S4:
 Once S4 has been deployed (i.e., after the admindb has been created), to deploy advanced error-handling features (which ensures that xp_cmdshell is enabled), simply run the following: 
 
 ```sql
+
     EXEC admindb.dbo.enable_advanced_capabilities;
     GO
+    
 ```
 
 ### Common Questions and Concerns about enabling xp_cmdshell 
@@ -42,16 +50,18 @@ Meh. There's a lot of [FUD](https://en.wikipedia.org/wiki/Fear,_uncertainty_and_
 To checkup-on/view current S4 advanced functionality and configuration settings, run the following: 
 
 ```sql
+
     EXEC admindb.dbo.verifiy_advanced_capabilities;
     GO
+
 ```
 
 **Note that S4 ships with Advanced Capabilities DISABLED by default.**
 
-[For more information on WHY xp_cmdshell makes lots of sense to use for 'advanced' capabilities AND to learn more about why xp_cmdshell is NOT the panic-attack many assume it to be, make sure to check on [link to CONVENTIONS - where Advanced Functionality is covered].]
+For more information on WHY xp_cmdshell makes lots of sense to use for 'advanced' capabilities AND to learn more about why xp_cmdshell is NOT the panic-attack many assume it to be, make sure to review [S4 notes on xp_cmdshell](/documentation/notes/xp_cmdshell_notes.md).
 
 ### Configuring SQL Server Database Mail
-[In order to take advantage of advanced alerting and monitoring capabilities - including the ablity to execute backups and run restore-tests - you'll need to configure SQL Server's Database Mail capabilities AND instruct or define how S4 communicates with SQL Server Agent Operators in the case of problems.]
+In order to take advantage of advanced alerting and monitoring capabilities - including the ablity to execute backups and run restore-tests - you'll need to configure SQL Server's Database Mail capabilities AND instruct or define how S4 communicates with SQL Server Agent Operators in the case of problems.
 
 [PENDING DOCS: S4 Setup - dbo.enable_database_mail... ]
 
@@ -76,18 +86,22 @@ To Update S4:
 To remove S4:
 1. If you have enabled advanced capabilities (and WANT/NEED xp_cmdshell to be disabled as part of the cleanup process), you'll need to run the following code to disable them (please do this BEFORE DROP'ing the `[admindb]` database):   
 ```  
+
     EXEC admindb.dbo.disable_advanced_capabilities;  
     GO  
+    
 ```
 
 2. Review and disable any SQL Server Agent jobs that may be using S4 functionality or capabilities (automated database restore-tests, disk space checks/alerts, HA failover, etc.). 
 3. Drop the `[admindb]` database: 
 ```
+
     USE [master];  
     GO   
 
     DROP DATABASE [admindb];  
     GO
+    
 ```
 
 4. Done. 
