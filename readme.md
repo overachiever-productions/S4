@@ -3,7 +3,6 @@
 
 ## Table of Contents
 - [License](#license)
-- [Requirements](#s4-requirements)
 - [Installing S4](#installing-s4)
     - [Step-by-Step Installation Instructions and FAQs](/documenation/setup.md#step-by-step-installation-instructions)
     - [Enabling Advanced S4 Features](/documenation/setup.md#enabling-advanced-S4-features) 
@@ -25,34 +24,25 @@
     - [Database Name Tokens](database-name-tokens)
     - [Alerting](#alerting-conventions)
 
-> ### :construction: Work in Progress  
-> S4 documentation is a work in progress. Any content [surrounded by square brackets] represents a DRAFT version of documentation.
+> ### :label: **NOTE:** 
+> S4 documentation is a work in progress. Any content *[surrounded by square brackets]* represents a DRAFT version of documentation.
 
 ## License 
 
 [MIT LICENSE](/LICENSE)
 
-## S4 Requirements
-- SQL Server 2012+. 
-    - MOST S4 functionality ALSO works with SQL Server 2008 / SQL Server 2008 R2.
-- Some advanced functionality will not work on Express and/or Web Versions of SQL Server.
-- Windows Server Only. 
-    - Not YET tested on Azure/Linux.
-    - Some functionality will NOT work on AWS RDS Instances.
-- Advanced S4 capabilities (error handling and alerting) rely upon xp_cmdshell and SQL Server's Database Mail capabilities.
-    
 ## Installing S4
 
 ### Simplified Installation
 1. Grab the `admindb_latest.sql` file from the [S4 releases directory](https://github.com/overachiever-productions/s4/releases/latest) 
 2. Run or execute `admindb_latest.sql` against your environment (you'll need SysAdmin permissions - and executing `admindb_latest.sql` will create a new database, the `admindb`.)
-3. Most of the [key benefits or features of S4](#features-and-benefits) require that you enable advanced-error-handling-functionality (enabling xp_cmdshell) - which you can then enable as follows: 
+3. Many of the [key benefits or features of S4](#features-and-benefits) require that you enable advanced-error-handling-functionality (which is facilitated largely by enabling [xp_cmdshell](/documentation/notes/xp_cmdshell_notes.md)). Once you've installed/deployed S4 into your environment, you can enable advanced functionality by running the following command: 
 
-```sql
+```sql****
     EXEC admindb.dbo.enable_advanced_capabilities;
     GO
 ```
-4. You'll also want to ensure that database mail... 
+4. Additionally, many advanced S4 capabilities that relate to automating SQL Server tasks and operations (backups, restore-tests, and other types of maintenance) require access to SQL Server [Database Mail profiles and operators](/documentation/notes/database_mail.md) to ensure that any probelms or issues encountered during execution are correctly surfaced (rather than allowing silent failures). Defining which Database Mail Profiles and SQL Server Agent Operators to use for these routines can either be done in one-off (per execution/call) fashion, or these details can be set (or defaulted) at server-level means by means of configuration and/or convention.
 
 ### Additional Installation, Update, and Removal Topics
 - [Step-by-Step Installation Instructions and FAQs](/documenation/setup.md#step-by-step-installation-instructions)
@@ -163,6 +153,7 @@ Examples include:
 ### Utilities
 S4 was primarily built to facilitate the automation of backups, restores, and disaster recovery testing - but contains a number of utilities that can be used to make many typical administrative T-SQL Tasks easier. 
 
+#### String Manipulation Utilities
 For example, a simple helper function to count the number of times a specific string of text occurs in a larger/target string:
 ```sql
 ------------------------------------------------------------------------
@@ -185,26 +176,29 @@ IF (SELECT admindb.dbo.count_matches(@someVariable, 'targetText') > 0) BEGIN
 END;
 ```
 
-Another, trivial, helpe function provides the ability to print LONG strings (helpful when debugging dynamic SQL or other 'blobs' of text):
+And, of course, no library would be complete without a string_split() function: 
+```sql
+------------------------------------------------------------------------
+-- dbo.split_string
+------------------------------------------------------------------------
+-- perf-optimized string splits - that maintain 'order' and enable trimming of white space: 
+SELECT admindb.dbo.split_string('this is the string     to split', 'the', 1);
+
+```
+
+
+Another, trivial, helper function provides the ability to print LONG strings (helpful when debugging dynamic SQL or other 'blobs' of text):
 
 ```sql
 ------------------------------------------------------------------------
 -- dbo.print_long_string
 ------------------------------------------------------------------------
 -- T-SQL's PRINT command truncates at 4000 characters - tedious if you're trying to see a longer string
-EXEC admindb.dbo.print_long_string @nvarcharMaxWithLongerTextThatYouWantToPrintForWhateverReason;
+EXEC admindb.dbo.print_long_string
+    @nvarcharMaxWithLongerTextThatYouWantToPrintForWhateverReason;
 
 ```
 
-And, of course, no library would be complete without a string_split() function: 
-```sql
-------------------------------------------------------------------------
--- dbo.split_string
-------------------------------------------------------------------------
--- perf-optimized string splits - that maintain 'order' and enable trim: 
-SELECT admindb.dbo.split_string('this is the string to split', 'the', 1);
-
-```
 Or the ability to format timespans - via milliseconds:
 
 ```sql 
@@ -215,6 +209,66 @@ Or the ability to format timespans - via milliseconds:
 SELECT dbo.format_timespan(147894); -- 000:02:27.894;
 ```
 
+#### Security and Management Utilities
+Ever been burned by how SSMS does a terrible job of scripting logins? (It bypasses the password and doesn't even BOTHER with the SID.) 
+
+S4's `script_login` routine provides a clean and easy way to script both SQL and Windows Logins - providing the option to specify what kind of syntax to generate for 'if-checks' or evaluations to execute on the target server. 
+
+
+```sql 
+------------------------------------------------------------------------
+-- dbo.script_login
+------------------------------------------------------------------------
+EXEC admindb.dbo.script_login
+    @LoginName = N'WebApp-Login', 
+    @BehaviorIfExists = N'CREATE_AND_DROP';
+
+```
+
+For example, the output of the command above is as follows: 
+
+```sql
+
+IF NOT EXISTS (SELECT NULL FROM [master].[sys].[server_principals] WHERE [name] = 'WebApp-Login') BEGIN 
+    CREATE LOGIN [WebApp-Login] WITH 
+	 	PASSWORD = 0x020092F37399BEAB41CA530245ADDEA17A25F03D4AC5640D8347D0FEA9A1ADB3F38844A46C2F52C70BE6554126A1641B2562A42D3CDD4DE206B8C670A8A838717E835A2814DF HASHED
+	 ,SID = 0x700D2F2541B1A04DA69A7EAA70649D1C
+	 ,DEFAULT_DATABASE = [master]
+	 ,CHECK_EXPIRATION = OFF
+	 ,CHECK_POLICY = OFF;  
+  END;
+ELSE BEGIN
+ 	DROP LOGIN [WebApp-Login];
+
+	CREATE LOGIN [WebApp-Login] WITH  
+	 	PASSWORD = 0x020092F37399BEAB41CA530245ADDEA17A25F03D4AC5640D8347D0FEA9A1ADB3F38844A46C2F52C70BE6554126A1641B2562A42D3CDD4DE206B8C670A8A838717E835A2814DF HASHED
+	 ,SID = 0x700D2F2541B1A04DA69A7EAA70649D1C
+	 ,DEFAULT_DATABASE = [master]
+	 ,CHECK_EXPIRATION = OFF
+	 ,CHECK_POLICY = OFF; 
+END;
+
+```
+
+Where the @BehaviorIfLoginExists of `DROP_AND_CREATE` generates IF-CHECKS that will drop/recreate the login if it's found on the target server (vs the options of `ALTER` and `NONE` (no IF-checks)). 
+
+Further, S4's `dbo.script_logins` can be easily used to dump/export (output) ALL logins within a given database - or all logins on a server via syntax that makes it easy to specify which Databases to target and exclude and/or which logins/users to exclude as well: 
+
+```sql
+
+EXEC admindb.dbo.[script_logins]
+	@TargetDatabases = N'{USER}',  -- target all USER dbs.
+	@ExcludedDatabases = N'Billing',
+	@ExcludedLogins = N'sa',
+	@ExcludedUsers = N'DEV\web-app',
+	@ExcludeMSAndServiceLogins = 1,
+	@BehaviorIfLoginExists = N'ALTER',
+	@DisablePolicyChecks = 1,
+	@DisableExpiryChecks = 1,
+	@ForceMasterAsDefaultDB = 1;
+	
+```
+
 ### Security Diagnostics
 [Documentation Pending.]
 
@@ -222,7 +276,7 @@ SELECT dbo.format_timespan(147894); -- 000:02:27.894;
 [Documentation Pending.]
 
 ### Tools and Templates 
-sadfsaf
+[Documentation Pending.]
 
 ### Best-Practices Guidance and Documentation
 A key goal of S4 is to enable best-practices execution in 'weaponized' form - or best-practices implementations in codified, easy-to-use, re-usable, code or modules. 
