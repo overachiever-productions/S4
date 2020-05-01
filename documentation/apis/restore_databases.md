@@ -1,15 +1,39 @@
-﻿[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > [S4 APIs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md) > dbo.restore_databases
+﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 
-## dbo.restore_databases
+[S4 Docs Home](/readme.md) > [S4 APIs](/documentation/apis.md) > dbo.restore_databases
 
-# S4 Restore
+# dbo.restore_databases
+
+## Table of Contents
+- [Overview](#overview)
+    - [Rationale]()
+    - [Benefits of S4 Restore]()
+- [Syntax](#syntax)
+- [Remarks](#remarks) 
+- [Examples](#examples)
+- [See Also](#see-also)
+
+
+[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > [S4 APIs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md) > dbo.restore_databases
+
+# dbo.restore_databases
+
+## Overview
+**APPLIES TO:** :heavy_check_mark: SQL Server 2008 / 2008 R2 :heavy_check_mark: SQL Server 2012+ :grey_exclamation: SQL Server Express / Web
+
+:heavy_check_mark: Windows :o: Linux :o: Amazon RDS :grey_question: Azure
+
+**S4 CONVENTIONS:** [Advanced-Capabilities](/x/link-here), [Alerting](etc), [@PrintOnly](etc), [Backup Names](xxx), and [Tokens](etc)
+
+### Rationale
+
 S4 Restore was designed to provide:
 - **Simplicity**. Streamlines the non-trivial process of testing backups (by restoring them) through a set of simplified commands and operations that remove the tedium and complexity from restore operations - while still facilitating best-practices for testing and recovery purposes.
 - Streamline the non-trivial process of verifying backups - by restoring them through a streamlined and simplified set of commands
 - **Recovery**. While S4 Restore was primarily designed for regular (automated) testing of backups, it can be used for disaster recovery purposes to restore backups to the most recent recovery point available by walking through FULL + DIFF + TLOG backups and applying the most recent backups of all applicable backup files available. 
 - **Transparency**. Use of (low-level) error-handling to log problems into a centralized logging table (for trend-analysis and improved trouble-shooting) and send email alerts with concise details about each failure or problem encountered during execution so that DBAs can quickly ascertain the impact and severity of problems without having to wade through messy 'debugging' and troubleshooting.
 
-## Benefits of S4 Restore
+### Benefits of S4 Restore
 Key Benefits provided by S4 Restore:
 - **Simplicity, Recovery, and Transparency.** Commonly needed features and capabilities for restoring SQL Server backups - with none of the hassles or headaches. 
 - **Peace of Mind.** The only real way to know if backups are viable is to restore them. S4 Restore removes the mystery by making it easy to regularly restore (i.e., test) backups of critical SQL Server databases.
@@ -17,61 +41,42 @@ Key Benefits provided by S4 Restore:
 - **Instrumentation.**  After setting up regular restore-check jobs, you can easily query metrics about the duration for restore operations (and consistency checks) for trend-analysis and to help ensure RTO compliance.
 - **Portability.** Easy setup and configuration - with no dependency on 'outside' resources (other than access to your backup files), S4 is easy to deploy and use pretty much anywhere.
 
-### Table of Contents <a name="table-of-contents"></a>
-- [Application](#application)
-- [Syntax](#syntax)
-- [Remarks](#remarks)
-    - [Intended Usage Scenarios]()
-    - [~~Conventions and Concerns~~]
-    - [Additional Warnings about @AllowReplace]
-    = [Order of Operations During Execution]
-    - [Considerations for Copying Databases into Development\QA\Testing]
-- [Examples](#examples)
-- [See Also](#see-also)
-
-
-### Application <a name="application"></a>
-
-| Platforms | SQL Server Versions | 
-| :-------- | :-----------------  |
-| :heavy_check_mark: Windows | :heavy_check_mark: SQL Server 2008 / 2008 R2 |
-| :grey_question: Linux | :heavy_check_mark: SQL Server 2012+ |
-| :grey_question: Azure |  :heavy_check_mark: SQL Server Express / Web |
-
-:warning: Requires Advanced S4 Error Handling 
-
 [Return to Table of Contents](#table-of-contents)
 
-### Syntax <a name="syntax"></a>
+## Syntax
+
 ```sql
+
 EXEC admindb.dbo.restore databases 
     @DatabasesToRestore = N'[ {READ_FROM_FILESYSTEM} | list,of,db-names,to,restore ]' ],
-    [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%',]
+    [@DatabasesToExclude = N'list,of,dbs,to,not,restore, %wildcards_allowed%', ]
     [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
     @BackupsRootPath = N'[ \\server\path-to-backups | {DEFAULT} ]', 
     @RestoredRootDataPath = N'[ D:\SQLData | {DEFAULT} ]', 
     @RestoredRootLogPath = N'[ L:\SQLLogs | {DEFAULT} ]', 
-    [@RestoredDbNamePattern = N'{0}_test',] 
-    [@AllowReplace = N'',] 
-    [@SkipLogBackups = NULL,] 
-    [@CheckConsistency = [ 0 | 1 ],] 
-    [@DropDatabasesAfterRestore = [ 0 | 1 ],]
-    [@MaxNumberOfFailedDrops = 2,]
-    [@OperatorName = N'{DEFAULT}',] 
-    [@MailProfileName = N'{DEFAULT}',] 
-    [@EmailSubjectPrefix = N'',] 
-    [@PrintOnly = [ 0 | 1 ] ] 
+    [@RestoredDbNamePattern = N'{0}_test', ] 
+    [@AllowReplace = N'', ] 
+    [@SkipLogBackups = NULL, ] 
+    [@CheckConsistency = [ 0 | 1 ], ] 
+    [@DropDatabasesAfterRestore = [ 0 | 1 ], ]
+    [@MaxNumberOfFailedDrops = 2, ]
+    [@OperatorName = N'{DEFAULT}', ] 
+    [@MailProfileName = N'{DEFAULT}', ] 
+    [@EmailSubjectPrefix = N'', ] 
+    [@PrintOnly = [ 0 | 1 ] ]   
+
 ;
 ```
 
-#### Arguments
-**@DatabasesToRestore** = N'[ {READ_FROM_FILESYSTEM} | comma,delimited, list-of-db-names, to restore ]'  REQUIRED. 
+### Arguments
+**@DatabasesToRestore** = N'[ {READ_FROM_FILESYSTEM} | comma,delimited, list-of-db-names, to restore ]'  
+**REQUIRED.** 
 You can either pass in the specialized 'token': [READ_FROM_FILESYSTEM] - which indicates that dbo.restore_databases will treat the names of (first-level) sub-FOLDERS within @BackupsRootPath as a list of databases to attempt to restore (i.e., if you have 3 folders, one called X, one called Y, and another called widgets, setting @BackupsRootPath to {READ_FROM_FILESYSTEM} would cause it to try and restore the databases: X, Y, and widgets). When using this token, you will typically want to explicitly exclude a number of databases using the @DatabasesToExclude parameter. Otherwise, if you don't want to 'read' in a list of databases to restore, you can simply specify a comma-delimited list of database names (e.g., 'X, Y,widgets') - where spaces between database-names can be present or not. 
 
 Otherwise, for every database listed, dba_RestoreBackups will look for a sub-folder with a matching name in @BackupsRootPath and attempt to restore any backups (with a matching-name) present. 
 
 **[@DatabasesToExclude** = 'list,of,dbs,to,not,attempt,restore,against, %wildcards_allowed%' ]  
-OPTIONAL. ONLY allowed to be populated when @DatabasesToRestore is set to '[READ_FROM_FILESYSTEM]' (as a means of explicitly ignoring or 'skipping' certain folders and/or databases). Otherwise, if you don't want a specific database restored, then don't list it in @DatabasesToRestore.
+OPTIONAL. May ONLY be populated when `@DatabasesToRestore` is set to `'{READ_FROM_FILESYSTEM}'` (as a means of explicitly ignoring or 'skipping' certain folders and/or databases). Otherwise, if you don't want a specific database restored, then don't list it in @DatabasesToRestore.
 
 Note that you can also specify wildcards, or 'patterns' for database names that you wish to skip or avoid - i.e., if you don't want to attempt to restore multiple databases defined as <db_name>_stage, then you can specify '%_stage%' as an option for exclusion - and any databases matching this pattern (via a LIKE evaluation) will be excluded.
 
