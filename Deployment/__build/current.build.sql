@@ -387,7 +387,7 @@ GO
 --##INCLUDE: S4 Utilities\shred_string.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\print_long_string.sql
+--##INCLUDE: S4 Utilities\print_long_string.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\get_executing_dbname.sql
@@ -551,23 +551,23 @@ GO
 --##INCLUDE: S4 Maintenance\Automated Log Shrinking\shrink_logfiles.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
---- Tools
+--- Additional Utilities
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Tools\normalize_text.sql
+--##INCLUDE: S4 Utilities\normalize_text.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\extract_statement.sql
+--##INCLUDE: S4 Utilities\extract_statement.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\extract_waitresource.sql
+--##INCLUDE: S4 Utilities\extract_waitresource.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\is_xml_empty.sql
+--##INCLUDE: S4 Utilities\is_xml_empty.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\refresh_code.sql
+--##INCLUDE: S4 Utilities\refresh_code.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- SQL Server Agent Jobs
