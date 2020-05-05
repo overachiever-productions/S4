@@ -4,7 +4,7 @@
 
 	REFERENCE:
 		- License, documentation, and source code at: 
-			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+			https://github.com/overachiever-productions/s4/
 
 	NOTES:
 		- This script will either install/deploy S4 version ##{{S4version}} or upgrade a PREVIOUSLY deployed version of S4 to ##{{S4version}}.
