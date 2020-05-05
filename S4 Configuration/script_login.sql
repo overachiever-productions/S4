@@ -2,8 +2,6 @@
 	FACADE
 		Actual 'work' of scripting a login is handled in either dbo.script_sql_login or dbo.script_windows_login.
 
-
-
 */
 
 USE [admindb];

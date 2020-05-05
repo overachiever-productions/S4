@@ -128,7 +128,7 @@ Similarly, the following command could be used to REPLACE nightly dev/test datab
 For more info, see API documentation for [dbo.restore_databases](/documentation/apis/restore-databases.md) and be sture to checkout  [S4's documented best-practices for RESTORE operations](/documentation/best-practices/restores.md) as well.
 
 ### Simplfied Disaster Recovery
-[PENDING]
+As tooling designed for DBAs, S4 focuses heavily on Disaster Recovery - both in terms of the necessary tools, techniques, and best-practices to help detect and alert for disasters as they unfold and in terms of tools designed to provide best-of-breed capabilities for responding to disasters when they occur. 
 
 ### Performance Monitoring and Workload Insights 
 S4 Includes a number of performance diagnostics that can be used in real-time to determine exactly what is using system resources and/or causing problems at a given moment. 

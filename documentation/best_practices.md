@@ -36,7 +36,7 @@ References and guidance to help ensure adherence to SQL Server Best-Practices wh
 
 - [Managing SQL Server Backups with S4](/documentation/best-practices/backups.md)
 - [Managing and Automating Regular Restore-Tests with S4](/documentation/best-practices/restores.md)
-- [Managing Disaster Recovery with S4 functionality and Tools](/documentation/best-practices/disaster_recovery.md)
+- [Leveraging S4 for Disaster Recovery](/documentation/best-practices/disaster_recovery.md)
 
 <section style="visibility:hidden; display:none;">
 
