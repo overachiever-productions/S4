@@ -25,16 +25,16 @@
 - [Section 6: Creating a Disaster Recovery Plan](#section-6-creating-a-disaster-recovery-plan)
 - [Section 7: Disaster Response Techniques](#section-7-disaster-response-techniques)
     - [Part A: Hardware, Virtualization, and OS Problems](#part-a-hardware-virtualization-and-os-problems)
-    - [Part B: SQL Server Problems](#part-b-sql-server-problems)
+    - [Part B: High Availability Problems](#part-b-high-availability-problems)
+    - [Part C: SQL Server Problems](#part-c-sql-server-problems)
         - [Handling Suspect and Recovery-Pending Databases](#handling-suspect-and-recovery-pending-databases)
-        - [Leveraging Backups for COPIES During Disaster Recovery Operations](#leveraging-backups-for-copies-during-disaster-recovery-operations)
-        - [Restoring and Recovering User Databases](#restoring-and-recovering-user-databases)
         - [Restoring and Recovering System Database](#restoring-and-recovering-system-databases)
+        - [Restoring and Recovering User Databases](#restoring-and-recovering-user-databases)
         - [Page-Level Recovery of User Databases](#page-level-recovery-of-user-databases)
         - [Point in Time Recovery of User Databases](#point-in-time-recovery-of-user-databases)
-        - [Putting Databases into EMERGENCY Mode](#putting-databases-into-emergency-mode)
         - [Smoke and Rubble Restores](#smoke-and-rubble-restores)
-    - [Part C: Common Disaster Response Techniques and Tasks](#part-c-common-disaster-response-techniques-and-tasks)
+    - [Part D: Disaster Response Techniques and Tasks](#part-d-common-disaster-response-techniques-and-tasks)
+        - [Putting Databases into EMERGENCY Mode](#putting-databases-into-emergency-mode)
 - [Section 8: Regular Testing](#section-8-regular-testing)
     - [Benefits of Regular Testing](#benefits-of-regular-testing)
     - [Testing Scenarios](#testing-scenarios)
@@ -147,7 +147,7 @@ An explicit goal of the functionality provided by S4 is to address all 3x of the
 ### Enabling the DAC 
 Prior to any disaster, best practices for SQL Server administration in any production environment are to enable the [Dedicated Administrator Connection - or DAC](https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators?view=sql-server-ver15). 
 
-S4 easily facilitates this by means of executing [`dbo.configure_instance`](/documentation/apis/configure_instance.md). 
+S4 easily facilitates enabling access via the DAC by means of executing [`dbo.configure_instance`](/documentation/apis/configure_instance.md). 
 
 ### Monitoring and Alerts
 S4 provides the capability to enable pro-active monitoring and alerts on the systems and resources described in this Disaster Recovery Documentation. 
@@ -158,7 +158,14 @@ An effective component of leveraging S4 for Disaster Recovery purposes is to ens
 > Care should be taken to ensure that these monitoring routines and associated alerts remain functional and periodically tested/verified to ensure viability. **Likewise, admins should have a rough idea of how to respond to alerts if/when raised.** 
 
 ### Alert Recipients
-[NOTE about how this ties into ... Operators and S4 conventions around monitoring and alerting - with default/convention to have an Operator named `Alerts` - along with links on how to modify these defaults/conventions as needed...f]
+*[DOCUMENTATION PENDING.]*
+
+[NOTES: Need to link-to and address conventions for defining alert recipients via SQL Server Agent Operators - i.e., `Alerts` by default - along with links to documentation on how to update/customize if/as needed.]
+
+[NOTES: Need to provide rationale/recommendation for having SQL Server Agent operators link to aliases as opposed to specific email addresses - as per: 
+
+]
+
 
 ### S4 Alerting Inventory 
 The following S4 alerting capabilities are currently available - with links to setup and other documentation specified per entry listed below.
@@ -322,30 +329,73 @@ Two key types of information: SQL Server related details/resources and business-
 [Return to Table of Contents](#table-of-contents)
 
 ## Section 6: Creating a Disaster Recovery Plan
-*[DOCUMENTATION PENDING.]*
+While there is significant overlap between a disaster recovery plan and the S4 documentation outlined on this page, the S4 documentation provided here is NOT a disaster plan. Instead, this document provides a list of best-practices associated with addressing disasters (especially when using S4) along with step-by-step guidance on how to respond to specific SQL Server Disaster scenarios. 
 
-[Key Components of Establishing a DR Plan: 
+Further, it's again important to stress that a document (by itself) is not a Disaster Recovery Plan - instead, Disaster Recovery Plans are documents accompanied with regular testing and validation. 
 
-A. [Establish Priorities - which is more important (and to what degree???)? Is UPTIME more important than data correctness/accuracy? In MOST environments data-correctness is a MUCH higher priority than up-time - but, not all environments or DATABASES are the same. Make sure your DR documentation clearly specifies priorities - broken out by SERVER and/or DATABASE as required.]
+As such, to create your own Disaster Recovery Plan, you'll need to review the recommended resources to assemble from [Section 5: xxx ] of this document and:  
+- Assemble an explicit DR plan that's unique to your EXACT business needs
+- Validate this plan with any/all persons who will have a role to play in implementing this plan.
+- Ensure that your own disaster recovery plan stays regularly-tested and up-to-date (as recommended in [Section 8: xxx ] and [Section 9: yyyy])
 
-B. RPOs and RTOs. Go hand-in hand with the above. Or, more specifically, the above 'informs' RPOs and RTOs to the point where RPOs and RTOs are simply 'measures' of the above. IF AND WHEN necessary: create different matrixes/worksheets for RPOs/RTOs per server and/or databases. 
+### Typical Milestones to Address When Creating Disaster Recovery Plans
 
-C. Address DR Security and Access. 
+#### A. Start by Establishing Priorities. 
+Define what is more important to your business: 
+- the consistency (or correctness) of your data
+- or overall uptime
 
-D. Address who can/will be responsible during db-level DR scenarios. A 'ranked' or prioritized list is usually the best option. Ensure that everyone involved is comfortable with their 'placement' and potential roles on the list. Ensure that EVERYONE on the list can access security info and details in the case of an emergency. 
+In MOST environments, data-consistency is a much higher concern than uptime - but not all environments, workloads, or databases are tyhe same. 
 
-E. Establish clearly defined audit/escalation processes to enable EVERYONE on the list above to be able to access security details, creds, certificates, and ANYTHING else needed in the case of a disaster. 
+**Start by making sure that your Disaste Recovery Documentation CLEARLY specifies business priorities - broken out by Product/Server/Database if/as needed.**
 
-F. Clearly define location of DR documentation/inventories and all DR instructions, guideliness. 
+#### B. Define RPOs and RTOs
+RPOs and RTOs go hand-in-hand with business priorities. Or, more specificially, business priorities 'inform' RPOs and RTOs - to the point where these SLAs are merely 'measures' or representations of actual business needs. 
 
-G. Create a schedule/timeline for regular testing and accountability for testing. Again: a DR plan without regular testing is a 'document' - not a plan. 
+Again: IF AND WHEN NECCESSARY, create different RPOs and RTOs for different workloads/servers, products, and or databases - and make sure that any and ALL differences are clearly documented as part of your business' actual Disaster Recovery Plan.
 
-H. Determine necessary process and review/steering for addressing changes and managing any problems with DR testing as problems occur. (Problems WILL occur during testing - which is a big part of WHY testing is so important - it's better to work through those problems within a controlled environment/scenario than during a disaster.)]
+#### C. Address Environment Access and Security
+Determine exactly what kinds of security concerns are typically associated with your production environments - and how you'll address those needs during a disaster recovery scenario. For MOST organizations and most SQL Server workloads, responding to a disaster obviously requires full-blown SysAdmin permissions. If you're going to allow 'junior level' members of your team to 'step in' and be part of the Disaster Recovery process if/when more senior-level engineers are not available, how are you going to address elevation of permissions? (One common technique is to keep SysAdmin-level credentials securely stored in an audited location - i.e., the equivalent to keeping 'keys' sealed in an envelope - in case of a disaster, the envelope can be 'opened' with permission and used by whoever needs them as long as a process for REVOKING those keys 'after the fact' exists and has been clearly mapped out).
+
+#### D. Determine Disaster Recovery Roles and Participation
+Make sure to address who can/will be responsible during db-level DR scenarios. A 'ranked' or prioritized list is usually the best option. Ensure that everyone involved is comfortable with their 'placement' and potential roles on the list. 
+
+Ensure that EVERYONE on the list can access security info and details in the case of an emergency. 
+
+#### E. Ensure Audited Escalation of Access to Security Instruments
+SysAdmin access into a SQL Server during Disaster Recovery scenarios is usually just 'the tip of the iceberg' that can/will be NEEDED when responding to a disaster. Access to off-box/off-site backups, access to hosting-company personnel and/or support services at the hosting level, along with the need for access to certificates, login details (for application and user logins who may need to be rebuilt/recreated), and a number of other ELEVATED permissions are going to be needed to recover from non-trivial disaster scenarios. 
+
+As such, the only REAL way to ensure that all permissions required for successfully responding to a wide variety of different types of disasters (simple emergencies on up to full-blown 'smoke and rubble' scenarios) is to both, a) ensure that 'junior members' of the Disaster Recovery team work through actual Disaster Recovery test scenarios to ensure they have necessary security access, and b) ensure period, continued, testing by those with 'lesser privilege' to ensure that any changes to your environment and workloads over time do NOT create 'surprises' that might prevent anyone with anything less than 'Full-Blown SysAdmin' access to recover. 
+
+#### F. Create an Inventory of Disaster Recovery Resources
+Using the recommendations outlined in [Section 5: Enumerating Disaster Recovery Resources ](#section-5-enumerating-disaster-recovery-resources), outline the resources specific to your organization that will be required for smooth management of disaster scenarios. Specifically, you'll typically want to address: 
+- RPOs and RTOs / Business Directives.
+- Calling Trees and/or (ranked) lists of personnel who can/should be notified and tasked with addressing disaster recovery responsibilities. 
+- Clearly defined escalation rules for when, where/how management and/or (customer-facing) support personnel should be notified and/or involved. 
+- Conference Bridges and/or recommendations for optimizing communication. (Avoid communications mechanisms that involve typing - engineers and personnel working on a fix don't need to be distracted with 'updating the board' every few minutes with their progress via slack/etc.)
+- Detailed Environment information (hosting details, server IPs/names and the locations of backups, etc.)
+- Detailed steps on how to escalate permissions if/as needed. 
+- Links to detailed, step-by-step checklists and/or response techniques (i.e., those outlined in Section 7 of this document) that can be used to help troubleshoot specific problem scenarios when responding to disasters.
+
+#### G. Validate Your Disaster Recovery Plan Through Testing
+Again, a Disaster Recovery Plan that only exists on paper isn't a disaster-recovery plan, it's a document (that typically falls well-short of being able to provide the full degree of guidance needed to smoothly address disasters). 
+
+As such, the most important part of any Disaster Recovery plan is the TESTING and refinement/improvements that go into the process of converting the 'paper' version of a plan into an actually viable resource or 'checklist' that can then be used when responding to true disasters. 
+
+Or, in other words, to create a truly viable Disaster Recovery Plan, you'll likely need to run multiple, initial, tests to address a variety of different disaster scenarios to ensure that your plan (documentation, lists of resources and priorities/escalation techniques, etc.) all allow you to meet business needs as expected. 
+
+Stated differently: PROBLEMS will occur during Disaster Recovery Testing - but, that's entire POINT of creating a Disaster Plan - doing so let's you identify (and address) those problems "before it's too late". 
+
+#### H. Create and Schedule a Timeline for Regular Testing and Follow-Up 
+Once your Disaster Recovery Plan has been validated and meets your needs, you'll need to periodically test your Disaster Recovery plan (every month is ideal, but every quarter can make sense for non-volatile environments where there's not a lot of change) to ensure that security changes, storage optimizations, and/or other major (or even minor) business initiatives and changes that might negatively impact disaster recovery procedures haven't managed to 'sneak breaking problems into play' without being noticed. Or, stated differently: even the best Disaster Recovery plan, when left un-tested over time, will gradually become non-viable due to environmental changes and modifications - as such, the worst time to figure out the 'cost' of those changes relative to Disaster Recovery is when addressing a disaster. A better option is to periodically validate and work through hiccups/issues as they crop up so that 'churn' is minimized. 
+
+#### I. Establish Periodic Re-Evaluations of Business Priorities
+Every year or so, re-evaluating business priorities (such as RPOs and RTOs) can help to both better match expectations between engineering teams and management AND decrease the potential cost associated with data-loss and/or down-time associated with disasters. 
 
 [Return to Table of Contents](#table-of-contents)
 
 ## Section 7: Disaster Response Techniques
-[Section intro/overview (brief).]
+The following section provids detailed instructions for addressing specific tasks and operations when working through Disaster Recovery efforts. 
 
 > ### :bulb: **TIP:**
 > [Tip here about least-destructive approaches typically being preferred - unless otherwise determinied and defined via explict DR plan details from Section 6.]
@@ -353,13 +403,19 @@ H. Determine necessary process and review/steering for addressing changes and ma
 ### Part A: Hardware, Virtualization, and OS Problems 
 *[DOCUMENTATION PENDING.]*
 
-### Part B: SQL Server Problems 
+### Part B: High Availabililty Problems 
+*[DOCUMENTATION PENDING.]*
+
+### Part C: SQL Server Problems 
 The following sub-section outlines step-by-step instructions and best-practices for addressing specific, SQL Server related, disaster scenarios and tasks. 
+
+> ### :bulb: **TIP:**
+> Don't overlook the 'power of backups' when addressing any database-level Disaster Recovery scenario with SQL Server. Or, stated differently, since a KEY component of addressing disasters is to protect against the destruction of MORE data through 'accidental' moves or 'mistakes' during the recovery process, don't forget that (while it typically will take a bit more time to test/evaluate), you can FREQUENTLY 'test' anything that might otherwise be destructive to production data against a COPY of one of your 'distressed' databases FIRST. This technique is ESPECIALLY helpful when addressing some types of corruption. 
 
 <section style="visibility:hidden; display:none;">
 
 #### Physical Database Corruption 
-[check for corruption (below) + overall plan of attack... ]
+[Need to synthesize the order of operations defined in my SQLMag article... but, updated for use with S4 and additional best-practices... ]
 
 #### Logical Database Corruption
 [ADVANCED documentation required. SIMILAR in concept to the process associated/defined(ish) for Point in Time Recovery of a User Database (below) - but then requires INSERTs/UPDATEs/DELETEs from 'point in time' db against 'production' db to 'vector' in/out all changes and updates and ... you'll miss data/changes along the way... and, this is easily the most UGLY process anywhere in SQL Server Universe or in dealing with dbs. 
@@ -428,6 +484,8 @@ E. To check the logs for more insight, see [Checking SQL Server (Error) Logs](#c
 
 F. If you’re dealing with a RECOVERY_PENDING database and you believe that you’ve corrected whatever underlying IO problems were causing the original problem, you can attempt to simply bring the database back online, with the following command: 
 
+<div style="margin-left: 40px;">
+
 ```sql 
 
 ALTER DATABASE [dbNameHere] SET ONLINE;
@@ -435,16 +493,28 @@ GO
 
 ```
 
-If this command works the database will either be switched to ONLINE or RECOVERING – depending upon how many transactions need to be reconciled. 
+If this command works, the database will either be switched to ONLINE or RECOVERING – depending upon how many transactions need to be reconciled. 
+
 If this command/operation doesn’t work, then you haven’t addressed the underlying issue, and the error messages that SQL Server outputs may help you address these issues. 
+</div>
 
-G. Otherwise, if you’re not able to figure out exactly why the database is SUSPECT (or stuck in RECOVERY_PENDING) then you have two or three options available – depending upon your environment. First, if you’ve got Mirroring/AlwaysOn Availability Groups or Log Shipping available, you can look at failing over to your secondary server. However, just be aware that in the case of Log Shipping, you’ll want to try and obtain and apply a tail-of-the-log backup before failing over. Otherwise, if you don’t have a secondary server available, you have to remaining options: Simply overwrite the existing database with a backup or put the database into EMERGENCY mode to try and ascertain the problem. 
+G. Otherwise, if you’re not able to figure out exactly why the database is SUSPECT (or stuck in RECOVERY_PENDING) then you have two or three options available – depending upon your environment.
 
-H. **Regardless of which option you decide to use you will want to (again) make sure you have a tail-end-of-the-log backup before proceeding.** 
+<div style="margin-left: 40px;">
+First, if you’ve got Mirroring/AlwaysOn Availability Groups or Log Shipping available, you can look at failing over to your secondary server. 
+
+However, just be aware that in the case of Log Shipping, you’ll want to try and obtain and apply a tail-of-the-log backup before failing over. 
+
+Otherwise, if you don’t have a secondary server available, you have two remaining options: Simply overwrite the existing database with a backup or attempt to put the database into `EMERGENCY` mode to try and ascertain the problem - with the caveat that this approach (setting your database to `EMERGENCY` mode should usually only be done as a 'last ditch' effort.)
+</div>
+
+H. Regardless of which option you decide to use you will want to (again) **make sure you have a [non-destructive tail-end-of-the-log backup](#non-destructive-tail-of-log-backups) before proceeding.** 
 
 I. Then, in the case where you decide to simply overwrite the database with backups, just make sure to apply the most recent FULL backup, the most recent DIFF backup (if they’re being used) and all T-Log backups (since either the most recent of the FULL or DIFF backup) along with the tail-of-the-log backup. 
 
 J. Or, if you opt to force the database into EMERGENCY mode, you’ll then potentially be able to run DBCC CHECKDB() against the database to try and ascertain exactly what kind of damage you are dealing with and how to address it. 
+
+<div style="margin-left: 40px;">
 
 > ### :zap: **WARNING:** 
 > Setting a database into `EMERGENCY` mode should ONLY be done as a last-ditch effort to recover data. 
@@ -454,32 +524,25 @@ To set your database into `EMERGENCY` mode, follow the instructions for [Putting
 > ### :bulb: **TIP:**
 > In most production scenarios, you’ll be better served by simply overwriting your database with backups if/when they becomes SUSPECT or locked in RECOVERY_PENDING mode IF you can't recover it by the means outlined after you’ve done all of the troubleshooting listed above. 
 
+</div>
+
 <section style="visibility:hidden; display:none;">
 #### Troubleshooting SQL Server Startup Problems
 *[DOCUMENTATION PENDING. Specifically: add in step-by-step instructions (as needed) and screenshots for the recommendations listed below.]*
 
 If SQL Server services won't start (after a server reboot/etc.) key things to check for include the following: 
+
 - Any recent (or semi-recent) changes to the logins used by the SQL Server service. Likewise, verify that the Windows credentials used for the SQL Server service account have not been disabled/locked-out. 
+
 - Review the server for any recent Windows Patches or updates (PowerShell's `Get-Hotfix` command is a convenient way to list patches) - thought it's QUITE rare for Windows Patches to cause problems that would stop SQL Server for starting. 
+
 - Check startup parameters - specifically, verify that the -d, -l, and -e switches all a) point to valid DISKs/Volumes and that b) you can CLEARLY see the files/directories being 'pointed-to' by these parameters. 
+
 - Likewise, in terms of startup parameters, verify that any OTHER switches - especially trace-flags are specified CORRECTLY (e.g., ensure that Trace Flags are specified such as -T4199 vs -TF4199 and so on). 
+
 - Check the SQL Server Error Logs and/or the Windows Event Logs if nothing to this point has solved the problem. 
 
 - FINALLY: you may need to try to start SQL Server in a minimal configuration - via the command-line to see if you can't troubleshoot exactly what's happening during startup - in which case, S4 can be leveraged to make this process easier by means of the PowerShell script described at [emergency-start-sql.ps1](/documentation/tools/emergency-start-sql.md)
-
-</section>
-
-#### Leveraging Backups for COPIES During Disaster Recovery Operations
-A KEY component of responding to most disasters is to ensure that the potential for any ADDITIONAL destruction of data is prevented - especially if the destruction of data when RESPONDING to a disaster may make the destroyed data impossible to retrieve. 
-
-Consequently, 
-
-[Part of least-destructive is ... using backups/restores as a test environment when it makes sense]  
-
-See [Leveraging Datatabase Copies for Disaster Response](#leveraging-database-copies-for-disaster-response) for more info.
-
-#### Restoring and Recovering User Databases 
-[overall process]
 
 #### Restoring and Recovering System Database 
 [emergency-start.ps1] + restore processes. 
@@ -487,22 +550,28 @@ See [Leveraging Datatabase Copies for Disaster Response](#leveraging-database-co
 [TODO: need to integrate response for this scenario into docs process: 
 https://docs.microsoft.com/en-us/sql/relational-databases/databases/move-system-databases?view=sql-server-ver15 ]
 
-#### Page-Level Recovery of User Databases
-[ADVANCED documentation required. i.e., this process is non-trivial and will require explicit details here to fully outline the entire process. Moreover, `dbo.restore_databases` has not YET been tweaked to allow `PAGE` directives - once that's the case, the process will be that much easier to document.]
+</section>
 
-[UNTIL THEN: 
+#### Restoring and Recovering User Databases 
+There are three primary ways in which backups - or restoring backups - can be used to recover user databases in disaster recovery scenarios: 
+- 'Full-Blown' restore operations - i.e., either replace a busted/corrupt database with a FULLY restored version of itself from backups - or, spin up a 'copy' of the database (on-box as a 'side by side' restore - or even on an entirely different server) to use as either a potential replacement or to use for 'manually' extracting data (such as when addressing problems with logical corruption). 
+- Similar to the above, but instead of restoring a user database to the 'latest point in time' available, you can restore to a specific point in time IF you have an unbroken chain of transaction logs since the last FULL (and/or DIFF) backup. 
+- Leveraging backup chains to address page-level corruption - or executing page-level recovery of user databases. 
 
-A. Overall/'Manual' process is outlined here: 
-https://www.itprotoday.com/sql-server/sql-server-database-corruption-part-x-page-level-restore-operations
+All thre off these techniques are addressed in this document (in this section and the immediate 2x sections following) - respectively. 
 
-B. That can be bolstered by means of the following process: 
-    1. Run `dbo.restore_databases` against the DB with the corruption but, 
-    2. Make sure that `@PrintOnly` has been set to a value of `1`. 
-    3. Copy + Paste + Tweak the printed OUTPUT of `dbo.restore_databases` to manually 'bind' `PAGE = 'x, y, z'` as needed for recovery.
-]
+Step By Step. 
+A. Start with a non-destructive tail-of-the-log backup if you want to go to 'latest time possible' - assuming access to production DB is still possible. (i.e., if servers burned to the ground, see if you can get the t-log (.ldfs) files... otherwise, ... last t-log backup is as good as you can do.)
+B. Determine DBs to restore... 
+C. Visually verify backups... 
+D. May want to check dbo.recovery_metrics to get a rough time of how long it takes to restore (actually, amke this a tip)
+
+E. Wire up dbo.restore_databases as follows: 
+
+-- and.. throw in an example or two here... 
 
 #### Point in Time Recovery of User Databases
-[ADVANCED documentation required. As above(ish), this requires additional, detailed, instructions and a number of CAVEATS about point-in-time RESTORE operations. Further, `dbo.restore_databases` does not YET support a `STOPAT` directive - but it will soon. Once that's tackled, documentation will, in turn, be a bit easier to address.]
+[ADVANCED documentation required. This requires additional, detailed, instructions and a number of CAVEATS about point-in-time RESTORE operations. Further, `dbo.restore_databases` does not YET support a `STOPAT` directive - but it will soon. Once that's tackled, documentation will, in turn, be a bit easier to address.]
 
 [CAVEATS: Generally never a GOOD IDEA to do a Point in Time Recovery OVER THE TOP of a production database (you may be able to recover to the point in time against a key table where, say, an UPDATE was run without a WHERE clause - but in overwriting the ENTIRE database 'back' to this 'point in time' you LOSE EVERYTHING else.) As such, typically much better to restore a point-in-time recovery DB 'side by side' with your main production db - i.e., if `Widgets` gets trashed, keep it going (and restrict access if/when possible), then restore `Widgets_PreUpdate` or whatever, as needed.]
 
@@ -547,6 +616,19 @@ J. At this point, you're effectively 'done' - other than that you now need to tr
 
 ]
 
+#### Page-Level Recovery of User Databases
+[ADVANCED documentation required. i.e., this process is non-trivial and will require explicit details here to fully outline the entire process. Moreover, `dbo.restore_databases` has not YET been tweaked to allow `PAGE` directives - once that's the case, the process will be that much easier to document.]
+
+[UNTIL THEN: 
+
+A. Overall/'Manual' process is outlined here: 
+https://www.itprotoday.com/sql-server/sql-server-database-corruption-part-x-page-level-restore-operations
+
+B. That can be bolstered by means of the following process: 
+    1. Run `dbo.restore_databases` against the DB with the corruption but, 
+    2. Make sure that `@PrintOnly` has been set to a value of `1`. 
+    3. Copy + Paste + Tweak the printed OUTPUT of `dbo.restore_databases` to manually 'bind' `PAGE = 'x, y, z'` as needed for recovery.
+]
 
 #### Putting Databases into EMERGENCY Mode
 > ### :zap: **WARNING:** 
@@ -579,9 +661,24 @@ For additional information on `EMERGENCY` mode, see [Paul Randal’s blog post d
 
 #### Smoke and Rubble Restores
 [process/tasks (high-level) for process involved]
+[Not really much different than restoring/recovering user-dbs with a couple of exceptions: 
+- as with restoring user dbs, start by trying to reclaim as much of the t-log as possible. [TODO: determine if 'hack-attach' operations can 'reclaim' t-log data via backups... don't THINK so but it's been a while and IF there's a chance, that needs to go here as a reference/link for addressing smoke-and-rubble DR...  ]
+- the above isn't an exception - it's just important enough to REALLY re-stress. 
+- you'll need configuration and logins and a bunch of other stuff. 
+- S4 helps with config via dbo.export_server_configuration... 
+- S4 helps with logins via dbo.export_server_logins
+- it should, eventually, help with email/alerts and even S4 configuration via dbo.export_dbmail_configuration (where ... might be a way to securely hash/export the password (maybe using Posh?) or ... the password would be the only thing NOT 'dumped') and via dbo.export_s4_settings.... 
+- eventually, there will also need to be an HA configuration - via dbo.export_ha_configuration as well. 
+- and, arguably, s4 should also have something like dbo.export_server_objects that addresses things like endpoints, linked-servers, and a bunch of other stuff. 
+- and... there should also be ... dbo.export_audits (or dbo.export_server_audits and dbo.export_db_audits... )
+- point being... there's a crap ton of stuff to address ... 
 
 
-### Part C: Common Disaster Response Techniques and Tasks
+
+]
+
+
+### Part D: Common Disaster Response Techniques and Tasks
 
 #### Checking SQL Server (Error) Logs
 sdaff
@@ -591,12 +688,18 @@ sdafsda
 
 #### Addressing Problems with Low Disk Space 
 
+
 #### Addressing Problems with 'Full' Database Files
+
 
 #### Checking Databases for Corruption
 
+
 #### Non-Destructive Tail-Of-Log Backups
 sdfsd
+
+
+<section style="visibility:hidden; display:none;">
 
 #### Taking Databases OFFLINE
 
@@ -606,10 +709,10 @@ sdfsd
 
 #### Returning a Database to MULTI_USER Mode
 
+</section>
+
 #### Executing RECOVERY against a Database
 
-#### Leveraging Database COPIES for Disaster Response
-[i.e., creating and using copies of dbs to test various/potential DR tasks]
 
 
 <section style="visibility:hidden; display:none;">

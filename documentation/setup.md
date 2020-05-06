@@ -16,7 +16,7 @@
 ## Requirements And Version Support
 
 ### Requirements
-- S4 is designed for DBAs. 
+- S4 is designed for SQL Server DBAs. 
     - SysAdmin permissions are needed for S4 deployment.
 - Advanced Capabilities (low-level error handling and alerting/notifications) further depend upon [xp_cmdshell](#enabling-advanced-s4-features) and SQL Server's native [Database Mail](#Configuring-sql-server-database-mail) capabilities.
 

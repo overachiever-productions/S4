@@ -105,8 +105,10 @@ S4 favors the following conventions relative to failures and errors.
 Automation isn't very helpful if it either silently 'breaks' (or stops working) and/or automation routines throw errors that either don't provide much context OR require you to drop what you're doing immediately to determine if what you're seeing is a critical problem or something that can wait. As such, one of the key goals of S4 is to try and provide enough 'at a glance' context and error-info as possible whenever errors and problems are encountered. 
 
 To this end, S4 favors the following conventions and paradigms relative to alerting and notifications. 
-    - **Avoid Silent Failures.** Automation created around the use of S4 code/procedures should be put into SQL Server Agent Jobs in most cases - and said jobs should, in turn, be set to raise alerts or notifications if/when the jobs fail - as a standard SQL Server Best Practice. In similar manner, S4 code also strives to detect, capture, and gracefully handle exceptions during processing as well. 
-    - **Favor Signal over Noise.** While it's better to know that there are problems vs being 'surprised' later on (when you pro-actively go to check on automation routines) - only to find that automation has 'silently failed', no one likes an inbox full of alerts. As such, S4 strives to favor signal over noise by decreasing the number of potential alerts whenever possible. (Otherwise, human nature is to set up 'inbox rules' for noisy alerts - meaning that if/when they finally report something important, no one is really 'watching'). 
+
+- **Avoid Silent Failures.** Automation created around the use of S4 code/procedures should be put into SQL Server Agent Jobs in most cases - and said jobs should, in turn, be set to raise alerts or notifications if/when the jobs fail - as a standard SQL Server Best Practice. In similar manner, S4 code also strives to detect, capture, and gracefully handle exceptions during processing as well.
+
+- **Favor Signal over Noise.** While it's better to know that there are problems vs being 'surprised' later on (when you pro-actively go to check on automation routines) - only to find that automation has 'silently failed', no one likes an inbox full of alerts. As such, S4 strives to favor signal over noise by decreasing the number of potential alerts whenever possible. (Otherwise, human nature is to set up 'inbox rules' for noisy alerts - meaning that if/when they finally report something important, no one is really 'watching'). 
     
 [Return to Table of Contents](#table-of-contents)  
 
@@ -255,7 +257,6 @@ b. (This functionality is 100% pending (i.e., NOT YET DONE)), run something like
 
 ]
 
-
 ### Advanced Capabilities / Advanced Error Handling
 [
 PLACE HOLDER:
@@ -361,12 +362,15 @@ Technically speaking, the @Modes convention is a VERY light-weight convention wi
 </section>
 
 ## Coding Conventions 
-    
+
+### Procedure Naming
+
 <section style="visibility:hidden; display:none;"> 
 ### Procedure Naming
 [borrows from PS... with the idea of verb-noun[phrase]]... any sprod or whatever that 'does' someting starts with verb of what it does, with a description of what it's operating against or providing... 
 </section>
-    
+
+
 ### HA Coding Conventions
 
 [Return to Table of Contents](#table-of-contents)
