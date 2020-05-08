@@ -3,7 +3,7 @@
 [S4 Docs Home](/readme.md) > [S4 Best Practices](/documentation/best-practices/) > Leveraging S4 for Disaster Recovery
 
 > ### :label: **NOTE:** 
-> This S4 documentation is a work in progress. Any content *[surrounded by square brackets]* represents a DRAFT version.
+> *This S4 documentation is a work in progress. Any content [surrounded by square brackets] represents a DRAFT version.*
 
 # Leveraging S4 for Disaster Recovery
 
@@ -119,13 +119,13 @@ To help with both quantifying the potential impact of outages, and to establish 
 Importantly, any failure or disaster is typically going to incur both the loss of up-time AND roughly 2x the time associated with potential for lost data – which means that end-users (i.e., customers) typically get ‘hit’ with both the amount of time ‘tolerated’ for system to be down (the RTO) PLUS roughly 2x the amount of time associated with ‘tolerated’ data-loss. So, for example, if the ‘simple’ failure of an entire host/hypervisor is defined with RPOs of 20 seconds (i.e, up to 20 seconds of data-loss) and RTOs of 4 minutes, end-users can EFFECTIVELY expect to ‘lose’ around 5 minutes of availability – in the form of up to roughly 4 minutes of time where the system was lost/down, 20 seconds of lost data that they have already put into place, a few seconds to figure out what was lost, and the potential need for them to RE-INPUT any lost changes). 
 
 > ### :bulb: **TIP:**
-> Rather than having IT personnel ‘guess’ at what would be tolerable amounts of data-loss and/or down-time during disasters, IT personnel should coordinate with Business Owners/Management to work together on establishing RPOs and RTOs – as this leaves management with a clear picture of what is possible and ensures that management realizes that there are COSTS associated with decreasing these metrics (and puts management ‘on the hook’ to collaborate with IT personnel in making sure they have the right tools, systems, and skills in place to be able to meet the objectives outlined by management). 
+> *Rather than having IT personnel ‘guess’ at what would be tolerable amounts of data-loss and/or down-time during disasters, IT personnel should coordinate with Business Owners/Management to work together on establishing RPOs and RTOs – as this leaves management with a clear picture of what is possible and ensures that management realizes that there are COSTS associated with decreasing these metrics (and puts management ‘on the hook’ to collaborate with IT personnel in making sure they have the right tools, systems, and skills in place to be able to meet the objectives outlined by management).* 
 
 > ### :bulb: **TIP:**
-> A sample matrix of stated RPOs and RTOs - against a variety of different kinds of outages and/or disaster-types in the form of a worksheet that can facilitate discussions between IT and management can be found [here](/documentation/best-practices/availability_and_recovery_worksheet.pdf).
+> *A sample matrix of stated RPOs and RTOs - against a variety of different kinds of outages and/or disaster-types in the form of a worksheet that can facilitate discussions between IT and management can be found [here](/documentation/best-practices/availability_and_recovery_worksheet.pdf).*
 
 > ### :label: **NOTE:** 
-> Additional, extended, information on RPOs, RTOs, and other metrics used to describe and quantify ‘down-time’ and data-loss (i.e., problems with Business Continuity) is covered in [Section 10, Appendix B – Business Continuity Concepts and Metrics](#appendix-b-business-continuity-concepts-and-metrics)
+> *Additional, extended, information on RPOs, RTOs, and other metrics used to describe and quantify ‘down-time’ and data-loss (i.e., problems with Business Continuity) is covered in [Section 10, Appendix B – Business Continuity Concepts and Metrics](#appendix-b-business-continuity-concepts-and-metrics)*
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -149,13 +149,27 @@ Prior to any disaster, best practices for SQL Server administration in any produ
 
 S4 easily facilitates enabling access via the DAC by means of executing [`dbo.configure_instance`](/documentation/apis/configure_instance.md). 
 
+> ### :zap: **WARNING:** 
+> *In ADDITION to enabling access to the DAC from within SQL Server, the DAC also 'listens' for connections to SQL Server on port 1434 - meaning that you will ALSO need to enable a firewall rule on your host server if your host defaults to a locked-down configuration.* 
+
+<div style="margin-left: 40px;">
+For example, to create a firewall rule allowing SQL Server to listen on port 1434 via the Windows Firewall using Powershell, you would run the following command: 
+
+```powershell
+
+New-NetFirewallRule -DisplayName "SQL Server = DAC" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 1434;
+
+```
+</div>
+
+
 ### Monitoring and Alerts
 S4 provides the capability to enable pro-active monitoring and alerts on the systems and resources described in this Disaster Recovery Documentation. 
 
 An effective component of leveraging S4 for Disaster Recovery purposes is to ensure that all of the pro-active monitoring components that are applicable to your individual environment and business continuity needs have been set up and properly configured BEFORE a disaster. 
 
 > ### :bulb: **TIP:**
-> Care should be taken to ensure that these monitoring routines and associated alerts remain functional and periodically tested/verified to ensure viability. **Likewise, admins should have a rough idea of how to respond to alerts if/when raised.** 
+> *Care should be taken to ensure that these monitoring routines and associated alerts remain functional and periodically tested/verified to ensure viability.* ***Likewise, admins should have a rough idea of how to respond to alerts if/when raised.*** 
 
 ### Alert Recipients
 *[DOCUMENTATION PENDING.]*
@@ -164,8 +178,8 @@ An effective component of leveraging S4 for Disaster Recovery purposes is to ens
 
 [NOTES: Need to provide rationale/recommendation for having SQL Server Agent operators link to aliases as opposed to specific email addresses - as per: 
 
+https://www.itprotoday.com/database-mail-tip-notifying-operators-vs-sending-emails
 ]
-
 
 ### S4 Alerting Inventory 
 The following S4 alerting capabilities are currently available - with links to setup and other documentation specified per entry listed below.
@@ -209,6 +223,18 @@ Consequently, the steps outlined in the [Examples section of the API documentati
 NOTE: [reference material from my old set of blog posts](https://www.itprotoday.com/sql-server-database-corruption-part-vi-regular-corruption-checks)
 
 [TODO: link to `dbo.check_database_consistency` ... and benefits (errors captured/handled as part of alert) + info on setup + document information on setting up best-practices checks (regularly automated and such)]
+
+<section style="visibility:hidden; display:none;">
+Fodder: 
+https://www.sqlskills.com/blogs/erin/capturing-dbcc-checkdb-output/
+
+Great stuff in there - though... I'd recommend, obviously: 
+1. `WITH NO_INFOMSGS, ALL_ERRORMSGS` - as we want/need ALLL error messages. 
+2. Frequency isn't a nice-to-have or 'guestimate' - it's based on the assumption that IF you're checking you can't afford to lose data - so ... frequency is inversely proportional to how long you're keeping FULL backups (i.e., if you keep FULLs for 3 days, you need to checks < every 3 days (and then some)) and how long you can allow recovery operations to take. 
+
+Still though, great info on benefits of HAVING this output/info - which is what I've done with `dbo.check_database_consistency` sdafa
+<section style="visibility:hidden; display:none;">
+
 
 <section style="visibility:hidden; display:none;">
 #### Maintenance Routine Alerts 
@@ -294,7 +320,7 @@ This documentation is NON-EXHAUSTIVE, but provides a high-level set of lists of 
 Two key types of information: SQL Server related details/resources and business-level resources. 
 
 > ### :zap: **WARNING:** 
-> Worst time to assemble this is during a disaster - in fact, at that point 'assembly' is too late - you'll be incurring additional down-time.
+> *The worst time to assemble this is during a disaster - in fact, at that point 'assembly' is too late - you'll be incurring additional down-time.*
 
 ]
 
@@ -318,7 +344,6 @@ Two key types of information: SQL Server related details/resources and business-
 
 - **SQL Server Logins.** For smoke and rubble DR scenarios or some DR scenarios involving the loss of the `master` database, having a backup of SQL Server Logins defined on your SQL Server instance can be a critical component of restoring in a timely fashion. [Note here about how how, obviously, access to this information needs to be guarded in sensitive environments. ] S4's `dbo.export_server_logins` can be used to set up regularly-scheduled 'dumps' of this information to ride 'side by side' with backups for help during disaster recovery scenarios.
 
-
 ### Business Resources
 - **Defined RPOs and RTOs.** [should be defined well in advance of disasters. recommendation that they're defined and/or documented in a fashion similar to what's found in the [Availability And Recovery Worksheet](/documentation/best-practices/availability_and_recovery_worksheet.pdf) ]
 
@@ -336,7 +361,7 @@ Further, it's again important to stress that a document (by itself) is not a Dis
 As such, to create your own Disaster Recovery Plan, you'll need to review the recommended resources to assemble from [Section 5: xxx ] of this document and:  
 - Assemble an explicit DR plan that's unique to your EXACT business needs
 - Validate this plan with any/all persons who will have a role to play in implementing this plan.
-- Ensure that your own disaster recovery plan stays regularly-tested and up-to-date (as recommended in [Section 8: xxx ] and [Section 9: yyyy])
+- Ensure that your own disaster recovery plan stays regularly-tested and up-to-date (as recommended in [Section 8: Regular Testing](#section-8-regular-testing) and [Section 9: Maintenance and Upkeep Concerns](#section-9-maintenance-and-upkeep-concerns)
 
 ### Typical Milestones to Address When Creating Disaster Recovery Plans
 
@@ -398,7 +423,7 @@ Every year or so, re-evaluating business priorities (such as RPOs and RTOs) can 
 The following section provids detailed instructions for addressing specific tasks and operations when working through Disaster Recovery efforts. 
 
 > ### :bulb: **TIP:**
-> [Tip here about least-destructive approaches typically being preferred - unless otherwise determinied and defined via explict DR plan details from Section 6.]
+> *[Tip here about least-destructive approaches typically being preferred - unless otherwise determinied and defined via explict DR plan details from Section 6.]*
 
 ### Part A: Hardware, Virtualization, and OS Problems 
 *[DOCUMENTATION PENDING.]*
@@ -410,7 +435,10 @@ The following section provids detailed instructions for addressing specific task
 The following sub-section outlines step-by-step instructions and best-practices for addressing specific, SQL Server related, disaster scenarios and tasks. 
 
 > ### :bulb: **TIP:**
-> Don't overlook the 'power of backups' when addressing any database-level Disaster Recovery scenario with SQL Server. Or, stated differently, since a KEY component of addressing disasters is to protect against the destruction of MORE data through 'accidental' moves or 'mistakes' during the recovery process, don't forget that (while it typically will take a bit more time to test/evaluate), you can FREQUENTLY 'test' anything that might otherwise be destructive to production data against a COPY of one of your 'distressed' databases FIRST. This technique is ESPECIALLY helpful when addressing some types of corruption. 
+> *Don't overlook the 'power of backups' when addressing any database-level Disaster Recovery scenario with SQL Server. Or, stated differently, since a KEY component of addressing disasters is to protect against the destruction of MORE data through 'accidental' moves or 'mistakes' during the recovery process, don't forget that (while it typically will take a bit more time to test/evaluate), you can FREQUENTLY 'test' anything that might otherwise be destructive to production data against a COPY of one of your 'distressed' databases FIRST. This technique is ESPECIALLY helpful when addressing some types of corruption.* 
+
+> ### :bulb: **TIP:**
+> *When assessing the scope or nature of particular disaster scenarios, it's always a best-practice to [Check the SQL Server Logs](#checking-the-sql-server-logs) before commiting to any plan of action.*
 
 <section style="visibility:hidden; display:none;">
 
@@ -423,6 +451,11 @@ The following sub-section outlines step-by-step instructions and best-practices 
 As such, need a pointer here to 3rd party log reader agents - as per my article here: 
 https://www.itprotoday.com/sql-server/alwayson-availability-groups-and-third-party-log-readers ]
 
+[and a warning about how 3rd party log reader agents: 
+- are slow as molasses - or can be - against high-volume (transaction-rate) databases... 
+- don't work with/against TDE or encrypted backups (sigh)
+- aren't much help in a disaster unless you've spent some time with them previously (before the disaster) - assessing how to use them/etc. ]
+
 </section>
 
 #### Handling Suspect and Recovery-Pending Databases 
@@ -430,15 +463,15 @@ Sometimes, during the SQL Server Database Recovery Process (such as during start
 NONcovery Pending’ if SQL Server can’t access the log files (or other files) or as ‘Suspect’ if there’s a problem or error that is encountered when running through the recovery process. 
 
 > ### :bulb: **TIP:**
-> In the case of ‘Suspect’ Databases, the SSMS Object Explorer will typically display a database that is Suspect as follows: 
+> *In the case of ‘Suspect’ Databases, the SSMS Object Explorer will typically display a database that is Suspect as follows:* 
 
 > ![Example of a Suspect database](https://assets.overachiever.net/s4/images/disaster_recovery/suspect_dbs_ssms.gif)
 
-> Whereas, with a database that is in ‘Recovery Pending’ mode will commonly look as follows (where the option to ‘expand’ details on this database is just missing):
+> *Whereas, with a database that is in ‘Recovery Pending’ mode will commonly look as follows (where the option to ‘expand’ details on this database is just missing):*
 
 > ![](https://assets.overachiever.net/s4/images/disaster_recovery/recovery_pending_ssms.gif)
     
-> And, if you try to pull up properties of a database in ‘Recovery Pending’ Mode, or try to ‘drill into it’ you’ll simply run into either a SINGLE ‘general’ page for properties and/or won’t be able to access the database at all. 
+> *And, if you try to pull up properties of a database in ‘Recovery Pending’ Mode, or try to ‘drill into it’ you’ll simply run into either a SINGLE ‘general’ page for properties and/or won’t be able to access the database at all.* 
 
 To determine exactly which state a database is in, run the following: 
 
@@ -508,7 +541,7 @@ However, just be aware that in the case of Log Shipping, you’ll want to try an
 Otherwise, if you don’t have a secondary server available, you have two remaining options: Simply overwrite the existing database with a backup or attempt to put the database into `EMERGENCY` mode to try and ascertain the problem - with the caveat that this approach (setting your database to `EMERGENCY` mode should usually only be done as a 'last ditch' effort.)
 </div>
 
-H. Regardless of which option you decide to use you will want to (again) **make sure you have a [non-destructive tail-end-of-the-log backup](#non-destructive-tail-of-log-backups) before proceeding.** 
+H. Regardless of which option (restore-in-place or attempt `EMERGENCY` mode with all of its caveats and potential negatives) you decide to use you will want to (again) **make sure you have a [non-destructive tail-end-of-the-log backup](#non-destructive-tail-of-log-backups) before proceeding.** 
 
 I. Then, in the case where you decide to simply overwrite the database with backups, just make sure to apply the most recent FULL backup, the most recent DIFF backup (if they’re being used) and all T-Log backups (since either the most recent of the FULL or DIFF backup) along with the tail-of-the-log backup. 
 
@@ -517,12 +550,12 @@ J. Or, if you opt to force the database into EMERGENCY mode, you’ll then poten
 <div style="margin-left: 40px;">
 
 > ### :zap: **WARNING:** 
-> Setting a database into `EMERGENCY` mode should ONLY be done as a last-ditch effort to recover data. 
+> *Setting a database into `EMERGENCY` mode should ONLY be done as a last-ditch effort to recover data.* 
 
 To set your database into `EMERGENCY` mode, follow the instructions for [Putting Databases into EMERGENCY Mode](#putting-databases-into-emergency-mode) in PART B of the documentation below. 
 
 > ### :bulb: **TIP:**
-> In most production scenarios, you’ll be better served by simply overwriting your database with backups if/when they becomes SUSPECT or locked in RECOVERY_PENDING mode IF you can't recover it by the means outlined after you’ve done all of the troubleshooting listed above. 
+> *In most production scenarios, you’ll be better served by simply overwriting your database with backups if/when they becomes SUSPECT or locked in RECOVERY_PENDING mode IF you can't recover it by the means outlined after you’ve done all of the troubleshooting listed above.* 
 
 </div>
 
@@ -544,8 +577,87 @@ If SQL Server services won't start (after a server reboot/etc.) key things to ch
 
 - FINALLY: you may need to try to start SQL Server in a minimal configuration - via the command-line to see if you can't troubleshoot exactly what's happening during startup - in which case, S4 can be leveraged to make this process easier by means of the PowerShell script described at [emergency-start-sql.ps1](/documentation/tools/emergency-start-sql.md)
 
-#### Restoring and Recovering System Database 
-[emergency-start.ps1] + restore processes. 
+</section>
+
+#### Restoring and Recovering System Databases
+Restoring SQL Server's system databases (`master`, `model`, `msdb`) can be a bit more difficult than restoring user databases. 
+
+**Restoring the `master` Database**  
+To restore the `master` database, you will have to: 
+- Shut down SQL Server if it is already running
+- Start SQL Server in Single-User Mode (i.e., the master database is key to core SQL Server functionality and can't be restored/overwritten unless the engine is running in a specialized state). 
+
+> ### :bulb: **TIP:**
+> *Before restoring the `master` database, note that you CAN restore a COPY of the `master` database from backup by restoring it as, say, `master_test` or something similar. This can be a convenient way of determining exactly WHICH backup of the `master` database you want to restore from BEFORE dropping the server into single-user mode. (Be aware, however, that because of the SPECIAL nature of the master database, DBCC CHECKs against a restored COPY of the `master` db will throw errors BY DESIGN. Or, in other words, don't 'check' to see if your backup of the `master` database might have corruption by restoring a COPY - that copy will always report consitency errors.)*
+
+For instructions on how to restore the `master` database, consult [Microsoft's official documentation on the subject](https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/restore-the-master-database-transact-sql?view=sql-server-ver15). 
+
+> ### :bulb: **TIP:**
+> *To avoid some of the tedium/hassle of sorting out how to start your SQL Server intance in Single User Mode, use [S4's Emergency-Start SQL Server PowerShell Script](/documentation/tools/emergency-start-sql.md) - which helps automate this process to make it MUCH simpler and SIGNIFICANTLY less time-consuming (even if you're not familiar with or 'good at' PowerShell).*
+
+**Restoring the `msdb` Database**
+The `msdb` database is leveraged heavily by the SQL Server Agent. As with all databases that you wish to execute 'restore-in-place' operations (i.e., 'restore over the top of' an existing database), the `msdb` database must be into `SINGLE_USER` mode in order to remove any existing connections as part of the `REPLACE` operation when executing a `RESTORE`. 
+
+In cases where putting the `msdb` into `SINGLE_USER` mode is problematic (i.e., you keep getting errors about exclusive access when trying to restore), STOPPING the SQL Server Agent Service on the server will TYPICALLY help remedy this specific issue. 
+
+[TODO: document rebuilding msdb database via installer: https://docs.microsoft.com/en-us/sql/relational-databases/databases/rebuild-system-databases?view=sql-server-ver15 ]
+
+**Restoring the `model` Database**
+In most cases, executing a `RESTORE` against the `model` database is typically not a problem. 
+
+However, if the `model` database has been corrupted, is 'missing', or otherwise won't 'work' it will prevent SQL Server from starting - because the `model` database is used as the template database required for the creation of the `tempdb` - each time SQL Server starts. (In other words: no `model` database means no `tempdb` database - which causes SQL Server to crash/shut-down after attempting initial startup procedures.)
+
+To address the scenario of a crashed SQL Server due to problems with the `model` database: 
+
+A. Determine IF and how you want to create backups of your `master` and `msdb` databases - to account for any changes made to either of these databases since your last, regularly scheduled, FULL backups of these databases (e.g., if you're executing FULL backups of the `msdb` database nightly and run into this particular problem at 3PM the next day, you can/will lose ALL job history/etc. unless you make some provisions for a backup). If you need a backup of one or more of these databases, there are two primary ways to achieve them: 
+
+- Since SQL Server is crashed and won't start - you can simply copy the `.mdf` and `.ldf` files for one or both databases into a 'backup' folder on, say, the desktop or some other folder on the server as a set of 'copy' backups. 
+
+- Or, you can start SQL Server in minimal-configuration mode (using [S4's Emergency-Start SQL Server PowerShell Script](/documentation/tools/emergency-start-sql.md)) and manually kick-off FULL backups of one or both databases as needed. 
+
+Executing `FULL` backups is the safest/best approach - but will take more time to the point where simple file-copies of your db/log files is usually a 'good enough' solution in most cases. Likewise, if you're sure you don't care about job history and/or any new logins, server-level objects or CHANGES to server-level objects/details (logins), then you can simply skip step A. 
+
+B. To recover the `model` database, you'll need to rebuild SQL Server's System databases using the steps outlined in [Microsoft's Documentation](https://docs.microsoft.com/en-us/sql/relational-databases/databases/rebuild-system-databases?view=sql-server-ver15). (In essence, this process is fairly similar to running a 'Repair' operation via the SQL Server Installer. NOTE that you will NOT need the SQL Server installation media/DVD to run this repair operation - but you WILL need to locate your 'bootstrap' (installation center) directory on the server - which is typically located at `C:\Program Files\Microsoft SQL Server\130\Setup Bootstrap\SQLServer<current_version>` as part of this process.
+
+> ### :zap: **WARNING:** 
+> *ANOTHER option - other than REBUILDING the System Databases via the installer is to locate another server of the same major (and ideally, minor) version as your SQL Server and grab it's model.mdf/.ldf files and simply 'drop' them in over the top of your corrupt/busted `.mdf`/`.ldf` files on your busted SQL Server.*   
+
+> *To use this technique, you'll need to a) remember that IF this allows you get your busted SQL Server to start up, you're NOT done and will need to RESTORE the most recent FULL backup of your model database - to make sure it has been reverted to the exact version as the rest of the databases on your server and b) you will have to STOP the SQL Server services on the 'source' server you're getting these files from - because otherwise the `model` `.mdf`/`.ldf` files will be locked.* 
+
+C. If you had to run a rebuild of the System Databases on your server and either preserved copies off the .mdf/.ldf files for the master and/or msdb databases (to preserve or retain any changesin your environment) or created new, FULL, backups of one or both of these databases, you'll need to 'recover' data from those backup/pseudo-backup processes. 
+
+> ### :bulb: **TIP:**
+> *IF you were able to 'borrow'/copy a model database from another server and get your server to restart using this approach/technique, the good news is that not only did you save time by avoiding the 'rebuild' process - but your master and msdb databases should be up-to-date as-is and you should NOT need to restore/recover them and can skip step C.* 
+
+If you created 'backups' by means of copying .mdf/.ldf files to another directory, you can 'recover' by ensuring that SQL Server is stopped, and then copying your 'backup copy' .mdf/.ldf files over the top of the newly rebuilt .mdf/.ldf files created by the rebuild process. (Or, in other words, if you had to run the Rebuild of System Databases processes documented by Microsoft via the 'installer', you've reset your master and mdsb databases back to 'scratch' and lost all logins, configuration, jobs, and other KEY data. To 'recover' that data, you simply need to 'replace' the master and msdb data and log files with the 'good' files that were on your system BEFORE the model database ran into problems.)
+
+> ### :bulb: **TIP:**
+> *Whether you're using a copy-paste 'good-enough' backup approach or created FULL backups of master and/or model, it's worthwhile to create ADDITIONAL 'good enough' file-copy backups of the .mdf and .ldf files for the master, model, AND msdb databases after your rebuild and BEFORE you overwrite any of these files via 'good enough' restores or actual T-SQL RESTORE commands. (If you've incurred the time/effort to reset these databases to scratch to work around problems with the model database, it'd suck to overwrite these files only to find that the model database wasn't the only database with problems and that you NOW need new master and/or msdb databases - once your server has cleared the 'hurdle' of getting the tempdb going. In short: it'll only take a few seconds to copy/paste copies of these newly rebuilt data and log files to a safe location - which can come in handy if the universe is trying to serve up a REALLY BAD day to keep you on your toes.)*
+
+Otherwise, if you create FULL backups of the master and/or model database by putting your SQL Server into minimal configuration mode, you'll need to put your SQL Server back into minimal configuration mode to run a RESTORE of the master database. (Technically, you can restore the msdb in SQL Server once it starts normally - so if that's all you backed-up, you can restore it once the server starts normally. Otherwise, if you're restoring the master database and also created a backup of the model database, restore both of them by starting the SQL Server in single-user mode.)
+
+Finally, after you've 'recovered' your FULL or 'good enough' backups of the master/model databases, you should be able to restart your SQL Server Service as normal. 
+
+D. Once SQL Server starts normally, restore/replace the model database from your last FULL backup of the model database. (This'll ensure that it's brought up to the correct version and will ensure it is put back into the exact state or configuration it was in before it was lost/corrupted/destroyed.)
+
+E. Once you're confident that SQL Server is running normally and safely again, clean up any manual FULL backups and/or 'good enough' copies of .mdf/.ldf files you have laying around (or copy them to a safe, off-box, location and nuke/delete them in a day or three - but get them out of production to prevent them from becoming 'turd' files and/or causing any kind of confusion should you be unlucky enough to run into any other similar types of disaster in the future).
+
+F. Kick off brand new, FULL, backups of ALL system databases. Likewise, unless you have truly MASIVE databases, kick of a new DIFF or FULL backup of any critical user databases.
+
+<section style="visibility:hidden; display:none;">
+[TODO: document process of 'hack-switch-replace'-ing the master db as a potential work-around to major problems that PREVENT SQL Server from even starting - similar to the process outlined in the second-half of this article: 
+https://www.mssqltips.com/sqlservertip/6226/restore-sql-server-master-database-options/
+
+ONLY, this 'hack-swap' approach shouldn't be used for the 'recovery' process - it should be used as a crutch/tool that gets the SQL server to _START_ in single-user mode - so that you can then restore the master db from a backup (otherwise, you'll lose objects AND SECURITY details/configurations and run the risk of VERSIONING/SP/CU mismatches as well.]
+
+[TODO: document the process of repairing the system databases via the installation center (i.e., effectively a 'reinstall' of the system databases)
+https://docs.microsoft.com/en-us/sql/relational-databases/databases/rebuild-system-databases?view=sql-server-ver15
+
+But, again, treat this as another 'crutch' to use UNTIL you can get to the point of restoring backups. Or, in other words, the end goal of EVERY option is to get to a point where you can restore `master` from a backup.]
+
+[NOTE: this article does a decent job of outlining the approach of starting in a minimal config state and backing up then ... restoring... 
+https://www.mssqltips.com/sqlservertip/6237/how-to-restore-model-database-in-sql-server/
+]
 
 [TODO: need to integrate response for this scenario into docs process: 
 https://docs.microsoft.com/en-us/sql/relational-databases/databases/move-system-databases?view=sql-server-ver15 ]
@@ -553,33 +665,110 @@ https://docs.microsoft.com/en-us/sql/relational-databases/databases/move-system-
 </section>
 
 #### Restoring and Recovering User Databases 
-There are three primary ways in which backups - or restoring backups - can be used to recover user databases in disaster recovery scenarios: 
-- 'Full-Blown' restore operations - i.e., either replace a busted/corrupt database with a FULLY restored version of itself from backups - or, spin up a 'copy' of the database (on-box as a 'side by side' restore - or even on an entirely different server) to use as either a potential replacement or to use for 'manually' extracting data (such as when addressing problems with logical corruption). 
-- Similar to the above, but instead of restoring a user database to the 'latest point in time' available, you can restore to a specific point in time IF you have an unbroken chain of transaction logs since the last FULL (and/or DIFF) backup. 
-- Leveraging backup chains to address page-level corruption - or executing page-level recovery of user databases. 
+Backups of User databases can be used in three primary use-cases or scenarios to recover from disasters: 
+- **Latest State Restores.** Used to either create COPIES of a production database (side-by-side configuration if restored on the same-server/host - or simple 'copy' configuration if you restor to an entirely different server/instance) OR to execute REPLACE restores - where you replace a database with a backup of itself. 
+- **Point-In-Time Restores.** Similar to the above, except rather than restoring to the latest possible state possible, you're restoring and recovering to a 'last-known-good' state at a previous point in time. 
+- **Page-Level Restores.** Unlike either of the scenarios above, this use of backups instructs SQL Server to explicitly execute restore operations against specific database pages ONLY (instead of telling it to restore ALL pages) - and is used solely to address scenarios stemming from physical database corruption.
 
-All thre off these techniques are addressed in this document (in this section and the immediate 2x sections following) - respectively. 
+All THREE of the scenarios above require a FULL backup (and can be 'bolstered' by an OPTIONAL DIFF backup) and an UNBROKEN chain of T-LOG backups from the last FULL (or DIFF) backup up to the point in time where recovery needs to be executed (i.e., up until 'now' for Page-Level and Latest-State restores - and up to the 'last-known-good' time-frame for point-in-time restores). 
 
-Step By Step. 
-A. Start with a non-destructive tail-of-the-log backup if you want to go to 'latest time possible' - assuming access to production DB is still possible. (i.e., if servers burned to the ground, see if you can get the t-log (.ldfs) files... otherwise, ... last t-log backup is as good as you can do.)
-B. Determine DBs to restore... 
-C. Visually verify backups... 
-D. May want to check dbo.recovery_metrics to get a rough time of how long it takes to restore (actually, amke this a tip)
+> ### :label: **NOTE:** 
+> *Step by Step instructions for [Point-In-Time Restores](#point-in-time-recovery-of-user-databases) and [Page-Level Restores](page-level-recovery-of-user-databases) are covered in their own, respective, sections below.* 
 
-E. Wire up dbo.restore_databases as follows: 
+**Executing Latest-State Restores**  
+A. To restore to the latest state possible, you'll need to execute a tail-of-the-log backup - to ensure that you capture any/all transactions currently stored in the active portion of the log (i.e., the portion that hasn't, yet, been backed up). Optionally, if you only need to restore to a point in time CLOSE to 'now' (i.e., to the point in time where your last, regularly scheduled, T-LOG backup was created) you can skip this step - otherwise, [Create a Non-Destructive Tail-Of-Log Backup](#non-destructive-tail-of-logbackups) before proceeding. 
 
--- and.. throw in an example or two here... 
+B. Determine whether you're executing a side-by-side restore or executing a REPLACE restore (i.e., where you're overwriting the existing database from backups). 
+
+C. Determine where your backups are (if they're in a non-default location) and where you'd like to RESTORE your target database (if you're restoring to a non-default) location. 
+
+D. With the info above, wire-up execution of `dbo.restore_databases` to meet your needs. 
+
+For example, if you need to restore a copy of the `widgets` database in a side-by-side configration - with your backup files stored in the default location specified on your SQL Server instance and with the .mdf and .ldf of this database going to the default locations for data and log files, you'd run something similar to the following: 
+
+```sql
+
+EXEC [admindb].dbo.[restore_databases]
+	@DatabasesToRestore = N'widgets',
+	@RestoredDbNamePattern = N'widgets_restored',
+	@SkipLogBackups = 0,
+	@ExecuteRecovery = 1,
+	@CheckConsistency = 0,
+	@DropDatabasesAfterRestore = 0,
+	@PrintOnly = 0;
+	
+
+```
+
+On the other hand, if you want to specify the root folder where backups for your database are located (i.e., a non-standard location) and if you wanted to push the data/log files to specific directories (i.e., maybe you don't have enough disk space in your main/default area and are pushing this backup as a side-by-side restore to a new/bigger volume), then you'd run something similar to the following: 
+
+```sql
+
+EXEC [admindb].dbo.[restore_databases]
+	@DatabasesToRestore = N'widgets',
+	@BackupsRootPath = N'N:\SQLBackups',  -- expects that N:\SQLBackups\widgets folder exists with backups
+	@RestoredRootDataPath = N'X:\SecondarySqlData',
+	@RestoredRootLogPath = N'Z:\SecondarySqlLogs',
+	@RestoredDbNamePattern = N'widgets_restored',
+	@SkipLogBackups = 0,
+	@ExecuteRecovery = 1,
+	@CheckConsistency = 0,
+	@DropDatabasesAfterRestore = 0,
+	@PrintOnly = 0;
+
+```
+
+Finally, if you're executing a REPLACE (i.e., restore-in-place or overwrite operation), you'll need to explicitly specify REPLACE as the value for @AllowReplace - as follows: 
+
+```sql
+
+EXEC [admindb].dbo.[restore_databases]
+	@DatabasesToRestore = N'widgets',
+	@BackupsRootPath = N'N:\SQLBackups',  -- expects that N:\SQLBackups\widgets folder exists with backups
+	@RestoredRootDataPath = N'X:\SecondarySqlData',
+	@RestoredRootLogPath = N'Z:\SecondarySqlLogs',
+	@RestoredDbNamePattern = N'widgets',  -- HAS to match existing db-name + requires explicit REPLACE for @AllowReplace
+	@AllowReplace = N'REPLACE',  -- use with EXTREME caution - overwrites widgets
+	@SkipLogBackups = 0,
+	@ExecuteRecovery = 1,
+	@CheckConsistency = 0,
+	@DropDatabasesAfterRestore = 0,
+	@PrintOnly = 0;
+	
+```
+
+> ### :label: **NOTE:** 
+> *In ALL of the examples above, @ExecuteRecovery has been set to a value of 1 - meaning that dbo.restore_databases will apply all backups and then RECOVER the database - or bring it online.*
+
+> ### :bulb: **TIP:**
+> *If you're restoring backups from the SAME directory where production T-LOG backups are being created, `dbo.restore_databases` will 'look for' and APPLY any new T-LOGs as part of the `RESTORE` process before executing recovery. For example, say that you're doing a side-by-side restore of the `widgets` database - but that the FULL restore takes 28 minutes, and then application of T-LOG backups from the full until 'now' takes an additionl 18 minutes - at that point IF `dbo.restore_databases` executed `RECOVERY`, your `widgets_restored` database would be roughly 46 minutes 'out of date' or 'behind' the main production database. To address this particular concern, once `dbo.restore_databases` finishes restoring the last T-LOG that it 'found' (roughly 46 minutes ago when it started the restore process and enumerated all potential files that it COULD use), it will 'look for' any new/additional files that have cropped up and attempt to apply those as well - before executing recovery. So, if T-LOG backups are/were taking place every 5 minutes against the `widgets` database, roughly 9 new T-LOG backups would be 'found' at this point, and then applied - bringing the `widgets_restored` database to within 5 minutes of 'real-time' (i.e., however long between T-LOG backups). Further, after restoring these 9x T-Log backups, `dbo.restore_databases` would then 'look again' and keeps 'looking again' until no more T-Log backups are found.* 
+
+For more information and options on how to use dbo.restore_databases, make sure to view: 
+- [dbo.restore_databases](/documentation/apis/restore_databases.md)
+- [Managing and Automating Regular Restore-Tests with S4](/documentation/best-practices/restores.md)
+
+E. Once you've configured dbo.restore_databases with the necessary directives, execute the stored procedure to kick-off the restore operation as needed. 
+
+> ### :bulb: **TIP:**
+> *Once you have kicked off the restore process, you may want to check recent history of the admindb.dbo.restore_log (if you've been executing regularly scheduled/automated restore-tests) to get a sense for how long the RESTORE process for the database you're attempting to restore typically takes - to give yourself a ROUGH idea of how much time to expect.* 
+
+F. Once RESTORE + RECOVERY is complete IF you've executed a REPLACE restore (i.e., overwritten your previous database with backups), you'll want to initiate a new FULL backup of this 'new' database to restart the backup chain to 'reset' against other potential disasters/emergencies. 
+
 
 #### Point in Time Recovery of User Databases
-[ADVANCED documentation required. This requires additional, detailed, instructions and a number of CAVEATS about point-in-time RESTORE operations. Further, `dbo.restore_databases` does not YET support a `STOPAT` directive - but it will soon. Once that's tackled, documentation will, in turn, be a bit easier to address.]
+[ADVANCED documentation required. This requires additional, detailed, instructions and a number of CAVEATS about point-in-time RESTORE operations. Further, `dbo.restore_databases` does not YET support a `STOPAT` `@Directive` - but it will soon. Once that's tackled, documentation will, in turn, be a bit easier to address.]
 
 [CAVEATS: Generally never a GOOD IDEA to do a Point in Time Recovery OVER THE TOP of a production database (you may be able to recover to the point in time against a key table where, say, an UPDATE was run without a WHERE clause - but in overwriting the ENTIRE database 'back' to this 'point in time' you LOSE EVERYTHING else.) As such, typically much better to restore a point-in-time recovery DB 'side by side' with your main production db - i.e., if `Widgets` gets trashed, keep it going (and restrict access if/when possible), then restore `Widgets_PreUpdate` or whatever, as needed.]
 
 [HIGH LEVEL INSTRUCTIONS: 
-A. Execute `dbo.restore_databases` against the DB in question, but
-B. Make sure to set `@PrintOnly` to a value of `1` and, additionally, set the `@RestoredDbNamePattern` as well - i.e., `N'Widgets_PreUpdate'` or `N'{0}_PreUpdate` as needed. 
+A. Run through exact same process as outlined for Executing Latest-State Step By Step instructions in [Restoring and Recovering User Databases](#rrestoring-and-recovering-user-database) - only, set @PrintOnly value to `1` instead of `0`. 
+
+B. Additionally, set the `@RestoredDbNamePattern` as well - i.e., `N'Widgets_PreUpdate'` or `N'{0}_PreUpdate` as needed. 
+
 C. DETERMINE WHICH T-LOG backup output by `dbo.restore_databases` 'covers' the point in time you wish to restore to (i.e., if you need to recover to 14:22:23 on such and such date, make sure to find the MOST RECENT T-LOG backup taken IMMEDIATELY after that point in time.)
+
 D. Double-check that you've got the right 'covering' T-LOG backup. (If you go 'too far' or 'pass up' your STOP AT point, you have to restore ALL OVER AGAIN.)
+
 E. Copy + Paste + Tweak the OUTPUT of `dbo.restore_backups` UP to the point of the last T-LOG you've identified (i.e., your 'covering T-LOG') 
 
 F. Modify the RESTORE LOG command for that T-LOG so that it 'changes' from something like the following: 
@@ -598,11 +787,11 @@ RESTORE LOG [Widgets_PreUpdate] FROM DISK = N'D:\SQLBackups\Widgets\LOG_Widgets_
 
 ```
 
-G. Nah. Really. Double-check the above. 
+G. Double-check your 'last-known-good'/point-in-time recovery point + the timing/overlap of the T-LOG you've modified witht he STOPAT directive (if you get this wrong, you'll have to restore everything again from scratch).  
 
-H. Execute the above. 
+H. Execute the commands you've copy/pasted + tweaked. 
 
-I. Once execution has completed, you'll need to RECOVER the database - as per docs in Section C - i.e., [Executing RECOVERY against a database](#executing-recovery-against-a-database). 
+I. Once execution has completed, you'll need to RECOVER the database - as per docs in Section D - i.e., [Executing RECOVERY against a database](#executing-recovery-against-a-database). 
 
 e.g., 
 
@@ -627,29 +816,11 @@ https://www.itprotoday.com/sql-server/sql-server-database-corruption-part-x-page
 B. That can be bolstered by means of the following process: 
     1. Run `dbo.restore_databases` against the DB with the corruption but, 
     2. Make sure that `@PrintOnly` has been set to a value of `1`. 
-    3. Copy + Paste + Tweak the printed OUTPUT of `dbo.restore_databases` to manually 'bind' `PAGE = 'x, y, z'` as needed for recovery.
+    3. Copy + Paste + Tweak the printed OUTPUT of `dbo.restore_databases` to manually 'bind' `PAGE = 'x, y, z'` as needed for recovery. 
+    
+C. NOTE that on Enterprise Edition this operation can/will be an ONLINE operation, but on Standard Edition, you will HAVE to knock the database into SINGLE_USER mode before being able to do page-level restore operations. 
+
 ]
-
-#### Putting Databases into EMERGENCY Mode
-> ### :zap: **WARNING:** 
-> Setting a database into `EMERGENCY` mode should ONLY be done as a last-ditch effort to recover data. 
-
-> ### :zap: **WARNING:** 
-> Databases in `EMERGENCY` mode are, by definition, going to be in a non-consistent state (i.e., you’ll be looking at the database with some parts of transactions partially implemented and/or rolled back – so your data will be full-on ‘dirty’).
-
-To set a database into `EMERGENCY` mode, execute the following: 
-
-```sql 
-
-USE master;
-GO
-
-ALTER DATABASE [db_name_here] SET EMERGENCY WITH ROLLBACK AFTER 10 SECONDS;
-GO
-
-```
-
-For additional information on `EMERGENCY` mode, see [Paul Randal’s blog post detailing samples/examples of how to force a database into RECOVERY_PENDING and how to use EMERGENCY mode](https://www.sqlskills.com/blogs/paul/checkdb-from-every-angle-emergency-mode-repair-the-very-very-last-resort/). 
 
 <section style="visibility:hidden; display:none;">
 
@@ -673,18 +844,85 @@ For additional information on `EMERGENCY` mode, see [Paul Randal’s blog post d
 - and... there should also be ... dbo.export_audits (or dbo.export_server_audits and dbo.export_db_audits... )
 - point being... there's a crap ton of stuff to address ... 
 
-
-
 ]
-
 
 ### Part D: Common Disaster Response Techniques and Tasks
 
-#### Checking SQL Server (Error) Logs
-sdaff
+#### Checking the SQL Server Logs
+SQL Server's (Event/Error) Logs can provide critical insight into problems occuring on the server and should typically be reviewed whenever assessing the scope or nature of any disaster scenario. 
+There are three primary ways in which review of the SQL Server logs can be accomplished: 
+- Via the SSMS GUI - which is the easiest and most straight-forward approach.
+- Iteratively - via sp_readerrorlog - an UNDOCUMENTED stored procedure that can be handy if/when working from the DAC or via SqlCmd or other command-line scenarios.
+- Manually - by means of opening and parsing the 'text' files used by SQL Server as logs. 
 
-#### Connecting to Databases via the DAC
-sdafsda
+**Accessing SQL Server Logs via SSMS**  
+To access SQL Server Error logs via SSMS, expand the Management > SQL Server Logs node as shown below - and then double-click on whichever log file you wish to open or review: 
+
+![](https://assets.overachiever.net/s4/images/disaster_recovery/accessing_sql_logs_via_ssms.gif)
+
+> ### :zap: **WARNING:** 
+> *Make sure to configure a regularly scheduled job that recycles the SQL Server Logs - otherwise the number of log entries can become excessively large if your server goes long periods of time between reboots. To enable this best-practices configuration, review and then execute S4's [`dbo.manage_server_history`](/documentation/apis/manage_server_history.md) within your envirment.* 
+
+
+**Using sp_readerrorlog and xp_errorlog**  
+In cases where SSMS is not available or preferred, you can 'query' SQL Server's logs via the undocumented procedures `sp_readerrorlog` and `xp_readerrorlog`. 
+
+For information on how to use these stored procedures for 'query' access of the error logs: 
+- See [Reading the SQL Server log files using T-SQL](https://www.mssqltips.com/sqlservertip/1476/reading-the-sql-server-log-files-using-tsql/) on mssqltips.com for basic insights into the syntax/etc. 
+
+**Accessing the SQL Server Logs Manually**  
+Finally, in the case of really ugly disasters or problems - where your SQL Server can't or won't start, you can access raw log data by opening the text files used by the SQL Server Engine as its log files. 
+
+To access these files:   
+1. Review SQL Server's startup parameters - and find the startup value/parameter for the -e switch - as this is the path where SQL Server will keep its error logs.
+
+2. Navigate to the path obtained above (i.e., whatever was specified as the -e switch), where you'll find a number of different plain-text and other files. 
+
+3. SQL Server Error/Event logs are named `ERRORLOG[.#]` - where the CURRENT error log in use by the server does NOT have a .# trailing the name and where `ERRORLOG` files with numbers attached to the file-name are progressive older log files. (Each time SQL Server restarts and/or whenever the error logs are explicitly recycled, SQL Server throws a +1 to the name of each existing log file, creates a new `ERRORLOG` (without a nubmer) as the current log file, and discards any files with a # > than the retention value specified on the server.)
+
+4. You can crack these files open in any application that can read plain text (NotePad, etc.).
+
+#### Connecting to Databases via the DAC  
+As per [Microsoft's Documentation for the Dedicated Administrator Connection (DAC)](https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators?view=sql-server-ver15), the DAC exists to provide SQL Server Administrators with a special diagnostic connection for troubleshooting - primarily for scenarios where normal SQL Server schedulers are thread-starved and/or overloaded. 
+
+**Access to the DAC should be enabled BEFORE Emergencies**  
+By default, access to the DAC is only allowed from clients connecting from the host running SQL Server - but this default can (and in most cases should) be modified to allow remote connections (before a disaster strikes) as per [Enabling the DAC](#enabling-the-dac) recommendations provided in [Section 3: Disaster Preparation](#section-3-disaster-preparation) of this document. 
+
+**Restrictions when Working with the DAC**
+Please note that there are a number of restrictions when working with the DAC (which is designed primarily for DIAGNOSTIC access) - as per [Microsoft's Official Documentation](https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators?view=sql-server-ver15#restrictions).
+
+**Connecting to the DAC via SSMS**  
+Because SSMS, by default, makes a number of different connections into a target server (object explorer, etc.) and due to the fact that the DAC is a single-user-only connection, you can't connect to the DAC via SSMS as you would a 'normal' server. Instead, to connect to the DAC from SSMS, you must do the following: 
+
+1. Open a new Query Window in SSMS (this can be connected to any OTHER server or explicitly disconnected). 
+
+2. Once the new query window has loaded, right-click anywhere in the window itself and select the Connection > Change Connection menu option. 
+
+3. From here specify the 'admin' protocol/specifier along with your server name - e.g., instead of connecting to `MyServer`, specify `admin:MyServer` - along with access credentials. 
+
+4. As you connect, you will likely see an 'error' pop up in SSMS informing you that a connection failed - this is/was likely 'background' and other connections that SSMS NORMALLY runs or attempts to run and NOT the window you explicitly connnected. 
+
+5. To confirm that you are connected to the DAC, you can run the following query: 
+
+<div style="margin-left: 40px;">
+
+```sql 
+
+IF EXISTS(SELECT NULL FROM sys.dm_exec_sessions WHERE endpoint_id = 1 AND session_id = @@SPID) 
+	PRINT 'Connected to DAC';
+	
+```
+
+</div>
+
+**Connecting to the DAC via SqlCmd**
+To connect to the DAC via SqlCmd, simply specify the admin signifier/protocol when specifying a new connection. For example: 
+
+```dos
+
+> sqlcmd -S admin:MyServerName
+
+```
 
 #### Addressing Problems with Low Disk Space 
 
@@ -696,8 +934,80 @@ sdafsda
 
 
 #### Non-Destructive Tail-Of-Log Backups
-sdfsd
+Because the Transaction Log (for `full` and `bulk-logged` RECOVERY databases) contains a change-by-change record of ALL modifications made to a given database, a key component of addressing many disaster recovery scenarios is to ensure that any/all transactions within the 'tail-end-of-the-log' (i.e., the currently active portion of the T-LOG - which hasn't been backed-up yet) gets backed up so that IF something unexpected happens along the way, you don't lose any transactions executed within the last N minutes on the server that have not yet (or would not otherwise have been) been backed up. 
 
+Or, stated more simply, before you 'do anything' to respond to a database-level disaster, it usually makes sense to 'kick off' a Transaction Log backup to ensure that ALL transactional changes that you can possibly capture or back-up have been safely copied to a .trn file. 
+
+That said, in order to recover from a SMALL number of database-specific disasters, it can also make sense to NOT 'truncate' (or risk truncating) the active portion of the log - meaning that you need to run a non-destructive backup of the T-LOG. 
+
+And, because a non-destructive backup of the log will fully preserve any transactional details that need to be captured - without running ANY sort of risk of damaging more advanced options for recovery, the best practice is to grab a 'non-destructive 'tail-of-the-log' backup as an additional contingency-plan/protection before making any potentially destructive changes. 
+
+Finally, in MOST cases when creating a non-destructive tail-of-the-log backup, it will make sense to 'kick' all users/applications out of the database BEFORE initiating this backup. 
+
+To forcibly remove all users from a given database, run the following: 
+
+```sql
+
+ALTER DATABASE [<dbNameHere>] SET SINGLE_USER 
+    WITH ROLLBACK IMMEDIATE;
+GO
+
+```
+
+*[TODO: document caveats and troubleshooting tips for putting DBs into `SINGLE_USER` mode (i.e., how to not 'hose yourself' by 'losing' this connection, how to 'fight it back' from other processes, etc. + document S4's upcoming sproc `dbo.liberate_database` which more aggressively evicts users/connections from a db + document how to get the db back into `MULTI_USER` mode and so on.]*
+
+**Creating a Non-Destructive Backup of the Transaction Log**  
+To create a non-destructive tail-of-the-log backup: 
+
+1. [Wire up dbo.backup_databases against the database in question - with @PrintOnly set to 1 - then execute, the path specified if/as needed, and the `@BackupType` set to `N'LOG'`]. 
+
+<div style="margin-left: 40px;">
+
+```sql 
+
+[example execution of dbo.backup_databases here];
+
+```
+
+</div>
+
+2. [COPY/PASTE output to a new window, and add in WITH NO_TRUNCATE. May also want to modify the file-name accordingly ]  
+
+<div style="margin-left: 40px;">
+
+```sql 
+
+[example output here - modified with the NO_TRUNCATE directive and with _notruncate.trn as part of the file-name]
+
+``` 
+
+</div>
+
+3. Execute command and verify that the .trn file was created. 
+
+*[NOTE: a future (soon-ish) version of `dbo.backup_databases` will allow the `NO_TRUNCATE` @Directive (only if/when @BackupType = 'LOG' - otherwise, already done in the form of COPY_ONLY] - which will make the above just a wee bit easier to tackle. ]*
+
+
+#### Putting Databases into EMERGENCY Mode
+> ### :zap: **WARNING:** 
+> *Setting a database into `EMERGENCY` mode should ONLY be done as a last-ditch effort to recover data.* 
+
+> ### :zap: **WARNING:** 
+> *Databases in `EMERGENCY` mode are, by definition, going to be in a non-consistent state (i.e., you’ll be looking at the database with some parts of transactions partially implemented and/or rolled back – so your data will be full-on ‘dirty’).*
+
+To set a database into `EMERGENCY` mode, execute the following: 
+
+```sql 
+
+USE master;
+GO
+
+ALTER DATABASE [db_name_here] SET EMERGENCY WITH ROLLBACK AFTER 10 SECONDS;
+GO
+
+```
+
+For additional information on `EMERGENCY` mode, see [Paul Randal’s blog post detailing samples/examples of how to force a database into RECOVERY_PENDING and how to use EMERGENCY mode](https://www.sqlskills.com/blogs/paul/checkdb-from-every-angle-emergency-mode-repair-the-very-very-last-resort/). 
 
 <section style="visibility:hidden; display:none;">
 
@@ -769,7 +1079,7 @@ both should be regularly scheduled and executed nightly...
 - Basic RPO and RTO tests... (restore all... did we meet needs? S4 makes this easy... )
 
 > ### :bulb: **TIP:**
-> Try to VARY the time of day that you run restore tests. This’ll help you better gauge real recovery times. (i.e., if you are running FULL backups nightly and T-Log backups every 20 minutes, and always test your backups around, say, 10:30AM you can easily end up thinking that recovery only takes, say, 30 minutes – whereas it MIGHT take closer to 1 hour if you were to test closer to 5PM because there are simply MORE transactions to iterate over.)
+> *Try to VARY the time of day that you run restore tests. This’ll help you better gauge real recovery times. (i.e., if you are running FULL backups nightly and T-Log backups every 20 minutes, and always test your backups around, say, 10:30AM you can easily end up thinking that recovery only takes, say, 30 minutes – whereas it MIGHT take closer to 1 hour if you were to test closer to 5PM because there are simply MORE transactions to iterate over.)*
 
 
 

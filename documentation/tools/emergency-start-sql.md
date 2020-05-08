@@ -12,6 +12,15 @@
 ## [Documentation Here]
 Intro details here about ... why this exists and how it can be beneficial ... 
 
+<section style="visibility:hidden; display:none;">
+
+TODO: look at integrating TF 3608 as an option for startup - i.e., instead of 'just' -m and -f ... look at -3608 as well. 
+
+rough fodder:
+https://www.mssqltips.com/sqlservertip/6237/how-to-restore-model-database-in-sql-server/
+
+</section>
+
 [Return to Table of Contents](#table-of-contents)
 
 ## Current Body of the Script (Rough Draft)
