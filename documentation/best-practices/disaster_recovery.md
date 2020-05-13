@@ -99,7 +99,6 @@ Put simply, both HA and DR systems and solutions are employed to improve availab
 
 However, in overly-simplistic terms, it is best to typically think of HA and DR as follows:
 - HA Problems are typically ‘hiccups’ or ‘minor’ problems within a single data-center that can range from something like the crash/failure of a single service, component, or operating system on up to more ‘spectacular’ failures like the loss of an entire server/hypervisor. Typically, when an HA system encounters a failure, redundant systems are expected to ‘catch’ the failure, respond, and ‘stand-up’ a replacement service, component, or even host – to keep things running as optimally as possible and with the least amount of down-time AND human intervention possible. 
-
 - Disasters and Disaster Recovery typically amount to ‘serious’ problems where either something has gone wrong with HA solutions and systems (to the point where they are compromised and/or not functioning correctly), where there’s a major problem or issue with data (that will need some sort of human interaction to resolve), or where significant or major components within a single data center have gone down (i.e., loss of the SAN or major networking infrastructure or even loss of the entire data center). Typically, but not always, response to disasters includes manual interaction with and restoration from backups and/or failover to an entirely different hosting location/data-center. 
 As outlined above, responses to either HA or DR scenarios can include pro-active planning and the creation of various contingencies, but it’s typically safe to say that ‘Disaster Recovery’ is best equated with human interaction and remediation to major problems, whereas (within the scope of this document) HA is defined as a set of ‘reactive’ or automated contingencies put in place before failures occur and which can be reviewed and analyzed by humans AFTER a problem occurs rather than requiring human interaction BEFORE a system can be put back online again. 
 
@@ -132,7 +131,7 @@ Importantly, any failure or disaster is typically going to incur both the loss o
 ## Section 3: Disaster Preparation
 Prior to disaster, care must be taken to ensure that not only are the following key concerns addressed, but that they’re also regularly checked and verified as being fully functional:
 
-- **Viable SQL Server Backups.** A Disaster Recovery Plan is only as good as its last, viable, backup. 
+- **Viable SQL Server Backups.** A Disaster Recovery Plan is only as good as its last, viable, backup and associated backup chain.
 
 - **Monitoring and Alerts.** Avoidable ‘disasters’ and problems like running a server out of disk or detecting problems with resource usage and load are things that can be easily automated and used to help pro-actively monitor (and then send alerts if/when necessary) as part of a comprehensive Disaster Recovery solution (by making administrators pro-actively aware of potential or pending failures and/or disasters). 
 
@@ -161,7 +160,6 @@ New-NetFirewallRule -DisplayName "SQL Server = DAC" -Direction Inbound -Action A
 
 ```
 </div>
-
 
 ### Monitoring and Alerts
 S4 provides the capability to enable pro-active monitoring and alerts on the systems and resources described in this Disaster Recovery Documentation. 
@@ -218,22 +216,28 @@ While having notifications provide alerts any time there are problems with regul
 Consequently, the steps outlined in the [Examples section of the API documentation for `dbo.restore_databases`](/documentation/apis/restore_databases.md#examples) along with details outlined in the Best Practices documentation for [Managing and Automating Regular Restore-Tests with S4](/documentation/best-practices/restores.md) should be implemented to set up regularly scheduled (i.e., nightly) restore-tests for production-level databases - which, in turn, will raise alerts if/when problems with backups are detected. 
 
 #### Database Consistency Checks 
-[TODO: link to rationale/need for regular checks (i.e., above/beyond IO/Corruption Error Alerts)]
+While configuring alerts to signal problems with [Database Corruption and IO Subsystem Problems](#corruption-and-io-subsystem-problem-alerts) is a critical part of ensuring that you can recover from problems when they're encountered by applications and end-users, but it's only a PART of the overall process of ensuring that corruption is quickly and regulary detected. 
 
-NOTE: [reference material from my old set of blog posts](https://www.itprotoday.com/sql-server-database-corruption-part-vi-regular-corruption-checks)
+Or, stated differently, the Corruption and IO Subsystem Alerts defined previously are a great tool for letting you know when data that's being queried or modified by end-users and/or applications has encountered corruption - but that ONLY addresses what happens with 'volatile' data - or data that's been 'recently' accessed. But what about data that gets written once and 'sits' on the server for potential days/weeks/months before being queried or accessed? 
 
-[TODO: link to `dbo.check_database_consistency` ... and benefits (errors captured/handled as part of alert) + info on setup + document information on setting up best-practices checks (regularly automated and such)]
+For example, imagine that we write some data to disk at 10AM, and, by 2PM the next day, a query detects that this data is now corrupt (checksums no longer match) - that's perfect, we've quickly and correctly identified corruption - on semi-volatile data. But, what if the data was written at 10AM today (and corrupted write as it's being written), and won't be actively queried until the end of the month (say, 18 days from now)? If we 'wait' for 18 more days to detect corruption, we have two problems:
 
-<section style="visibility:hidden; display:none;">
-Fodder: 
-https://www.sqlskills.com/blogs/erin/capturing-dbcc-checkdb-output/
+1. We may NOT (and in most cases DO NOT) have an UNBROKEN chain of FULL + T-LOG Backups stretching back 18+ days - which is what would be needed to go 'back in time' and replay all transactions from that point forward to make sure this data was recoverable. 
 
-Great stuff in there - though... I'd recommend, obviously: 
-1. `WITH NO_INFOMSGS, ALL_ERRORMSGS` - as we want/need ALLL error messages. 
-2. Frequency isn't a nice-to-have or 'guestimate' - it's based on the assumption that IF you're checking you can't afford to lose data - so ... frequency is inversely proportional to how long you're keeping FULL backups (i.e., if you keep FULLs for 3 days, you need to checks < every 3 days (and then some)) and how long you can allow recovery operations to take. 
+2. Assuming we DO have this unbroken chain (which, again, usually is NOT going to be the case), do you REALLY want to incur the time (down-time if running Standard Edition) necessary to 're-run' 18+ days of transactional operations to recover this data? 
 
-Still though, great info on benefits of HAVING this output/info - which is what I've done with `dbo.check_database_consistency` sdafa
-<section style="visibility:hidden; display:none;">
+> ### :zap: **WARNING:** 
+> *Don't assume that corruption ONLY happens when data is written to disk. It CAN happen when data is written to disk, but it can also happen if/when data has been CORRECTLY written to disk (i.e., no corruption) and when no other logical operations attempt to touch or modify said data. Instead, 'perfectly good' data can be mangled when 'just sitting there - doing nothing'.*
+
+To avoid data-disasters - where data sits idle for long periods of time without being identified as having become corrupt (until it's 'too late' to effectuate a safe recovery), best practices for SQL Server disaster protection dictate that consistency checks be regularly scheduled to help protect against corruption by surfacing problems with data corruption on a regular basis. 
+
+> ### :zap: **WARNING:** 
+> *If you value your data, determining when to run Database Consistency checks is not a question of trying to balance when to run checks vs the potential impact these checks may have on your hardware - nor is it a question of assuming that running it every X days 'or so' will be good enough. Instead, because you'll need at LEAST a FULL backup + an unbroken chain of T-LOG backups from BEFORE corruption 'happened' up until 'now', the frequency for when consistency checks should be run is tightly tied to how LONG you're keeping FULL + T-LOG backups in an unbroken chain. For example, if you're keeping FULL + T-LOG backups on-box for, say, 3 days only, then you'll NEED to run consistency checks at a **minimum** of roughly every 2 days. (Yes, technically, you've got 3x days' worth of 'coverage', but don't forget that consistency checks are a size-of-data operation and IF you find any problems, you'll need to give yourself a bit of a buffer to respond/etc. - or, in other words, if you assume 3 days = 72 hours, running consistency checks roughly every 3 days would / could put you in a situation where 5 hours into a consistency check, you've now 'crossed' your 72-hours' worth of coverage and are now in 'hour 74+' since corruption happened - at which point, you're hosed). Granted, off-box backups/copies can/should 'stretch' a bit longer than what you're keeping on-box - so if you're only keeping 72 hours' worth of backups on-box, you COULD (in theory), use off-box backups to respond to disaster - but you'll need to copy those backups back on-box and/or make them available - i.e., it's just better/easier to stay well 'inside' the retention windows you've established for on-box backups than trying to 'scramble' if/when you've been a bit 'lax' with your verification windows.* 
+
+While SQL Server provides solid tools for database consistency checks (i.e., DBCC CHECKDB and 'friends'), S4 'extends' and simplifies this functionality via [dbo.check_database_consistency](/documentation/apis/check_database_consistency.md) - which offers 3x primary advantages over setting up checks with DBCC CHECKDB directly: 
+- It enables easy execution and targetting of all and/or specific databases. 
+- It is correctly optimized to include the `WITH` `NO_INFOMSGS` and `ALL_ERRORMSGS` flags (which are critical to being able to properly 'size-up'/evaluate and respond to corruption when it occurs)
+- It CAPTURES all outputs of DBCC CHECKDB while it is being executed and sends those details out as part of the alerts it will raise/send when it detects corruption. 
 
 
 <section style="visibility:hidden; display:none;">
@@ -242,9 +246,7 @@ Still though, great info on benefits of HAVING this output/info - which is what 
 
 PREVIOUS copy/text: 
 Index Maintenance and Statistics Update Routines have been configured to send Alerts if/when they run into problems during execution. Because these are preventative maintenance routines, failures within these jobs/routines are NOT disasters; instead, they only raise the potential for a decrease in overall performance IF they continue to fail and if they’re not corrected/addressed. As such, recommendations for responding to alerts for failure of these types of maintenance routines is to simply take a quick look at error details whenever there is a failure, watch for any ‘long term’ patterns or concerns, and – effectively, feel free to more or less ‘ignore’ the occasional failure or ‘crash’ of one of these jobs here and there. (The occasional failure here and there (i.e., every 2 weeks or so) shouldn’t pose much of a problem performace-wise. However, repeated and regular failures will typically mean something is improperly configured, or that there is a potential problem with locking/blocking or resource acquisition during execution times – and this SHOULD be reviewed. 
-</section>
 
-<section style="visibility:hidden; display:none;">
 #### HA Synchronization Alerts 
 [Synchronization Alerts. For Mirroring/AGs… this’ll tell us when falling behind and/or when disconnected or other problems. These are typically going to be very serious alerts to pay attention to – they indicate problems with fault-tolerance/protection.]
 
@@ -253,10 +255,7 @@ Index Maintenance and Statistics Update Routines have been configured to send Al
 
 #### Batch Job Alerts 
 (not S4 functionality - but something to watch from overall continuity standpoint)
-</section>
 
-
-<section style="visibility:hidden; display:none;">
 ### OPTIONAL Alerts 
 Unlike the alerts listed above, which are all highly recommended (depending upon environment - i.e., if there is no HA... then HA doesn't make sense)... the following are optional... 
 
@@ -312,32 +311,26 @@ Also. Provide links/guidance on how to set up alert filtering for Severity 17+ e
 [Return to Table of Contents](#table-of-contents)
 
 ## Section 5: Enumerating Disaster Recovery Resources 
-[
-Key component to properly responding to disasters is having access to key resources needed to navigate the disaster - such as access to documentation, security details, inventories of server resources, technical resources, team members, and ... etc. that might be needed along the way.
+A key requirement for responding to disasters in an optimal fashion is to clearly catalog and document resources needed for disaster recovery BEFORE disasters strike. Key resources needed to navigate disasters include things such as clearly defined locations for disaster recovery documentation, access to any/all security details needed for your environment, detailed inventories of server-locations and access-details + information about the locations of backups, the names and contact information for applicable team-members, support personel, management, and contact info for hosting companies and/or hosting-support contacts - among others. 
 
-This documentation is NON-EXHAUSTIVE, but provides a high-level set of lists of key components that can/should be assembled and securely stored in an accessible location (may need to be audited) for key personnel.
+While non-exhaustive, the following section outlines two high-level sets of resources (SQL Server/Technical Resources and Business/Organization Resources) that should be reviewed and evaluated for inclusion in any real-world Disaster Recovery Plan.  
 
-Two key types of information: SQL Server related details/resources and business-level resources. 
-
-> ### :zap: **WARNING:** 
+> ### :bulb: **TIP:** 
 > *The worst time to assemble this is during a disaster - in fact, at that point 'assembly' is too late - you'll be incurring additional down-time.*
-
-]
-
-[
 
 ### SQL Server Resources
 - **Basic Server-Level Details.** IP Addresses/Server Names etc. per each SQL Server should be documented/defined along with high-level details about where additional security information for elevated access (to SysAdmin, certs, etc.) can be found should be documented prior to disasters.
+
+- **Inventory of Backup Locations.** On-box for addressing problems with corruption and inventories of off-box backups for hardware/site-wide disasters and/or smoke-and-rubble scnenarios. 
 
 - **Hosting and Hosting/Account Details.** For some disasters (especially those involving hardware failures of any kind), correspondence with your hosting provider may be essential. Part of a solid DR plan is to ensure that everyone who needs access has (up to date access) and/or can be cleared for appropriate 'admin-level' access in the case of a disaster if needed. 
 
 - **Support Contacts.** In addition to the above, make sure that contact and security/access information for interaction with your hosting company and their emergency support personnel is available to eveyone as needed. 
 
-- **Inventory of Backup Locations.** On-box for addressing problems with corruption and inventories of off-box backups for hardware/site-wide disasters and/or smoke-and-rubble scnenarios. 
-
-- **Elevated Permissions.** Permissions and/or Locations + Access Instructions for SysAdmin credentials or other elevated permissions that will be needed by anyone OTHER than standard/regular DBA if/when disaster occurs during time that 'standard DBA' can not be reached. [Notes here about potential need to audit access to these resources.]
+- **Permissions Elevations Processes/Documentation.** Permissions and/or Locations + Access Instructions for SysAdmin credentials or other elevated permissions that will be needed by anyone OTHER than standard/regular DBA if/when disaster occurs during time that 'standard DBA' can not be reached. [Notes here about potential need to audit access to these resources.]
 
 - **Last Successful Restore Test Details.** For most disaster scenarios, access to metrics showing typical restore/recovery times for production databases + outcomes of regular testing can help remove significant 'guess work' from DR equations. S4 helps facilitate this via metrics stored in `dbo.restore_log` when regular restore-tests are automated via `dbo.restore_databases`. 
+
 - **Certificates and Other Security Details.** For smoke and rubble DR scenarios, it may be necessary to restore TDE or Backup-Encryption certificates BEFORE being able to restore SQL Server backups into a NEW environment. If these aren't securely stored in an accessible/known location BEFORE a disaster strikes, it may be too late to recover at all - otherwise, if recovery is possible, it will certainly be slowed as those responding to the disaster have to 'hunt down' these resources. 
 
 - **Server Configuration Settings.** For smoke and rubble DR scenarios, details about your FORMER SQL Server instance's configuration should be on hand along-side backups as a means of helping ensure that the new server you stand up is running the same configuration settings. S4's `dbo.export_server_configuration` can be used to set up regularly-scheduled 'dumps' of this information for DR purposes. 
@@ -345,11 +338,10 @@ Two key types of information: SQL Server related details/resources and business-
 - **SQL Server Logins.** For smoke and rubble DR scenarios or some DR scenarios involving the loss of the `master` database, having a backup of SQL Server Logins defined on your SQL Server instance can be a critical component of restoring in a timely fashion. [Note here about how how, obviously, access to this information needs to be guarded in sensitive environments. ] S4's `dbo.export_server_logins` can be used to set up regularly-scheduled 'dumps' of this information to ride 'side by side' with backups for help during disaster recovery scenarios.
 
 ### Business Resources
-- **Defined RPOs and RTOs.** [should be defined well in advance of disasters. recommendation that they're defined and/or documented in a fashion similar to what's found in the [Availability And Recovery Worksheet](/documentation/best-practices/availability_and_recovery_worksheet.pdf) ]
+- **Defined RPOs and RTOs.** RPOs and RTOs should be defined well in advance of disasters - and can be defined by means of the [Availability And Recovery Worksheet](/documentation/best-practices/availability_and_recovery_worksheet.pdf) - which, while not exhaustive, can/will help facilitate discussions between technical and leadership teams to help ensure that business priorities are clearly defined for technical team-members (as well as to ensure that technical teams have been provided with the proper hardware, licensing, and skills/training needed to meet business continuity requirements).
 
 - **Call Trees and Escalation Rules.** [Need information about technical resources (people) who should be looped in to respond to permutations/problems, call-bridges or other conventions used during DR/all-hands-on-deck scenarios, and contact information for management/leadership along with clear definitions of any internal rules or conventions necessary for determining how to escalate business continuity problems/disasters to leadership AND support personnel.]
 
-]
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -431,6 +423,38 @@ The following section provids detailed instructions for addressing specific task
 ### Part B: High Availabililty Problems 
 *[DOCUMENTATION PENDING.]*
 
+<section style="visibility:hidden; display:none;">
+
+#### Pausing Synchronization
+[manual instructions for both AGs and MIRRORING + instructions on who to use `dbo.suspend_synchronization` and `dbo.resume_synchronization`... ]
+
+**AGs**  
+[xxx]
+
+**Mirroring**  
+[xxx]
+
+#### Executing Failover 
+[General info]
+[NOTE: for both of the sub-options below, I need to provide 'manual' options, and ... link/recommendation on how to use `dbo.execute_failover` - or whatever it'll be that I end up implementing... ]
+
+**Executing Failover with Availability Group Databases**  
+[instructions]
+
+**Executing Failover of Mirrored Datbases**  
+[instructions]
+
+#### Executing FailBack
+[just failover, but ... back]
+
+#### Re-Seeding databases 
+[i.e., how to do it for mirrored dbs, and for AGs and ... how to do it via `dbo.synchronize_databases` - or whatever S4 proc facilitates this... ]
+
+#### xxx
+[check previous documents for HA systems for other topics/ideas/details.]
+
+</section>
+
 ### Part C: SQL Server Problems 
 The following sub-section outlines step-by-step instructions and best-practices for addressing specific, SQL Server related, disaster scenarios and tasks. 
 
@@ -440,10 +464,104 @@ The following sub-section outlines step-by-step instructions and best-practices 
 > ### :bulb: **TIP:**
 > *When assessing the scope or nature of particular disaster scenarios, it's always a best-practice to [Check the SQL Server Logs](#checking-the-sql-server-logs) before commiting to any plan of action.*
 
-<section style="visibility:hidden; display:none;">
-
 #### Physical Database Corruption 
-[Need to synthesize the order of operations defined in my SQLMag article... but, updated for use with S4 and additional best-practices... ]
+[not a matter of if, but of when. nature of corruption... + make sure to read/review ALL docs below and during DR scenarios - do NOT 'jump the gun'.]
+
+**Addressing Physical Database Corruption**  
+Physical corruption will usually manifest either in the form of alerts being thrown from SQL Server about Errors 823, 824, 825 (when [enabled](#corruption-and-io-subsystem-problem-reports)) or due to errors or other problems encountered when working with SQL Server.
+
+Should you encounter physical corruption:
+
+**A. Carefully review ALL OF THESE INSTRUCTIONS Before Proceeding further.** Reviewing the documentation below will take 5-10 minutes. On the other hand, making a MISTAKE by not fully understanding how to correctly deal with corruption (i.e., not knowing your options and/or how best avoid destructive operations or common mistakes that can make things worse) typically incur much longer to address and/or can result in the NON-RECOVERABLE LOSS of business data. 
+
+**B. DO NOT Reboot or Restart your server.** While some weird Windows issues will go away by rebooting the box, the presence of corruption will NOT go away if you reboot your server. Instead, it’s VERY possible that a reboot will actually make things MUCH worse as it may act as the means for causing SQL Server to take your database offline and render it SUSPECT – making it MUCH harder to deal with than it might otherwise be.
+
+**C. DO NOT attempt to detach/re-attach your Databases.** As with the previous point, this is an absolute worst practice (no matter WHAT you might have read in some forums online). Detaching and re-attaching your database when corruption is present is almost certainly going to make recovery MUCH harder.
+
+**D. Determine the Nature and Scope of the Corruption BEFORE Attempting ANY Repairs.** If you’re getting IO errors (823, 824, 825 errors) from SQL Server, then you may be at the cusp or leading edge of running into problems with corruption. As soon as possible, run
+
+```sql 
+
+DBCC CHECKDB([yourDbName]) WITH NO_INFOMSGS, ALL_ERRORMSGS
+
+```
+
+to verify if there are problems. Or, if you’ve found problems by means of regular checks or backups, make sure to evaluate ALL of the error messages returned and document or save them to a safe location somewhere (i.e., copy/paste to notepad or save as a .sql file as needed).
+
+**E. Consider re-running DBCC CHECKDB if there is Only a Single or Minor Problem Reported.** Yes, this sounds lame and even superstitious, BUT in some _very_ rare cases if you’ve just encountered a minor bit of corruption (i.e. just one or two errors) you can actually re-run DBCC CHECKDB and the corruption will have disappeared – simply because SQL Server wrote to a bad spot (or the ‘write’ was ‘mangled’) and SQL Server was able to ‘recover’ transparently, and then write to a new location, or execute a write that ‘completed correctly’. 
+
+Such scenarios are VERY rare but do happen. Care should be taken in these kinds of scenarios too to watch for a pattern – because while one instance of corruption here or there is sadly to be allowed/tolerated/expected, multiple problems over a short period of calendar time typically indicate a pattern of systemic problems and you need to start contemplating hardware replacement as needed. Otherwise, IF you want to take a chance that this is going on and you’re working with a small database, the factors to consider here are that if you can re-run checks quickly, it may be in your best interest to TRY this option – but don’t HOPE too much for problems to magically disappear. 
+
+**F. Size Up Corruption and Remediation Options BEFORE doing ANYTHING.** Otherwise, when you do run into problems, make sure to WAIT until DBCC CHECKDB() has successfully completed. There are simply too many horror stories out there about DBAs who ‘jumped the gun’ at the first sign of trouble and either DESTROYED data unnecessarily or who INCREASED down-time by responding to SYMPTOMS of corruption instead of root-causes. Accordingly, make sure you review EVERY single error after SQL Server completes reporting about errors because in some cases the ‘screen’ may be chock-full of red error messages about corruption here and there in various pages, but you might find out at the end of the check that almost all of these errors are caused by a non-clustered index that can be simply dropped and recreated.
+
+Don’t jump the gun.
+
+Likewise, some forms of corruption are simple issues where the meta-data used by SQL Server to keep track of free space and other ‘internals’ get a bit out of ‘sync’ with reality – and in these cases SQL Server may tell you that you can safely just run `DBCC UPDATEUSAGE()` or another operation to CLEANLY and EASILY restore from corruption without incurring any downtime OR losing any data. 
+
+Again, size up your options accordingly – and after you have all of the facts.
+
+AND, the upside of ‘getting lucky’ with this seemingly feeble attempt is that you ALWAYS want to 100% size up the specifics of corruption whenever it occurs – as in think of the old adage: “measure twice, and cut once”.
+
+**G. Try to obtain a tail-of-the-log backup.** If you've detected problems with corruption, you need to ensure that you correctly capture/back-up any transactions still in your transaction-log to protect against the possibility of something possibly (though usually very unlikely) going wrong during repair options. To do this, follow the instructions for [Creating a Non-Destructive Tail-of-the-Log Backup](#non-destructive-tail-of-log-backups).
+
+**H. Determine Your Planned Recovery Strategy.** [Four main options in terms of recovery... listing best to worst in terms of order: ]
+
+- **Execute REPAIR REBUILD or UPDATE USAGE if/as recommended.** Both options are non-destructive and will TYPICALLY result in the least amount of time needed to recover full operational status and data. 
+
+> ### :label: **NOTE:** 
+> *In many cases when corruption is minimal, SQL Server might inform you that the `REPAIR_REBUILD` option may be a viable approach to recovering data. If this is the case, or if you just want to ‘check’ and see if it will work, you can safely run `DBCC CHECKDB([yourDBName]) WITH REPAIR_REBUILD` with no worries of data loss. The only thing you stand to lose would be TIME – meaning you MUST put the database into `SINGLE_USER` mode to execute this option. So, if you think this has a potential to correct your errors, it’s a viable approach. If SQL Server indicated something more severe (that requires the use of backups or repair options that require data loss) then running this will JUST waste time.*
+
+
+> ### :zap: **WARNING:** 
+> *Don't confuse `REPAIR_REBUILD` with `REPAIR_ALLOW_DATA_LOSS` - these options are CLEARLY and perfectly named for a reason - as the last can, does, will allow for data loss.*
+
+- **Execute a Page-Level Restore if possible.** If you’ve got full-blown corrupt data within a few pages (as opposed to being in indexes that could be recreated), then you’ll be able to spot those by querying msdb’s suspect pages table, like so:
+
+SELECT * FROM msdb..suspect_pages
+GO
+
+Then, from there, it’s possible to effectuate a page-level restore from SQL Server using your existing backups. And what this means is that you’ll instruct SQL Server to ‘reach in’ to previous backups, ‘grab’ the data from the pages that were corrupt, and then REPLACE the corrupted pages with known-safe pages from your backups. 
+
+MKC: TODO: i need to re-evaluate the info below ... against LARGER databases ... think I might have written the 'tip' info below for a specific client in some client-specific docs... 
+
+> ### :bulb: **TIP:**
+> If the steps outlined above point to needing a page-level restore – then you can typically count on that taking 5-10 minutes or so – under decent circumstances – and it’s a very complex set of operations. As such, you may be much better served by simply failing the problem database over (especially if you’re able to obtain a tail-end backup). 
+
+
+More importantly, since any operations since your last backup will also have been logged (assuming FULL recovery and regular FULL/DIFF + Transaction Log backups), you’ll be able to ‘replay’ any changes against that data by means of replaying the data in the transaction log. 
+
+(For more information on how this works, see the following video.) As such, make sure to back up the ‘tail end’ of your transaction log BEFORE beginning this operation.
+
+- **Execute a Full Recovery.** If there are large numbers of suspect/corrupted pages (i.e., so many that manually recovering each one would take longer than a full recovery) or if critical system pages have been destroyed, then you’ll need to execute a full recovery. As with the previous operation, make sure you commence this operation by backing up the tail end (or non-backed up part) of your current transaction log – to ensure that you don’t lose any operations that haven’t been backed up.
+
+
+- **Consider using REPAIR_ALLOW_DATA_LOSS if all Other Hope is Lost.** Using this option WILL result in the loss of data so it’s not recommended. Furthermore, if you’re going to run this option, Microsoft recommends that you initiate a full backup BEFORE running this option as once complete you have no other option for undoing the loss you will have caused.
+
+As such, that begs the question: “Why would you want to use this technique?” And there are two answers.
+
+**First**, you would use this technique IF you had no existing backups that you could use to recover from corruption otherwise. Therefore, don’t let this ever become a need – by making sure you always have viable backups.
+
+> ### :bulb: **TIP:**
+> *If you care about your data, `REPAIR_ALLOW_DATA_LOSS` is a terrible option. As such, if you've found yourself in the unenviable position of entertaining this option, you may want to create a support ticket with Microsoft. Sadly, Microsoft doesn't have a magic wand that can/will make up for your lack of backups but they do have teams of engineers adept at working through this particular disaster scenario and MAY (or may not) have some additional experience, insight, and tools other than what is publically available and supported.*
+
+**Second**, there are some EDGE cases where SOME databases might actually FAVOR uptime over data-purity (meaning that these kinds of databases would prefer to avoid down-time at the expense of data-continuity or purity) and in cases like this there are ADVANCED scenarios where the use of `REPAIR_ALLOW_DATA_LOSS` might be acceptable (assuming you understand the trade-offs). And for more info on these kinds of scenarios, or where this would make sense, take a peek at my previous post where I provide a link to a Tech Ed presentation made by Paul Randal showing some of the raw kung-fu moves you’d need to pull off correction of these sorts of problems – assuming you felt you were in a scenario where you favored up-time over correctness.
+
+]
+
+**I. Evaluate the Option to Validate Repair Options in a Test Environment First.** 
+Once you've evaluated your options... ... 
+
+In environments where the accuracy of data is more important than up-time, you'll want to test or validate ANY options you've identified for corrective actions within a 'test environment' first. This test environment can be a dedicated testing server OR your production server - anywhere that you can spin-up a RESTORED copy of your database (corruption is 'copied'/preserved within backups) - so that you can test non-destructive options in a less forgiving environment/database than your primary production database. 
+
+Yes, this will probably take longer in most cases than just executing your changes in production. Then again, if you screw something up in production, THEN which approach ends up taking longer? (Personally, I ALWAYS approach every recovery operation in looking for any options that leave me with INCREASED fall-back options and capabilities as I move forward with remediation efforts.)
+
+J. **Verify Correction.** Once you've executed your chosen/optimal recovery operations (ideally, first in a test/sandbox environment, then in production), VERIFY that your efforts/operations have CORRECTED the problem. Depending upon WHERE original detected corruption is/was... you can run DBCC CHECKTABLE() with [commands here] if you're sure that the problem was isolated to one or more tables only, or ... if  needed, run DBCC CHECKDB. 
+
+> ### :bulb: **TIP:**
+> Usually makes the MOST sense to run checks BEFORE returning a db back into production. BUT, if you've verified that your repairs worked against a TEST/RESTORED-COPY database and you then repeated those steps in production and didn't see any reason to doubt there was a potential problem, you CAN (in some environments - but not in others) use your best judgement to determine if you want to 'release' the database back to users WHILE re-running/re-verifying that all corruption has been cleaned up. Making this decision is a 100% judgement call and should typically be made in conjunction with management/leadership - i.e., explain the pros/cons and let them make the call or weigh-in with any concerns for or against. And, if data-accuracy is your top concern (and up-time, while obviously important, is a distant secondary concern), then the answer is simple: validate repairs/correction BEFORE releasing the database back into production use.
+
+
+**J. Initiate New Backup Chain.** Once you've verified that you're corruption free, 1) congrats, 2) it's time to kick off a new backup chain. Technically speaking, depending upon WHEN and WHERE the corruption happened, you MAY be 'fine' with just a DIFF backup. But, the reality is that you've likely just 'hit the disks' and system resources HARDER with the DBCC checks and/or any repair operations that you've JUST done than what you'll typically incur with anything but really massive databases (2TB or larger - depending upon hardware) to the point where the most logical option in the vast majority of scenarios is simply to kick off a new, FULL, backup of your database - so that you've now got a corruption-free backup-chain going forward. 
 
 #### Logical Database Corruption
 [ADVANCED documentation required. SIMILAR in concept to the process associated/defined(ish) for Point in Time Recovery of a User Database (below) - but then requires INSERTs/UPDATEs/DELETEs from 'point in time' db against 'production' db to 'vector' in/out all changes and updates and ... you'll miss data/changes along the way... and, this is easily the most UGLY process anywhere in SQL Server Universe or in dealing with dbs. 
@@ -931,6 +1049,24 @@ To connect to the DAC via SqlCmd, simply specify the admin signifier/protocol wh
 
 
 #### Checking Databases for Corruption
+Checking for corruption is a size-of-data operation (the larger your databases, the more time this will take). 
+
+1.	To check for corruption you CAN review the SQL Server logs as one means of potentially finding problems or issues – especially if they relate to databases being marked as suspect when starting up a SQL Server instance. 
+2.	To check the SQL Server Logs, simply open up SQL Server Management Studio, connect to the target server, and then expand the Management node, and expand the SQL Server Logs node, and double-click on the most recent log entry (or any other that might make sense to scan) as per the following screenshot:
+ 
+
+3.	Note too that you can filter entries by specific keywords, such as database name:
+ 
+
+4.	When dealing with suspect databases, make sure to check events around/during the times when SQL Server is starting up and look for specific reasons or details as to why a database might be marked as suspect. (Many times you’ll see references to paths that are unavailable or will spot information about data potentially being corrupt or ‘suspect’.)
+5.	Otherwise, to address issues or potential concerns where databases might be experiencing problems due to corruption, you’ll have to perform a check – where the exact syntax you’ll want to use is: 
+
+DBCC CHECKDB(dbNameHere) WITH NO_INFOMSGS, ALL_ERRORMSGS
+GO
+
+(And, of course, make sure to change the name of your database in the sample above.)
+6.	And, note, that you’ll want to wait until that ENTIRE check is completed before making decisions about how to proceed. 
+7.	As such, make sure to use the documentation provided here as a guide for how to respond to corruption. 
 
 
 #### Non-Destructive Tail-Of-Log Backups
@@ -1093,7 +1229,12 @@ both should be regularly scheduled and executed nightly...
 [Return to Table of Contents](#table-of-contents)
 
 ## Section 9: Maintenance and Upkeep Concerns
-sdfs
+[Documentation needs to address 2 main concerns: 
+1. patching/updates - i.e. 'maintenance' - either via Windows/SQL Server patches and/or via application changes/updates etc... 
+
+2. How to account for these changes and/or potential changes in terms of DR. ]
+
+
 
 [Return to Table of Contents](#table-of-contents)
 
