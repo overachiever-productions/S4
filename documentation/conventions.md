@@ -5,7 +5,7 @@
 # S4 Conventions
 
 > ### :label: **NOTE:** 
-> Aspects of this document are not yet even to 'working-draft' stages and are, instead, merely place-holders instead.
+> *Aspects of this document are not yet even to 'working-draft' stages and are, instead, merely place-holders.*
 
 ## TABLE OF CONTENTS
 - [Overview and Philosophy](#overview-and-philosophy)
@@ -27,7 +27,7 @@
     - [Advanced Capabilities / Advanced Error Handling](#advanced-capabilities)
     - [PROJECT or RETURN Modules](#project-or-return)
     - [XE Data Mappings, Extraction, and TraceViews Conventions](#xe-database-mappings)
-    - [Database Mapping Redirects](#) (for diagnosticst tools)
+    - [Database Mapping Redirects](#)
     - [@Modes](#modes)
     - [Domains](#domains)
     - [Lists](#lists)
@@ -40,6 +40,11 @@
 
 ## Overview and Philosophy
 S4 skews heavily towards the following philosophical ideals:
+- Convention over Configuration
+- Fail Fast, Fail Responsibly, Fail Safe (a must, when dealing with data), and Fail Minimally. 
+- Avoid Silent Failures while Favoring Signal over Noise 
+
+Details on each of the philisophical ideals listed above are futher clarified below.
 
 ### Convention over Configuration  
 S4 favors [convention over configuration](https://en.wikipedia.org/wiki/Convention_over_configuration). This is most apparent relative to defaults associated with notifications and alerts, standardized default `@Parameters` for most S4 modules (which attempt to default to the most-commonly-used configuration value or setting), and storage paths + filenames for SQL Server backups.
@@ -96,10 +101,11 @@ But, still, this example implementation of convention over configuration helps h
 
 ### Failures and Error Handling
 S4 favors the following conventions relative to failures and errors.
-    - **Fail Fast.** Most S4 routines associated with automation (backups, restore-tests, and other maintenance routines) explicitly strive to 'fail early' - meaning that if/when they're mis-configured (set to use illegal or non-valid arguments or parameters), they'll throw exceptions immediately. This can make initial configuration of automation routines a bit more tedious - but helps decrease the potential for 'gotcha' problems and 'surprises' further on. 
-    - **Fail Safe.** S4 routines are designed to work in production environments - where data loss or 'accidents' can be expensive. As such, S4 code is designed to require explicit directives around anything scary (like restoring datbases 'over the top' or existing databases) and/or is designed to attempt to minimize the impact of any and all exceptions that occur during processing.
-    - **Fail Responsibly.** S4 code favors caller-inform vs caller-beware and caller-confuse.
-    - **Fail Minimally.** S4 code strives for resiliency. When processing batch operations (i.e., working against one or more larger sets of operations - like backing up multiple databases), S4 code strives to ensure that a single failure (against, say, a backup for a single database) does NOT crash or terminate the entire process or batch-operation. Instead, TRY-CATCH and other advanced-error-handling techniques are used to 'catch' errors during processing, gather context and information for later reporting, and 'move on' to the next operation in the batch - reporting upon all errors and problems once an attempt has been made to process all targets of the batch operation.
+
+- **Fail Fast.** Most S4 routines associated with automation (backups, restore-tests, and other maintenance routines) explicitly strive to 'fail early' - meaning that if/when they're mis-configured (set to use illegal or non-valid arguments or parameters), they'll throw exceptions immediately. This can make initial configuration of automation routines a bit more tedious - but helps decrease the potential for 'gotcha' problems and 'surprises' further on. 
+- **Fail Responsibly.** S4 code strives to **favor caller-inform** vs caller-beware or caller-confuse.
+- **Fail Safe.** S4 routines are designed to work in production environments - where data loss or 'accidents' can be expensive. As such, S4 code is designed to require explicit directives around anything scary (like restoring datbases 'over the top' or existing databases) and/or is designed to attempt to minimize the impact of any and all exceptions that occur during processing.
+- **Fail Minimally.** S4 code strives for resiliency. When processing batch operations (i.e., working against one or more larger sets of operations - like backing up multiple databases), S4 code strives to ensure that a single failure (against, say, a backup for a single database) does NOT crash or terminate the entire process or batch-operation. Instead, TRY-CATCH and other advanced-error-handling techniques are used to 'catch' errors during processing, gather context and information for later reporting, and 'move on' to the next operation in the batch - reporting upon all errors and problems once an attempt has been made to process all targets of the batch operation.
 
 ### Alerting and Notifications  
 Automation isn't very helpful if it either silently 'breaks' (or stops working) and/or automation routines throw errors that either don't provide much context OR require you to drop what you're doing immediately to determine if what you're seeing is a critical problem or something that can wait. As such, one of the key goals of S4 is to try and provide enough 'at a glance' context and error-info as possible whenever errors and problems are encountered. 
@@ -336,6 +342,11 @@ To implement the `RETURN` aspect of this convention you must do the following:
 ### Database Mapping Redirects
 *[DOCUMENTATION PENDING.]*
 
+<section style="visibility:hidden; display:none;">
+NOTE TO SELF: this includes 'mappings' for things like extraction of wait-resources and so on - i.e., where we've captured data within ONE environment, and want to 'repoint it' to another environment (e.g., captured waits against db [xyz] in production, and want to see the exact waits are/would be against a RESTORED backup of [xyz] (restored as [xyz_2] in a dev environment, etc.))
+
+</section>
+
 ### @Modes
 A number of S4 stored procedures and functions (especially those that are `SELECT` or 'query' heavy) leverage the convention of using a `@Mode' (or other functionally similar parameter - but with a different name) to enable specify different processing outcomes or excution processing rules. 
 
@@ -358,6 +369,7 @@ Technically speaking, the @Modes convention is a VERY light-weight convention wi
 *[DOCUMENTATION PENDING.]*
 
 <section style="visibility:hidden; display:none;">
+[serialized arrays?]
 [comma separated stuff... can include * ... when defining priorities and such... ]
 </section>
 

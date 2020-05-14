@@ -1,4 +1,4 @@
-﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
+﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)  
 [S4 Docs Home](/readme.md) > Installing, Updating, and Removing S4
 
 # Installing, Updating, and Removing S4
@@ -11,7 +11,6 @@
     - [Configuring SQL Server Database Mail](#configuring-sql-server-database-mail)
 - [Keeping S4 Updated](#updating-s4)
 - [Removing S4](#removing-s4)
-- [Installation via PowerShell](#installation-via-powershell)
 
 ## Requirements And Version Support
 
@@ -19,6 +18,13 @@
 - S4 is designed for SQL Server DBAs. 
     - SysAdmin permissions are needed for S4 deployment.
 - Advanced Capabilities (low-level error handling and alerting/notifications) further depend upon [xp_cmdshell](#enabling-advanced-s4-features) and SQL Server's native [Database Mail](#Configuring-sql-server-database-mail) capabilities.
+
+### Version Support
+S4 is primarily designed for SQL Server 2012+ instances - though many (but not all) S4 features work without any problems on SQL Server 2008 and 2008 R2 instances. 
+
+S4 is also primarily designed to work on NON Express-Edition (i.e., Web Edition and 'above') instances of SQL Server running in 'normal' Windows environments. It has not yet been actively targetted against Linux Instance, Azure, and some functionality provided by S4 will, obviously, not work on AWS RDS Instances. 
+
+Effort is currently under way (but is a work in progress) to define full/known version-support details per each documented S4 function/method. For example, see the `APPLIES TO` details in the `Overview` section of the [API documentation for `dbo.backup_databases`](/documentation/apis/backup_databases.md).
 
 ## Step-By-Step Installation Instructions
 To deploy S4:
@@ -106,12 +112,19 @@ To remove S4:
 
 4. Done. 
 
-(If you want to re-install, simply re-run the original setup instructions outlined above.)
-
-## Installation via PowerShell
-[**Documentation Pending.** But, basically, just grab [/s4/releases/latest/admindb_latest.sql](https://github.com/overachiever-productions/s4/releases/latest) via `Invoke-WebRequest`, then run `Invoke-SqlCmd` against the downloaded file, and then run `Invoke-SqlCmd -Query "EXEC admindb.dbo.enable_advanced_capabilities;"` ... done.]
+> ### :bulb: **TIP:**
+> *At this point, if you ever want to re-install, simply re-run the original setup instructions outlined above.*
 
 <section style="visibility:hidden; display:none;">
+
+## Installation via PowerShell
+
+throw this into the toc:
+- [Installation via PowerShell](#installation-via-powershell)
+
+
+[**Documentation Pending.** But, basically, just grab [/s4/releases/latest/admindb_latest.sql](https://github.com/overachiever-productions/s4/releases/latest) via `Invoke-WebRequest`, then run `Invoke-SqlCmd` against the downloaded file, and then run `Invoke-SqlCmd -Query "EXEC admindb.dbo.enable_advanced_capabilities;"` ... done.]
+
 
 ```powershell
 $creds = Get-Credentials "Please provide SysAdmin creds against your SQL Server...";
@@ -120,7 +133,6 @@ Invoke-SqlCmd -QueryFile $admindbLatest -IgnoreVariables -Credentials $creds;
 Invoke-SqlCmd -Query "EXEC admindb.dbo.enable_advanced_capabilities;" -Credentials $creds;
 ```
 </section>
-
 
 [Return to Table of Contents](#table-of-contents)
 

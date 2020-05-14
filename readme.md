@@ -4,26 +4,34 @@
 
 ## Table of Contents
 - [License](#license)
+- [Change Log](/changelog.md)
 - [Installing S4](#installing-s4)
     - [Step-by-Step Installation Instructions and FAQs](/documenation/setup.md#step-by-step-installation-instructions)
     - [Enabling Advanced S4 Features](/documenation/setup.md#enabling-advanced-S4-features) 
     - [Common Questions and Concerns about enabling xp_cmdshell](/documenation/setup.md#common-questions-and-concerns-about-enabling-xp_cmdshell)
     - [Keeping S4 Updated](/documenation/setup.md#updating-S4)
     - [Removing S4](/documenation/setup.md#removing-S4)
-    - [Installation via PowerShell](/documenation/setup.md#installation-via-powershell)
 - [S4 Features and Benefits](#features-and-benefits)
     - [Simplified and Robust Backups](#simplified-and-robust-backups) 
     - [Automated RESTORE Tests](#simplified-restore-operations-and-automated-restore-testing)
     - [Simplfied Disaster Recovery](#simplified-disaster-recovery)
     - [Performance Monitoring](#performance-monitoring-and-workload-insights)
+    - [Capacity Planning Resources](#capacity-planning-resources)
     - [S4 Utilities](#utilities)
     - [Tools and Templates](#tools-and-templates)
-    - [Best-Practices Guidance and Documentation](#best-practices-guidance-and-documentation)
+- [Best-Practices Guidance and Documentation](#best-practices-guidance-and-documentation)
 - [APIs](#apis)
+    - [SQL Server BACKUPs and Utilities](/documentation/apis.md#sql-server-backups-and-utilities)
+    - [SQL Server Configuration Utilities](/documentation/apis.md#sql-server-configuration-utilities)
+    - [High Availability Configuration, Monitoring, and Management](/documentation/apis.md#high-availability-configuration,-monitoring,-and-management)
+    - [SQL Server Agent Jobs](/documentation/apis.md#sql-server-agent-jobs)
+    - [SQL Server Maintenance](/documentation/apis.md#sql-server-maintenance)
+    - [Monitoring](/documentation/apis.md#monitoring)
+    - [Performance](/documentation/apis.md#performance)
+    - [RESTORE Operations and Utilities](/documentation/apis.md#restore-operations-and-utilities)
+    - [Tools and Utilities](/documentation/apis.md#tools-and-utilities) 
+    - [SQL Server Audit Signature Monitoring and Verification](/documentation/apis.md#sql-server-audit-signature-monitoring-and-verification)
 - [S4 Conventions](#s4-conventions)
-    - [Backup Conventions](#backup-conventions)
-    - [Database Name Tokens](database-name-tokens)
-    - [Alerting](#alerting-conventions)
 
 > ### :label: **NOTE:** 
 > S4 documentation is a work in progress. Any content *[surrounded by square brackets]* represents a DRAFT version of documentation.
@@ -31,6 +39,10 @@
 ## License 
 
 [MIT LICENSE](/LICENSE)
+
+## Change Log
+
+[ChangeLog](#/changelog.md)
 
 ## Installing S4
 
@@ -125,10 +137,12 @@ Similarly, the following command could be used to REPLACE nightly dev/test datab
     GO
 ```
 
-For more info, see API documentation for [dbo.restore_databases](/documentation/apis/restore-databases.md) and be sture to checkout  [S4's documented best-practices for RESTORE operations](/documentation/best-practices/restores.md) as well.
+For more info, see API documentation for [dbo.restore_databases](/documentation/apis/restore-databases.md) and be sture to checkout  [S4's documented best-practices for RESTORE operations](/documentation/best-practices/restores.md) as well.  
 
-### Simplfied Disaster Recovery
+### Simplified Disaster Recovery
 As tooling designed for DBAs, S4 focuses heavily on Disaster Recovery - both in terms of the necessary tools, techniques, and best-practices to help detect and alert for disasters as they unfold and in terms of tools designed to provide best-of-breed capabilities for responding to disasters when they occur. 
+
+For more information, see [Best Practices documentation for Leveraging S4 to help with Disaster Recovery](/documentation/best-practices/disaster_recovery.md)
 
 ### Performance Monitoring and Workload Insights 
 S4 Includes a number of performance diagnostics that can be used in real-time to determine exactly what is using system resources and/or causing problems at a given moment. 
@@ -149,7 +163,10 @@ Examples include:
 - **dbo.verify_database_configurations:** Make sure that all datbases on your production system are configured for best-practices usage (i.e., no auto-shrink enabled, CHECKSUM only, and no down-level compat levels) and recieve alerts if/when specified or target databases change from defined norms and/or when new, non-compliant, databases are added. 
 
 ### HA Configuration, Monitoring, and Alerting
-[Section/Documentation Pending. However, see [High Availability Configuration, Monitoring, and Management](/documentation/apis.md#high-availability-configuration,-monitoring,-and-management) APIs documentation for more insights on what's available.]
+*[Section/Documentation Pending. However, see [High Availability Configuration, Monitoring, and Management](/documentation/apis.md#high-availability-configuration,-monitoring,-and-management) APIs documentation for more insights on what's available.]*
+
+### Capacity Planning Resources 
+[Documentation Pending.]
 
 ### Utilities
 S4 was primarily built to facilitate the automation of backups, restores, and disaster recovery testing - but contains a number of utilities that can be used to make many typical administrative T-SQL Tasks easier. 
@@ -188,7 +205,7 @@ SELECT admindb.dbo.split_string('this is the string     to split', 'the', 1);
 ```
 
 
-Another, trivial, helper function provides the ability to print LONG strings (helpful when debugging dynamic SQL or other 'blobs' of text):
+Another, trivial, helper function provides the ability to print the ENTIRETY of strings longer than 4K bytes in size (helpful when debugging dynamic SQL or other 'blobs' of text):
 
 ```sql
 ------------------------------------------------------------------------
@@ -279,7 +296,9 @@ EXEC admindb.dbo.[script_logins]
 ### Tools and Templates 
 [Documentation Pending.]
 
-### Best-Practices Guidance and Documentation
+[Return to Table of Contents](#table-of-contents)
+
+## Best-Practices Guidance and Documentation
 A key goal of S4 is to enable best-practices execution in 'weaponized' form - or best-practices implementations in codified, easy-to-use, re-usable, code or modules. 
   
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]

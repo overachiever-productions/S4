@@ -30,7 +30,7 @@ General/Best-Practices References (i.e., MS docs and other associated resources)
 ## S4 Best Practices Documentation
 
 > ### :bulb: **TIP:**
->  Note that while the documentation linked below does apply explicitly to scenarios involving the use of S4 code and functionality, a HIGH DEGREE of overall/general SQL Server Best-Practices are detailed in the documentation below as well - given that S4 strives to adhere to all best-practices for working with SQL Server.
+>  Note that while the documentation linked below does apply explicitly to scenarios involving the use of S4 code and functionality, a HIGH DEGREE of overall/general SQL Server Best-Practices are detailed in the documentation below as well - given that S4 strives to adhere to ALL best-practices for working with SQL Server.
 
 References and guidance to help ensure adherence to SQL Server Best-Practices when using S4 functionality (along with guidance for making the most of S4):
 

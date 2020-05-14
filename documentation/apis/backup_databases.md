@@ -6,6 +6,8 @@
 
 ## Table of Contents
 - [Overview](#overview)
+    - [Rationale](#rationale)
+    - [Benefits of S4 Backups](#benefits-of-s4-backups)
 - [Syntax](#syntax)
 - [Remarks](#remarks) 
 - [Examples](#examples)
@@ -16,7 +18,7 @@
 
 :heavy_check_mark: Windows :o: Linux :o: Amazon RDS :grey_question: Azure
 
-**S4 CONVENTIONS:** [Advanced-Capabilities](/x/link-here), [Alerting](etc), [@PrintOnly](etc), [Backup Names](xxx), [Vectors](xx), and [Tokens](etc)
+**S4 CONVENTIONS:** [Advanced-Capabilities](#), [Alerting](#), [@PrintOnly](#), [Backup Names](#), [Vectors](#), and [{Tokens}](#)
 
 
 ### Rationale
@@ -43,7 +45,7 @@ Key Benefits Provided by S4 Backups:
     EXEC dbo.backup_databases
         @BackupType = '[ FULL | DIFF | LOG ]', 
         @DatabasesToBackup = N'[ widgets,hr,sales,etc | [ {SYSTEM} | {USER} ] | {ALL} ]', 
-        [@DatabasesToExclude = N'list,of,dbs,to,not,restore,%wildcards_allowed%', ] 
+        [@DatabasesToExclude = N'list,of, dbs,to,not,restore,%wildcards_supported%', ] 
         [@Priorities = N'higher,priority,dbs,*,lower,priority,dbs, ]
         @BackupDirectory = N'[ D:\PathTo\BackupsRoot\ | {DEFAULT} ]', 
         [@CopyToBackupDirectory = N'\\OffBoxLocation\Path\BackupsRoot\', ]
@@ -136,7 +138,7 @@ By default, once the databases in `@DatabasesToBackup` has been converted into a
 > *@AllowNonAccessibleSecondaries should ONLY be set to `1` (true) when Mirroring or Availability Groups are in use and after carefully considering what could/would happen IF execution of backups did NOT 'fire' because the databases specified by `@DatabasesToBackup` were all found to be in a state where they could NOT be backed up.*
 
 [**@Directives** `= N'optional, directives, specified, as, desired'` ]    
-Allows 'advanced' directives to be specified as part of the executed backup operation. Currently supported directives include: 
+Allows 'advanced' directives to be specified as part of the executed backup operation. Currently supported S4 directives include: 
 
 - `COPY_ONLY` - which directs the creation of `COPY_ONLY` backups (i.e., do not reset DIFF markers) - just as with 'normal' T-SQL Backup Syntax. 
 - `FILE:logical_file_name` - which directs that ONLY the `logical_file_name` specified should be backed up - vs the entire database.
