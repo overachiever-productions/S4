@@ -96,7 +96,7 @@ AS
 	@Databases = ''ALL_DATABASES'',
 	@FragmentationLow = NULL,
 	@FragmentationMedium = ''INDEX_REORGANIZE'',
-	@FragmentationHigh = ''INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE'',
+	@FragmentationHigh = ''INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE'',
 	@FragmentationLevel1 = 20,
 	@FragmentationLevel2 = 40, 
 	@MSShippedObjects = ''Y'', -- include system objects/etc.

@@ -97,7 +97,7 @@ AS
 	END; 
 
 
-	-- if we're still here, we need to dynamically output/execute dbo.script_configuration so that output is directed to a file (and copied if needed)
+	-- if we're still here, we need to dynamically output/execute dbo.script_server_configuration so that output is directed to a file (and copied if needed)
 	--		while catching and alerting on any errors or problems. 
 	DECLARE @errorDetails nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -125,9 +125,9 @@ AS
 
 	-- Set up a 'translation' of the sproc call (for execution via xp_cmdshell): 
 	DECLARE @sqlCommand varchar(MAX); 
-	SET @sqlCommand = N'EXEC admindb.dbo.script_configuration;';
+	SET @sqlCommand = N'EXEC admindb.dbo.script_server_configuration;';
 
-	DECLARE @command varchar(8000) = 'sqlcmd {0} -q "{1}" -o "{2}"';
+	DECLARE @command varchar(8000) = 'sqlcmd {0} -Q "{1}" -o "{2}"';
 
 	-- replace parameters: 
 	SET @command = REPLACE(@command, '{0}', CASE WHEN UPPER(@@SERVICENAME) = 'MSSQLSERVER' THEN '' ELSE ' -S .\' + UPPER(@@SERVICENAME) END);

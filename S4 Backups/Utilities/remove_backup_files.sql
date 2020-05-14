@@ -134,7 +134,7 @@ AS
 		RETURN 0; -- success
 	END;
 
-	IF UPPER(@Retention) LIKE 'B%' OR UPPER(@Retention) LIKE '%BACKUP%' BEGIN 
+	IF UPPER(@Retention) LIKE '%B%' OR UPPER(@Retention) LIKE '%BACKUP%' BEGIN 
 		-- Backups to be kept by # of backups NOT by timestamp
 		DECLARE @boundary int = PATINDEX(N'%[^0-9]%', @Retention)- 1;
 
