@@ -4,7 +4,7 @@
 
 	REFERENCE:
 		- License, documentation, and source code at: 
-			https://git.overachiever.net/Repository/Tree/00aeb933-08e0-466e-a815-db20aa979639
+			https://github.com/overachiever-productions/s4/
 
 	NOTES:
 		- This script will either install/deploy S4 version ##{{S4version}} or upgrade a PREVIOUSLY deployed version of S4 to ##{{S4version}}.
@@ -131,7 +131,7 @@ DECLARE @obsoleteObjects xml = CONVERT(xml, N'
     
     <entry schema="dbo" name="dba_AvailabilityGroups_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
     <entry schema="dbo" name="dba_Mirroring_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-    
+
     <entry schema="dbo" name="dba_FilterAndSendAlerts" type="P" comment="FORMER version of alert filtering.">
         <notification>
             <content>NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.</content>
@@ -190,6 +190,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
     <entry schema="dbo" name="respond_to_db_failover" type="P" comment="v6.5 refactoring (changed to dbo.process_synchronization_failover)" />
 
 	<entry schema="dbo" name="server_trace_flags" type="U" comment="v6.6 - Direct Query for Trace Flags vs delayed/table-checks." />
+
+	<entry schema="dbo" name="script_configuration" type="P" comment="v8.0 - Renamed to dbo.script_server_configuration - better alignment with scope." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -385,7 +387,7 @@ GO
 --##INCLUDE: S4 Utilities\shred_string.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\print_long_string.sql
+--##INCLUDE: S4 Utilities\print_long_string.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\get_executing_dbname.sql
@@ -429,7 +431,7 @@ GO
 --##INCLUDE: S4 Configuration\export_server_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_configuration.sql
+--##INCLUDE: S4 Configuration\script_server_configuration.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
@@ -549,23 +551,23 @@ GO
 --##INCLUDE: S4 Maintenance\Automated Log Shrinking\shrink_logfiles.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
---- Tools
+--- Additional Utilities
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Tools\normalize_text.sql
+--##INCLUDE: S4 Utilities\normalize_text.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\extract_statement.sql
+--##INCLUDE: S4 Utilities\extract_statement.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\extract_waitresource.sql
+--##INCLUDE: S4 Utilities\extract_waitresource.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\is_xml_empty.sql
+--##INCLUDE: S4 Utilities\is_xml_empty.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\refresh_code.sql
+--##INCLUDE: S4 Utilities\refresh_code.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- SQL Server Agent Jobs

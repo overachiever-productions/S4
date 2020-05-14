@@ -398,7 +398,7 @@ AS
     END;
     
     IF UPPER(@ExecutionType) IN (N'SQLCMD', N'PARTNER') BEGIN
-        SET @xpCmd = 'sqlcmd {0} -q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+        SET @xpCmd = 'sqlcmd {0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
     
         IF UPPER(@ExecutionType) = N'SQLCMD' BEGIN 
 		

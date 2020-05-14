@@ -22,7 +22,7 @@ AS
     SELECT 
         dp.name
         , OBJECT_NAME(@objectID) [object_name]
-        , perms.class_desc
+        , perms.class_desc				-- OBJECT_OR_COLUMN seems a bit ... vague for SPROCs... 
         , perms.permission_name
         , perms.state_desc
     FROM sys.database_permissions perms
