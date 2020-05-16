@@ -8,6 +8,9 @@
 - [Overview](#section-name-here)
 - [General SQL Server Best Practices](#general-sql-server-best-practices)
 - [S4 Best Practices Documentation](#s4-best-practices-documentation)
+    - [Managing SQL Server Backups with S4](/documentation/best-practices/backups.md)
+    - [Managing and Automating Regular Restore-Tests with S4](/documentation/best-practices/restores.md)
+    - [Leveraging S4 for Disaster Recovery](/documentation/best-practices/disaster_recovery.md)
 
 ## Overview
 [Links to references and guidance both for SQL Server (in general) best-practices as they related to code and features provided or touched by S4 and to documentation for best-practices when using S4 to help automate and/or manage SQL Server instances.]
@@ -15,7 +18,6 @@
 [Return to Table of Contents](#table-of-contents)
 
 ## General SQL Server Best Practices
-*[NOTE: this isn't yet even a work-in-progress; it's a place-holder...]*
 > ### :label: **NOTE:** 
 > *This section isn't even a work-in-progress yet; it's a place-holder...*
 
@@ -37,20 +39,6 @@ References and guidance to help ensure adherence to SQL Server Best-Practices wh
 - [Managing SQL Server Backups with S4](/documentation/best-practices/backups.md)
 - [Managing and Automating Regular Restore-Tests with S4](/documentation/best-practices/restores.md)
 - [Leveraging S4 for Disaster Recovery](/documentation/best-practices/disaster_recovery.md)
-
-<section style="visibility:hidden; display:none;">
-
-- [Managing SQL Server Agent Jobs with S4](/documentation/best-practices/jobs.md)
-
-</section>
-
-<section style="visibility:hidden; display:none;">
-
-## S4 Worst Practices 
-
-[Place-Holder for "don't do this" type of documentation/details for common stumbling-blocks and 'mistakes' that people might otherwise be tempted to make... ]
-
-</section>
 
 [Return to Table of Contents](#table-of-contents)
 

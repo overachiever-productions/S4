@@ -1,14 +1,16 @@
-﻿[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > dbo.apply_logs
+﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 
-## dbo.apply_logs
+[S4 Docs Home](/readme.md) > [S4 APIs](/documentation/apis.md) > dbo.apply_logs
 
-S4's dbo.apply_logs helps:
+# dbo.apply_logs
+
+S4's `dbo.apply_logs` helps:
 - Streamline and simplify SQL Server Log Shipping  
 - Simplify 'Seeding' of Synchronized (AG or Mirrored) Databases.
 
 > **NOTE:** *dbo.apply_logs relies VERY heavily upon S4 Conventions - to the point where this stored procedure can only be used in conjunction with backups created  by S4's dbo.backup_databases.* 
 
-### Table of Contents <a name="table-of-contents"></a>
+### Table of Contents 
 - [Application](#application)
 - [Syntax](#syntax)
 - [Remarks](#remarks)
@@ -24,7 +26,7 @@ S4's dbo.apply_logs helps:
 - [See Also](#see-also)
 
 
-### Application <a name="application"></a>
+### Application 
 
 | Platforms | SQL Server Versions | 
 | :-------- | :-----------------  |
@@ -36,7 +38,7 @@ S4's dbo.apply_logs helps:
 
 [Return to Table of Contents](#table-of-contents)
 
-### Syntax <a name="syntax"></a>
+### Syntax 
 ```sql
 EXEC admindb.dbo.[apply_logs]
     @SourceDatabases = N'list,of,db-names,to,apply-logs-against', 
@@ -114,7 +116,7 @@ DEFAULT = 0;
 
 [Return to Table of Contents](#table-of-contents)
 
-### Remarks <a name="remarks"></a>
+### Remarks 
 #### Intended Usage Scenarios 
 S4 Apply Logs functionality is intented to be used in conjunction with both: 
 - **dbo.backup_databases** - which creates and stores backups according to naming conventions used by S4 functionality)
@@ -148,7 +150,7 @@ As of SQL Server 2012 and above, the use of Software Assurance (SA) licensing an
 
 Log shipping involves a moderate amount of complexity. Backups on/from the primary database have to be happening at regular/scheduled intervals, T-Log backup files will usually need to be moved from one server to another, and the 'application' of logs is therefore dependent upon multiple processes to work in conjunction and without any 'hiccups' to consistently remain effective. 
 
-dbo.apply_logs attempts to account for this by making 'apply' operations idempotent (thanks to how SQL Server Log files can be applied multiple times without problems/issues) and by enabling users of dbo.apply_logs to set up alerts/notifications for different types or instances of failure. Consequently, if there is a slight to moderate degree of 'inconsistency' or a few too many 'hiccups' with the processes involved in getting files or applying files to the secondary, you may want to (after verifying that T-Log backups are happening correctly on your primary and are not being compromised), configure executions of dbo.apply_logs to only allow if/when a certain amount of time has passed since the LAST successful application of logs - via the **@AlertOnStaleOnly** parameter (in conjunction with the **@StaleAlertThreshold** parameter to specify the amount of time tolerated before a target database is considered stale (out of sync) or potentially in danger of violating SLAs).
+`dbo.apply_logs` attempts to account for this by making 'apply' operations idempotent (thanks to how SQL Server Log files can be applied multiple times without problems/issues) and by enabling users of dbo.apply_logs to set up alerts/notifications for different types or instances of failure. Consequently, if there is a slight to moderate degree of 'inconsistency' or a few too many 'hiccups' with the processes involved in getting files or applying files to the secondary, you may want to (after verifying that T-Log backups are happening correctly on your primary and are not being compromised), configure executions of dbo.apply_logs to only allow if/when a certain amount of time has passed since the LAST successful application of logs - via the **@AlertOnStaleOnly** parameter (in conjunction with the **@StaleAlertThreshold** parameter to specify the amount of time tolerated before a target database is considered stale (out of sync) or potentially in danger of violating SLAs).
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -353,15 +355,11 @@ With the code configured above, a SQL Server Agent job could be created on the '
 
 [Return to Table of Contents](#table-of-contents)
 
-### See Also <a name="see-also"></a>
+### See Also
 - [TODO:] [Best-Practices for RESTORE operations]()
-- [dbo.backup_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2Fbackup_databases.md)
-- [dbo.restore_databases](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2Fapis%2Frestore_databases.md)
+- [dbo.backup_databases](/documentation/apis/backup_databases.md)
+- [dbo.restore_databases](/documentation/apis/restore_databases.md)
 
 [Return to Table of Contents](#table-of-contents)
 
-[Return to README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md)
-
-<style>
-    div.stub { display: none; }
-</style>
+[Return to README](/readme.md)
