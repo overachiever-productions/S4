@@ -78,15 +78,6 @@
 - **dbo.process_synchronization_failover** - Stored procedure executed when Mirroring or AG failover occurs (i.e., code defined for execution via execution of `dbo.add_failover_processing`).
 - **dbo.verify_synchronization_setup** - 'Checklist' to ensure that HA configurations are correctly defined and setup for synchronization (Mirroring or AGs).
 
-<section style="visibility:hidden; display:none;">
-### Availability Group and Mirroring Management Tools
-- **dbo.seed_synchronization** - [not yet implemented.]
-- **dbo.execute_manual_failover** - [not yet implemented.]
-- **dbo.suspend_synchronization** - [not yet implemented.]
-- **dbo.resume_synchronization** - [not yet implemented.]
-
-</section>
-
 ### Server Synchronization and Monitoring
 - **dbo.compare_jobs** - Diagnostic which can be used to report on high-level diffferences between jobs on `PARTNER` servers - or to report on low-level details about a specific/individual job. (Useful when troubleshooting job-synchronization alerts/problems.)
 - **dbo.verify_server_synchronization** - Ensure that logins, Trace Flags, Configuration Settings, and other CORE server-level details are identical between `PARTNER` servers in a Mirroring or AG configuration.
@@ -153,14 +144,5 @@ In addition to native T-SQL functionality and utilities (lighter-weight scripts 
 - **SQL Server Replication Schema Parser** - Revamp/rewrite of [SQL Server Replication Schema Options Parser](https://www.sqlserveraudits.com/tools/replication-schema-options-parser) (Rewrite Pending... )
 
 [Return to Table of Contents](#table-of-contents)
-
-<section style="visibility:hidden; display:none;">
-## Templates 
-[note about templates - and their scope.]
-- TDE Templates
-- Server Certificate Templates
-
-[Return to Table of Contents](#table-of-contents)
-</section>
 
 [S4 Docs Home](/readme.md)

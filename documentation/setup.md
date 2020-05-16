@@ -24,7 +24,8 @@ S4 is primarily designed for SQL Server 2012+ instances - though many (but not a
 
 S4 is also primarily designed to work on NON Express-Edition (i.e., Web Edition and 'above') instances of SQL Server running in 'normal' Windows environments. It has not yet been actively targetted against Linux Instance, Azure, and some functionality provided by S4 will, obviously, not work on AWS RDS Instances. 
 
-Effort is currently under way (but is a work in progress) to define full/known version-support details per each documented S4 function/method. For example, see the `APPLIES TO` details in the `Overview` section of the [API documentation for `dbo.backup_databases`](/documentation/apis/backup_databases.md).
+> ### :bulb: **TIP:**
+> Effort is currently under way (but is a work in progress) to define full/known version-support details per each documented S4 function/method. For example, see the `APPLIES TO` details in the `Overview` section of the [API documentation for `dbo.backup_databases`](/documentation/apis/backup_databases.md).
 
 ## Step-By-Step Installation Instructions
 To deploy S4:
@@ -114,25 +115,6 @@ To remove S4:
 
 > ### :bulb: **TIP:**
 > *At this point, if you ever want to re-install, simply re-run the original setup instructions outlined above.*
-
-<section style="visibility:hidden; display:none;">
-
-## Installation via PowerShell
-
-throw this into the toc:
-- [Installation via PowerShell](#installation-via-powershell)
-
-
-[**Documentation Pending.** But, basically, just grab [/s4/releases/latest/admindb_latest.sql](https://github.com/overachiever-productions/s4/releases/latest) via `Invoke-WebRequest`, then run `Invoke-SqlCmd` against the downloaded file, and then run `Invoke-SqlCmd -Query "EXEC admindb.dbo.enable_advanced_capabilities;"` ... done.]
-
-
-```powershell
-$creds = Get-Credentials "Please provide SysAdmin creds against your SQL Server...";
-Download-Content "https://github.com/overachieverproductions/s4/releases/latest/admindb_latest.sql" > $admindbLatest;
-Invoke-SqlCmd -QueryFile $admindbLatest -IgnoreVariables -Credentials $creds;
-Invoke-SqlCmd -Query "EXEC admindb.dbo.enable_advanced_capabilities;" -Credentials $creds;
-```
-</section>
 
 [Return to Table of Contents](#table-of-contents)
 

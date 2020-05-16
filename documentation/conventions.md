@@ -135,27 +135,6 @@ Reasons:
 ### HA Job Synchronization Conventions
 *[DOCUMENTATION PENDING.]*
 
-<section style="visibility:hidden; display:none;">
-    - Definition of 'Synchronized' DB - i.e., AG or Mirrored DB. 
-    - SQL Server Ageng Job Conventions (no explanation)
-        - if db-name = job-category-name-with-same-name-as-db, auto-failover. 
-        - if job-category-name = 'disabled' ... job is disabled. 
-        
-    - Alerts/Monitoring... 
-        checks to ensure compliance with the above. 
-        and ... to make sure definitions are the same. 
-            RATIONALE for why we want/need the details to be the same... (imagine change to schedule or something key like ... biz logic)
-        
-    - RATIONALE
-        a. SIMPLE/OBVIOUS: failover - i.e., which server should the job run on? 
-            server-level jobs + backups
-            db-level / batch-jobs - convention of category-name
-            
-        b. NOT-OBVIOUS (disasters possible)
-            - disabled... 
-            
-</section>
-
 ### S4 Version History
 S4 is designed to be updated regularly. An overview of the installation history - along within information about the most recently installed version of S4 on a given SQL Server instance can be retrieved by running the following query: 
 
@@ -184,8 +163,7 @@ Given that a large number of S4 routines are aimed at automation of processes th
 *[Examples of how/why.]*
 
 ### `<Vectors>`
-[
-A number of S4 routines need to allow-for and/or specify 'time-spans' or other 'vectored differences from now' values - for things like retention rates (for older backups), how frequently to run/poll for certain types of automation checks, and so on. 
+[A number of S4 routines need to allow-for and/or specify 'time-spans' or other 'vectored differences from now' values - for things like retention rates (for older backups), how frequently to run/poll for certain types of automation checks, and so on. 
 
 As such, rather than defining parameters for these needs as something along the lines of `@RetentionHours` which thereby limits retention 'inputs' or values to hours (which probably works just fine in most scenarios) or dropping to something like `@RetentionMinutes` - which provides better flexibility - but at the 'cost' of incurring *60 multipliers to all values, S4 commonly makes use of `<vectors>` or 'natural-language' time-span specifiers. 
 
@@ -197,24 +175,12 @@ For example, in the case of specifying Retention (i.e., how long backups should 
 - `N'5days'`, `N'5 days'`, `N'5d'`
 and... so on. 
 
-This convention makes it MUCH easier to spot, at a glance, how 'long' or how 'frequently' something should be run or removed, and so on - by rendering the values in natural (English-Only) language. 
+This convention makes it MUCH easier to spot, at a glance, how 'long' or how 'frequently' something should be run or removed, and so on - by rendering the values in natural (English-Only) language. ]
 
 #### N Backups as an Exception
 There is one 'exception' to `<vectors>` being time-related - which is that for `dbo.backup_databases`' `@Retention` paramter an additional 'class' or 'type' of natural language inputs can be specified: the number of backups to keep. 
 
 For example, if I'm creating a set of automation routines (i.e., jobs) for creating backups and do NOT wish to keep FULL backups of my `Widgets` database for a specific time-span or period-of-time but wish, instead, to only keep the most-recent 2x backups, I would specify the `@Retention` value as `N'2b'` or `N'2 backups'` instead of something like `N'2 days'`. 
-
-<section style="visibility:hidden; display:none;">
-[NOTE TO SELF: vectors doesn't quite work with something like 3b - that's more of a range/... something]
-
-[... durations or ranges time (time-spans?) are pain in parameters... ]
-[could name things like retention or how far back to check something as @parameterNameMinutes or... whatever... ]
-[instead ... S4 uses configuration of Xn - where x = int... and n is a signifier...  i.e., 4h ... 2d and or... 2b[ackups] ... ]
-</section>
-
-
-]
-
 
 ### {TOKENS}
 [
@@ -273,18 +239,6 @@ PLACE HOLDER:
 (i.e., the above 2x 'details' are the rationale for why 'advanced error handling' exists and is implemented the way it is.)
 
 - Conventions around enabling/disabling - i.e., xp_cmdshell and some of the info defined in the setup.md documentation + links to the 3x sprocs defined for advanced capabilities review/management.
-
-<section style="visibility:hidden; display:none;" meta="this stuff is OLD. just verify i didn't drop something useful in the info/notes below then drop/delete">
-#### TRY / CATCH Fails to Catch All Exceptions in SQL Server
-[demonstrate this by means of an example - e.g., backup to a drive that doesn't exist... and try/catch... then show the output... of F5/execution.]
-
-[To get around this, have to enable xp_cmdshell - to let us 'shell out' to the SQL Server's own shell and run sqlcmd with the command we want to run... so that we can capture all output/details as needed.] 
-
-[example of dbo.execute_command (same backup statement as above - but passed in as a command) - and show the output - i.e., we TRAPPED the error (with full details).]
-
-[NOTE about how all of this is ... yeah, a pain, but there's no other way. Then... xp_cmdshell is native SQL Server and just fine.]
-</section>
-
 ]
 
 ### PROJECT or RETURN Modules
@@ -342,11 +296,6 @@ To implement the `RETURN` aspect of this convention you must do the following:
 ### Database Mapping Redirects
 *[DOCUMENTATION PENDING.]*
 
-<section style="visibility:hidden; display:none;">
-NOTE TO SELF: this includes 'mappings' for things like extraction of wait-resources and so on - i.e., where we've captured data within ONE environment, and want to 'repoint it' to another environment (e.g., captured waits against db [xyz] in production, and want to see the exact waits are/would be against a RESTORED backup of [xyz] (restored as [xyz_2] in a dev environment, etc.))
-
-</section>
-
 ### @Modes
 A number of S4 stored procedures and functions (especially those that are `SELECT` or 'query' heavy) leverage the convention of using a `@Mode' (or other functionally similar parameter - but with a different name) to enable specify different processing outcomes or excution processing rules. 
 
@@ -356,32 +305,15 @@ In a similar fashion, `dbo.script_login` (and associated/similar functions) prov
 
 Technically speaking, the @Modes convention is a VERY light-weight convention with little impact (whether you know about this convention or not won't radically impact your use of S4 one way or the other).
 
-<section style="visibility:hidden; display:none;">
-[the whole idea of certain 'overloads' for many kinds of sprocs... ]
-[generally, this kind of thing is a usually a bad idea(TM) in SQL Server - given how SQL Serer doesn't do great with code-reuse and how it violates separation of concerns and so on... ]
-[but here... helps with DRY and helps keep code-base small - and we're NEVER deailing with huge amounts of data and/or super-complex predicates/queries that haven't been tested/optimized prior to release.]
-</section>
-
 ### Domains
 [Effectively an extension of `@Modes` - in the sense of easily query-able meta-data defining the domain ('full-list of options') for a given `@Mode` (or `@Mode-Like`) parameter - to make chosing between options that much easier while 'in the trenches'.]
 
 ### Lists
 *[DOCUMENTATION PENDING.]*
 
-<section style="visibility:hidden; display:none;">
-[serialized arrays?]
-[comma separated stuff... can include * ... when defining priorities and such... ]
-</section>
-
 ## Coding Conventions 
 
 ### Procedure Naming
-
-<section style="visibility:hidden; display:none;"> 
-### Procedure Naming
-[borrows from PS... with the idea of verb-noun[phrase]]... any sprod or whatever that 'does' someting starts with verb of what it does, with a description of what it's operating against or providing... 
-</section>
-
 
 ### HA Coding Conventions
 
