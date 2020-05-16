@@ -1,10 +1,22 @@
 /*
 
-
 	vNEXT: 
-		In terms of 'creating' the #translated_metrics table... 
-			an... odd option would be to SELECT * FROM bigProjectionLeadingUpToTranslatedMetrics WHERE 1 = 0 ... INTO #someTable - and then, in that same DYNAMIC operation, run "SELECT * FROM #someTable" into
-				dbo.
+		look at potentially impossing optional @Thresholds into play for disks. 
+			e.g., let's say that the output of the sample execution below shows that 
+				drive D is hitting 12K IOPs and doing 898MB/sec... 
+				it'd be NICE to put in something like: 
+					@ThresholdsForD = N'500MB and 7000 IOPs'
+						obviously... that's a LAME way of specifying those values ... FIGURING OUT HOW TO specify those inputs would, hands-down, be the hardest part here
+							but... let's assume i use xml or something ... 
+
+						Point is, it'd be nice to run this wil NO thresholds/limits and see 'real' perf
+							then run with caps/limits specified - to see what those artificial limits would do in terms of how frequently (what percent) of the time we'd be in the 98+ range
+										and... at that point in a 100%+ range as well
+											that way... if we ran the numbers with the thresholds listed above and saw that we were running .2% of the time at 99%+ and .1% of the time at 100%+ 
+												we'd know we could safely drop down to 500MB and 7K IOPs
+													whereas... if those numbers were 8% of the time and 5% of the time... we'd know that this would cause major issues.... 
+
+
 
 
 	SAMPLE EXECUTION: 
@@ -29,6 +41,8 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	SET @TargetDisks = ISNULL(NULLIF(@TargetDisks, N''), N'{ALL}');
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @targetObjectID int; 
@@ -117,7 +131,6 @@ AS
 	SET 
 		[simplified] = REPLACE(REPLACE(drive, LEFT(drive,  CHARINDEX(N' ', drive)), N''), N':', N'');
 
-
 	-- Implement drive filtering: 
 	IF UPPER(@TargetDisks) <> N'{ALL}' BEGIN 
 
@@ -183,8 +196,8 @@ AS
 		{IOPS}
 		{Latency},
 		[PeakLatency]
-	--INTO 
-	--	##translated_metrics
+	INTO 
+		##translated_metrics
 	FROM 
 		[aggregated]; ';
 
@@ -352,8 +365,9 @@ AS
 
 	--EXEC admindb.dbo.[print_long_string] @statement;
 	
-	-- vNEXT: I'd much rather dynamically derive/define and then run/execute (the creation of) #translated_metrics - than... use the loopy-doopy cursor below... 
-	--			that said... the cursor works just fine. 
+	-- vNEXT: rather than playing with ##global temp tables... I think the following approach would be a better option - it'll need some decent help though
+	--		not JUST in terms of creating the T-SQL needed to create the #translated_metrics table... but... also in terms of the INSERT INTO (will, have, to, specify, column, names) angle of things
+	--			OTEHRWISE, if I TRY to use 'shortcut syntax' I run the risk of things getting garbled on the way in... 
 	--DECLARE @tempTableDefinition nvarchar(MAX); 
 	--EXEC [admindb].dbo.project_query_to_table_definition
 	--	@Command = @sql, 
@@ -365,48 +379,19 @@ AS
 	--PRINT @tempTableDefinition;
 
 
-	CREATE TABLE #translated_metrics (
-		[timestamp] datetime NULL,
-		[% CPU] decimal(10,2) NULL,
-		[PLE] int NULL,
-		[batches/second] decimal(22,2) NULL,
-		
-		[PeakLatency] decimal(23,2) NULL
-	);
-
-	DECLARE @simplifiedName sysname;
-	DECLARE [driver] CURSOR LOCAL FAST_FORWARD FOR 
-	SELECT [simplified] FROM @drives ORDER BY [row_id];
-	
-	OPEN [driver];
-	FETCH NEXT FROM [driver] INTO @simplifiedName;
-	
-	WHILE @@FETCH_STATUS = 0 BEGIN
-	
-		IF @simplifiedName = N'_Total' BEGIN 
-				
-			SET @sql = 'ALTER TABLE [#translated_metrics] ADD [MB Throughput.' + @simplifiedName + N'] decimal(20,2) NULL; ';
-			SET @sql = @sql + @crlf + 'ALTER TABLE [#translated_metrics] ADD [IOPs.' + @simplifiedName + N'] decimal(23,2) NULL; ';
-			
-		  END; 
-		ELSE BEGIN 
-
-			SET @sql = 'ALTER TABLE [#translated_metrics] ADD [MB Throughput.' + @simplifiedName + N'] decimal(20,2) NULL; ';
-			SET @sql = @sql + @crlf + 'ALTER TABLE [#translated_metrics] ADD [IOPs.' + @simplifiedName + N'] decimal(23,2) NULL; ';
-			SET @sql = @sql + @crlf + 'ALTER TABLE [#translated_metrics] ADD [Latency.' + @simplifiedName + N'] decimal(23,2) NULL; ';
-
-		END;
-	
-		EXEC sp_executesql @sql;
-
-		FETCH NEXT FROM [driver] INTO @simplifiedName;
+	IF OBJECT_ID('tempdb..##translated_metrics') IS NOT NULL BEGIN
+		DROP TABLE ##translated_metrics;
 	END;
-	
-	CLOSE [driver];
-	DEALLOCATE [driver];
 
-	INSERT INTO [#translated_metrics] 
 	EXEC sp_executesql @statement;
+
+	-------------------------------------------------------------------------------------------------------------------------
+	-- convert ##translated_metrics to #translated_metrics: 
+	IF OBJECT_ID('tempdb..##translated_metrics') IS NOT NULL BEGIN
+		SELECT * INTO #translated_metrics FROM ##translated_metrics;
+
+		DROP TABLE ##translated_metrics;
+	END;
 
 	-------------------------------------------------------------------------------------------------------------------------
 	-- begin processing/assessing outputs: 
@@ -435,18 +420,18 @@ AS
 		@maxIOPs = MAX([IOPs.{driveName}]), 
 		@maxThroughput = MAX([MB Throughput.{driveName}])
 	FROM 
-		[#translated_metrics]; '
+		[#translated_metrics]; ';
 
 	DECLARE @aggregateIOPsTemplate nvarchar(MAX) = N'WITH partitioned AS ( 
 
 		SELECT 
-			CASE WHEN [IOPs.{driveName}] < (@maxIOPs * .1) THEN 1 ELSE 0 END [< 10% usage],
-			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .1)) AND ([IOPs.{driveName}] <= (@maxIOPs * .2)) THEN 1 ELSE 0 END [10-20% usage],
-			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .2)) AND ([IOPs.{driveName}] <= (@maxIOPs * .4)) THEN 1 ELSE 0 END [20-40% usage], 
-			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .4)) AND ([IOPs.{driveName}] <= (@maxIOPs * .6)) THEN 1 ELSE 0 END [40-60% usage], 
-			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .6)) AND ([IOPs.{driveName}] <= (@maxIOPs * .9)) THEN 1 ELSE 0 END [60-90% usage],
+			CASE WHEN  [IOPs.{driveName}] < (@maxIOPs * .1) THEN 1 ELSE 0 END [< 10% usage],
+			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .1)) AND  ([IOPs.{driveName}] <= (@maxIOPs * .2)) THEN 1 ELSE 0 END [10-20% usage],
+			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .2)) AND  ([IOPs.{driveName}] <= (@maxIOPs * .4)) THEN 1 ELSE 0 END [20-40% usage], 
+			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .4)) AND  ([IOPs.{driveName}] <= (@maxIOPs * .6)) THEN 1 ELSE 0 END [40-60% usage], 
+			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .6)) AND  ([IOPs.{driveName}] <= (@maxIOPs * .9)) THEN 1 ELSE 0 END [60-90% usage],
 			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .91)) AND ([IOPs.{driveName}] <= (@maxIOps * .98)) THEN 1 ELSE 0 END [90-98% usage],
-			CASE WHEN ([IOPs.{driveName}] > @maxIOPs * .98) THEN 1 ELSE 0 END [99+% usage]
+			CASE WHEN ([IOPs.{driveName}] > (@maxIOPs * .98)) THEN 1 ELSE 0 END [99+% usage]
 
 		FROM 
 			[#translated_metrics]
@@ -466,7 +451,6 @@ AS
 			[partitioned]
 	) 
 
-
 	SELECT
 		@serverName [server], 
 		N''IOPs'' [metric_type], 
@@ -485,13 +469,13 @@ AS
 	DECLARE @aggregateMBsTemplate nvarchar(MAX) = N'WITH partitioned AS ( 
 
 		SELECT 
-			CASE WHEN [MB Throughput.{driveName}] < (@maxThroughput * .1) THEN 1 ELSE 0 END [< 10% usage],
-			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .1)) AND ([MB Throughput.{driveName}] <= (@maxThroughput * .2)) THEN 1 ELSE 0 END [10-20% usage],
-			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .2)) AND ([MB Throughput.{driveName}] <= (@maxThroughput * .4)) THEN 1 ELSE 0 END [20-40% usage], 
-			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .4)) AND ([MB Throughput.{driveName}] <= (@maxThroughput * .6)) THEN 1 ELSE 0 END [40-60% usage], 
-			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .6)) AND ([MB Throughput.{driveName}] <= (@maxThroughput * .9)) THEN 1 ELSE 0 END [60-90% usage],
+			CASE WHEN  [MB Throughput.{driveName}] < (@maxThroughput * .1) THEN 1 ELSE 0 END [< 10% usage],
+			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .1)) AND  ([MB Throughput.{driveName}] <= (@maxThroughput * .2)) THEN 1 ELSE 0 END [10-20% usage],
+			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .2)) AND  ([MB Throughput.{driveName}] <= (@maxThroughput * .4)) THEN 1 ELSE 0 END [20-40% usage], 
+			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .4)) AND  ([MB Throughput.{driveName}] <= (@maxThroughput * .6)) THEN 1 ELSE 0 END [40-60% usage], 
+			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .6)) AND  ([MB Throughput.{driveName}] <= (@maxThroughput * .9)) THEN 1 ELSE 0 END [60-90% usage],
 			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .91)) AND ([MB Throughput.{driveName}] <= (@maxThroughput * .98)) THEN 1 ELSE 0 END [90-98% usage],
-			CASE WHEN ([MB Throughput.{driveName}] > @maxThroughput * .98) THEN 1 ELSE 0 END [99+% usage]
+			CASE WHEN ([MB Throughput.{driveName}] > (@maxThroughput * .98)) THEN 1 ELSE 0 END [99+% usage]
 
 		FROM 
 			[#translated_metrics]
@@ -532,12 +516,11 @@ AS
 
 	DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
-		[result]
+		[simplified]
 	FROM 
-		[admindb].dbo.[split_string](@TargetDisks, N',', 1)
+		@drives
 	ORDER BY 
 		[row_id];
-
 
 	OPEN [walker];
 	FETCH NEXT FROM [walker] INTO @driveName;
@@ -552,7 +535,6 @@ AS
 			@totalRows = @totalRows OUTPUT, 
 			@maxThroughput = @maxThroughput OUTPUT, 
 			@maxIOPs = @maxIOPs OUTPUT; 
-
 
 		SET @sql = REPLACE(@aggregateIOPsTemplate,  N'{driveName}', @driveName); 
 
