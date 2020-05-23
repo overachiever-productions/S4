@@ -61,9 +61,9 @@
 - [Step-by-Step Installation Instructions and FAQs](/documentation/setup.md#step-by-step-installation-instructions)
 - [Enabling Advanced S4 Features](/documetation/setup.md#enabling-advanced-S4-features) 
 - [Common Questions and Concerns about enabling xp_cmdshell](/documentation/setup.md#common-questions-and-concerns-about-enabling-xp_cmdshell)
-- [Keeping S4 Updated](/documenation/setup.md#updating-S4)
-- [Removing S4](/documenation/setup.md#removing-S4)
-- [Installation via PowerShell](/documenation/setup.md#installation-via-powershell)
+- [Keeping S4 Updated](/documentation/setup.md#updating-S4)
+- [Removing S4](/documentation/setup.md#removing-S4)
+- [Installation via PowerShell](/documentation/setup.md#installation-via-powershell)
 
 [Return to Table of Contents](#table-of-contents)
 
