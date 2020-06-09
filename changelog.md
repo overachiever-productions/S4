@@ -1,6 +1,25 @@
-![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
+﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 
 # Change Log
+
+## [8.1.3282.1] - 2020-06-08
+
+### Added 
+- Source/Target migration-generation templates for moving and/or upgrading SQL Server databases.
+- Capacitity Planning Analysis/Reporting sprocs: `dbo.report_io_percent_of_percent_load` and `dbo.report_cpu_percent_of_percent_load` - providing extrapolated usage/planning metrics.
+- Linguist Directives - to 'point' github at using T-SQL as repo language (instead of MySQL).
+
+
+### Fixed 
+- Cleaned-up/Fixed documentation links. 
+- Bug with IO metrics analysis/calculations (Capacity Planning).
+- Bug in `dbo.export_server_configuration` - update to internal/source naming calls. 
+- MAJOR fix to `dbo.script_logins` - to address problems with servers having > 10K logins hitting 'buffer' overloads (and `PRINT`ing blank output).
+- Bug-Fixes for dbo.restore_databases - to address databases with underscores in names and other problems.
+
+### Changed
+- Additional cleanup/re-organization of Utilities vs Tools + migration of some more commonly-used 'utility-like' routines into Common/Internal.
+
 
 ## [8.0.3247.1] - 2020-05-05
 
@@ -24,7 +43,6 @@
 - Initial introduction of `dbo.configure_tempdb` for IaC configurations - along with internal helpers for REMOVAL of 'surplus' tempdb data files. 
 - Addition of `dbo.refresh_code` as simplified 'wrapper' for executing 'all' against `sp_refreshview` and `sp_refreshsqlmodule`. 
 
- 
 ### Changed
 - `dbo.create_sync_check_jobs` now creates all sync-check jobs as `Disabled`. 
 
