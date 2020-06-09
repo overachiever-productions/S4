@@ -91,7 +91,7 @@ AS
 	IF @PrintOnly = 1 BEGIN 
 		
 		-- just execute the sproc that prints info to the screen: 
-		EXEC dbo.script_configuration;
+		EXEC dbo.script_server_configuration;
 
 		RETURN 0;
 	END; 
