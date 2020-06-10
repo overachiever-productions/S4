@@ -512,16 +512,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Migration\verify_backup_execution.sql
+--##INCLUDE: S4 Migration\script_sourcedb_migration_template.sql
 
 -----------------------------------
---##INCLUDE: S4 Migration\
-
------------------------------------
---##INCLUDE: S4 Monitoring\script_sourcedb_migration_template.sql
-
------------------------------------
---##INCLUDE: S4 Monitoring\script_targetdb_migration_template.sql
+--##INCLUDE: S4 Migration\script_targetdb_migration_template.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Monitoring
