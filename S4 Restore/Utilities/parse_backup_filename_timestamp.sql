@@ -35,19 +35,23 @@ AS
 			CAST([result] AS sysname)
 		FROM 
 			dbo.[split_string](@filename, N'_', 1)
+
+		DECLARE @count int = (SELECT COUNT(*) FROM @parts);
     	
 		DECLARE @date sysname = N'';
 		DECLARE @time sysname;
 		SELECT 
-			@date = @date + file_part + CASE WHEN [row_id] = 6 THEN '' ELSE '-' END
+			--@date = @date + file_part + CASE WHEN [row_id] = 6 THEN '' ELSE '-' END
+			@date = @date + file_part + CASE WHEN [row_id] = (@count - 2) THEN '' ELSE '-' END
 		FROM 
 			@parts
 		WHERE 
-			[row_id] IN (4,5,6) 
+			--[row_id] IN (4,5,6) 
+			[row_id] IN ((@count - 4), (@count - 3), (@count - 2))
 		ORDER BY 
 			[row_id];
 
-		SELECT @time = file_part FROM @parts WHERE [row_id] = 7;
+		SELECT @time = file_part FROM @parts WHERE [row_id] = (@count - 1);  -- 7
 		SET @time = LEFT(@time, 2) + N':' + SUBSTRING(@time, 3, 2) + N':' + RIGHT(@time, 2);
     	
     	SET @datestring = @date + N' ' + @time;

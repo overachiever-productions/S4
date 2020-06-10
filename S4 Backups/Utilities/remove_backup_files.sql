@@ -41,7 +41,7 @@ IF OBJECT_ID('[dbo].[remove_backup_files]','P') IS NOT NULL
 GO
 
 CREATE PROC [dbo].[remove_backup_files] 
-	@BackupType							sysname,									-- { ALL|FULL|DIFF|LOG }
+	@BackupType							sysname,									-- { {ALL} | FULL|DIFF|LOG }
 	@DatabasesToProcess					nvarchar(1000),								-- { {READ_FROM_FILESYSTEM} | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000) = N'{DEFAULT}',				-- { path_to_backups }
@@ -115,9 +115,8 @@ AS
 		RETURN -6;
 	END;
 
-	IF UPPER(@BackupType) NOT IN ('FULL', 'DIFF', 'LOG', 'ALL') BEGIN;
-		PRINT 'Usage: @BackupType = FULL|DIFF|LOG';
-		RAISERROR('Invalid @BackupType Specified.', 16, 1);
+	IF UPPER(@BackupType) NOT IN ('FULL', 'DIFF', 'LOG', '{ALL}') BEGIN;
+		RAISERROR('Invalid @BackupType Specified. Allowable values are { {ALL} |  FULL | DIFF | LOG }.', 16, 1);
 
 		RETURN -7;
 	END;
@@ -199,7 +198,7 @@ AS
 		RAISERROR('Invalid @TargetDirectory specified - either the path does not exist, or SQL Server''s Service Account does not have permissions to access the specified directory.', 16, 1);
 		RETURN -10;
 	END
-	
+
 	-----------------------------------------------------------------------------
 	SET @Output = NULL;
 
@@ -208,7 +207,7 @@ AS
 	IF @BackupType = N'LOG'
 		SET @excludeSimple = 1;
 
-	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	-- Replace {READ_FROM_FILESYSTEM} with a list of DBs to process in @TargetDirectory:
 	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
@@ -232,12 +231,13 @@ AS
 		ORDER BY 
 			row_id;
 
-		SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
+		IF LEN(@serialized) > 1
+			SET @serialized = LEFT(@serialized, LEN(@serialized) - 1);
 
-        SET @databases = NULL;
-		EXEC dbo.load_backup_database_names
-			@TargetDirectory = @TargetDirectory, 
-			@SerializedOutput = @databases OUTPUT;
+		IF NULLIF(@serialized, N'') IS NULL BEGIN 
+			RAISERROR(N'@TargetDatabases was set to {READ_FROM_FILESYSTEM} but the path ''%s'' specified by @TargetDirectory contained no sub-directories (that could be treated as locations for database backups).', 16, 1, @TargetDirectory);
+			RETURN -20;
+		END;
 
 		SET @DatabasesToProcess = REPLACE(@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
@@ -338,7 +338,7 @@ AS
 			-- Remove non-matching files/entries:
 			DELETE FROM @files WHERE isfile = 0; -- remove directories.
 
-			IF @BackupType IN ('LOG', 'ALL') BEGIN
+			IF @BackupType IN ('LOG', '{ALL}') BEGIN
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)
 					id, 
@@ -351,12 +351,12 @@ AS
 				ORDER BY 
 					id DESC;
 
-				IF @BackupType != 'ALL' BEGIN
-					DELETE FROM @files WHERE subdirectory NOT LIKE '%.trn';  -- if we're NOT doing all, then remove DIFF and FULL backups... 
+				IF @BackupType != '{ALL}' BEGIN
+					DELETE FROM @files WHERE subdirectory NOT LIKE '%.trn';  -- if we're NOT doing {ALL}, then remove DIFF and FULL backups... 
 				END;
 			END;
 
-			IF @BackupType IN ('FULL', 'ALL') BEGIN
+			IF @BackupType IN ('FULL', '{ALL}') BEGIN
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)
 					id, 
@@ -369,12 +369,12 @@ AS
 				ORDER BY 
 					id DESC;
 
-				IF @BackupType != 'ALL' BEGIN 
+				IF @BackupType != '{ALL}' BEGIN 
 					DELETE FROM @files WHERE subdirectory NOT LIKE 'FULL%.bak'; -- if we're NOT doing all, then remove all non-FULL backups...  
 				END
 			END;
 
-			IF @BackupType IN ('DIFF', 'ALL') BEGIN
+			IF @BackupType IN ('DIFF', '{ALL}') BEGIN
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)
 					id, 
@@ -387,7 +387,7 @@ AS
 				ORDER BY 
 					id DESC;
 
-					IF @BackupType != 'ALL' BEGIN 
+					IF @BackupType != '{ALL}' BEGIN 
 						DELETE FROM @files WHERE subdirectory NOT LIKE 'DIFF%.bak'; -- if we're NOT doing all, the remove non-DIFFs so they won't be nuked.
 					END
 			END;
@@ -448,7 +448,7 @@ AS
 		  END;
 		ELSE BEGIN -- Any backups older than @RetentionCutoffTime are removed. 
 
-			IF @BackupType IN ('LOG', 'ALL') BEGIN;
+			IF @BackupType IN ('LOG', '{ALL}') BEGIN;
 			
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
 
@@ -478,7 +478,7 @@ AS
 				END
 			END
 
-			IF @BackupType IN ('FULL', 'DIFF', 'ALL') BEGIN;
+			IF @BackupType IN ('FULL', 'DIFF', '{ALL}') BEGIN;
 
 				-- start by clearing any previous values:
 				DELETE FROM @files;

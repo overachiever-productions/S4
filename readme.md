@@ -6,11 +6,11 @@
 - [License](#license)
 - [Change Log](/changelog.md)
 - [Installing S4](#installing-s4)
-    - [Step-by-Step Installation Instructions and FAQs](/documenation/setup.md#step-by-step-installation-instructions)
-    - [Enabling Advanced S4 Features](/documenation/setup.md#enabling-advanced-S4-features) 
-    - [Common Questions and Concerns about enabling xp_cmdshell](/documenation/setup.md#common-questions-and-concerns-about-enabling-xp_cmdshell)
-    - [Keeping S4 Updated](/documenation/setup.md#updating-S4)
-    - [Removing S4](/documenation/setup.md#removing-S4)
+    - [Step-by-Step Installation Instructions and FAQs](/documentation/setup.md#step-by-step-installation-instructions)
+    - [Enabling Advanced S4 Features](/documentation/setup.md#enabling-advanced-S4-features) 
+    - [Common Questions and Concerns about enabling xp_cmdshell](/documentation/setup.md#common-questions-and-concerns-about-enabling-xp_cmdshell)
+    - [Keeping S4 Updated](/documentation/setup.md#updating-S4)
+    - [Removing S4](/documentation/setup.md#removing-S4)
 - [S4 Features and Benefits](#features-and-benefits)
     - [Simplified and Robust Backups](#simplified-and-robust-backups) 
     - [Automated RESTORE Tests](#simplified-restore-operations-and-automated-restore-testing)
@@ -58,12 +58,12 @@
 4. Additionally, many advanced S4 capabilities that relate to automating SQL Server tasks and operations (backups, restore-tests, and other types of maintenance) require access to SQL Server [Database Mail profiles and operators](/documentation/notes/database_mail.md) to ensure that any probelms or issues encountered during execution are correctly surfaced (rather than allowing silent failures). Defining which Database Mail Profiles and SQL Server Agent Operators to use for these routines can either be done in one-off (per execution/call) fashion, or these details can be set (or defaulted) at server-level means by means of configuration and/or convention.
 
 ### Additional Installation, Update, and Removal Topics
-- [Step-by-Step Installation Instructions and FAQs](/documenation/setup.md#step-by-step-installation-instructions)
-- [Enabling Advanced S4 Features](/documenation/setup.md#enabling-advanced-S4-features) 
-- [Common Questions and Concerns about enabling xp_cmdshell](/documenation/setup.md#common-questions-and-concerns-about-enabling-xp_cmdshell)
-- [Keeping S4 Updated](/documenation/setup.md#updating-S4)
-- [Removing S4](/documenation/setup.md#removing-S4)
-- [Installation via PowerShell](/documenation/setup.md#installation-via-powershell)
+- [Step-by-Step Installation Instructions and FAQs](/documentation/setup.md#step-by-step-installation-instructions)
+- [Enabling Advanced S4 Features](/documetation/setup.md#enabling-advanced-S4-features) 
+- [Common Questions and Concerns about enabling xp_cmdshell](/documentation/setup.md#common-questions-and-concerns-about-enabling-xp_cmdshell)
+- [Keeping S4 Updated](/documentation/setup.md#updating-S4)
+- [Removing S4](/documentation/setup.md#removing-S4)
+- [Installation via PowerShell](/documentation/setup.md#installation-via-powershell)
 
 [Return to Table of Contents](#table-of-contents)
 
@@ -303,7 +303,7 @@ A key goal of S4 is to enable best-practices execution in 'weaponized' form - or
   
 That said, [lots of complex things 'wrapped up' and made easy - meaning that there's some background info and context/understanding that should be in place before/when-using S4 in a production environment. To that end, best practices are effectively like 'essays' outlining SQL Server best practices for key/critical concerns - but adapted to and explicitly for implementation via S4 functionality and with an S4 'flavor' or spin.]
 
-- [Best-Practices Documenation](/documenation/best-practices.md)
+- [Best-Practices Documentation](/documentation/best-practices.md)
 
 [Return to Table of Contents](#table-of-contents)
 

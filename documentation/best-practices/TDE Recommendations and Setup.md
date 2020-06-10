@@ -238,6 +238,7 @@ In consequence of these two security concerns, best practices are to keep TDE 'C
 To backup a certificate used for TDE: 
 
 ```sql
+
 BACKUP CERTIFICATE DataEncryptionCertificate 
 TO 
 	FILE = 'D:\SQLBackups\DataEncryptionCertificate_TDE.cer'
@@ -247,6 +248,7 @@ WITH
 		ENCRYPTION BY PASSWORD = 'password here - with high ENtropY1!!!111one'
 	);
 GO
+
 ```
 
 NOTE: Make sure to securely document the password you used as a decryption key for this backup operation. 
@@ -261,6 +263,7 @@ Once you've created (and backed-up) a certificate for use in TDE, you'll need to
 Per each database that you'll encrypt, you need to create an encryption key (which will be signed by your 'TDE' Certificate). This key will define encryption type and stength and, obviously, be used to encrypt/decrypt data to/from disk (transparently during SQL Server operations).
 
 ```sql
+
 USE [DatabaseThatIWantToEncrypt];
 GO
 
@@ -269,6 +272,7 @@ WITH
 	ALGORITHM = AES_256  -- AES_256 is recommended (lower/older algorithms are not enabled by DEFAULT on newer versions of SQL Server).
 	ENCRYPTION BY SERVER CERTIFICATE DataEncryptionCertificate;
 GO
+
 ```
 
 See the following for additional information on the creation of database encryption keys: 
@@ -279,10 +283,12 @@ https://docs.microsoft.com/en-us/sql/t-sql/statements/create-database-encryption
 You can instruct SQL Server to encrypt (or decrypt) a database via a 'simple' ALTER DATABASE statement - setting ENCRYPTION on or off as desired: 
 
 ```sql
+
 ALTER DATABASE [DatabaseThatIWantToEncrypt]
 SET 
 	ENCRYPTION ON;
 GO
+
 ```
 
 While normal databases operations (queries and INSERTs/UPDATEs/DELETEs, most schema changes, and so on) will function without ANY issue while a database is being encrypted/decrypted some (very low lever) modifications to the database will NOT be allowed until encryption/decryption completes. Details on which operations are prohibited are found here: 
@@ -297,6 +303,7 @@ Otherwise, background threads will begin the process of encrypting/decrypting th
 To monitor overall encryption (or decryption) progress, you can use the following query (focusing on the **[percent_completed]** column):
 
 ```sql
+
 SELECT 
 	DB_NAME([database_id]) [database_name],
 	CASE [encryption_state] 
@@ -320,6 +327,7 @@ SELECT
 	[encryptor_type]
 FROM 
 	sys.dm_database_encryption_keys;
+	
 ```
 
 #### 5.d Kick off a FULL Backup When Possible
@@ -342,8 +350,10 @@ Copy the .cer and .key file representing your 'TDE' certificate to your test/tar
 Create a new MASTER KEY using syntax similar to the following: 
 
 ```sql
+
 CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'This is a DIFFERENT password';
 GO
+
 ```
 
 NOTE: the MASTER KEY does NOT need to use the same encryption 'password' NOR does it even need to be the 'same' key (i.e., restored from before). 
@@ -355,6 +365,10 @@ Modify the paths for the .cer file and the .key file in the code below AND updat
 This should result in the creation of a new CERTIFICATE on the new/target server. However, since this certificate was 'signed' with the key/secure information used on your primary server, it'll have an identical thumbprint - meaning that it can be used to decrypt (and encryt) TDE databases.
 
 ```sql
+
+USE [master];
+GO
+
 CREATE CERTIFICATE DataEncryptionCertificate 
 FROM 
 	FILE = 'D:\SomePath\DataEncryptionCertificate_TDE.cer'
@@ -364,6 +378,7 @@ WITH
 		DECRYPTION BY PASSWORD = 'the SAME password here - that you used in the backup previously'
 	);
 GO
+
 ```
 
 #### 4. Restore a Backup taken from your primary server. 
@@ -378,8 +393,3 @@ As outlined above, you'll typically be better off by creating FULL backups of yo
 Either way, you SHOULD be able to fully restore and recover a FULL (+ any DIFFs if you didn't execute a NEW full after TDE) + any t-logs without any problems issues. Otherwise, you've done something wrong and will need to either re-export/backup+restore your TDE 'certificate' and/or REMOVE TDE encryption, re-sign/re-create certificates and VERIFY that you can restore as needed. 
 
 **Otherwise, you will be gauranteed to lose data during a disaster.**
-
-
-<style>
-    div.stub { display: none; }
-</style>
