@@ -42,7 +42,6 @@ CREATE PROC dbo.list_logfile_sizes
 	@TargetDatabases					nvarchar(MAX),															-- { {ALL} | {SYSTEM} | {USER} | name1,name2,etc }
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,
-	--@IgnoreLogFilesWithGBsLessThan	decimal(12,1)							= 0.5,
 	@ExcludeSimpleRecoveryDatabases		bit										= 1,
 	@SerializedOutput					xml										= N'<default/>'			OUTPUT
 AS 
@@ -72,7 +71,7 @@ AS
 		@Priorities = @Priorities, 
 		@ExcludeSimpleRecovery = @ExcludeSimpleRecoveryDatabases;
 
-	CREATE TABLE #logSizes (
+	CREATE TABLE #logs (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[database_name] sysname NOT NULL, 
 		[recovery_model] sysname NOT NULL,
@@ -81,12 +80,12 @@ AS
 		[log_percent_used] decimal(5,2) NOT NULL,
 		[vlf_count] int NOT NULL,
 		[log_as_percent_of_db_size] decimal(5,2) NULL, 
-		[mimimum_allowable_log_size_gb] decimal(20,2) NOT NULL, 
+		[mimimum_allowable_log_size_gb] decimal(20,2) NOT NULL 
 	);
-
+	
 	IF NOT EXISTS (SELECT NULL FROM [#targetDatabases]) BEGIN 
 		PRINT 'No databases matched @TargetDatbases (and @DatabasesToExclude) Inputs.'; 
-		SELECT * FROM [#logSizes];
+		SELECT * FROM [#logs];
 		RETURN 0; -- success (ish).
 	END;
 
@@ -157,7 +156,7 @@ AS
 			x.[mimimum_allowable_log_size_gb]
 		FROM 
 			sys.databases db
-			INNER JOIN #targetDatabases x ON db.[name] = x.database_name
+			INNER JOIN #targetDatabases x ON db.[name] = x.[database_name]
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / (1024.0)) AS decimal(20,2)) [log_size] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Size %') logsize ON db.[name] = logsize.[db_name]
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / (1024.0)) AS decimal(20,2)) [log_used] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Used %') logused ON db.[name] = logused.[db_name]
 			LEFT OUTER JOIN (
@@ -165,15 +164,15 @@ AS
 			) sizes ON db.database_id = sizes.database_id		
 	) 
 
-	INSERT INTO [#logSizes] (
+	INSERT INTO [#logs] (
         [database_name], 
         [recovery_model], 
         [database_size_gb], 
         [log_size_gb], 
         [log_percent_used], 
-        [vlf_count], 
-        [log_as_percent_of_db_size], 
-        [mimimum_allowable_log_size_gb]
+		[vlf_count],
+		[log_as_percent_of_db_size], 
+		[mimimum_allowable_log_size_gb] 
     )
 	SELECT 
         [database_name],
@@ -188,7 +187,7 @@ AS
 		[core]
 	ORDER BY 
 		[row_id];
-
+	
 	-----------------------------------------------------------------------------
     -- Send output as XML if requested:
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY initialized as NULL/empty... then REPLY...
@@ -198,11 +197,11 @@ AS
 			[database_size_gb],
 			[log_size_gb],
 			[log_percent_used],
-			[vlf_count],
+			[vlf_count],  -- 160x
 			[log_as_percent_of_db_size], 
-			[mimimum_allowable_log_size_gb]
+			[mimimum_allowable_log_size_gb] 
 		FROM 
-			[#logSizes]
+			[#logs]
 		ORDER BY 
 			[row_id] 
 		FOR XML PATH('database'), ROOT('databases'));
@@ -218,14 +217,13 @@ AS
         [database_size_gb],
         [log_size_gb],
         [log_percent_used],
-		[vlf_count],
-        [log_as_percent_of_db_size], 
-		[mimimum_allowable_log_size_gb]
+		[vlf_count],  -- 180x
+		[log_as_percent_of_db_size], 
+		[mimimum_allowable_log_size_gb] 
 	FROM 
-		[#logSizes]
+		[#logs]
 	ORDER BY 
 		[row_id];
-
 
 	RETURN 0;
 GO
