@@ -611,33 +611,44 @@ AS
 		END;
         
         -- Map File Destinations:
-        DECLARE @LogicalFileName sysname, @FileId bigint, @Type char(1);
+		DECLARE @logicalFileName sysname, @fileId bigint, @type char(1), @fileName sysname;
         DECLARE mover CURSOR LOCAL FAST_FORWARD FOR 
         SELECT 
-            LogicalName, FileID, [Type]
+			LogicalName, 
+			FileID, 
+			[Type], 
+			(SELECT TOP 1 (result) FROM dbo.split_string([name], N'.', 1) ORDER BY [row_id]) [FileName]
         FROM 
-            #FileList
-		WHERE 
-			[IsPresent] = 1 -- allow for partial restores
+            (
+				SELECT 
+					LogicalName, 
+					FileID, 
+					[Type], 
+					(SELECT TOP 1 (result) FROM dbo.split_string(PhysicalName, N'\', 1) ORDER BY [row_id] DESC) [name]
+				FROM 
+					#FileList 
+				WHERE 
+					[IsPresent] = 1 -- allow for partial restores
+			) translated
         ORDER BY 
             FileID;
 
         OPEN mover; 
-        FETCH NEXT FROM mover INTO @LogicalFileName, @FileId, @Type;
+        FETCH NEXT FROM mover INTO @logicalFileName, @fileId, @type, @fileName;
 
         WHILE @@FETCH_STATUS = 0 BEGIN 
 
-            SET @move = @move + N'MOVE ''' + @LogicalFileName + N''' TO ''' + CASE WHEN @FileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + @restoredName + '.';
-            IF @FileId = 1
+            SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + REPLACE(@fileName, @databaseToRestore, @restoredName) + '.';
+            IF @fileId = 1
                 SET @move = @move + N'mdf';
-            IF @FileId = 2
+            IF @fileId = 2
                 SET @move = @move + N'ldf';
-            IF @FileId NOT IN (1, 2)
+            IF @fileId NOT IN (1, 2)
                 SET @move = @move + N'ndf';
 
             SET @move = @move + N''', '
 
-            FETCH NEXT FROM mover INTO @LogicalFileName, @FileId, @Type;
+            FETCH NEXT FROM mover INTO @logicalFileName, @fileId, @type, @fileName;
         END;
 
         CLOSE mover;
