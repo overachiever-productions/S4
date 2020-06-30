@@ -1,31 +1,10 @@
 /*
 	vNEXT:
-		- Implement Caching. 
-			Implementation: 
-				- after parameter validation... 
-					- check admindb.dbo.cached_index_stats for EXISTS() against db_name = @TargetDatabase and generated < DATEDIFF(MINUTES, 5 or 10, GETDATE())
-						if those rows exist, they're the 'full' results - without filters and were dropped there by a previous execution. 
+		- Possibly: 
+			change 'ratio' to 'benefit' - and/or make it more apparent what's going on relative to this 'benefit' (or lack thereof).
 
-					- before checking dbo.cached_index_stats... NUKE any rows > 30 days old. (or > 24 hours old). 
-
-					- if nothing exists in dbo.cached_index_stats... then project the 'normal' (unfiltered) output into admindb.dbo.cached_index_stats
-						- and then add in any applicable indexes as needed. 
-
-					- and then, once the plumbing above is put into place... 
-						this sproc will ALWAYS create a dynamic query that PULLS from admindb.dbo.cached_index_stats - instead of from #temptables. 
-
-		- Formatting Optimizations
-			having 3x columns for avg_row_lock_wait, avg_page_lock_wait, avg_page_io_latch_wait burns up a LOT of real-estate. 
-				better option would be 1 or 2 columns: 
-					2 columns would be: [xxx_summary] and [xxx_details] 
-						where xxx is ... a word that covers both locking/latching and ... xxx_details is an XML do-hickie with full details
-									and xxx_summary would be something like #.## | #.## | #.## in the form of row_lock_ms, page_lock_ms, page_io_latch_ms
-					1 column would be ... just the xxx_details column... 
-
-		- Details (XML)
-			I've collapsed IX levels details down to a single row (per IX - i.e., see the collapsed_* CTEs)... 
-				but, I need to pull sub-queries from the 'core' tables that account for ALL IX levels and such so that details about fragmentation and anything else 
-					ends up being truly details and NOT 'surface level only'. 
+		- integrate:
+			D:\Dropbox\Projects\SQLServerAudits.com\Scripts\Diagnostics\Get Forwarded Record Counts.sql
 
 */
 
@@ -41,6 +20,7 @@ CREATE PROC dbo.[list_index_metrics]
 	@TargetTables								nvarchar(MAX)		= N'{ALL}',   
 	@ExcludedTables								nvarchar(MAX)		= NULL, 
 	@ExcludeSystemTables						bit					= 1,
+	@IncludeFragmentationMetrics				bit					= 0,		-- really don't care about this - 99% of the time... 
 	@MinRequiredTableRowCount					int					= 0,		-- ignore tables with < rows than this value... (but, note: this is per TABLE, not per IX cuz filtered indexes might only have a few rows on a much larger table).
 	@OrderBy									sysname				= N'ROW_COUNT'					-- { ROW_COUNT | FRAGMENTATION | SIZE | BUFFER_SIZE | READS | WRITES }
 
@@ -297,16 +277,6 @@ AS
 
 	---------------------------------------------------------------------------------------------------------------------------------------
 	-- physical stats: 
-	SET @sql = N'SELECT
-		[object_id],
-		index_id,
-		alloc_unit_type_desc, 
-		index_depth, 
-		index_level, 
-		CAST(avg_fragmentation_in_percent AS decimal(5,2)) avg_fragmentation_percent,
-		fragment_count
-	FROM 
-		sys.dm_db_index_physical_stats(DB_ID(@TargetDatabase), NULL, -1, 0, ''LIMITED''); ';
 
 	CREATE TABLE #physical_stats (
 		[object_id] int NULL,
@@ -318,19 +288,34 @@ AS
 		[fragment_count] bigint NULL
 	);
 
-	INSERT INTO [#physical_stats] (
-		[object_id],
-		[index_id],
-		[alloc_unit_type_desc],
-		[index_depth],
-		[index_level],
-		[avg_fragmentation_percent],
-		[fragment_count]
-	)
-	EXEC [sys].[sp_executesql]
-		@sql, 
-		N'@TargetDatabase sysname', 
-		@TargetDatabase = @TargetDatabase;
+	IF @IncludeFragmentationMetrics = 1 BEGIN
+
+		SET @sql = N'SELECT
+			[object_id],
+			index_id,
+			alloc_unit_type_desc, 
+			index_depth, 
+			index_level, 
+			CAST(avg_fragmentation_in_percent AS decimal(5,2)) avg_fragmentation_percent,
+			fragment_count
+		FROM 
+			sys.dm_db_index_physical_stats(DB_ID(@TargetDatabase), NULL, -1, 0, ''LIMITED''); ';
+
+		INSERT INTO [#physical_stats] (
+			[object_id],
+			[index_id],
+			[alloc_unit_type_desc],
+			[index_depth],
+			[index_level],
+			[avg_fragmentation_percent],
+			[fragment_count]
+		)
+		EXEC [sys].[sp_executesql]
+			@sql, 
+			N'@TargetDatabase sysname', 
+			@TargetDatabase = @TargetDatabase;
+
+	END;
 
 	---------------------------------------------------------------------------------------------------------------------------------------
 	-- sizing stats:
@@ -546,16 +531,15 @@ AS
 		ISNULL(os.avg_row_lock_wait, 0) avg_row_lock_ms, 
 		ISNULL(os.avg_page_lock_wait, 0) avg_page_lock_ms,
 		ISNULL(os.avg_page_io_latch_wait, 0) avg_page_io_latch_ms,
-		ps.avg_fragmentation_percent [fragmentation_%], 
-		ISNULL(ps.fragment_count, 0) [fragments], 
+		{fragmentation_details}
 		ss.allocated_mb, 
 		ss.used_mb, 
-		ss.unused_mb,
+		--ss.unused_mb,
 		ISNULL(bs.buffered_size_mb, 0) cached_mb, 
 		--br.buffered_percentage,
-		ISNULL(us.user_seeks, 0) user_seeks, 
-		ISNULL(us.user_scans, 0) user_scans, 
-		ISNULL(us.user_lookups, 0) user_lookups,
+		ISNULL(us.user_seeks, 0) seeks, 
+		ISNULL(us.user_scans, 0) scans, 
+		ISNULL(us.user_lookups, 0) lookups,
 		us.seek_ratio
 	FROM 
 		#sys_indexes i
@@ -563,7 +547,7 @@ AS
 		{ExcludedTables}
 		LEFT OUTER JOIN #usage_stats us ON i.[object_id] = us.[object_id] AND i.[index_id] = us.index_id
 		LEFT OUTER JOIN #operational_stats os ON i.[object_id] = os.[object_id] AND i.index_id = os.index_id
-		LEFT OUTER JOIN [collapsed_physical_stats] ps ON i.[object_id] = ps.[object_id] AND i.index_id = ps.index_id
+		{physical_stats}
 		LEFT OUTER JOIN #sizing_stats ss ON i.[object_id] = ss.[object_id] AND i.index_id = ss.index_id
 		LEFT OUTER JOIN [collapsed_buffer_stats] bs ON i.[object_id] = bs.[object_id] AND i.index_id = bs.index_id
 		LEFT OUTER JOIN #column_definitions cd ON i.[object_id] = cd.[object_id] AND i.index_id = cd.index_id
@@ -584,6 +568,15 @@ AS
 		SET @sql = REPLACE(@sql, N'{MinRequiredTableRowCount}', N'AND ss.[row_count] > ' + CAST(@MinRequiredTableRowCount AS sysname));
 	ELSE 
 		SET @sql = REPLACE(@sql, N'{MinRequiredTableRowCount}', N'');
+
+	IF @IncludeFragmentationMetrics = 1 BEGIN
+		SET @sql = REPLACE(@sql, N'{fragmentation_details}', N'ps.avg_fragmentation_percent [fragmentation_%], ISNULL(ps.fragment_count, 0) [fragments],');
+		SET @sql = REPLACE(@sql, N'{physical_stats}', N'LEFT OUTER JOIN [collapsed_physical_stats] ps ON i.[object_id] = ps.[object_id] AND i.index_id = ps.index_id');
+	  END;
+	ELSE BEGIN
+		SET @sql = REPLACE(@sql, N'{fragmentation_details}', N'');
+		SET @sql = REPLACE(@sql, N'{physical_stats}', N'');
+	END;
 
 	IF @TargetTables <> N'{ALL}' BEGIN 
 		
