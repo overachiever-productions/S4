@@ -1,4 +1,4 @@
-﻿[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > [S4 APIs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md) > `dbo.list_index_metrics`
+[README](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=README.md) > [S4 APIs](/Repository/Blob/00aeb933-08e0-466e-a815-db20aa979639?encodedPath=Documentation%2FAPIS.md) > `dbo.list_index_metrics`
 
 ## dbo.list_index_metrics
 
@@ -103,7 +103,8 @@ Specifies (DESCENDING) Sort Order for results set.
 [Return to Table of Contents](#table-of-contents)
 
 ### Remarks <a name="remarks"></a>
-#### Point 1
+#### Included Columns
+Note that the `definition` column provides a list of indexed columns (in natural/normal order) and also includes a list of columns added by the `INCLUDE` clause - wrapping [included], [columns], [in], [square], [brackets]. 
 
 #### Point 2
 
