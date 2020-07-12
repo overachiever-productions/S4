@@ -252,7 +252,7 @@ AS
                         l.[name], 
                         N'0x' + CONVERT(nvarchar(MAX), l.[password_hash], 2) + N' ', 
                         N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
-                        l.[default_database_name], 
+                        CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END, 
                         l.[default_language_name], 
                         CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
                         CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
@@ -262,7 +262,7 @@ AS
                         l.[enabled], 
                         @BehaviorIfLoginExists, 
                         l.[name], 
-                        l.[default_database_name], 
+                        CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END, 
                         l.[default_language_name]
                     )
                 ELSE 
