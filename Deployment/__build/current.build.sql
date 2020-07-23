@@ -315,6 +315,9 @@ GO
 --##INCLUDE: Common\Internal\load_default_path.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\normalize_file_path.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\load_default_setting.sql
 
 -----------------------------------
