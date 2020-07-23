@@ -19,7 +19,7 @@ AS
     
     BEGIN; 
     	
-    	DECLARE @output sysname;
+    	DECLARE @output sysname = @FilePath;
     	
 		IF(RIGHT(@FilePath, 1) = N'\')
 			SET @output = LEFT(@FilePath, LEN(@FilePath) - 1);    	
