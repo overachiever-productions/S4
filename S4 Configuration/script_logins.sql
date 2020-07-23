@@ -254,8 +254,8 @@ AS
                         N'0x' + CONVERT(nvarchar(MAX), l.[sid], 2), 
                         CASE WHEN @ForceMasterAsDefaultDB = 1 THEN N'master' ELSE l.[default_database_name] END, 
                         l.[default_language_name], 
-                        CASE WHEN @DisableExpiryChecks = 1 THEN 1 ELSE l.[is_expiration_checked] END,
-                        CASE WHEN @DisablePolicyChecks = 1 THEN 1 ELSE l.[is_policy_checked] END
+                        CASE WHEN @DisableExpiryChecks = 1 THEN 0 ELSE l.[is_expiration_checked] END,
+                        CASE WHEN @DisablePolicyChecks = 1 THEN 0 ELSE l.[is_policy_checked] END
                         )
                 WHEN l.[type] IN (N'U', N'G') THEN 
                     dbo.[format_windows_login] (
