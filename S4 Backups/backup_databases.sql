@@ -361,14 +361,9 @@ AS
 	END;
 
 	-- normalize paths: 
-	IF(RIGHT(@BackupDirectory, 1) = N'\')
-		SET @BackupDirectory = LEFT(@BackupDirectory, LEN(@BackupDirectory) - 1);
-
-	IF(RIGHT(ISNULL(@CopyToBackupDirectory, N''), 1) = N'\')
-		SET @CopyToBackupDirectory = LEFT(@CopyToBackupDirectory, LEN(@CopyToBackupDirectory) - 1);
-
-	IF(RIGHT(ISNULL(@OffSiteBackupPath, N''), 1) = N'\')
-		SET @OffSiteBackupPath = LEFT(@OffSiteBackupPath, LEN(@OffSiteBackupPath) - 1);
+	SET @BackupDirectory = dbo.normalize_file_path(@BackupDirectory);
+	SET @CopyToBackupDirectory = dbo.normalize_file_path(@CopyToBackupDirectory);
+	SET @OffSiteBackupPath = dbo.normalize_file_path(@OffSiteBackupPath);
 
 	IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
 		DECLARE @s3BucketName sysname; 
