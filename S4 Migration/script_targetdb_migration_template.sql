@@ -27,6 +27,8 @@ AS
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 	SET @TargetCompatLevel = ISNULL(NULLIF(@TargetCompatLevel, N''), N'{LATEST}');
 
+	SET @CheckSanityMarker = ISNULL(@CheckSanityMarker, 1);
+
 	SET @UpdateStatistics = ISNULL(@UpdateStatistics, 1);
 	SET @CheckForOrphans = ISNULL(@CheckForOrphans, 1);
 
@@ -72,6 +74,18 @@ GO
 
 ';
 
+	IF @CheckSanityMarker = 1 BEGIN
+		PRINT N'
+
+------------------------------------------------------------------------
+-- Check for Sanity Table:
+SELECT * FROM [' + @TargetDatabase + N']..[___migrationMarker];
+GO 		
+';
+
+
+	END;
+
 
 	IF @CheckForOrphans = 1 BEGIN 
 
@@ -88,7 +102,7 @@ GO
 	IF @UpdateStatistics = 1 BEGIN 
 
 		PRINT N'------------------------------------------------------------------------
-EXEC [<target, sysname, dbNameHere>]..sp_updatestats;
+EXEC [' + @TargetDatabase + N']..sp_updatestats;
 GO
 
 ';
@@ -99,6 +113,21 @@ GO
 -- TODO: Kick off FULL backups, enable jobs, etc. 
 
 ';
+
+
+	IF @CheckSanityMarker = 1 BEGIN
+
+		PRINT N'------------------------------------------------------------------------
+-- DROP Sanity Marker Table: 
+USE [' + @TargetDatabase + N'];
+GO
+
+IF OBJECT_ID(N''dbo.[___migrationMarker]'', N''U'') IS NOT NULL BEGIN
+	DROP TABLE dbo.[___migrationMarker];
+END;
+';
+
+	END;
 
 	RETURN 0;
 GO
