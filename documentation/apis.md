@@ -55,6 +55,12 @@
 - **dbo.enable_disk_monitoring** - Set up a regularly executing job to alert if/when available disk drops below a specified threshold. 
 - **dbo.manage_server_history** - Automate the creation of a weekly job to truncate job-history, backup-history, mail-history, FT-crawl logs (optional), and cycle SQL and SQL Agent logs. 
 
+### Server-Level Certificate Management. 
+- **[dbo.backup_server_certificate](/documentation/apis/backup_server_certificate.md)** - Easily dump server-level certificate details to .cer and .key files with a password. 
+- **[dbo.create_server_certificate](/documentation/apis/create_server_certificate.md)** - Easily reate server-level certificates (for Backup Encryption, TDE, etc.) with minimal effort and, optionally/recommended: execute backup functionality as a safe-guard for you certificates as part of the creation process. 
+- **[dbo.restore_server_certificate](/documentation/apis/restore_server_certificate.md)** - Easily 'restore' server-level certificates from .cer and .key files using either full-paths to files or S4 certificate file-naming conventions.
+
+
 ### Dump / Export of Existing Configuration
 - **dbo.script_server_configuration** - Print/Dump server-level configuration details and settings to the console. 
 - **dbo.script_database_configuration** - Print/Dump database-level configuration/settings/details to the console. 
