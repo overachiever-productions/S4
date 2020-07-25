@@ -440,6 +440,15 @@ GO
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\backup_server_certificate.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\create_server_certificate.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\restore_server_certificate.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\configure_instance.sql
 
 -----------------------------------
