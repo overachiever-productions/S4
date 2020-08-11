@@ -521,10 +521,10 @@ AS
 	SELECT 
 		--i.[object_id],
 		i.[table_name],
-		ISNULL(i.[index_name], N'''') [index_name],
 		i.[index_id],
-		ss.[row_count],
+		ISNULL(i.[index_name], N'''') [index_name],
 		cd.[definition],
+		ss.[row_count],
 		ISNULL(us.reads, 0) reads, 
 		ISNULL(us.writes, 0) writes, 
 		us.[read_write_ratio] [ratio], 

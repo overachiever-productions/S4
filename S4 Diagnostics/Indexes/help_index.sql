@@ -80,11 +80,11 @@ AS
 		@targetTable = PARSENAME(@normalizedName, 1);
 
 	DECLARE @sql nvarchar(MAX);
-	SET @sql = N'SELECT index_id, [name] FROM [' + @targetDatabase + N'].sys.[indexes] WHERE [object_id] = @targetObjectID; ';
+	SET @sql = N'SELECT index_id, ISNULL([name], N''-HEAP-'') FROM [' + @targetDatabase + N'].sys.[indexes] WHERE [object_id] = @targetObjectID; ';
 
 	CREATE TABLE #sys_indexes (
 		index_id int NOT NULL, 
-		index_name sysname NOT NULL 
+		index_name sysname NULL -- frickin' heaps
 	);
 
 	INSERT INTO [#sys_indexes] (
@@ -95,7 +95,6 @@ AS
 		@sql, 
 		N'@targetObjectID int', 
 		@targetObjectID = @targetObjectID;
-
 
 	SET @sql = N'
 	SELECT 
@@ -130,10 +129,6 @@ AS
 		@sql, 
 		N'@targetObjectID int', 
 		@targetObjectID = @targetObjectID;
-
-	--SELECT * FROM [#sys_indexes];
-
-	--SELECT * FROM [#index_columns];
 
 	CREATE TABLE #output (
 		index_id int NOT NULL, 
