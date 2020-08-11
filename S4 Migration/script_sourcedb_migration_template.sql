@@ -33,8 +33,8 @@ GO
 CREATE PROC dbo.[script_sourcedb_migration_template]
 	@SourceDatabase					sysname				= NULL, 
 	@FinalBackupType				sysname				= N'LOG',			-- { FULL | DIFF | LOG }
-	@FinalBackupDate				date				= NULL, 
-	@SingleUserRollbackSeconds		int					= 10,
+	@FinalBackupDate				date				= NULL,				-- defaults to GETDATE()
+	@SingleUserRollbackSeconds		int					= 5,
 	@BackupDirectory				nvarchar(2000)		= N'{DEFAULT}', 
 	@IncludeSanityMarker			bit					= 1, 
 	@FileMarker						sysname				= N'FINAL'
@@ -109,17 +109,17 @@ GO
 
 	END;
 
-	DECLARE @fullTemplate nvarchar(MAX) = N'BACKUP DATABASE [{database_name}] TO DISK = N''{backup_directory}\{database_name}\FULL_{database_name}_backup_{date}_<hhmm, sysname, {time}>00_{marker}.bak''  
+	DECLARE @fullTemplate nvarchar(MAX) = N'BACKUP DATABASE [{database_name}] TO DISK = N''{backup_directory}\{database_name}\FULL_{database_name}_backup_{date}_{time}00_{marker}.bak''  
 	WITH 
-		COMPRESSION, NAME = N''FULL_{database_name}_backup_{date}_<hhmm, sysname, 0117>00_{marker}.bak'', SKIP, REWIND, NOUNLOAD, CHECKSUM, STATS = 5; ';
+		COMPRESSION, NAME = N''FULL_{database_name}_backup_{date}_{time}00_{marker}.bak'', SKIP, REWIND, NOUNLOAD, CHECKSUM, STATS = 5; ';
 
-	DECLARE @diffTemplate nvarchar(MAX) = N'BACKUP DATABASE [{database_name}] TO DISK = N''{backup_directory}\{database_name}\DIFF_{database_name}_backup_{date}_<hhmm, sysname, {time}>00_{marker}.bak''  
+	DECLARE @diffTemplate nvarchar(MAX) = N'BACKUP DATABASE [{database_name}] TO DISK = N''{backup_directory}\{database_name}\DIFF_{database_name}_backup_{date}_{time}00_{marker}.bak''  
 	WITH 
-		COMPRESSION, DIFFERENTIAL, NAME = N''DIFF_{database_name}_backup_{date}_<hhmm, sysname, 0117>00_{marker}.bak'', SKIP, REWIND, NOUNLOAD, CHECKSUM, STATS = 10; ';
+		COMPRESSION, DIFFERENTIAL, NAME = N''DIFF_{database_name}_backup_{date}_{time}00_{marker}.bak'', SKIP, REWIND, NOUNLOAD, CHECKSUM, STATS = 10; ';
 
-	DECLARE @logTemplate nvarchar(MAX) = N'BACKUP LOG [{database_name}] TO DISK = N''{backup_directory}\{database_name}\LOG_{database_name}_backup_{date}_<hhmm, sysname, {time}>00_{marker}.trn''  
+	DECLARE @logTemplate nvarchar(MAX) = N'BACKUP LOG [{database_name}] TO DISK = N''{backup_directory}\{database_name}\LOG_{database_name}_backup_{date}_{time}00_{marker}.trn''  
 	WITH 
-		COMPRESSION, NAME = N''LOG_{database_name}_backup_{date}_<hhmm, sysname, 0117>00_{marker}.trn'', SKIP, REWIND, NOUNLOAD, CHECKSUM, STATS = 25; ';
+		COMPRESSION, NAME = N''LOG_{database_name}_backup_{date}_{time}00_{marker}.trn'', SKIP, REWIND, NOUNLOAD, CHECKSUM, STATS = 25; ';
 
 	DECLARE @sql nvarchar(MAX);
 
@@ -163,7 +163,4 @@ GO
 ';
 
 	RETURN 0;
-GO
-	
-	
-	
+GO	
