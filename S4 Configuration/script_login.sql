@@ -2,7 +2,33 @@
 	FACADE
 		Actual 'work' of scripting a login is handled in either dbo.script_sql_login or dbo.script_windows_login.
 
+
+
+Here's an example of GROUP logins/definitions: 
+
+USE [master]
+GO
+
+CREATE LOGIN [PAYTRACE\S-PROD-APP] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+CREATE LOGIN [PAYTRACE\S-PROD-CHIRON] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+CREATE LOGIN [PAYTRACE\S-PROD-METIS] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+CREATE LOGIN [PAYTRACE\S-PROD-STL] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+CREATE LOGIN [PAYTRACE\S-PROD-WEB] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+
+
+
 */
+
+
+
+
+
+
 
 USE [admindb];
 GO

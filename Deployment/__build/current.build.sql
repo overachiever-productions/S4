@@ -309,6 +309,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: Common\Internal\normalize_file_path.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\check_paths.sql
 
 -----------------------------------
@@ -437,6 +440,15 @@ GO
 --##INCLUDE: S4 Configuration\export_server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\backup_server_certificate.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\create_server_certificate.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\restore_server_certificate.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\configure_instance.sql
 
 -----------------------------------
@@ -542,6 +554,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\help_index.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql

@@ -2,6 +2,24 @@
 
 # Change Log
 
+## [8.2.3410.1] - 2020-10-15
+
+### Added
+- Initial implementation of 'wrapper' logic to handle creation, backup, and restore of server-level (backup encryption, TDE, etc.) certificates.
+
+### Changed
+- File-Path normalization has now been abstracted into `dbo.normalize_file_path` (primarily for 'internal' use - to avoid DRY violations).
+- Minor modifications to migration templates/script-generation.
+
+### Fixed  
+- Corrected problem with sporadic errors in automated log-shrink operations.
+- Bug-fix to enable > 1 .ndf file during restore via `dbo.restore_databases`
+### Secured.
+- Miscellaneous fixes to address case-sensitive instances.
+- Bug-fixes to `dbo.print_long_string` to help with scenarios where scripting/dumping 10s of thousands of logins via `dbo.script_logins`.
+- Corrected issues with state-management and reporting within `dbo.apply_logs`. 
+
+
 ## [8.1.3282.1] - 2020-06-08
 
 ### Added 

@@ -456,6 +456,7 @@ AS
 		x.[sql_handle] IS NULL;
 
 	-- load statements: 
+-- TODO: MAY need to use a non_blocked_handles CTE here as well. BUT, IF necessary, note that we can work against dbs in SINGLE_USER state... 
 	SELECT 
 		x.[session_id], 
 		t.[text] [batch_text], 
@@ -467,13 +468,22 @@ AS
 		OUTER APPLY sys.[dm_exec_sql_text](x.[sql_handle]) t;
 
 	-- load plans: 
+	WITH non_blocked_plans AS ( 
+		SELECT 
+			session_id,
+			plan_handle 
+		FROM 
+			[#core] 
+		WHERE 
+			[database_id] NOT IN (SELECT [database_name] FROM dbo.[list_nonaccessible_databases]())
+	)  
 	SELECT 
 		x.[session_id], 
 		p.query_plan [batch_plan]
 	INTO 
 		#plans 
 	FROM 
-		[#core] x 
+		non_blocked_plans x 
 		OUTER APPLY sys.dm_exec_query_plan(x.plan_handle) p
 
     CREATE TABLE #statementPlans (
@@ -482,11 +492,23 @@ AS
     );
 
 	DECLARE @loadPlans nvarchar(MAX) = N'
+	WITH non_blocking_statements AS (
+		SELECT 
+			session_id,
+			plan_handle, 
+			statement_start_offset, 
+			statement_end_offset
+		FROM 
+			[#core] 
+		WHERE 
+			[database_id] NOT IN (SELECT [database_name] FROM dbo.[list_nonaccessible_databases]())
+	)
+	
 	SELECT 
 		x.session_id, 
 		' + CASE WHEN (SELECT dbo.[get_engine_version]()) > 10.5 THEN N'TRY_CAST' ELSE N'CAST' END + N'(q.[query_plan] AS xml) [statement_plan]
 	FROM 
-		[#core] x 
+		non_blocking_statements x 
 		OUTER APPLY sys.dm_exec_text_query_plan(x.[plan_handle], x.statement_start_offset, x.statement_end_offset) q ';
 
     INSERT INTO [#statementPlans] (
@@ -494,10 +516,9 @@ AS
         [statement_plan]
     )
 	EXEC [sys].[sp_executesql] @loadPlans;
-
+	
 	IF @ExtractCost = 1 BEGIN
-        
-        WITH XMLNAMESPACES (DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
+		WITH XMLNAMESPACES (DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
         SELECT
             p.[session_id],
 --TODO: look at whether or not a more explicit path with provide any perf benefits (less tempdb usage, less CPU/less time, etc.)
@@ -560,8 +581,8 @@ AS
 	FROM 
 		[#core] c
 		INNER JOIN #statements t ON c.session_id = t.session_id
-		INNER JOIN #plans p ON c.session_id = p.session_id
-		INNER JOIN #statementPlans sp ON c.session_id = sp.session_id
+		LEFT OUTER JOIN #plans p ON c.session_id = p.session_id
+		LEFT OUTER JOIN #statementPlans sp ON c.session_id = sp.session_id
 		{extractJoin}
         {tempdbUsageJoin}
 	ORDER BY

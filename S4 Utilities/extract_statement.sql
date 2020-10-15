@@ -60,7 +60,7 @@ AS
 SELECT 
 	@Statement = SUBSTRING([definition], (@offsetStart / 2) + 1, (CASE WHEN @offsetEnd < 1 THEN DATALENGTH([definition]) ELSE (@offsetEnd - @offsetStart)/2 END) + 1) 
 FROM 
-	{TargetDatabase}.sys.[sql_modules] 
+	[{TargetDatabase}].sys.[sql_modules] 
 WHERE 
 	[object_id] = @ObjectID; ';
 

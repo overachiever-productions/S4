@@ -93,6 +93,8 @@ BEGIN
 		END;
 	END;
 
+	SET @output = dbo.[normalize_file_path](@output);
+
 	RETURN @output;
 END;
 GO

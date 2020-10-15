@@ -1,5 +1,9 @@
 /*
 
+	NOTE: 
+		@TargetDatabases does NOT YET support wildcards... 
+
+
 	TODO: 
 		- this current implementation is, in some ways, an MVP. Specifically, there are some known problems/issues/tweaks that should be made to get this up to speed: 
 			- For starters, I need to 'finish' this - right now it just spits out SELECTs from both of the 'temp tables' it uses along the way. Instead, I need to output some sort of summary or whatever... 
@@ -189,7 +193,7 @@ AS
         [s].[database_size_gb],
         [s].[log_size_gb],
         [s].[log_percent_used],
-        [s].[initial_min_allowed_gbs] [starting_mimimum_allowable_log_size_gb], 
+        [s].[initial_min_allowed_gbs], 
 		CAST((CASE WHEN t.[target_log_size] < @IgnoreLogFilesSmallerThanGBs THEN @IgnoreLogFilesSmallerThanGBs ELSE t.[target_log_size] END) AS decimal(20,2)) [target_log_size]
 	FROM 
 		[shredded] s 
@@ -201,7 +205,7 @@ AS
 			CASE 
 				WHEN [log_size_gb] <= [target_log_size] THEN 'NOTHING' -- N'N/A - Log file is already at target size or smaller. (Current Size: ' + CAST([log_size_gb] AS sysname) + N' GB - Target Size: ' + CAST([target_log_size] AS sysname) + N' GB)'
 				ELSE CASE 
-					WHEN [initial_min_allowed_gbs] <= ([target_log_size] + @LogFileSizingBufferInGBs) THEN 'SHRINK'
+					WHEN ([initial_min_allowed_gbs] > ([target_log_size] + @LogFileSizingBufferInGBs)) OR ([recovery_model] = N'SIMPLE') THEN 'SHRINK'
 					ELSE N'CHECKPOINT + BACKUP + SHRINK'
 				END
 			END [operation]
@@ -236,6 +240,7 @@ AS
 			[operation] = N'NOTHING';
 	END;
 
+
 	DECLARE @returnValue int;
 	DECLARE @outcome nvarchar(MAX);
 	DECLARE @currentDatabase sysname;
@@ -267,7 +272,6 @@ AS
 		WHERE 
 			ls.[processing_complete] = 0 AND ls.[operation] = N'CHECKPOINT + BACKUP + SHRINK';
 
-
 		DECLARE @checkpointTemplate nvarchar(200) = N'USE [{0}]; ' + @crlf + N'CHECKPOINT; ' + @crlf + N'CHECKPOINT;' + @crlf + N'CHECKPOINT;';
 		DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
@@ -291,7 +295,7 @@ AS
 				EXEC @returnValue = dbo.[execute_command]
 					@Command = @command,
 					@ExecutionType = N'SQLCMD',
-					@ExecutionRetryCount = 1, 
+					@ExecutionAttemptsCount = 1, 
 					@DelayBetweenAttempts = N'5s',
 					@Results = @executionResults OUTPUT 
 			
@@ -320,7 +324,6 @@ AS
 		CLOSE walker;
 		DEALLOCATE walker;
 
-
 		SET @waitStarted = GETDATE();
 WaitAndCheck:
 		
@@ -339,10 +342,10 @@ WaitAndCheck:
 --			that way, say we've got t-logs cycling at roughly 2-3 minute intervals over the next N minutes... ... currently, if we're going to wait up to 20 minutes, we'll wait until ALL of them have been be backed up (or as many as we could get to before we timed out) and then PROCESS ALL of them. 
 --				the logic above would, effectively, process each db _AS_ its t-log backup was completed... making it a bit more 'robust' and better ... 
 		-- keep looping/waiting while a) we have time left, and b) there are dbs that have NOT been backed up.... 
-		IF DATEDIFF(MINUTE, @waitStarted, GETDATE()) < @maxSecondsToWaitForLogFileBackups BEGIN 
+		IF DATEDIFF(SECOND, @waitStarted, GETDATE()) < @maxSecondsToWaitForLogFileBackups BEGIN 
 			IF EXISTS (SELECT NULL FROM [#logSizes] ls 
 				INNER JOIN (SELECT [database_name], MAX([backup_finish_date]) latest FROM msdb.dbo.[backupset] WHERE type = 'L' GROUP BY [database_name]) x ON ls.[database_name] = [x].[database_name] 
-					WHERE ls.[last_log_backup] IS NOT NULL AND x.[latest] < @checkpointComplete
+				WHERE ls.[last_log_backup] IS NOT NULL AND x.[latest] < @checkpointComplete
 			) BEGIN
 					GOTO WaitAndCheck;
 			END;
@@ -449,8 +452,8 @@ ShrinkLogFile:
 		SELECT 
 			[data].[row].value('database_name[1]', 'sysname') [database_name], 
 			[data].[row].value('recovery_model[1]', 'sysname') recovery_model, 
-			[data].[row].value('database_size_gb[1]', 'decimal(20,1)') database_size_gb, 
-			[data].[row].value('log_size_gb[1]', 'decimal(20,1)') log_size_gb,
+			[data].[row].value('database_size_gb[1]', 'decimal(20,2)') database_size_gb, 
+			[data].[row].value('log_size_gb[1]', 'decimal(20,2)') log_size_gb,
 			[data].[row].value('log_percent_used[1]', 'decimal(5,2)') log_percent_used, 
 			--[data].[row].value('vlf_count[1]', 'int') vlf_count,
 			--[data].[row].value('log_as_percent_of_db_size[1]', 'decimal(5,2)') log_as_percent_of_db_size,

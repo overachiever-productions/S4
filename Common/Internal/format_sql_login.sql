@@ -63,7 +63,7 @@ CREATE FUNCTION dbo.format_sql_login (
     @SID                              varchar(100),                         -- only processed if this is a CREATE or a DROP/CREATE... 
     @DefaultDatabase                  sysname         = N'master',          -- have to specify DEFAULT for this to work... obviously
     @DefaultLanguage                  sysname         = N'{DEFAULT}',       -- have to specify DEFAULT for this to work... obviously
-    @CheckExpriration                 bit             = 0,                  -- have to specify DEFAULT for this to work... obviously
+    @CheckExpiration				  bit             = 0,                  -- have to specify DEFAULT for this to work... obviously
     @CheckPolicy                      bit             = 0                   -- have to specify DEFAULT for this to work... obviously
 )
 RETURNS nvarchar(MAX)
@@ -165,11 +165,11 @@ END; ';
         END;
 
         -- checks:
-        IF @CheckExpriration IS NULL BEGIN 
+        IF @CheckExpiration IS NULL BEGIN 
             SET @output = REPLACE(@output, N'{CheckExpiration}', N'');
             END;
         ELSE BEGIN 
-            SET @output = REPLACE(@output, N'{CheckExpiration}', @newAtrributeLine + N',CHECK_EXPIRATION = ' + CASE WHEN @CheckExpriration = 1 THEN N'ON' ELSE 'OFF' END);
+            SET @output = REPLACE(@output, N'{CheckExpiration}', @newAtrributeLine + N',CHECK_EXPIRATION = ' + CASE WHEN @CheckExpiration = 1 THEN N'ON' ELSE 'OFF' END);
         END;
 
         IF @CheckPolicy IS NULL BEGIN 
