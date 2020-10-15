@@ -1,4 +1,9 @@
 /*
+	TODO: 
+		- Uh... this should check for mirroring/AG-ing endpoints and associated security, no?
+		- Ideally, it'd also be great to try and query the windows firewall - see if it's on, and ... if so, do we have a rule for 5022?
+
+
 	INSTRUCTIONS:
 		- Just run this script on the Primary and Secondary - and review any INFO, WARNINGS, or ERRORs raised. 
                 

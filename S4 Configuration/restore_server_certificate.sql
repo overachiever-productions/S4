@@ -109,6 +109,31 @@ AS
 		RETURN 0;
 	END;
 
+
+	-----------------------------------------------------------------------------
+	-- Verify Master Key Encryption:
+	-- DRY_VIOLATION: the code below exists here and in dbo.create_server_certificate:
+	IF NOT EXISTS (SELECT NULL FROM master.sys.[symmetric_keys] WHERE [symmetric_key_id] = 101) BEGIN 
+		
+		IF @MasterKeyEncryptionPassword IS NULL BEGIN 
+			RAISERROR(N'Master Key Encryption has not yet been defined (in the [master] databases). Please supply a @MasterKeyEncryptionPassword.', 16, 1);
+			RETURN -8;
+		END;
+
+		DECLARE @command nvarchar(MAX) = N'USE [master];
+
+IF NOT EXISTS (SELECT NULL FROM master.sys.symmetric_keys WHERE symmetric_key_id = 101) BEGIN;
+	CREATE MASTER KEY ENCRYPTION BY PASSWORD = N''' + @MasterKeyEncryptionPassword + N''';
+END;
+';
+		IF @PrintOnly = 1
+			PRINT @command; 
+		ELSE 
+			EXEC sp_executesql @command;
+
+	END;
+
+
 	DECLARE @template nvarchar(MAX) = N'USE [master];
 
 CREATE CERTIFICATE [{certName}] 
