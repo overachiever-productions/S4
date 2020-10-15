@@ -262,6 +262,7 @@ AS
 		
 		SET @restoreStart = GETDATE();
 		SET @noFilesApplied = 0;  
+		DELETE FROM @appliedFiles;
 
 		-- determine last successfully applied t-log:
 		SELECT @fileList = [restored_files] FROM dbo.[restore_log] WHERE [restore_id] = (SELECT MAX(restore_id) FROM [dbo].[restore_log] WHERE [database] = @sourceDbName AND [restored_as] = @targetDbName AND [restore_succeeded] = 1);

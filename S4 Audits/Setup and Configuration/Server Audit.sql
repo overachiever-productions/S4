@@ -95,12 +95,14 @@ CREATE SERVER AUDIT SPECIFICATION [<serverAuditSpecName, sysname, Server Audit S
 		ADD (APPLICATION_ROLE_CHANGE_PASSWORD_GROUP), -- if not being used, no real overhead... 
 		ADD (AUDIT_CHANGE_GROUP),
 		ADD (BACKUP_RESTORE_GROUP),
+		--ADD (BATCH_COMPLETED_GROUP), -- added 2019 - audits ENTIRE batches (each and EVERY ONE).
+		--ADD (BATCH_STARTED_GROUP), -- ditto
 		ADD (BROKER_LOGIN_GROUP), -- if broker isn't being used, we won't log any data (so no real overhead). 
 		ADD (DATABASE_MIRRORING_LOGIN_GROUP), -- only reports on TLS issues with mirroring... (and, presumably? AGs?)
 		ADD (DATABASE_CHANGE_GROUP),
 		ADD (DATABASE_LOGOUT_GROUP),	-- contained users only... 
 		--ADD (DATABASE_OBJECT_ACCESS_GROUP),  -- can lead to a LOT of overhead, and is primararily for service broker monitoring (see docs).
-		ADD (DATABASE_OBJECT_CHANGE_GROUP),
+		ADD (DATABASE_OBJECT_CHANGE_GROUP),  -- i.e., ALTERs
 		ADD (DATABASE_OBJECT_OWNERSHIP_CHANGE_GROUP),
 		ADD (DATABASE_OBJECT_PERMISSION_CHANGE_GROUP),
 		ADD (DATABASE_OPERATION_GROUP),
@@ -114,11 +116,12 @@ CREATE SERVER AUDIT SPECIFICATION [<serverAuditSpecName, sysname, Server Audit S
 		ADD (FAILED_LOGIN_GROUP),
 		--ADD (FULLTEXT_GROUP), -- no real 'security' info here.  
 		ADD (LOGIN_CHANGE_PASSWORD_GROUP),
-	--ADD (LOGOUT_GROUP),  -- can be enabled... connection pooling makes this a bit less vile than might originally think... 
+		--ADD (LOGOUT_GROUP),  -- can be enabled... connection pooling makes this a bit less vile than might originally think... 
 		--ADD (SCHEMA_OBJECT_ACCESS_GROUP), -- this includes SELECTs ... and can literally crater busier servers.
 		ADD (SCHEMA_OBJECT_CHANGE_GROUP),
 		ADD (SCHEMA_OBJECT_OWNERSHIP_CHANGE_GROUP),
 		ADD (SCHEMA_OBJECT_PERMISSION_CHANGE_GROUP),
+
 		ADD (SERVER_OBJECT_CHANGE_GROUP),
 		ADD (SERVER_OBJECT_OWNERSHIP_CHANGE_GROUP),
 		ADD (SERVER_OBJECT_PERMISSION_CHANGE_GROUP),
@@ -128,10 +131,11 @@ CREATE SERVER AUDIT SPECIFICATION [<serverAuditSpecName, sysname, Server Audit S
 		ADD (SERVER_PRINCIPAL_IMPERSONATION_GROUP),
 		ADD (SERVER_ROLE_MEMBER_CHANGE_GROUP),
 		ADD (SERVER_STATE_CHANGE_GROUP),
+
 		ADD (SUCCESSFUL_DATABASE_AUTHENTICATION_GROUP),  -- contained only.
-	--ADD (SUCCESSFUL_LOGIN_GROUP),  -- depends upon environment/scenario. Again, pooled connections mitigate problems. 
+		--ADD (SUCCESSFUL_LOGIN_GROUP),  -- depends upon environment/scenario. Again, pooled connections mitigate problems. 
 		ADD (TRACE_CHANGE_GROUP),
-	--ADD (TRANSACTION_GROUP) -- includes IMPLICIT transactions - which can/will dump a TON of modifications into a db. BUT, usefull when monitoring ALL modifications. 
+		--ADD (TRANSACTION_GROUP) -- includes IMPLICIT transactions - which can/will dump a TON of modifications into a db. BUT, usefull when monitoring ALL modifications. 
 		ADD (USER_CHANGE_PASSWORD_GROUP),  -- contained only... 
 		ADD (USER_DEFINED_AUDIT_GROUP) -- outputs any 'custom' details defined by sp_audit_write and friends. 
 	WITH (STATE = ON);
@@ -224,17 +228,27 @@ GO
 -- Audit Management and Oversight:
 
 -- Fine-tuning of config - i.e., see what actions are being tracked and at what rates and if there are any LEGIT filters that could be put in place that would decrease noise and NOT decrease efficacy of the audit. 
+WITH consolidated AS ( 
+	SELECT 
+		RTRIM(x.action_id) COLLATE SQL_Latin1_General_CP1_CI_AS + ' - ' + aa.[name]  [action]
+	FROM 
+		[fn_get_audit_file](N'<audit_path, sysname, D:\Audits\>*', DEFAULT, DEFAULT) x
+		INNER JOIN sys.dm_audit_actions aa ON x.action_id = aa.action_id
+)
+
 SELECT 
-	action_id, 
-	COUNT(*) instances
+	[action],
+	COUNT(*) [instances]
 FROM 
-	fn_get_audit_file('<audit_path, sysname, D:\Audits\>*',default,default)
+	consolidated
 GROUP BY 
-	action_id 
+	[action] 
 ORDER BY 
 	2 DESC;
 
+
 -- then, look up the action_ids in question for additional details on their scope/origin/etc. 
+
 SELECT * FROM sys.[dm_audit_actions] WHERE [action_id] = 'SL'; -- for example, this is a 'select'....  (if you don't need SELECT across ALL databases and/or only need it for one or two tables, or one or two databases, then set up db-level specifications as 'narrowly' as possible/logical. (when in doubt, record more data).
 
 -- docs on this DMV are here: https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-audit-actions-transact-sql
@@ -243,7 +257,43 @@ SELECT * FROM sys.[dm_audit_actions] WHERE [action_id] = 'SL'; -- for example, t
 -- B. Analysis/Review:
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
--- Sample 'review' query... 
-SELECT action_id, succeeded, [event_time], server_principal_name, database_principal_name, CAST(additional_information AS xml) [additional_information], [statement] 
-FROM fn_get_audit_file('<audit_path, sysname, D:\Audits\>*',default,default)
-ORDER BY [event_time] DESC, [transaction_id] DESC, [sequence_number] DESC;
+-- Sample 'review' query...
+SELECT
+	aa.[name],
+	x.[succeeded],
+	x.[event_time],
+	x.[database_name],
+	x.[server_principal_name],
+	x.[statement], 
+	x.[client_ip],
+	x.[duration_milliseconds],
+	CAST(x.[additional_information] AS xml) [additional_information]
+FROM
+	[fn_get_audit_file](N'<audit_path, sysname, D:\Audits\>*', DEFAULT, DEFAULT) x 
+	INNER JOIN sys.dm_audit_actions aa ON x.action_id = aa.action_id
+ORDER BY
+	[event_time] DESC,
+	[transaction_id] DESC,
+	[sequence_number] DESC;
+
+
+-- or, a filtered version: 
+SELECT
+	aa.[name],
+	x.[succeeded],
+	x.[event_time],
+	x.[database_name],
+	x.[server_principal_name],
+	x.[statement], 
+	x.[client_ip],
+	x.[duration_milliseconds],
+	CAST(x.[additional_information] AS xml) [additional_information]
+FROM
+	[fn_get_audit_file](N'<audit_path, sysname, D:\Audits\>*', DEFAULT, DEFAULT) x 
+	INNER JOIN sys.dm_audit_actions aa ON x.action_id = aa.action_id
+WHERE 
+	x.[action_id] = N'CR'  -- create, for example...
+ORDER BY
+	[event_time] DESC,
+	[transaction_id] DESC,
+	[sequence_number] DESC;

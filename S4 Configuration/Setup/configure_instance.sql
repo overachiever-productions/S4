@@ -11,9 +11,9 @@ IF OBJECT_ID('dbo.configure_instance','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[configure_instance]
-	@MaxDOP									int, 
-	@CostThresholdForParallelism			int, 
-	@MaxServerMemoryGBs						decimal(8,1),
+	@MaxDOP									int				= NULL, 
+	@CostThresholdForParallelism			int				= NULL,	 
+	@MaxServerMemoryGBs						decimal(8,1)	= NULL,
 	@OptimizeForAdhocWorkloads				bit				= 1
 AS
     SET NOCOUNT ON; 

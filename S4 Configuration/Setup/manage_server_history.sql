@@ -79,7 +79,7 @@ AS
 		@ProhibitedIntervals = 'MILLISECOND, SECOND, MINUTE, HOUR',
 		@TranslationDatePart = 'DAY',
 		@Output = @backupDaysBack OUTPUT, 
-		@error = @error OUTPUT;
+		@Error = @error OUTPUT;
 
 	IF @outcome <> 0 BEGIN
 		RAISERROR(@error, 16, 1);
@@ -94,7 +94,7 @@ AS
 			@ProhibitedIntervals = 'MILLISECOND, SECOND, MINUTE, HOUR',
 			@TranslationDatePart = 'DAY',
 			@Output = @emailDaysBack OUTPUT, 
-			@error = @error OUTPUT;
+			@Error = @error OUTPUT;
 
 		IF @outcome <> 0 BEGIN
 			RAISERROR(@error, 16, 1);

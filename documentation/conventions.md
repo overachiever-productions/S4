@@ -22,6 +22,7 @@
     - [`<vectors>`](#vectors)
     - [{TOKENS}](#tokens)
     - [{DEFAULTS}](#defaults)
+    - [Implied Context Targeting](#implied-context-targeting)
     - [File Path Specifications](#file-path_specifications)
     - [Alerting and Database Mail Conventions](#alerting-and-database-mail-conventions)
     - [Advanced Capabilities / Advanced Error Handling](#advanced-capabilities)
@@ -206,6 +207,36 @@ If desired, `@BackupDirectory` COULD be left empty/NULL - which would have the s
 Take-Away: The KEY thing here is to know that S4 attempts in many cases (backups, restores, alerting, etc.) to use conventions that define commonly-used/specified parameters to avoid the need to 'hard-code' values into S4 calls as a means of helping ensure that S4 automation routines stay more resilient and easier to manage over time.
 
 ]
+
+### Implied Context Targeting
+[Probably need a better name (i.e., refactor the name of this convention).
+Represents the ability of some S4 routines to be able to determine calling context - i.e., figure out which database an admindb routine is being called from. 
+
+behavior is SIMILAR to what SQL Server provides via sp_Sprocs - in that you can execute, say: 
+
+```sql
+
+EXEC sp_helpindex 'someTableName'; 
+
+``` 
+
+Within any database and the 'special procedure' nature of sp_Sprocs checks to see if there's a sproc in the master/resource db with the name of `sp_helpindex` that can/should be run locally. 
+
+In that same sense, you can run: 
+
+```sql 
+
+EXEC admindb.dbo.help_index 'someTableName';
+
+```
+
+from within a database OTHER than the `admindb` and 'redirection'/binding logic within S4/admindb code will derive the calling context and process `help_index` against `[Current].[schema_name-defaults-to-dbo].someTableName` as implied/intended. 
+
+RATIONALE: 
+Big question, of course, is: why re-invent `sp_SpecialProcs` functionality? 
+Answer: `sp_Procs` need to live in the MASTER database - and one of the EXPLICIT goals of the `admindb` is to avoid ANY code in the `master` database - ergo, this convention.
+]
+
 
 ### File Path Specifications
 [

@@ -57,9 +57,9 @@ AS
 
 		SET @currentLocation = @currentLocation + (LEN(@chunk));
 
-		IF LEFT(@chunk, 2) = @crlf BEGIN 
-			SET @chunk = RIGHT(@chunk, LEN(@chunk) - 2);
-		END;
+		--IF LEFT(@chunk, 2) = @crlf BEGIN 
+		--	SET @chunk = RIGHT(@chunk, LEN(@chunk) - 2);
+		--END;
 
 		PRINT @chunk;
 	END;
