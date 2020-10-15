@@ -309,13 +309,13 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: Common\Internal\normalize_file_path.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\check_paths.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_default_path.sql
-
------------------------------------
---##INCLUDE: Common\Internal\normalize_file_path.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_default_setting.sql
@@ -554,6 +554,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\help_index.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
