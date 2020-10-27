@@ -43,6 +43,32 @@ AS
     -------------------------------------------------------------------------------------
     -- 0. Core Configuration Details/Needs:
 
+	-- TODO: Verify that we've got a Mirroring Endpoint (and, ideally, that CONNECT/etc. has been granted to something on the partner/etc.). 
+
+
+	-- Verify AG health XE session:
+	IF (SELECT [admindb].dbo.[get_engine_version]()) >= 11.0 BEGIN 
+		IF NOT EXISTS (SELECT NULL FROM sys.[server_event_sessions] WHERE [name] = N'AlwaysOn_health') BEGIN
+			INSERT INTO #Errors (SectionID, Severity, ErrorText)
+			SELECT 0, N'WARNING', N'AlwaysOn_health XE session not found on server.';			
+
+		  END; 
+		ELSE BEGIN -- we found it, make sure it's auto-started and running: 
+			
+			IF NOT EXISTS (SELECT NULL FROM sys.[server_event_sessions] WHERE [name] = N'AlwaysOn_health' AND [startup_state] = 1) BEGIN
+				INSERT INTO #Errors (SectionID, Severity, ErrorText)
+				SELECT 0, N'WARNING', N'AlwaysOn_health XE session is NOT set to auto-start with Server.';
+			END;
+
+			IF NOT EXISTS (SELECT NULL FROM sys.[dm_xe_sessions] WHERE [name] = N'AlwaysOn_health') BEGIN
+				INSERT INTO #Errors (SectionID, Severity, ErrorText)
+				SELECT 0, N'WARNING', N'AlwaysOn_health XE session is NOT currently running.';
+			END;
+		END;
+
+	END;
+
+
     -- Database Mail
     IF (SELECT value_in_use FROM sys.configurations WHERE name = 'Database Mail XPs') != 1 BEGIN
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
