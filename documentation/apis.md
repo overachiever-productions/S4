@@ -116,6 +116,14 @@
 [Return to Table of Contents](#table-of-contents)
 
 
+## Extended Events
+- **[dbo.translate_blockedprocesses_trace](/documentation/apis/translate_blockedprocesses_trace.md** -  Imports and translates raw XEL data from blocked-processes traces into a normalized-view SQL Server table for additional review and analysis (e.g., via view_xxxx_blockedprocesses operations).
+- **[dbo.translate_deadlock_trace](/documentation/apis/translate_deadlock_trace.md)** - Imports XEL deadlock graph data and transforms low-level details into easier-to-consume data for chronological and aggregate analysis. 
+- **[dbo.view_sequential_blockedprocesses](/documentation/apis/view_sequential_blockedprocesses.md)** - Standardized dashboard for chronological analysis and review of blocked process reports - from a (pre imported and) pre-translated set of .xel data.  
+- **[dbo.view_sequential_deadlocks](/documentation/apis/view_sequential_deadlocks.md)** - Sequential or chronological view of key data extracted from deadlock graphs - to make high-level review and analysis of deadlock graph information easier to process.
+
+[Return to Table of Contents](#table-of-contents)
+
 ## SQL Server Audit Signature Monitoring and Verification
 
 Keep an eye on your audit specifications and definitions - by means of periodic checkups to verify that audit details and 'signatures' haven't changed: 
