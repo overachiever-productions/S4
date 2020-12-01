@@ -104,6 +104,9 @@ AS
 	WHERE 
 		[output] IS NOT NULL;
 
+
+
+
 	DECLARE @orderedResults table ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
 		[output] varchar(500) NOT NULL, 
