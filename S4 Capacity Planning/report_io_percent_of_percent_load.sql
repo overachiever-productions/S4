@@ -41,11 +41,10 @@ IF OBJECT_ID('dbo.report_io_percent_of_percent_load','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[report_io_percent_of_percent_load]
-	@MetricsSourceTable				sysname, 
+	@SourceTable				sysname, 
 	@TargetDisks					sysname				= N'{ALL}', 
 	@TargetThresholds				nvarchar(MAX)		= NULL,
-	@ExcludePerfmonTotal			bit					= 1,						
-	@IncludeContinuityHeader		bit					= 0
+	@ExcludePerfmonTotal			bit					= 1					
 AS
     SET NOCOUNT ON; 
 
@@ -58,8 +57,8 @@ AS
 	DECLARE @outcome int = 0;
 
 	EXEC @outcome = dbo.load_id_for_normalized_name 
-		@TargetName = @MetricsSourceTable, 
-		@ParameterNameForTarget = N'@MetricsSourceTable', 
+		@TargetName = @SourceTable, 
+		@ParameterNameForTarget = N'@SourceTable', 
 		@NormalizedName = @normalizedName OUTPUT, 
 		@ObjectID = @targetObjectID OUTPUT;
 
@@ -69,7 +68,7 @@ AS
 	-------------------------------------------------------------------------------------------------------------------------
 	-- Translate Targetting Constraints (if present): 
 	DECLARE @targetsPresent bit = 0;
-
+	
 	IF NULLIF(@TargetThresholds, N'') IS NOT NULL BEGIN 
 
 		CREATE TABLE #targets (
@@ -92,9 +91,7 @@ AS
 		
 		IF EXISTS (SELECT NULL FROM [#targets]) BEGIN
 			SET @targetsPresent = 1;
-
 		END;
-
 	END;
 
 	-------------------------------------------------------------------------------------------------------------------------
@@ -105,73 +102,37 @@ AS
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @sql nvarchar(MAX);
 
-	DECLARE @sampleRow nvarchar(200);
-
-	SET @sql = N'SET @sampleRow = (SELECT TOP 1 [name] FROM [' + @targetDBName + N'].sys.[all_columns] WHERE [object_id] = OBJECT_ID(''' + @normalizedName + N''') AND [name] LIKE ''%Disk Read Bytes/sec''); ';
-	EXEC sp_executesql 
+	SET @sql = N'SELECT @serverName = (SELECT TOP 1 [server_name] FROM ' + @SourceTable + N'); ';
+	DECLARE @serverName sysname; 
+	EXEC [sys].[sp_executesql]
 		@sql, 
-		N'@sampleRow nvarchar(200) OUTPUT',
-		@sampleRow = @sampleRow OUTPUT;
-
-	DECLARE @hostNamePrefix sysname; 
-	DECLARE @instanceNamePrefix sysname;
-	SET @hostNamePrefix = LEFT(@sampleRow, CHARINDEX(N'\PhysicalDisk', @sampleRow));
-
-	SET @sql = N'SET @sampleRow = (SELECT TOP 1 [name] FROM [' + @targetDBName + N'].sys.[all_columns] WHERE [object_id] = OBJECT_ID(''' + @normalizedName + N''') AND [name] LIKE ''%Batch Requests/sec''); ';
-	EXEC sp_executesql 
-		@sql, 
-		N'@sampleRow nvarchar(200) OUTPUT',
-		@sampleRow = @sampleRow OUTPUT;	
-		
-	SET @instanceNamePrefix = LEFT(@sampleRow, CHARINDEX(N':SQL Statistics', @sampleRow));
-
+		N'@serverName sysname OUTPUT', 
+		@serverName = @serverName OUTPUT;
 	
-	DECLARE @timeZone sysname; 
-	SET @sql = N'SELECT 
-		@timeZone = [name]
-	FROM 
-		[' + @targetDBName + N'].sys.[columns] 
-	WHERE 
-		[object_id] = OBJECT_ID(''' + @normalizedName + N''')
-		AND [column_id] = 1; ';
-
-	EXEC sp_executesql 
-		@sql, 
-		N'@timeZone sysname OUTPUT',
-		@timeZone = @timeZone OUTPUT;	
-
 	DECLARE @drives table (
 		row_id int IDENTITY(1,1) NOT NULL, 
-		drive sysname NOT NULL, 
-		simplified sysname NULL
+		[drive] sysname NOT NULL
 	); 
 
 	SET @sql = N'WITH core AS ( 
 		SELECT 
 			column_id,
-			REPLACE(name, @hostNamePrefix, N'''') [name]
+			[name]
 		FROM 
 			[' + @targetDBName + N'].sys.[all_columns] 
 		WHERE 
 			[object_id] = OBJECT_ID(''' + @normalizedName + N''')
-			AND [name] LIKE ''%Disk Read Bytes/sec''
+			AND [name] LIKE ''IOPs.%''
 	) 
 
 	SELECT 
-		REPLACE(REPLACE([name], ''PhysicalDisk('', ''''), N'')\Disk Read Bytes/sec'', N'''') [drive]
+		REPLACE([name], N''IOPs.'', '''') [drive]
 	FROM 
 		core; ';
 
 	INSERT INTO @drives ([drive])
 	EXEC sp_executesql 
-		@sql,
-		N'@hostNamePrefix sysname', 
-		@hostNamePrefix = @hostNamePrefix;
-
-
-	UPDATE @drives
-	SET 
-		[simplified] = REPLACE(REPLACE(drive, LEFT(drive,  CHARINDEX(N' ', drive)), N''), N':', N'');
+		@sql;
 
 	-- Implement drive filtering: 
 	IF UPPER(@TargetDisks) <> N'{ALL}' BEGIN 
@@ -189,316 +150,15 @@ AS
 					
 				SELECT 
 					N'_Total' [result]				
-			) x ON d.[simplified] = x.[result] 
+			) x ON d.[drive] = x.[result] 
 		WHERE 
 			x.[result] IS NULL;
-
-
-		IF @ExcludePerfmonTotal = 1 BEGIN 
-			DELETE FROM @drives WHERE [simplified] = N'_Total';
-		END;
-
 	END;
 
-	DECLARE @statement nvarchar(MAX) = N'
-	WITH translated AS (
-		SELECT 
-			TRY_CAST([{timeZone}] as datetime) [timestamp],
-			TRY_CAST([\\{HostName}\Processor(_Total)\% Processor Time]  as decimal(10,2)) [% CPU],
-			TRY_CAST([{InstanceName}Buffer Manager\Page life expectancy] as int) [PLE],
-			TRY_CAST([{InstanceName}SQL Statistics\Batch Requests/sec] as decimal(22,2)) [batches/second],
-        
-			{ReadBytes}
-			{WriteBytes}
-			{MSPerRead}
-			{MSPerWrite}
-			{ReadsPerSecond}
-			{WritesPerSecond}
-		FROM 
-			{TableName}
-	), 
-	aggregated AS (
-		SELECT 
-			[timestamp],
-			[% CPU],
-			[PLE],
-			[batches/second],   
-
-			{AggregatedThroughput}
-			{AggregatedIOPS}
-			{AggregatedLatency}
-
-			, (SELECT MAX(latency) FROM (VALUES {PeakLatency}) AS x(latency)) [PeakLatency]
-		FROM 
-			translated 
-	)
-
-	SELECT 
-		[timestamp],
-		[% CPU],
-		[PLE],
-		[batches/second],
-
-		{Throughput}
-		{IOPS}
-		{Latency},
-		[PeakLatency]
-	INTO 
-		##translated_io_metrics
-	FROM 
-		[aggregated]; ';
-
-	------------------------------------------------------------------------------------------------------------
-	-- Raw Data / Extraction (from nvarchar(MAX) columns).
-	------------------------------------------------------------------------------------------------------------
-	--------------------------------
-	-- ReadBytes
-	DECLARE @ReadBytes nvarchar(MAX) = N'';
-	SELECT 
-		@ReadBytes = @ReadBytes + N'TRY_CAST([\\{HostName}\PhysicalDisk(' + drive + N')\Disk Read Bytes/sec] as decimal(22,2)) [ReadBytes.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{ReadBytes}', @ReadBytes);
-
-	--------------------------------
-	-- WriteBytes
-	DECLARE @WriteBytes nvarchar(MAX) = N'';
-	SELECT 
-		@WriteBytes = @WriteBytes + N'TRY_CAST([\\{HostName}\PhysicalDisk(' + drive + N')\Disk Write Bytes/sec] as decimal(22,2)) [WriteBytes.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{WriteBytes}', @WriteBytes);
-
-	--------------------------------
-	-- MSPerRead
-	DECLARE @MSPerRead nvarchar(MAX) = N'';
-	SELECT 
-		@MSPerRead = @MSPerRead + N'TRY_CAST([\\{HostName}\PhysicalDisk(' + drive + N')\Avg. Disk sec/Read] as decimal(22,2)) [MSPerRead.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives
-	WHERE 
-		[drive] <> '_Total';
-
-	SET @statement = REPLACE(@statement, N'{MSPerRead}', @MSPerRead);
-
-	--------------------------------
-	-- MSPerWrite
-	DECLARE @MSPerWrite nvarchar(MAX) = N'';
-	SELECT 
-		@MSPerWrite = @MSPerWrite + N'TRY_CAST([\\{HostName}\PhysicalDisk(' + drive + N')\Avg. Disk sec/Write] as decimal(22,2)) [MSPerWrite.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives
-	WHERE 
-		[drive] <> '_Total';
-
-	SET @statement = REPLACE(@statement, N'{MSPerWrite}', @MSPerWrite);
-
-	--------------------------------
-	-- ReadsPerSecond
-	DECLARE @ReadsPerSecond nvarchar(MAX) = N'';
-	SELECT 
-		@ReadsPerSecond = @ReadsPerSecond + N'TRY_CAST([\\{HostName}\PhysicalDisk(' + drive + N')\Disk Reads/sec] as decimal(22,2)) [ReadsPerSecond.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{ReadsPerSecond}', @ReadsPerSecond);
-
-	--------------------------------
-	-- WritesPerSecond
-	DECLARE @WritesPerSecond nvarchar(MAX) = N'';
-	SELECT 
-		@WritesPerSecond = @WritesPerSecond + N'TRY_CAST([\\{HostName}\PhysicalDisk(' + drive + N')\Disk Writes/sec] as decimal(22,2)) [WritesPerSecond.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @WritesPerSecond = LEFT(@WritesPerSecond, LEN(@WritesPerSecond) - 5);  -- tabs/etc.... 
-	SET @statement = REPLACE(@statement, N'{WritesPerSecond}', @WritesPerSecond);
-
-	------------------------------------------------------------------------------------------------------------
-	-- Aggregated Data
-	------------------------------------------------------------------------------------------------------------
-	--------------------------------
-	-- AggregatedThroughput
-	DECLARE @AggregatedThroughput nvarchar(MAX) = N'';
-	SELECT 
-		@AggregatedThroughput = @AggregatedThroughput + N'CAST(([ReadBytes.' + simplified + N'] + [WriteBytes.' + simplified + N']) /  (1024.0 * 1024.0) as decimal(20,2)) [Throughput.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{AggregatedThroughput}', @AggregatedThroughput);
-
-	--------------------------------
-	-- AggregatedIOPS
-	DECLARE @AggregatedIOPS nvarchar(MAX) = N'';
-	SELECT 
-		@AggregatedIOPS = @AggregatedIOPS + N'[ReadsPerSecond.' + simplified + N'] + [WritesPerSecond.' + simplified + N'] [IOPs.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{AggregatedIOPS}', @AggregatedIOPS);
-
-	--------------------------------
-	-- AggregatedLatency
-	DECLARE @AggregatedLatency nvarchar(MAX) = N'';
-	SELECT 
-		@AggregatedLatency = @AggregatedLatency + N'[MSPerRead.' + simplified + N'] + [MSPerWrite.' + simplified + N'] [Latency.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives
-	WHERE 
-		[drive] <> '_Total';
-
-	SET @AggregatedLatency = LEFT(@AggregatedLatency, LEN(@AggregatedLatency) - 5);  -- tabs/etc.... 
-	SET @statement = REPLACE(@statement, N'{AggregatedLatency}', @AggregatedLatency);
-
-
-	DECLARE @PeakLatency nvarchar(MAX) = N'';
-
-	SELECT 
-		@PeakLatency = @PeakLatency + N'([MSPerRead.' + simplified + N'] + [MSPerWrite.' + simplified + N']), '
-	FROM 
-		@drives 
-	WHERE 
-		[drive] <> '_Total';
-
-	SET @PeakLatency = LEFT(@PeakLatency, LEN(@PeakLatency) - 1);
-
-	SET @statement = REPLACE(@statement, N'{PeakLatency}', @PeakLatency);
-	
-	------------------------------------------------------------------------------------------------------------
-	-- Final Projection Details: 
-	------------------------------------------------------------------------------------------------------------
-	--------------------------------
-	-- Throughput
-	DECLARE @Throughput nvarchar(MAX) = N'';
-	SELECT 
-		@Throughput = @Throughput + N'[Throughput.' + simplified + N'] [MB Throughput.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{Throughput}', @Throughput);
-
-	--------------------------------
-	-- IOPs
-	DECLARE @IOPs nvarchar(MAX) = N'';
-	SELECT 
-		@IOPs = @IOPs + N'[IOPs.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives;
-
-	SET @statement = REPLACE(@statement, N'{IOPs}', @IOPs);
-
-	--------------------------------
-	-- Latency
-	DECLARE @Latency nvarchar(MAX) = N'';
-	SELECT 
-		@Latency = @Latency + N'[Latency.' + simplified + N'],' + @crlf + @tab + @tab
-	FROM 
-		@drives
-	WHERE 
-		[drive] <> '_Total'; -- averages out latencies over ALL drives - vs taking the MAX... (so... we'll have to grab [peak/max).
-
-	SET @Latency = LEFT(@Latency, LEN(@Latency) - 5);  -- tabs/etc.... 
-	SET @statement = REPLACE(@statement, N'{Latency}', @Latency);
-
-	--------------------------------
-	-- TOP + ORDER BY + finalization... 
-
-	SET @statement = REPLACE(@statement, N'{timeZone}', @timeZone);
-	SET @statement = REPLACE(@statement, N'{HostName}', REPLACE(@hostNamePrefix, N'\', N''));
-	SET @statement = REPLACE(@statement, N'{InstanceName}', @instanceNamePrefix);
-	SET @statement = REPLACE(@statement, N'{TableName}', @normalizedName);
-
-	--EXEC admindb.dbo.[print_long_string] @statement;
-	
-	-- vNEXT: rather than playing with ##global temp tables... I think the following approach would be a better option - it'll need some decent help though
-	--		not JUST in terms of creating the T-SQL needed to create the #translated_metrics table... but... also in terms of the INSERT INTO (will, have, to, specify, column, names) angle of things
-	--			OTEHRWISE, if I TRY to use 'shortcut syntax' I run the risk of things getting garbled on the way in... 
-	--DECLARE @tempTableDefinition nvarchar(MAX); 
-	--EXEC [admindb].dbo.project_query_to_table_definition
-	--	@Command = @sql, 
-	--	@Params = N'@hostNamePrefix sysname',
-	--	@TableName = N'translated_metrics', 
-	--	@Mode = N'TEMP',
-	--	@Output = @tempTableDefinition OUTPUT;
-
-	--PRINT @tempTableDefinition;
-
-
-	IF OBJECT_ID('tempdb..##translated_io_metrics') IS NOT NULL BEGIN
-		DROP TABLE ##translated_io_metrics;
+	IF @ExcludePerfmonTotal = 1 BEGIN 
+		DELETE FROM @drives WHERE [drive] = N'_Total';
 	END;
 
-	EXEC sp_executesql @statement;
-
-	-------------------------------------------------------------------------------------------------------------------------
-	-- convert ##translated_io_metrics to #translated_metrics: 
-	IF OBJECT_ID('tempdb..##translated_io_metrics') IS NOT NULL BEGIN
-		SELECT * INTO #translated_metrics FROM ##translated_io_metrics;
-
-		DROP TABLE ##translated_io_metrics;
-	END;
-
-	DECLARE @serverName sysname = REPLACE(@hostNamePrefix, N'\', N'');
-
-	-------------------------------------------------------------------------------------------------------------------------
--- TODO: push into a sub-sproc that EXPECTS and uses #translated_metrics for re-use purposes... (assuming that #temp-table is visable in 'sub-sprocs'
-	IF @IncludeContinuityHeader = 1 BEGIN 
-
-		DECLARE @startTime datetime, @endTime datetime;
-		DECLARE @largeGaps int;
-		DECLARE @smallGapsSum int; 
-
-		SELECT 
-			@startTime = MIN([timestamp]), 
-			@endTime = MAX([timestamp])
-		FROM 
-			#translated_metrics
-		WHERE 
-			[timestamp] IS NOT NULL;
-
-		WITH core AS ( 
-			SELECT 
-				[timestamp], 
-				ROW_NUMBER() OVER (ORDER BY [timestamp]) [row_number]
-			FROM 
-				#translated_metrics
-		) 
-
-		SELECT 
-			ROW_NUMBER() OVER(ORDER BY c1.[timestamp]) [gap_id],
-			c1.[timestamp] [gap_start], 
-			c2.[timestamp] [gap_end], 
-			DATEDIFF(MILLISECOND, c1.[timestamp], c2.[timestamp]) [gap_duration_ms]
-		INTO 
-			#gaps
-		FROM 
-			core c1 
-			INNER JOIN core c2 ON c1.[row_number] + 1 = c2.[row_number] 
-		WHERE 
-			DATEDIFF(MILLISECOND, c1.[timestamp], c2.[timestamp]) > 1200
-		ORDER BY 
-			c1.[row_number];
-
-
-		SELECT @largeGaps = SUM(gap_duration_ms) FROM [#gaps] WHERE [gap_duration_ms] > 30000;
-		SELECT @smallGapsSum = SUM(gap_duration_ms) FROM [#gaps] WHERE [gap_duration_ms] < 30000;
-
-		SELECT 
-			@serverName [server_name],
-			@startTime [start_time],
-			@endTime [end_time], 
-			DATEDIFF(SECOND, @startTime, @endTime) [total_seconds], 
-			@largeGaps / 1000 [large_gap_seconds], 
-			@smallGapsSum / 1000 [aggregate_small_gap_seconds], 
-			(DATEDIFF(SECOND, @startTime, @endTime)) - (@largeGaps / 1000) - (@smallGapsSum / 1000) [exact_seconds]
-
-
-		SELECT * FROM [#gaps] ORDER BY [gap_id];
-
-	END;
-	   
 	-------------------------------------------------------------------------------------------------------------------------
 	-- begin processing/assessing outputs: 
 
@@ -532,7 +192,7 @@ AS
 		@maxIOPs = MAX([IOPs.{driveName}]), 
 		@maxThroughput = MAX([MB Throughput.{driveName}])
 	FROM 
-		[#translated_metrics]; ';
+		' + @SourceTable + N'; ';
 
 	DECLARE @aggregateIOPsTemplate nvarchar(MAX) = N'WITH partitioned AS ( 
 
@@ -551,7 +211,7 @@ AS
 			CASE WHEN ([IOPs.{driveName}] > (@comparedIOPs * 1.2)) THEN 1 ELSE 0 END [121%+ usage]
 
 		FROM 
-			[#translated_metrics]
+			' + @SourceTable + N'
 
 	),
 	aggregated AS ( 
@@ -610,7 +270,7 @@ AS
 			CASE WHEN ([MB Throughput.{driveName}] > (@comparedThroughput * 1.2)) THEN 1 ELSE 0 END [121%+ usage]
 
 		FROM 
-			[#translated_metrics]
+			' + @SourceTable + N'
 
 	),
 	aggregated AS ( 
@@ -658,7 +318,7 @@ AS
 	DECLARE @targetThroughput decimal(24,2) = 0; 
 	DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
-		[simplified]
+		[drive]
 	FROM 
 		@drives
 	ORDER BY 
