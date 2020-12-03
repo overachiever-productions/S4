@@ -95,6 +95,8 @@ AS
 		[report] xml NULL
 	);
 
+	CREATE CLUSTERED INDEX [____CLIX_#work_byReportId] ON [#work] (report_id);
+
 	DECLARE @sql nvarchar(MAX) = N'SELECT 
 		*
 	FROM {SourceTable}{WHERE}
