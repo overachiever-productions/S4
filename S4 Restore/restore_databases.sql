@@ -1201,7 +1201,7 @@ FINALIZE:
 		FROM 
 			[#stale] x
 		WHERE  
-			(x.[vector] > @vector) OR [x].[days_old] > 20 
+			(x.[vector] > (@vector * 1000)) OR [x].[days_old] > 20 
 		ORDER BY 
 			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
 			[x].[vector];
