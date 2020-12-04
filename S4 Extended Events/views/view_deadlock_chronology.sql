@@ -2,7 +2,7 @@
 
 
 
-			EXEC [admindb].dbo.[view_sequential_deadlocks]
+			EXEC [admindb].dbo.[view_deadlocks_chronology]
 				@TranslatedDeadlocksTable = N'Meddling.dbo.xxx_deadlocks';
 
 */
@@ -10,11 +10,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.view_chronological_deadlocks','P') IS NOT NULL
-	DROP PROC dbo.[view_chronological_deadlocks];
+IF OBJECT_ID('dbo.view_deadlock_chronology','P') IS NOT NULL
+	DROP PROC dbo.[view_deadlock_chronology];
 GO
 
-CREATE PROC dbo.[view_chronological_deadlocks]
+CREATE PROC dbo.[view_deadlock_chronology]
 	@TranslatedDeadlocksTable					sysname, 
 	@OptionalStartTime							datetime	= NULL, 
 	@OptionalEndTime							datetime	= NULL
