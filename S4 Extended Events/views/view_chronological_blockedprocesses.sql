@@ -26,11 +26,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.view_chronological_blockedprocesses','P') IS NOT NULL
-	DROP PROC dbo.[view_chronological_blockedprocesses];
+IF OBJECT_ID('dbo.view_blockedprocess_chronology','P') IS NOT NULL
+	DROP PROC dbo.[view_blockedprocess_chronology];
 GO
 
-CREATE PROC dbo.[view_chronological_blockedprocesses]
+CREATE PROC dbo.[view_blockedprocess_chronology]
 	@TranslatedBlockedProcessesTable					sysname, 
 	@OptionalStartTime									datetime	= NULL, 
 	@OptionalEndTime									datetime	= NULL
