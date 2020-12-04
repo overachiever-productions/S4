@@ -4,7 +4,13 @@
 			- dbo.extract_statement needs the ability to use/define @OptionalDbTranslationMappings 
 					otherwise, if this sproc is run in another environment, we end up grabbing the wrong statements (which is silly/bad/wrong).
 
+			- Change @OverwriteTarget to 
+				@BehaviorOnTargetTableExists sysname	= { OVERWRITE | ADD } 
 
+					where OVERWRITE is the same as current/now behavior.	
+					and ADD = a) find the start/stop of the data in the current @TargetTable... b) grab anything from the new @Source... that isn't in the range defined/calculated from step a
+								and, c) shove the 'union' of said data into the table 
+									this way we can add new/additional data ('before' or 'after' whatever is there) to help look for other patterns/behaviors and the likes.
 
 
 

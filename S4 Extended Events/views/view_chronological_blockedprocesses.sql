@@ -1,14 +1,20 @@
 /*
 
 	vNEXT: 
-		- Currently pulling 1x 'header' row PER each lead-blocker - normally, that's fine/good-ish. But if there's > 1 lead blocker, this quickly gets ugly/lame. 
-			Especially if/when there are, say, 20 or 60+ lead blockers (yeah, it happens). In that case, there's like 30 or 60 some-odd 'header' rows... then the individual blocked process reports. 
-				and... that all totally sucks. 
-					A better approach for 1 or MORE (i.e., all scenarios) would be: 
-							- 1x (only) 'header' row PER EACH blocked-process report_id. 
-							- [process_count] still shows what it does now, e.g., 57 or 28 (i.e., total number of lead blockers and/or blocked process reports)
-							- [blocking_chain] column shows: lead-blockers: 503, 128, 119, etc. - i.e., a 'serialized' list of lead blockers. 
-							
+		- account for system-level/database-level and ... uh, <phantom-blockers> 
+			i.e., where: 
+				blocking_xactid
+				blocking_request
+				blocking_resource are all NULL (i.e., NOTHING is blocking)
+
+				and, unlike self-blockers - where ... there IS something being blocked (the self-blocker). 
+				in this new/additional scenario, the following are ALSO, uh, blank: 
+					- blocked_xactid
+					- blocked_request 
+					OR
+					- blocked_resource 
+						
+					i.e., we USUALLY get at least ONE of the request/resource values - (but seems like we never get both? ) 
 
 
 	FODDER: 
@@ -202,62 +208,192 @@ AS
 			[#work] base 
 			INNER JOIN chain c ON base.report_id = c.report_id AND base.blocking_id = c.blocking_id 
 
-	), 
-	aggregated AS ( 
+	)
+	SELECT 
+		[report_id],
+		[level],
+		[blocking_id],
+		[blocking_chain]
+	INTO 
+		#chain
+	FROM 
+		chain
+	WHERE 
+		[level] <> 0;
+
+
+	--SELECT * FROM #chain; 
+	--RETURN 0;
+
+	SELECT 
+		report_id, 
+		MIN([timestamp]) [timestamp], 
+		COUNT(*) [process_count]
+	INTO 
+		#aggregated
+	FROM 
+		[#work]
+	GROUP BY 
+		[report_id];
+
+
+	WITH normalized AS ( 
+
 		SELECT 
-			report_id, 
-			MIN([timestamp]) [timestamp], 
-			COUNT(*) [process_count]
+			ISNULL([c].[level], -1) [level],
+			[w].[blocking_id],
+			[w].[blocked_id],
+			LAG([w].[report_id], 1, 0) OVER (ORDER BY [w].[report_id], ISNULL([c].[level], -1)) [previous_report_id],
+
+			--[w].[report_id],
+			[w].[report_id] [original_report_id],
+			[w].[database_name],
+			[w].[timestamp],
+			[a].[process_count],
+
+			ISNULL([c].[blocking_chain], N'    ' + CAST([w].[blocked_id] AS sysname) + N' -> (' + CAST([w].[blocked_id] AS sysname) + N')') [blocking_chain],
+			
+			dbo.[format_timespan]([w].[blocked_wait_time]) [time_blocked],
+			
+			CASE WHEN [w].[blocking_id] IS NULL THEN N'<blocking-self>' ELSE [w].[blocking_status] END [blocking_status],
+			[w].[blocking_isolation_level],
+			CASE WHEN [w].[blocking_id] IS NULL THEN N'(' + CAST([w].[blocked_xactid] AS sysname) + N')' ELSE CAST([w].[blocking_xactid] AS sysname) END [blocking_xactid],
+			[w].[blocking_tran_count],
+			CASE WHEN [w].blocking_request LIKE N'%Object Id = [0-9]%' THEN [w].[blocking_request] + N' --> ' + ISNULL([w].[blocking_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([w].[blocking_request], N'') END [blocking_request],
+			[w].[blocking_resource],
+
+			-- blocked... 
+			[w].[blocked_status], -- always suspended or background - but background can be important to know... 
+			[w].[blocked_isolation_level],
+			[w].[blocked_xactid],
+			[w].[blocked_tran_count],
+			[w].[blocked_log_used],
+			
+			CASE WHEN [w].[blocked_request] LIKE N'%Object Id = [0-9]%' THEN [w].[blocked_request] + N' --> ' + ISNULL([w].[blocked_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([w].[blocked_request], N'') END [blocked_request],
+			[w].[blocked_resource],
+		
+			[w].[blocking_weight],
+			[w].[blocked_weight],
+
+			[w].[blocking_host_name],
+			[w].[blocking_login_name],
+			[w].[blocking_client_app],
+		
+			[w].[blocked_host_name],
+			[w].[blocked_login_name],
+			[w].[blocked_client_app],
+
+			----------
+		
+			--[w].[blocking_sproc_statement],
+			--[w].[blocking_resource_id],
+		
+			--[w].[blocking_wait_time],
+			--[w].[blocking_start_offset],
+			--[w].[blocking_end_offset],
+			--[w].[blocking_host_name],
+			--[w].[blocking_login_name],
+			--[w].[blocking_client_app],
+
+			--[w].[blocked_spid],
+			--[w].[blocked_ecid],
+		
+			--[w].[blocked_sproc_statement],
+		
+			--[w].[blocked_resource_id],
+			--[w].[blocked_wait_time],
+			--[w].[blocked_lock_mode],
+			--[w].[blocked_start_offset],
+			--[w].[blocked_end_offset],
+
+			[w].[report]
 		FROM 
-			[#work] 
-		GROUP BY 
-			report_id
+			[#work] w
+			LEFT OUTER JOIN [#aggregated] a ON [w].[report_id] = [a].[report_id]
+			LEFT OUTER JOIN [#chain] c ON [w].[report_id] = [c].[report_id] AND w.blocked_id = c.[blocking_id]
 	)
 
 	SELECT 
-		CASE WHEN s.[timestamp] IS NULL THEN CAST(c.report_id AS sysname) ELSE N'' END [report_id],
-		CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.[database_name], N'') ELSE ISNULL([s].[database_name], N'') END [database_name],
-		CASE WHEN s.[report] IS NULL THEN CONVERT(sysname,  a.[timestamp], 120) ELSE N'' END [timestamp],
-		CASE WHEN s.[report] IS NULL THEN CAST(a.[process_count] AS sysname) ELSE N'' END [process_count],
+		--[level],
+		--[blocking_id],
+		--[blocked_id],
+		--[previous_report_id],
 		
-		CASE WHEN c.blocking_chain IS NULL THEN N'     ' + CAST(detail.blocked_id AS sysname) + N' -> (' + CAST(detail.blocked_id AS sysname) + N')'  ELSE SPACE(4 * c.[level]) + c.blocking_chain END [blocking_chain],
-
-		CASE WHEN c.blocking_chain IS NULL THEN dbo.[format_timespan](detail.blocked_wait_time) ELSE dbo.format_timespan(s.blocked_wait_time) END [time_blocked],
-
-		s.blocking_tran_count, 
-		ISNULL(CAST(s.blocking_xactid AS sysname), '') blocking_xactid,  -- VERY helpful in determining which 'blocker' is the same from one blocked-process-report to the next... 
-		ISNULL(s.blocking_isolation_level, '') blocking_isolation_level,
-		CASE WHEN c.blocking_chain IS NULL THEN N'<blocking-self>' ELSE ISNULL(s.blocking_status, N'') END [blocking_status],	
-		CASE WHEN s.blocking_request LIKE N'%Object Id = [0-9]%' THEN s.blocking_request + N' --> ' + ISNULL(s.blocking_sproc_statement, N'#sproc_statement_extraction_error#') ELSE ISNULL(s.blocking_request, '') END [blocking_request],
-		ISNULL(s.blocking_resource, '') blocking_resource, 
-
-		CASE WHEN c.blocking_chain IS NULL 
-			THEN CASE WHEN detail.blocked_request LIKE N'xx' THEN detail.blocked_request + N' --> ' + detail.blocked_sproc_statement ELSE ISNULL(detail.blocked_request, '') END
-			ELSE CASE WHEN s.blocked_request LIKE N'xx' THEN s.blocked_request + N' --> ' + s.blocked_sproc_statement ELSE ISNULL(s.blocked_request, '') END 
-		END [blocked_request],
-		
-		CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_resource, N'') ELSE ISNULL(s.blocked_resource, N'') END [blocked_resource],
-		CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_status, N'') ELSE ISNULL(s.blocked_status, '') END [blocked_status],
-		
-		CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_isolation_level, N'') ELSE ISNULL(s.blocked_isolation_level, N'') END blocked_isolation_level,
-		CASE WHEN c.blocking_chain IS NULL THEN detail.blocked_tran_count ELSE s.blocked_tran_count END [blocked_tran_count],
-		CASE WHEN c.blocking_chain IS NULL THEN detail.blocked_log_used ELSE s.blocked_log_used END [blocked_log_used],
-		
-		s.[blocking_weight],
-		s.[blocking_host_name], 
-		s.[blocking_client_app] [blocking_app_name],
-		CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_weight] ELSE s.[blocked_weight] END [blocked_weight],
-		CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_host_name] ELSE s.[blocked_host_name] END [blocked_host_name], 
-		CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_client_app] ELSE s.[blocked_client_app] END [blocked_app_name],
-		
-		CASE WHEN c.blocking_chain IS NULL THEN detail.[report] ELSE ISNULL(s.[report], N'<lead_blocker/>') END [report]
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CAST([original_report_id] AS sysname) END [report_id],
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE [database_name] END [database_name],
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CONVERT(sysname, [timestamp], 121) END [timestamp],
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CAST([process_count] AS sysname) END [process_count],
+		[blocking_chain],
+		[time_blocked],
+		[blocking_status],
+		[blocking_isolation_level],
+		[blocking_xactid],
+		[blocking_tran_count],
+		[blocking_request],
+		[blocking_resource],
+		[blocked_status],
+		[blocked_isolation_level],
+		[blocked_xactid],
+		[blocked_tran_count],
+		[blocked_log_used],
+		[blocked_request],
+		[blocked_resource],
+		[blocking_weight],
+		[blocked_weight],
+		[blocking_host_name],
+		[blocking_login_name],
+		[blocking_client_app],
+		[blocked_host_name],
+		[blocked_login_name],
+		[blocked_client_app],
+		[report] 
 	FROM 
-		chain c
-		INNER JOIN #work detail ON c.report_id = detail.report_id
-		LEFT OUTER JOIN [#work] s ON c.report_id = s.report_id AND c.blocking_id = s.blocked_id 
-		LEFT OUTER JOIN aggregated a ON c.report_id = a.report_id
+		[normalized] 
 	ORDER BY 
-		c.report_id, c.[level];
+		[original_report_id], [level];
+
+
+	--SELECT 
+					--	CASE WHEN s.[timestamp] IS NULL THEN CAST(c.report_id AS sysname) ELSE N'' END [report_id],
+					--	CASE WHEN s.[report] IS NULL THEN CONVERT(sysname,  a.[timestamp], 120) ELSE N'' END [timestamp],
+					--	CASE WHEN s.[report] IS NULL THEN CAST(a.[process_count] AS sysname) ELSE N'' END [process_count],
+		
+
+
+	--	s.blocking_tran_count, 
+	--	ISNULL(CAST(s.blocking_xactid AS sysname), '') blocking_xactid,  -- VERY helpful in determining which 'blocker' is the same from one blocked-process-report to the next... 
+	--	ISNULL(s.blocking_isolation_level, '') blocking_isolation_level,
+	--	CASE WHEN c.blocking_chain IS NULL THEN N'<blocking-self>' ELSE ISNULL(s.blocking_status, N'') END [blocking_status],	
+				--	CASE WHEN s.blocking_request LIKE N'%Object Id = [0-9]%' THEN s.blocking_request + N' --> ' + ISNULL(s.blocking_sproc_statement, N'#sproc_statement_extraction_error#') ELSE ISNULL(s.blocking_request, '') END [blocking_request],
+	--	ISNULL(s.blocking_resource, '') blocking_resource, 
+
+	--	CASE WHEN c.blocking_chain IS NULL 
+	--		THEN CASE WHEN detail.blocked_request LIKE N'xx' THEN detail.blocked_request + N' --> ' + detail.blocked_sproc_statement ELSE ISNULL(detail.blocked_request, '') END
+	--		ELSE CASE WHEN s.blocked_request LIKE N'xx' THEN s.blocked_request + N' --> ' + s.blocked_sproc_statement ELSE ISNULL(s.blocked_request, '') END 
+	--	END [blocked_request],
+		
+	--	CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_resource, N'') ELSE ISNULL(s.blocked_resource, N'') END [blocked_resource],
+	--	CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_status, N'') ELSE ISNULL(s.blocked_status, '') END [blocked_status],
+		
+	--	CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_isolation_level, N'') ELSE ISNULL(s.blocked_isolation_level, N'') END blocked_isolation_level,
+	--	CASE WHEN c.blocking_chain IS NULL THEN detail.blocked_tran_count ELSE s.blocked_tran_count END [blocked_tran_count],
+	--	CASE WHEN c.blocking_chain IS NULL THEN detail.blocked_log_used ELSE s.blocked_log_used END [blocked_log_used],
+		
+	--	s.[blocking_weight],
+	--	s.[blocking_host_name], 
+	--	s.[blocking_client_app] [blocking_app_name],
+	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_weight] ELSE s.[blocked_weight] END [blocked_weight],
+	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_host_name] ELSE s.[blocked_host_name] END [blocked_host_name], 
+	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_client_app] ELSE s.[blocked_client_app] END [blocked_app_name],
+		
+	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[report] ELSE ISNULL(s.[report], N'<lead_blocker/>') END [report]
+	--FROM 
+	--	chain c
+	--	INNER JOIN #work detail ON c.report_id = detail.report_id
+	--	LEFT OUTER JOIN [#work] s ON c.report_id = s.report_id AND c.blocking_id = s.blocked_id 
+	--	LEFT OUTER JOIN aggregated a ON c.report_id = a.report_id
+	--ORDER BY 
+	--	c.report_id, c.[level];
 
 	RETURN 0;
 GO
