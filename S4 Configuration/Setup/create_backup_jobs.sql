@@ -53,13 +53,30 @@ AS
 
 	-- translate 'local' timezone to UTC-zoned servers:
 	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
-		DECLARE @utc datetime = GETUTCDATE();
-		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+		IF (SELECT [dbo].[get_engine_version]()) >= 13.0 BEGIN 
 
-		SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
-		SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
-		SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
-		SET @DiffBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DiffBackupsStartTime);
+			DECLARE @utc datetime = GETUTCDATE();
+			DECLARE @atTimeZone datetime;
+			
+			DECLARE @offsetSQL nvarchar(MAX) = N'SELECT @atTimeZone = @utc AT TIME ZONE ''UTC'' AT TIME ZONE @TimeZoneForUtcOffset; ';
+			
+			EXEC sys.[sp_executesql]
+				@offsetSQL, 
+				N'@atTimeZone datetime OUTPUT, @utc datetime, @TimeZoneForUtcOffset sysname', 
+				@atTimeZone = @atTimeZone OUTPUT, 
+				@utc = @utc, 
+				@TimeZoneForUtcOffset = @TimeZoneForUtcOffset;
+
+			SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
+			SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
+			SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
+			SET @DiffBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DiffBackupsStartTime);
+
+		  END;
+		ELSE BEGIN 
+			RAISERROR('@TimeZoneForUtcOffset is NOT supported on SQL Server versions prior to SQL Server 2016. Set value to NULL.', 16, 1); 
+			RETURN -100;
+		END;
 	END;
 
 	DECLARE @systemStart time, @userStart time, @logStart time, @diffStart time;
