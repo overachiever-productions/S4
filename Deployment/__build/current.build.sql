@@ -586,6 +586,9 @@ GO
 --##INCLUDE: S4 Utilities\extract_statement.sql
 
 -----------------------------------
+--##INCLUDE: S4 Utilities\extract_code_lines.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\extract_waitresource.sql
 
 -----------------------------------
