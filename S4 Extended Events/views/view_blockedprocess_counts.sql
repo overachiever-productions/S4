@@ -36,13 +36,16 @@ CREATE PROC dbo.[view_blockedprocess_counts]
 	@TranslatedBlockedProcessesTable			sysname, 
 	@Granularity								sysname			= N'HOUR',   -- { DAY | HOUR | MINUTE } WHERE MINUTE ends up being tackled in 5 minute increments (not 1 minute).
 	@OptionalStartTime							datetime		= NULL, 
-	@OptionalEndTime							datetime		= NULL
+	@OptionalEndTime							datetime		= NULL, 
+	@ConvertTimesFromUtc								bit			= 1
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
 	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
+	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
+
 	IF UPPER(@Granularity) LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
 
 	DECLARE @normalizedName sysname; 
@@ -57,6 +60,11 @@ AS
 
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised...
+
+	DECLARE @timeOffset int = 0;
+	IF @ConvertTimesFromUtc = 1 BEGIN 
+		SET @timeOffset = (SELECT DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()));
+	END;
 
 	DECLARE @timePredicates nvarchar(MAX) = N'';
 

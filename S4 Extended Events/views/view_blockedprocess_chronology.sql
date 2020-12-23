@@ -33,13 +33,15 @@ GO
 CREATE PROC dbo.[view_blockedprocess_chronology]
 	@TranslatedBlockedProcessesTable					sysname, 
 	@OptionalStartTime									datetime	= NULL, 
-	@OptionalEndTime									datetime	= NULL
+	@OptionalEndTime									datetime	= NULL, 
+	@ConvertTimesFromUtc								bit			= 1
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
 	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
+	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -53,12 +55,17 @@ AS
 
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised... 
+
+	DECLARE @timeOffset int = 0;
+	IF @ConvertTimesFromUtc = 1 BEGIN 
+		SET @timeOffset = (SELECT DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()));
+	END;
 	
 	CREATE TABLE #work (
 		[row_id] int NOT NULL,
 		[timestamp] datetime NULL,
 		[database_name] sysname NULL,
-		[seconds_blocked] decimal(6,2) NULL,
+		[seconds_blocked] decimal(24,2) NULL,
 		[report_id] int NULL,
 		[blocking_spid] int NULL,
 		[blocking_ecid] int NULL,
@@ -221,10 +228,6 @@ AS
 	WHERE 
 		[level] <> 0;
 
-
-	--SELECT * FROM #chain; 
-	--RETURN 0;
-
 	SELECT 
 		report_id, 
 		MIN([timestamp]) [timestamp], 
@@ -248,6 +251,7 @@ AS
 			--[w].[report_id],
 			[w].[report_id] [original_report_id],
 			[w].[database_name],
+			--DATEADD(MINUTE, 0 - @timeOffset, [w].[timestamp]) [timestamp],
 			[w].[timestamp],
 			[a].[process_count],
 
@@ -351,49 +355,6 @@ AS
 		[normalized] 
 	ORDER BY 
 		[original_report_id], [level];
-
-
-	--SELECT 
-					--	CASE WHEN s.[timestamp] IS NULL THEN CAST(c.report_id AS sysname) ELSE N'' END [report_id],
-					--	CASE WHEN s.[report] IS NULL THEN CONVERT(sysname,  a.[timestamp], 120) ELSE N'' END [timestamp],
-					--	CASE WHEN s.[report] IS NULL THEN CAST(a.[process_count] AS sysname) ELSE N'' END [process_count],
-		
-
-
-	--	s.blocking_tran_count, 
-	--	ISNULL(CAST(s.blocking_xactid AS sysname), '') blocking_xactid,  -- VERY helpful in determining which 'blocker' is the same from one blocked-process-report to the next... 
-	--	ISNULL(s.blocking_isolation_level, '') blocking_isolation_level,
-	--	CASE WHEN c.blocking_chain IS NULL THEN N'<blocking-self>' ELSE ISNULL(s.blocking_status, N'') END [blocking_status],	
-				--	CASE WHEN s.blocking_request LIKE N'%Object Id = [0-9]%' THEN s.blocking_request + N' --> ' + ISNULL(s.blocking_sproc_statement, N'#sproc_statement_extraction_error#') ELSE ISNULL(s.blocking_request, '') END [blocking_request],
-	--	ISNULL(s.blocking_resource, '') blocking_resource, 
-
-	--	CASE WHEN c.blocking_chain IS NULL 
-	--		THEN CASE WHEN detail.blocked_request LIKE N'xx' THEN detail.blocked_request + N' --> ' + detail.blocked_sproc_statement ELSE ISNULL(detail.blocked_request, '') END
-	--		ELSE CASE WHEN s.blocked_request LIKE N'xx' THEN s.blocked_request + N' --> ' + s.blocked_sproc_statement ELSE ISNULL(s.blocked_request, '') END 
-	--	END [blocked_request],
-		
-	--	CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_resource, N'') ELSE ISNULL(s.blocked_resource, N'') END [blocked_resource],
-	--	CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_status, N'') ELSE ISNULL(s.blocked_status, '') END [blocked_status],
-		
-	--	CASE WHEN c.blocking_chain IS NULL THEN ISNULL(detail.blocked_isolation_level, N'') ELSE ISNULL(s.blocked_isolation_level, N'') END blocked_isolation_level,
-	--	CASE WHEN c.blocking_chain IS NULL THEN detail.blocked_tran_count ELSE s.blocked_tran_count END [blocked_tran_count],
-	--	CASE WHEN c.blocking_chain IS NULL THEN detail.blocked_log_used ELSE s.blocked_log_used END [blocked_log_used],
-		
-	--	s.[blocking_weight],
-	--	s.[blocking_host_name], 
-	--	s.[blocking_client_app] [blocking_app_name],
-	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_weight] ELSE s.[blocked_weight] END [blocked_weight],
-	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_host_name] ELSE s.[blocked_host_name] END [blocked_host_name], 
-	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[blocked_client_app] ELSE s.[blocked_client_app] END [blocked_app_name],
-		
-	--	CASE WHEN c.blocking_chain IS NULL THEN detail.[report] ELSE ISNULL(s.[report], N'<lead_blocker/>') END [report]
-	--FROM 
-	--	chain c
-	--	INNER JOIN #work detail ON c.report_id = detail.report_id
-	--	LEFT OUTER JOIN [#work] s ON c.report_id = s.report_id AND c.blocking_id = s.blocked_id 
-	--	LEFT OUTER JOIN aggregated a ON c.report_id = a.report_id
-	--ORDER BY 
-	--	c.report_id, c.[level];
 
 	RETURN 0;
 GO
