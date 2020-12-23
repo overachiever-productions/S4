@@ -22,7 +22,7 @@
     - [`<vectors>`](#vectors)
     - [{TOKENS}](#tokens)
     - [{DEFAULTS}](#defaults)
-    - [Implied Context Targeting](#implied-context-targeting)
+    - [Current CallingDb Context CCC](#current-callingdb-context-ccc)
     - [File Path Specifications](#file-path_specifications)
     - [Alerting and Database Mail Conventions](#alerting-and-database-mail-conventions)
     - [Advanced Capabilities / Advanced Error Handling](#advanced-capabilities)
@@ -208,9 +208,9 @@ Take-Away: The KEY thing here is to know that S4 attempts in many cases (backups
 
 ]
 
-### Implied Context Targeting
-[Probably need a better name (i.e., refactor the name of this convention).
-Represents the ability of some S4 routines to be able to determine calling context - i.e., figure out which database an admindb routine is being called from. 
+### Current CallingDB Context - CCC
+[was 'implied context targetting]
+[Represents the ability of some S4 routines to be able to determine calling context - i.e., figure out which database an admindb routine is being called from. 
 
 behavior is SIMILAR to what SQL Server provides via sp_Sprocs - in that you can execute, say: 
 

@@ -342,7 +342,7 @@ AS
     DECLARE @statusDetail nvarchar(MAX);
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
-	DECLARE @fileList nvarchar(MAX) = NULL; 
+	DECLARE @serializedFileList xml = NULL; 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 
@@ -470,7 +470,7 @@ AS
 		SET @ignoredLogFiles = 0;
         SET @statusDetail = NULL; 
 		SET @isPartialRestore = 0;
-		SET @fileList = NULL;
+		SET @serializedFileList = NULL;
         DELETE FROM @restoredFiles;
 		
 		SET @restoredName = REPLACE(@RestoredDbNamePattern, N'{0}', @databaseToRestore);
@@ -559,20 +559,28 @@ AS
         END;
 
 		-- Check for a FULL backup: 
-		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a {SYSTEM} database, then dbo.load_backup_files will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
+		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a {SYSTEM} database, then dbo.load_backup_files ...
+		--				will check @SourcePath + @ServerName as well - i.e., it accounts for @AppendServerNameToSystemDbs 
 		EXEC dbo.load_backup_files 
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
             @Mode = N'FULL', 
-            @Output = @fileList OUTPUT;
+            @Output = @serializedFileList OUTPUT;
 		
-		IF(NULLIF(@fileList,N'') IS NULL) BEGIN
+		IF(SELECT dbo.[is_xml_empty](@serializedFileList)) = 1 BEGIN
 			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
 			GOTO NextDatabase;	
 		END;
 
         -- Load Backup details/etc. 
-		SELECT @backupName = @fileList;
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+			FROM 
+				@serializedFileList.nodes('//file') [data]([row])
+		) 
+		SELECT @backupName = (SELECT TOP 1 [file_name] FROM [shredded]);
+		
 		SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName;
 
 		-- define the list of files to be processed:
@@ -695,16 +703,24 @@ AS
 			[FileName] = @backupName;
         
 		-- Restore any DIFF backups if present:
-        SET @fileList = NULL;
+        SET @serializedFileList = NULL;
 		EXEC dbo.load_backup_files 
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
             @Mode = N'DIFF', 
             @LastAppliedFile = @backupName, 
-            @Output = @fileList OUTPUT;
+            @Output = @serializedFileList OUTPUT;
 		
-		IF NULLIF(@fileList, N'') IS NOT NULL BEGIN
-			SET @backupName = @fileList;
+		IF (SELECT dbo.[is_xml_empty](@serializedFileList)) = 0 BEGIN 
+
+			WITH shredded AS ( 
+				SELECT 
+					[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+				FROM 
+					@serializedFileList.nodes('//file') [data]([row])
+			) 
+			SELECT @backupName = (SELECT TOP 1 [file_name] FROM [shredded]);
+
 			SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
 
             SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
@@ -751,16 +767,24 @@ AS
 			-- reset values per every 'loop' of main processing body:
 			DELETE FROM @logFilesToRestore;
 
-            SET @fileList = NULL;
+            SET @serializedFileList = NULL;
 			EXEC dbo.load_backup_files 
                 @DatabaseToRestore = @databaseToRestore, 
                 @SourcePath = @sourcePath, 
                 @Mode = N'LOG', 
                 @LastAppliedFile = @backupName,
-                @Output = @fileList OUTPUT;
+                @Output = @serializedFileList OUTPUT;
+
+			WITH shredded AS ( 
+				SELECT 
+					[data].[row].value('@id[1]', 'int') [id], 
+					[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+				FROM 
+					@serializedFileList.nodes('//file') [data]([row])
+			) 
 
 			INSERT INTO @logFilesToRestore ([log_file])
-			SELECT result FROM dbo.[split_string](@fileList, N',', 1) ORDER BY row_id;
+			SELECT [file_name] FROM [shredded] ORDER BY [id];
 			
 			-- re-update the counter: 
 			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
@@ -822,17 +846,26 @@ AS
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
 
 					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
-                    SET @fileList = NULL;
+                    SET @serializedFileList = NULL;
 					EXEC dbo.load_backup_files 
                         @DatabaseToRestore = @databaseToRestore, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
                         @LastAppliedFile = @backupName,
-                        @Output = @fileList OUTPUT;
+                        @Output = @serializedFileList OUTPUT;
+
+
+					WITH shredded AS ( 
+						SELECT 
+							[data].[row].value('@id[1]', 'int') [id], 
+							[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+						FROM 
+							@serializedFileList.nodes('//file') [data]([row])
+					) 
 
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT result FROM dbo.[split_string](@fileList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
-					ORDER BY row_id;
+					SELECT [file_name] FROM [shredded] WHERE [file_name] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					ORDER BY [id];
 				END;
 
 				-- increment: 
@@ -1147,7 +1180,7 @@ FINALIZE:
 			c.[most_recent_backup], 
 			c.[restore_end], 
 			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) < 20) THEN -1 ELSE (DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) END [days_old], 
-			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(SECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
+			CASE WHEN ((DATEDIFF(DAY, [c].[most_recent_backup], [c].[restore_end])) > 20) THEN -1 ELSE (DATEDIFF(MILLISECOND, [c].[most_recent_backup], [c].[restore_end])) END [vector]
 		INTO 
 			#stale 
 		FROM 
@@ -1163,12 +1196,12 @@ FINALIZE:
 					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
 				ELSE 
 					+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
-					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan]([x].vector - @vector)
+					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan]([x].vector - (@vector))
 				END + @crlf
 		FROM 
 			[#stale] x
 		WHERE  
-			(x.[vector] > @vector) OR [x].[days_old] > 20 
+			(x.[vector] > (@vector * 1000)) OR [x].[days_old] > 20 
 		ORDER BY 
 			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
 			[x].[vector];

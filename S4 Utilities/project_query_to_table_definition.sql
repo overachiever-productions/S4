@@ -1,4 +1,8 @@
 /*
+	REFACTOR/RENAME:
+		dbo.project_table_from_query
+
+
 	CONVENTIONS: 
 		- PROJECT or RETURN
 

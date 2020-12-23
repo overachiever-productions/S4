@@ -82,6 +82,8 @@
                      (from blocked processes trace)
                     METADATA: database_id = 15 SECURITY_CACHE($hash = 0x5:0x0)
                     METADATA: database_id = 15 SECURITY_CACHE($hash = 0x5:0x0)
+					METADATA: database_id = 6 FULLTEXT_INDEX(object_id = 597577167), lockPartitionId = 0
+								this one is pretty simple, it's FTI - where Object_ID = name of the table that has the FTI - i.e., dbo.Actions (vs something like, say, the 'actions FTI fragments' - i.e., JUST the 'parent' table is all that object_ID represents).
 
                       (from deadlock trace)
                     METADATA: database_id = 5 COMPRESSED_FRAGMENT(object_id = 597577167, fragment_id = 6088335), lockPartitionId = 0
@@ -322,7 +324,7 @@ AS
 	END CATCH
 
 	-- IF we're still here - then either there was an exception 'shredding' the resource identifier - or we're in an unknown resource-type. (Either outcome, though, is that we're dealing with an unknown/non-implemented type.)
-	SELECT @waittype [wait_type], @part2 [part2], @part3 [part3], @part4 [part4], @part5 [part5];
+	SELECT @WaitResource [wait_resource], @waittype [wait_type], @part2 [part2], @part3 [part3], @part4 [part4], @part5 [part5];
 
 	IF @error = 1 
 		SET @Output = QUOTENAME(@WaitResource) + N' - EXCEPTION_PROCESSING_WAIT_RESOURCE';
