@@ -11,7 +11,15 @@
 					and ADD = a) find the start/stop of the data in the current @TargetTable... b) grab anything from the new @Source... that isn't in the range defined/calculated from step a
 								and, c) shove the 'union' of said data into the table 
 									this way we can add new/additional data ('before' or 'after' whatever is there) to help look for other patterns/behaviors and the likes.
+				
+				ALSO: MIGHT not need to do the above by means of @startTime and @endTime - i.e., there might be other markers or details I can use to help differentiate data
+					that has already been imported/translated vs what's 'targetted'. 
+						easy example would be the report_id - assuming that doesn't get reset if/when the trace is stopped/resttarted (which it DOES). 
+							but... reportID and, say... txid or some combination of something to exclude duplicates is really all i need. 
 
+							further, might make more sense to just shove data into a staging table (which I do)
+								then... UNION it into the @TargetTable as the last step - i.e., not sure how much benefit there is to trying to isolate 'new data ONLY'
+									during the intial process. (unless, of course, tons of the data we're processing has already been processed...)
 
 
 	
@@ -163,7 +171,7 @@ AS
 		IDENTITY(int, 1, 1) row_id,
 		meta.[timestamp], 
 		meta.[database_name], 
-		CAST((meta.duration/1000000.0) as decimal(6,2)) [seconds_blocked], 
+		CAST((meta.duration/1000000.0) as decimal(24,2)) [seconds_blocked], 
 		[report].report_id,
 		
 		[report].blocking_spid, 
