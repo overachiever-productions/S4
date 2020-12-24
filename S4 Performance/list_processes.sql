@@ -475,7 +475,7 @@ AS
 		FROM 
 			[#core] 
 		WHERE 
-			[database_id] NOT IN (SELECT [database_name] FROM dbo.[list_nonaccessible_databases]())
+			[database_id] NOT IN (SELECT [database_id] FROM dbo.[list_nonaccessible_databases]())
 	)  
 	SELECT 
 		x.[session_id], 
@@ -501,7 +501,7 @@ AS
 		FROM 
 			[#core] 
 		WHERE 
-			[database_id] NOT IN (SELECT [database_name] FROM dbo.[list_nonaccessible_databases]())
+			[database_id] NOT IN (SELECT [database_id] FROM dbo.[list_nonaccessible_databases]())
 	)
 	
 	SELECT 

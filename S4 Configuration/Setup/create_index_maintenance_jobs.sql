@@ -75,10 +75,25 @@ AS
 
 	-- translate 'local' timezone to UTC-zoned servers:
 	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
-		DECLARE @utc datetime = GETUTCDATE();
-		DECLARE @atTimeZone datetime = @utc AT TIME ZONE 'UTC' AT TIME ZONE @TimeZoneForUtcOffset;
+		IF (SELECT [dbo].[get_engine_version]()) >= 13.0 BEGIN 
 
-		SET @IXMaintenanceJobStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @IXMaintenanceJobStartTime);
+			DECLARE @utc datetime = GETUTCDATE();
+			DECLARE @atTimeZone datetime;
+			DECLARE @offsetSQL nvarchar(MAX) = N'SELECT @atTimeZone = @utc AT TIME ZONE ''UTC'' AT TIME ZONE @TimeZoneForUtcOffset; ';
+			
+			EXEC sys.[sp_executesql]
+				@offsetSQL, 
+				N'@atTimeZone datetime OUTPUT, @utc datetime, @TimeZoneForUtcOffset sysname', 
+				@atTimeZone = @atTimeZone OUTPUT, 
+				@utc = @utc, 
+				@TimeZoneForUtcOffset = @TimeZoneForUtcOffset;
+
+			SET @IXMaintenanceJobStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @IXMaintenanceJobStartTime);
+		  END;
+		ELSE BEGIN
+			RAISERROR('@TimeZoneForUtcOffset is NOT supported on SQL Server versions prior to SQL Server 2016. Set value to NULL.', 16, 1); 
+			RETURN -100;
+		END;
 	END;
 
 	DECLARE @weekDayIxTemplate nvarchar(MAX) = N'EXECUTE [master].dbo.IndexOptimize

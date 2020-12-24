@@ -1,6 +1,10 @@
 
 /*
 	
+	refactor. 
+		this MIGHT? make more sense to rename as VIEW_recovery_metrics?
+
+
 	-- permutations... 
 	--		SUMMARY - Formatted summary of the last @Scope. 
 	--		SLAs = AGGREGATE of restore times (avgs, max, min), error counts, and RPOs, RTOs over the @scope specified. 
@@ -15,6 +19,9 @@
 			- BUT... this'll also mean i can tweak restore_databases to pull back 'error' details by means of executing this sproc? 
 
 
+		- Also, need to account for 'multi-day' restores in a cleaner fashion. 
+			e.g., assume we start restoring, say, 10x different databases at 10:45PM nightly. And that this takes 3.25 hours total. 
+					some of thos operations will  be from 'today', some from 'yesterday' if/when viewing this info/report once everything is done. 
 
 ---------------------------------------------------------------------------------------------------
 ---- sample RPO checks: 

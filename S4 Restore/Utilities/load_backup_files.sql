@@ -54,9 +54,9 @@ GO
 CREATE PROC dbo.load_backup_files 
 	@DatabaseToRestore			sysname,
 	@SourcePath					nvarchar(400), 
-	@Mode						sysname,				-- FULL | DIFF | LOG 
+	@Mode						sysname,				-- FULL | DIFF | LOG | LIST			-- where LIST = 'raw'/translated results.
 	@LastAppliedFile			nvarchar(400)			= NULL,	
-	@Output						nvarchar(MAX)			= N'default'  OUTPUT
+	@Output						xml						= N'<default/>'	    OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -66,7 +66,7 @@ AS
     -- Dependencies Validation:
 	EXEC dbo.verify_advanced_capabilities;
 
-	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG') BEGIN;
+	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG',N'LIST') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
 		SET @Output = NULL;
 		RETURN -1;
@@ -104,6 +104,9 @@ AS
 	WHERE 
 		[output] IS NOT NULL;
 
+
+
+
 	DECLARE @orderedResults table ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
 		[output] varchar(500) NOT NULL, 
@@ -125,6 +128,36 @@ AS
 		[timestamp];
 
 	-- Mode Processing: 
+	IF UPPER(@Mode) = N'LIST' BEGIN 
+		
+		IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 
+			
+			SELECT @Output = (SELECT
+				[id] [file/@id],
+				[output] [file/@file_name],
+				[timestamp] [file/@timestamp]
+			FROM 
+				@orderedResults 
+			ORDER BY 
+				id 
+			FOR XML PATH(''), ROOT('files'));
+
+			RETURN 0;
+
+		END;
+
+		SELECT 
+			[id],
+			[output] [file_name],
+			[timestamp] 
+		FROM 
+			@orderedResults 
+		ORDER BY 
+			[id];
+
+        RETURN 0;
+    END;
+
 	IF UPPER(@Mode) = N'FULL' BEGIN
 		-- most recent full only: 
 		DELETE FROM @orderedResults WHERE id <> ISNULL((SELECT MAX(id) FROM @orderedResults WHERE [output] LIKE 'FULL%'), -1);
@@ -147,13 +180,16 @@ AS
 		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
 
-    IF NULLIF(@Output, N'') IS NULL BEGIN -- if @Output has been EXPLICITLY initialized as NULL/empty... then REPLY... 
+    IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 
         
-	    SET @Output = N'';
-	    SELECT @Output = @Output + [output] + N',' FROM @orderedResults ORDER BY [id];
-
-	    IF ISNULL(@Output,'') <> ''
-		    SET @Output = LEFT(@Output, LEN(@Output) - 1);
+		SELECT @Output = (SELECT
+			[id] [file/@id],
+			[output] [file/@file_name]
+		FROM 
+			@orderedResults 
+		ORDER BY 
+			id 
+		FOR XML PATH(''), ROOT('files'));
 
         RETURN 0;
     END;

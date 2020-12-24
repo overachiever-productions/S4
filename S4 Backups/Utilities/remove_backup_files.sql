@@ -282,11 +282,12 @@ AS
 	DECLARE @errorMessage nvarchar(MAX) = N'';
 	DECLARE @file nvarchar(512);
 
+	DECLARE @serializedFiles xml; 
+
 	DECLARE @files table (
-		id int IDENTITY(1,1),
-		subdirectory nvarchar(512), 
-		depth int, 
-		isfile bit
+		[id] int IDENTITY(1,1) NOT NULL, 
+		[file_name] nvarchar(MAX) NOT NULL, 
+		[timestamp] datetime NOT NULL
 	);
 
 	DECLARE @lastN table ( 
@@ -316,43 +317,67 @@ AS
 		
 		SET @targetPath = @TargetDirectory + N'\' + @currentDirectory;
 
+		-- cleanup from previous passes
 		SET @errorMessage = NULL;
 		SET @outcome = NULL;
+		
+		DELETE FROM @files;
+		SET @serializedFiles = NULL;
 
+		IF @PrintOnly = 1 BEGIN
+			IF @routeInfoAsOutput = 1
+				PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDirectory + N''', @SourcePath = N''' + @TargetDirectory + N''', @Mode = N''OUTPUT''; ';
+		END;
+
+		-- Load a list of files available for the target db: 
+		EXEC dbo.load_backup_files 
+			@DatabaseToRestore = @currentDirectory, 
+			@SourcePath = @TargetDirectory, 
+			@Mode = N'OUTPUT', 
+			@Output = @serializedFiles OUTPUT;
+
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value('@id[1]', 'int') [id], 
+				[data].[row].value('@file_name', 'nvarchar(max)') [file_name],
+				[data].[row].value('@timestamp', 'datetime') [timestamp]
+			FROM 
+				@serializedFiles.nodes('//file') [data]([row])
+		) 
+		INSERT INTO @files (
+			[file_name],
+			[timestamp]
+		)
+		SELECT 
+			[file_name],
+			[timestamp]	
+		FROM 
+			shredded 
+		ORDER BY 
+			id;
+
+		-- Now process different retention types (i.e., b or time/vector-based expiry):
 		IF @retentionType = 'b' BEGIN -- Remove all backups of target type except the most recent N (where N is @retentionValue).
 			
 			-- clear out any state from previous iterations.
-			DELETE FROM @files;
+
 			DELETE FROM @lastN;
-
-			SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
-
-			IF @PrintOnly = 1 BEGIN
-				IF @routeInfoAsOutput = 1
-					PRINT N'--' + @command;
-			END;
-
-			INSERT INTO @files (subdirectory, depth, isfile)
-			EXEC sys.sp_executesql @command;
-
-			-- Remove non-matching files/entries:
-			DELETE FROM @files WHERE isfile = 0; -- remove directories.
 
 			IF @BackupType IN ('LOG', '{ALL}') BEGIN
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)
 					id, 
-					subdirectory, 
+					[file_name], 
 					'LOG'
 				FROM 
 					@files
 				WHERE 
-					subdirectory LIKE 'LOG%.trn'
+					[file_name] LIKE 'LOG%.trn'
 				ORDER BY 
 					id DESC;
 
 				IF @BackupType != '{ALL}' BEGIN
-					DELETE FROM @files WHERE subdirectory NOT LIKE '%.trn';  -- if we're NOT doing {ALL}, then remove DIFF and FULL backups... 
+					DELETE FROM @files WHERE [file_name] NOT LIKE '%.trn';  -- if we're NOT doing {ALL}, then remove DIFF and FULL backups... 
 				END;
 			END;
 
@@ -360,17 +385,17 @@ AS
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)
 					id, 
-					subdirectory, 
+					[file_name], 
 					'FULL'
 				FROM 
 					@files
 				WHERE 
-					subdirectory LIKE 'FULL%.bak'
+					[file_name] LIKE 'FULL%.bak'
 				ORDER BY 
 					id DESC;
 
 				IF @BackupType != '{ALL}' BEGIN 
-					DELETE FROM @files WHERE subdirectory NOT LIKE 'FULL%.bak'; -- if we're NOT doing all, then remove all non-FULL backups...  
+					DELETE FROM @files WHERE [file_name] NOT LIKE 'FULL%.bak'; -- if we're NOT doing all, then remove all non-FULL backups...  
 				END
 			END;
 
@@ -378,17 +403,17 @@ AS
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)
 					id, 
-					subdirectory, 
+					[file_name], 
 					'DIFF'
 				FROM 
 					@files
 				WHERE 
-					subdirectory LIKE 'DIFF%.bak'
+					[file_name] LIKE 'DIFF%.bak'
 				ORDER BY 
 					id DESC;
 
 					IF @BackupType != '{ALL}' BEGIN 
-						DELETE FROM @files WHERE subdirectory NOT LIKE 'DIFF%.bak'; -- if we're NOT doing all, the remove non-DIFFs so they won't be nuked.
+						DELETE FROM @files WHERE [file_name] NOT LIKE 'DIFF%.bak'; -- if we're NOT doing all, the remove non-DIFFs so they won't be nuked.
 					END
 			END;
 			
@@ -396,11 +421,11 @@ AS
 			DELETE x 
 			FROM 
 				@files x 
-				INNER JOIN @lastN l ON x.id = l.original_id AND x.subdirectory = l.backup_name;
+				INNER JOIN @lastN l ON x.id = l.original_id AND x.[file_name] = l.backup_name;
 
 			-- and delete all, enumerated, files that are left:
 			DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT subdirectory FROM @files ORDER BY id;
+			SELECT [file_name] FROM @files ORDER BY id;
 
 			OPEN nuker;
 			FETCH NEXT FROM nuker INTO @file;
@@ -450,6 +475,7 @@ AS
 
 			IF @BackupType IN ('LOG', '{ALL}') BEGIN;
 			
+-- great... this sucks... i'm cheating and using the whole "delete everything that matches the PATH" ... meaning I'll have to explicitly enumerate .trn files instead... 
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
 
 				IF @PrintOnly = 1 BEGIN
@@ -480,33 +506,25 @@ AS
 
 			IF @BackupType IN ('FULL', 'DIFF', '{ALL}') BEGIN;
 
-				-- start by clearing any previous values:
-				DELETE FROM @files;
-				SET @command = N'EXEC master.sys.xp_dirtree ''' + @targetPath + ''', 1, 1;';
-
-				IF @PrintOnly = 1 BEGIN 
-					IF @routeInfoAsOutput = 1
-						PRINT N'--' + @command;
-				END; 
-
-				INSERT INTO @files (subdirectory, depth, isfile)
-				EXEC sys.sp_executesql @command;
-
-				DELETE FROM @files WHERE isfile = 0; -- remove directories.
-				DELETE FROM @files WHERE subdirectory NOT LIKE '%.bak'; -- remove (from processing) any files that don't use the .bak extension. 
+				DELETE FROM @files WHERE [file_name] NOT LIKE '%.bak'; -- remove (from processing) any files that don't use the .bak extension. 
 
 				-- If a specific backup type is specified ONLY target that backup type:
 				IF @BackupType != N'ALL' BEGIN;
 				
 					IF @BackupType = N'FULL'
-						DELETE FROM @files WHERE subdirectory NOT LIKE N'FULL%';
+						DELETE FROM @files WHERE [file_name] NOT LIKE N'FULL%';
 
 					IF @BackupType = N'DIFF'
-						DELETE FROM @files WHERE subdirectory NOT LIKE N'DIFF%';
+						DELETE FROM @files WHERE [file_name] NOT LIKE N'DIFF%';
 				END
 
 				DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-				SELECT subdirectory FROM @files WHERE isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
+				SELECT [file_name] FROM @files 
+				WHERE
+					[timestamp] < @retentionCutoffTime
+				ORDER BY 
+					id;
+					--isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
 
 				OPEN nuker;
 				FETCH NEXT FROM nuker INTO @file;

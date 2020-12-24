@@ -200,7 +200,7 @@ AS
 	DECLARE @fileList xml;
 	DECLARE @latestPreviousFileRestored sysname;
 	DECLARE @sourcePath sysname; 
-	DECLARE @backupFilesList nvarchar(MAX) = NULL;
+	DECLARE @backupFilesList xml = NULL;
 	DECLARE @currentLogFileID int;
 	DECLARE @backupName sysname;
 	DECLARE @pathToTLogBackup sysname;
@@ -280,6 +280,8 @@ AS
 		END; 
 
 		SET @sourcePath = @BackupsRootPath + N'\' + @sourceDbName;
+
+		SET @backupFilesList = NULL;
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @sourceDbName, 
 			@SourcePath = @sourcePath, 
@@ -290,8 +292,16 @@ AS
 		-- reset values per every 'loop' of main processing body:
 		DELETE FROM @logFilesToRestore;
 
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value('@id[1]', 'int') [id], 
+				[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+			FROM 
+				@backupFilesList.nodes('//file') [data]([row])
+		) 
+
 		INSERT INTO @logFilesToRestore ([log_file])
-		SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) ORDER BY row_id;
+		SELECT [file_name] FROM [shredded] ORDER BY [id];
 
 		SET @logsWereApplied = 0;
 
@@ -392,9 +402,18 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
                         @LastAppliedFile = @backupName,
                         @Output = @backupFilesList OUTPUT;
 
+					WITH shredded AS ( 
+						SELECT 
+							[data].[row].value('@id[1]', 'int') [id], 
+							[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+						FROM 
+							@backupFilesList.nodes('//file') [data]([row])
+					) 
+
 					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT [result] FROM dbo.[split_string](@backupFilesList, N',', 1) WHERE [result] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
-					ORDER BY row_id;
+					SELECT [file_name] FROM [shredded] WHERE [file_name] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
+					ORDER BY [id];
+
 				END;
 
 				-- signify files applied: 

@@ -20,6 +20,13 @@
 
 
 
+	Sadly, 
+		this thing is, effectively, useless. 
+			It won't normalize: 
+				- simple statements without WHERE clauses (not a big loss - those rarely cause problems - and when they do, they're easy enough to 'aggregate' on their own). 
+				- Parameterized queries - i.e., anything that's already parameterized. This is huge/pointless. 
+				- sproc calls - e.g., sp_executesql ... game over. (don't really care about 'other' sprocs - just that one)
+
 
 
 
@@ -100,7 +107,7 @@ AS
 		SET @isExec = 1; 
 
 
-	-- damn... this might be one of the smartest things i've done in a while... (here's hoping that it WORKS)... 
+	-- damn... this (exclusion logic) might be one of the smartest things i've done in a while... (here's hoping that it WORKS)... 
 	IF COALESCE(@multiStatement, @noParams, @isExec, 0) = 0 BEGIN 
 		
 		DECLARE @errorMessage nvarchar(MAX);
