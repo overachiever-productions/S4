@@ -2,6 +2,25 @@
 
 # Change Log
 
+## [8.3.3479] - 2020-12-23
+
+### Added 
+- Initial addition of XE (log/data) transforms and views for blocked-processes and deadlocks. 
+- Diagnostic query in the form of `extract_code_lines` which will extract the line (and surrounding lines) of code from a sproc/udf/trigger throwing errors (i.e., if when an error says something like "xyz error - line 345 of sproc N", you can punch in that line-number and the name of sproc (N) and see the exact lines of code as they exist on the server (vs trying to guess based on scripting of object and/or any scripts you might have).)
+
+### Changed 
+- `load_backup_files` no longer uses `xp_deletfile` anymore. This sproc is/was undocumented and consistently ran into problems if/when backup files were 0 byte or had other formatting errors preventing them from being legit backup files. (Which, obviously, is/was a problem and was (or should be) detected by regular restore tests - but then, a few days later, if/when there was an issue, 'cleanup' would throw additional errors.). 
+- AlwaysOn_health XE is now enabled + configured for auto-start whenever `add_synchronization_partner` is run (i.e., if we're going to be running HA configs, makes sense to ensure these diagnostics are running). 
+
+### Fixed 
+- Bugfix/correction of RPO warnings and math/calculations within `dbo.restore_databases` - to provide better insight into SLA violations during restore-tests.
+- `list_nonaccessible_databases` correctly added to S4 build (was missing from previous build file). 
+- `list_nonaccessible_databases`, and configuration/setup helpers in the form of `manage_server_history`, and `create_xxx_jobs`-type sprocs have been back-ported to work with SQL Server 2008, 2008R2, 2012, and 2014 instances.
+
+
+
+
+
 ## [8.2.3410.1] - 2020-10-15
 
 ### Added
