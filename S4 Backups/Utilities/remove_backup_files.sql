@@ -326,14 +326,14 @@ AS
 
 		IF @PrintOnly = 1 BEGIN
 			IF @routeInfoAsOutput = 1
-				PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDirectory + N''', @SourcePath = N''' + @TargetDirectory + N''', @Mode = N''OUTPUT''; ';
+				PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDirectory + N''', @SourcePath = N''' + @TargetDirectory + N''', @Mode = N''LIST''; ';
 		END;
 
 		-- Load a list of files available for the target db: 
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @currentDirectory, 
 			@SourcePath = @TargetDirectory, 
-			@Mode = N'OUTPUT', 
+			@Mode = N'LIST', 
 			@Output = @serializedFiles OUTPUT;
 
 		WITH shredded AS ( 

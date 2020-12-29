@@ -15,16 +15,23 @@
                     @Mode = N'FULL', 
                     @LastAppliedFile = NULL;
 
+                EXEC dbo.load_backup_files 
+                    @DatabaseToRestore = N'Billing', 
+                    @SourcePath = N'D:\SQLBackups\Billing', 
+                    @Mode = N'LIST', 
+                    @LastAppliedFile = NULL;
+
 
         -- Example of REPLY outputs - for all file-types... 
+			NOTE: these examples are busted - due to change from nvarchar, string, concatenated, lists, of, backups to ... xml instead.
 
 		        -- FULL:
 		        DECLARE @lastFile nvarchar(400) = NULL;
-		        DECLARE @output nvarchar(MAX);
+		        DECLARE @output xml;
 		        EXEC dbo.load_backup_files @DatabaseToRestore = N'Billing', @SourcePath = N'D:\SQLBackups\Billing', @Mode = N'FULL', @LastAppliedFile = NULL, @Output = @output OUTPUT;
 		        SELECT @output [FULL BACKUP FILE];
 
-		        SELECT @lastFile = @output;
+		        --SELECT @lastFile = @output;
 
 		        -- DIFF (if present):
                 SET @output = NULL;
@@ -103,9 +110,6 @@ AS
 		[timestamp] = dbo.[parse_backup_filename_timestamp]([output])
 	WHERE 
 		[output] IS NOT NULL;
-
-
-
 
 	DECLARE @orderedResults table ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
