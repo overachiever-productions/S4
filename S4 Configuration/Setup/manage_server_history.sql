@@ -1,6 +1,9 @@
 /*
+		vNEXT: Need an option to UPDATE Existing Job 
+			i.e., keep the same name/schedule... but... add in any new job steps and/or updated directives that make sense. 
+				Except, that's sort of hard cuz... logic for @Overwrite Existing job now is: drop job, create again from scratch (with same name)
 
-
+				So. arguably, might need a whole, secondary sproc for this - update_managed_server_history (lol. that name is out of control).
 
 */
 
@@ -67,7 +70,7 @@ AS
 		REG_DWORD, 
 		@NumberOfServerLogsToKeep;
 
-	-- Toggle Agent History Retention (i.e., get rid of 'silly' 1000/100 limits: 
+	-- Toggle Agent History Retention (i.e., get rid of 'silly' 1000/100 limits): 
 	EXEC [msdb].[dbo].[sp_set_sqlagent_properties]			-- undocumented, but... pretty 'solid'/obvious: EXEC msdb.dbo.sp_helptext 'sp_set_sqlagent_properties';
 		@jobhistory_max_rows = -1, 
 		@jobhistory_max_rows_per_job = -1;
@@ -189,6 +192,25 @@ EXEC msdb.dbo.sp_purge_jobhistory
 	    @retry_attempts = 2,
 	    @retry_interval = 1;			
 	
+	SET @currentStepId += 1;
+
+
+	-- Remove stale Jobs Activity: 
+	SET @currentStepName = N'Remove Stale Jobs Activity';
+	SET @currentCommand = N'EXEC admindb.dbo.clear_stale_jobsactivity; ';
+
+	EXEC msdb..sp_add_jobstep
+		@job_id = @jobId,               
+	    @step_id = @currentStepId,		
+	    @step_name = @currentStepName,	
+	    @subsystem = N'TSQL',			
+	    @command = @currentCommand,		
+	    @on_success_action = 3,			
+	    @on_fail_action = 3, 
+	    @database_name = N'admindb',
+	    @retry_attempts = 2,
+	    @retry_interval = 1;	
+
 	SET @currentStepId += 1;
 
 	-- Remove Backup History:
