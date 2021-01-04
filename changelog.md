@@ -2,6 +2,17 @@
 
 # Change Log
 
+## [8.4.3491] - 2021-01-04  
+
+### Added  
+- Added processing to add new Job-Step for Regular History Cleanup (via `dbo.manage_server_history`) to address cleanup of stale/orphaned SQL Server Agent job histories via call to `dbo.clear_stale_jobsactivity` (added v8.3).
+
+
+### Fixed  
+- Invalid `@Mode` value (OUTPUT vs LIST) specified in `dbo.remove_backup_files` - causing problems with cleanup of backups on v8.3.
+- Corrected bug with apostrophe in SQL Server Login-names causing problems with IF EXISTS checks in `dbo.script_login` (and associated sprocs) via changes to formatting UDFs.
+
+
 ## [8.3.3479] - 2020-12-23
 
 ### Added 
@@ -16,9 +27,6 @@
 - Bugfix/correction of RPO warnings and math/calculations within `dbo.restore_databases` - to provide better insight into SLA violations during restore-tests.
 - `list_nonaccessible_databases` correctly added to S4 build (was missing from previous build file). 
 - `list_nonaccessible_databases`, and configuration/setup helpers in the form of `manage_server_history`, and `create_xxx_jobs`-type sprocs have been back-ported to work with SQL Server 2008, 2008R2, 2012, and 2014 instances.
-
-
-
 
 
 ## [8.2.3410.1] - 2020-10-15
