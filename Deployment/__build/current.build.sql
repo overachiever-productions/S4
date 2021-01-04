@@ -570,6 +570,9 @@ GO
 --##INCLUDE: S4 Maintenance\check_database_consistency.sql
 
 -----------------------------------
+--##INCLUDE: S4 Maintenance\clear_stale_jobsactivity.sql
+
+-----------------------------------
 --##INCLUDE: S4 Maintenance\Automated Log Shrinking\list_logfile_sizes.sql
 
 -----------------------------------
