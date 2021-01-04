@@ -67,7 +67,7 @@ AS
 		REG_DWORD, 
 		@NumberOfServerLogsToKeep;
 
-	-- Toggle Agent History Retention (i.e., get rid of 'silly' 1000/100 limits: 
+	-- Toggle Agent History Retention (i.e., get rid of 'silly' 1000/100 limits): 
 	EXEC [msdb].[dbo].[sp_set_sqlagent_properties]			-- undocumented, but... pretty 'solid'/obvious: EXEC msdb.dbo.sp_helptext 'sp_set_sqlagent_properties';
 		@jobhistory_max_rows = -1, 
 		@jobhistory_max_rows_per_job = -1;
@@ -189,6 +189,25 @@ EXEC msdb.dbo.sp_purge_jobhistory
 	    @retry_attempts = 2,
 	    @retry_interval = 1;			
 	
+	SET @currentStepId += 1;
+
+
+	-- Remove stale Jobs Activity: 
+	SET @currentStepName = N'Remove Stale Jobs Activity';
+	SET @currentCommand = N'EXEC admindb.dbo.clear_stale_jobsactivity; ';
+
+	EXEC msdb..sp_add_jobstep
+		@job_id = @jobId,               
+	    @step_id = @currentStepId,		
+	    @step_name = @currentStepName,	
+	    @subsystem = N'TSQL',			
+	    @command = @currentCommand,		
+	    @on_success_action = 3,			
+	    @on_fail_action = 3, 
+	    @database_name = N'admindb',
+	    @retry_attempts = 2,
+	    @retry_interval = 1;	
+
 	SET @currentStepId += 1;
 
 	-- Remove Backup History:
