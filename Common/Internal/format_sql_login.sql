@@ -95,7 +95,7 @@ AS
         DECLARE @alterAttributes sysname = REPLACE(@attributes, N'{SID}', N'');
 
         DECLARE @template nvarchar(MAX) = N'
-IF NOT EXISTS (SELECT NULL FROM [master].[sys].[server_principals] WHERE [name] = ''{Name}'') BEGIN 
+IF NOT EXISTS (SELECT NULL FROM [master].[sys].[server_principals] WHERE [name] = ''{EscapedName}'') BEGIN 
 	CREATE LOGIN [{Name}] WITH {Attributes} {Disable} {ElseClause} {SidReplacementDrop}{CreateOrAlter} {Attributes2} {Disable2}
 END; ';
         -- Main logic flow:
@@ -129,7 +129,9 @@ END; ';
   
         -- initialize output with basic details:
         SET @template = REPLACE(@template, N'{Attributes}', @attributes);
-        SET @output = REPLACE(@template, N'{Name}', @Name);
+		SET @output = REPLACE(@template, N'{Name}', @Name);
+		SET @output = REPLACE(@template, N'{EscapedName}', REPLACE(@Name, N'''', N''''''));
+
 
         IF (@Password LIKE '0x%') --AND (@Password NOT LIKE '%HASHED')
             SET @Password = @Password + N' HASHED';

@@ -170,7 +170,7 @@ BEGIN
 	END;
 
 	DECLARE @flowTemplate nvarchar(MAX) = N'
-IF NOT EXISTS (SELECT NULL FROM [master].[sys].[server_principals] WHERE [name] = ''{Name}'') BEGIN 
+IF NOT EXISTS (SELECT NULL FROM [master].[sys].[server_principals] WHERE [name] = ''{EscapedName}'') BEGIN 
 	{createAndDisable}{else}{alterOrCreateAndDisable}
 END; ';
 
@@ -200,6 +200,7 @@ END; ';
 	END;
 
 	SET @output = REPLACE(@output, N'{Name}', @Name);
+	SET @output = REPLACE(@output, N'{EscapedName}', REPLACE(@Name, N'''', N''''''));
 
 Done:
 
