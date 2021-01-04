@@ -1,6 +1,9 @@
 /*
+		vNEXT: Need an option to UPDATE Existing Job 
+			i.e., keep the same name/schedule... but... add in any new job steps and/or updated directives that make sense. 
+				Except, that's sort of hard cuz... logic for @Overwrite Existing job now is: drop job, create again from scratch (with same name)
 
-
+				So. arguably, might need a whole, secondary sproc for this - update_managed_server_history (lol. that name is out of control).
 
 */
 
