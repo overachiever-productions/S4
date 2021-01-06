@@ -166,8 +166,7 @@ AS
         )
         SELECT [result] FROM dbo.[split_string](@ExcludedAlerts, N',', 1);
     END;
-
-
+	
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR
     SELECT 
         [t].[name] 
