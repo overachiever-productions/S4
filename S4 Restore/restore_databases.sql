@@ -346,6 +346,8 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 
+	DECLARE @restoredFileName nvarchar(MAX);
+
 	-- dbo.execute_command variables: 
 	DECLARE @execOutcome bit;
 	DECLARE @execResults xml;
@@ -646,7 +648,12 @@ AS
 
         WHILE @@FETCH_STATUS = 0 BEGIN 
 
-            SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + REPLACE(@fileName, @databaseToRestore, @restoredName) + '.';
+			-- NOTE: FULL filename (path + name) can NOT be > 260 (259?) chars long. 
+			SET @restoredFileName = @fileName;
+			IF @databaseToRestore <> @restoredName
+				SET @restoredFileName = @restoredName;
+
+            SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + @restoredFileName + '.';
             IF @fileId = 1
                 SET @move = @move + N'mdf';
             IF @fileId = 2
