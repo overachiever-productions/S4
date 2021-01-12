@@ -347,6 +347,7 @@ AS
 	DECLARE @fileListXml nvarchar(MAX);
 
 	DECLARE @restoredFileName nvarchar(MAX);
+	DECLARE @ndfCount int = 0;
 
 	-- dbo.execute_command variables: 
 	DECLARE @execOutcome bit;
@@ -653,13 +654,19 @@ AS
 			IF @databaseToRestore <> @restoredName
 				SET @restoredFileName = @restoredName;
 
+			IF @ndfCount > 0 
+				SET @restoredFileName = @restoredFileName + CAST((@ndfCount + 1) AS sysname);
+
             SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + @restoredFileName + '.';
             IF @fileId = 1
                 SET @move = @move + N'mdf';
             IF @fileId = 2
                 SET @move = @move + N'ldf';
-            IF @fileId NOT IN (1, 2)
+
+            IF @fileId NOT IN (1, 2) BEGIN
                 SET @move = @move + N'ndf';
+				SET @ndfCount = @ndfCount + 1;
+			END;
 
             SET @move = @move + N''', '
 
