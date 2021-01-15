@@ -3,19 +3,18 @@
         - This sproc adheres to the PROJECT/REPLY usage convention.
 
 		- WARNING: This script does what it says - it'll remove files exactly as specified. 
-
-		- NOTE: this script/logic will NEVER delete the most-recent FULL backup for any database... 
-			(vNEXT: probably want to put an @EnsureSafetyBackups bit = 1 as a default or something... i.e., need an option for nuking/removing/doing-cleanup in some cases.,..)
-
+			   
 		- Not yet documented. 
-			-	Behaves, essentially, like dba_BackupDatabases - only it doesn't do backups... it just removes files from ONE root directory for 1st level of child directories NOT excluded. 
-			- Main Differences:
-				- @SendNotifications - won't send notifications unless set to 1. 
 
-	FODDER:
-		xp_dirtree:
-			http://www.sqlservercentral.com/blogs/everyday-sql/2012/12/31/how-to-use-xp_dirtree-to-list-all-files-in-a-folder-part-2/
-			http://stackoverflow.com/questions/26750054/xp-dirtree-in-sql-server
+
+	vNEXT: 
+		- Set up a defaulted 'safety' where script/logic will NEVER delte the most recent FULL backup for any database. 
+			i.e., something along the lines of @AlwaysKeepLastFullBackup bit = 1 (by default). 
+				such that it has to be explicitly overridden to remove the last FULL. 
+				Then again? maybe NOT... 
+
+
+
 */
 
 
@@ -188,8 +187,7 @@ AS
 	END;
 
 	-- normalize paths: 
-	IF(RIGHT(@TargetDirectory, 1) = '\')
-		SET @TargetDirectory = LEFT(@TargetDirectory, LEN(@TargetDirectory) - 1);
+	SET @TargetDirectory = dbo.[normalize_file_path](@TargetDirectory);
 
 	-- verify that path exists:
 	DECLARE @isValid bit;
@@ -281,6 +279,8 @@ AS
 	DECLARE @outcome varchar(4000);
 	DECLARE @errorMessage nvarchar(MAX) = N'';
 	DECLARE @file nvarchar(512);
+	DECLARE @commandOutcome int;
+	DECLARE @commandResults xml;
 
 	DECLARE @serializedFiles xml; 
 
@@ -326,13 +326,13 @@ AS
 
 		IF @PrintOnly = 1 BEGIN
 			IF @routeInfoAsOutput = 1
-				PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDirectory + N''', @SourcePath = N''' + @TargetDirectory + N''', @Mode = N''LIST''; ';
+				PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDirectory + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''LIST''; ';
 		END;
 
 		-- Load a list of files available for the target db: 
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @currentDirectory, 
-			@SourcePath = @TargetDirectory, 
+			@SourcePath = @targetPath, 
 			@Mode = N'LIST', 
 			@Output = @serializedFiles OUTPUT;
 
@@ -424,6 +424,7 @@ AS
 				INNER JOIN @lastN l ON x.id = l.original_id AND x.[file_name] = l.backup_name;
 
 			-- and delete all, enumerated, files that are left:
+/*
 			DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
 			SELECT [file_name] FROM @files ORDER BY id;
 
@@ -437,6 +438,7 @@ AS
 				SET @outcome = NULL
 
 				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), GETDATE(), 120), ' ', 'T') + ''', 0;';
+				--SET @command = N'del /q /f "' + @targetPath + N'\' + @file + '" ';
 
 				IF @PrintOnly = 1 BEGIN 
 					IF @routeInfoAsOutput = 1
@@ -470,38 +472,17 @@ AS
 
 			CLOSE nuker;
 			DEALLOCATE nuker;
+*/
 		  END;
 		ELSE BEGIN -- Any backups older than @RetentionCutoffTime are removed. 
 
 			IF @BackupType IN ('LOG', '{ALL}') BEGIN;
 			
--- great... this sucks... i'm cheating and using the whole "delete everything that matches the PATH" ... meaning I'll have to explicitly enumerate .trn files instead... 
-				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + ''', N''trn'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 1;';
-
-				IF @PrintOnly = 1 BEGIN
-					IF @routeInfoAsOutput = 1
-						PRINT @command;
-				  END;
-				ELSE BEGIN 
-					BEGIN TRY
-						EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
-
-						IF @outcome IS NOT NULL 
-							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-
-					END TRY 
-					BEGIN CATCH
-						SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error deleting older LOG backups from [' + @targetPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
-					END CATCH;				
-				END
-
-				IF @errorMessage IS NOT NULL BEGIN;
-					SET @errorMessage = ISNULL(@errorMessage, '') + N' [Command: ' + @command + N']';
-
-					INSERT INTO @errors ([error_message])
-					VALUES (@errorMessage);
-				END
+				DELETE FROM @files WHERE [timestamp] >= @retentionCutoffTime; -- Remove any files we should keep.
+				
+				IF @BackupType != '{ALL}' BEGIN
+					DELETE FROM @files WHERE [file_name] NOT LIKE '%.trn';  -- if we're NOT doing {ALL}, then remove DIFF and FULL backups... 
+				END;
 			END
 
 			IF @BackupType IN ('FULL', 'DIFF', '{ALL}') BEGIN;
@@ -518,59 +499,65 @@ AS
 						DELETE FROM @files WHERE [file_name] NOT LIKE N'DIFF%';
 				END
 
-				DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-				SELECT [file_name] FROM @files 
-				WHERE
-					[timestamp] < @retentionCutoffTime
-				ORDER BY 
-					id;
-					--isfile = 1 AND subdirectory NOT LIKE '%.trn' ORDER BY id;
-
-				OPEN nuker;
-				FETCH NEXT FROM nuker INTO @file;
-
-				WHILE @@FETCH_STATUS = 0 BEGIN;
-
-					-- reset per each 'grab':
-					SET @errorMessage = NULL;
-					SET @outcome = NULL
-
-					SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), @retentionCutoffTime, 120), ' ', 'T') + ''', 0;';
-
-					IF @PrintOnly = 1 BEGIN 
-						IF @routeInfoAsOutput = 1
-							PRINT @command;
-					  END;
-					ELSE BEGIN; 
-
-						BEGIN TRY
-							EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
-						
-							IF @outcome IS NOT NULL 
-								SET @errorMessage = ISNULL(@errorMessage, '')  + @outcome + N' ';
-
-						END TRY 
-						BEGIN CATCH
-							SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting DIFF/FULL Backup with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-						END CATCH
-
-					END;
-
-					IF @errorMessage IS NOT NULL BEGIN;
-						SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';
-
-						INSERT INTO @errors ([error_message])
-						VALUES (@errorMessage);
-					END
-
-					FETCH NEXT FROM nuker INTO @file;
-				END;
-
-				CLOSE nuker;
-				DEALLOCATE nuker;
-
+				DELETE FROM @files WHERE [timestamp] >= @retentionCutoffTime;
 		    END
 		END;
+
+		-- whatever is left is what we now need to nuke/remove:
+		DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT [file_name] FROM @files 
+		ORDER BY id;
+
+		OPEN nuker;
+		FETCH NEXT FROM nuker INTO @file;
+
+		WHILE @@FETCH_STATUS = 0 BEGIN;
+
+			-- reset per each 'grab':
+			SET @errorMessage = NULL;
+			SET @outcome = NULL;
+
+			SET @command = N'del /q /f "' + @targetPath + N'\' + @file + N'"';
+
+			IF @PrintOnly = 1 BEGIN 
+				IF @routeInfoAsOutput = 1
+					PRINT N'--    ' + @command;
+				END;
+			ELSE BEGIN; 
+
+				BEGIN TRY
+					
+					EXEC @commandOutcome = dbo.[execute_command]
+						@Command = @command,
+						@ExecutionType = N'SHELL',
+						@ExecutionAttemptsCount = 1,
+						@IgnoredResults = N'[DELETEFILE]',
+						@PrintOnly = @PrintOnly,
+						@Results = @commandResults OUTPUT;
+
+					IF @commandOutcome <> 0 BEGIN 
+						SET @errorMessage = ISNULL(@errorMessage, N'') + CAST(@commandResults.value(N'(/results/result)[1]', N'nvarchar(MAX)') AS nvarchar(MAX)) + N' ';
+					END;
+
+				END TRY 
+				BEGIN CATCH
+					SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting DIFF/FULL Backup with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+				END CATCH
+
+			END;
+
+			IF @errorMessage IS NOT NULL BEGIN;
+				SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';
+
+				INSERT INTO @errors ([error_message])
+				VALUES (@errorMessage);
+			END
+
+			FETCH NEXT FROM nuker INTO @file;
+		END;
+
+		CLOSE nuker;
+		DEALLOCATE nuker;
 
 		FETCH NEXT FROM processor INTO @currentDirectory;
 	END
