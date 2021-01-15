@@ -179,7 +179,7 @@ AS
 
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'LIST' BEGIN 
-		
+
 		IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 
 			
 			SELECT @Output = (SELECT
