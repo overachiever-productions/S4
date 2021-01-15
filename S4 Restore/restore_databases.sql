@@ -722,7 +722,7 @@ AS
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
             @Mode = N'DIFF', 
-            @LastAppliedFile = @backupName, 
+			@LastAppliedFinishTime = @backupDate, 
             @Output = @serializedFileList OUTPUT;
 		
 		IF (SELECT dbo.[is_xml_empty](@serializedFileList)) = 0 BEGIN 
@@ -786,7 +786,7 @@ AS
                 @DatabaseToRestore = @databaseToRestore, 
                 @SourcePath = @sourcePath, 
                 @Mode = N'LOG', 
-                @LastAppliedFile = @backupName,
+				@LastAppliedFinishTime = @backupDate,
                 @Output = @serializedFileList OUTPUT;
 
 			WITH shredded AS ( 
@@ -865,7 +865,7 @@ AS
                         @DatabaseToRestore = @databaseToRestore, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
-                        @LastAppliedFile = @backupName,
+						@LastAppliedFinishTime = @backupDate,
                         @Output = @serializedFileList OUTPUT;
 
 
