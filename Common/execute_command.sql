@@ -308,7 +308,6 @@ AS
 	-----------------------------------------------------------------------------
 	-- Processing: 
 
-
 	DECLARE @filters table (
 		filter_type varchar(20) NOT NULL, 
 		filter_text varchar(2000) NOT NULL
@@ -351,6 +350,14 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[BACKUP]', N'');
 	END; 
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[DELETEFILE]', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('DELETEFILE', 'Command(s) completed successfully.');
+		
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[DELETEFILE]', N'');
+	END; 
+	
 	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[RESTORE]', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 

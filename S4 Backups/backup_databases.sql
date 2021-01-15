@@ -784,13 +784,14 @@ RemoveOlderFiles:
 					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
 					
                     EXEC dbo.remove_backup_files
-                        @BackupType= @BackupType,
+                        @BackupType = @BackupType,
                         @DatabasesToProcess = @currentDatabase,
                         @TargetDirectory = @BackupDirectory,
                         @Retention = @BackupRetention, 
 						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 						@OperatorName = @OperatorName,
 						@MailProfileName  = @DatabaseMailProfile,
+						@Output = NULL, 
 
 						-- note:
                         @PrintOnly = 1;
@@ -798,7 +799,6 @@ RemoveOlderFiles:
 				  END;
 				ELSE BEGIN;
 					SET @outcome = NULL;
-					DECLARE @Output nvarchar(MAX);
 					EXEC dbo.remove_backup_files
 						@BackupType= @BackupType,
 						@DatabasesToProcess = @currentDatabase,
@@ -827,6 +827,7 @@ RemoveOlderFiles:
 							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
 							@OperatorName = @OperatorName,
 							@MailProfileName  = @DatabaseMailProfile,
+							@Output = NULL,
 
 							--note:
 							@PrintOnly = 1;
