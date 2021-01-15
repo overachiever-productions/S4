@@ -399,7 +399,7 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
                         @DatabaseToRestore = @sourceDbName, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
-                        @LastAppliedFile = @backupName,
+						@LastAppliedFinishTime = @backupDate,
                         @Output = @backupFilesList OUTPUT;
 
 					WITH shredded AS ( 
