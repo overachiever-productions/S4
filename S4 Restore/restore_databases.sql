@@ -247,8 +247,7 @@ AS
 	DECLARE @isPartialRestore bit = 0;
 
 	-- normalize paths: 
-	IF(RIGHT(@BackupsRootPath, 1) = '\')
-		SET @BackupsRootPath = LEFT(@BackupsRootPath, LEN(@BackupsRootPath) - 1);
+	SET @BackupsRootPath = dbo.[normalize_file_path](@BackupsRootPath)
 
     -- Verify Paths: 
     EXEC dbo.check_paths @BackupsRootPath, @isValid OUTPUT;
@@ -327,13 +326,9 @@ AS
         RETURN -20;
     END;
 
-    -- TODO: @serialized no longer contains a legit list of targets... (@dbsToRestore does).
-    --IF @PrintOnly = 1 BEGIN;
-    --    PRINT '-- Databases To Attempt Restore Against: ' + @serialized;
-    --END;
-
     DECLARE @databaseToRestore sysname;
     DECLARE @restoredName sysname;
+	DECLARE @restoreStart datetime;
 
     DECLARE @fullRestoreTemplate nvarchar(MAX) = N'RESTORE DATABASE [{0}] FROM DISK = N''{1}''' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'WITH {partial}' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + '{move}, ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'NORECOVERY;'; 
     DECLARE @move nvarchar(MAX);
@@ -345,6 +340,9 @@ AS
 	DECLARE @serializedFileList xml = NULL; 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
+
+	DECLARE @restoredFileName nvarchar(MAX);
+	DECLARE @ndfCount int = 0;
 
 	-- dbo.execute_command variables: 
 	DECLARE @execOutcome bit;
@@ -371,22 +369,6 @@ AS
 	); 
 
 	DECLARE @backupDate datetime, @backupSize bigint, @compressed bit, @encrypted bit;
-
-    -- Assemble a list of dbs (if any) that were NOT dropped during the last execution (only) - so that we can drop them before proceeding. 
-    DECLARE @NonDroppedFromPreviousExecution table( 
-        [Database] sysname NOT NULL, 
-        RestoredAs sysname NOT NULL
-    );
-
-    DECLARE @LatestBatch uniqueidentifier;
-    SELECT @LatestBatch = (SELECT TOP(1) execution_id FROM dbo.restore_log ORDER BY restore_id DESC);
-
-    INSERT INTO @NonDroppedFromPreviousExecution ([Database], RestoredAs)
-    SELECT [database], [restored_as]
-    FROM dbo.restore_log 
-    WHERE execution_id = @LatestBatch
-        AND [dropped] = 'NOT-DROPPED'
-        AND [restored_as] IN (SELECT [name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM sys.databases WHERE UPPER(state_desc) = 'RESTORING');  -- make sure we're only targeting DBs in the 'restoring' state too. 
 
     IF @CheckConsistency = 1 BEGIN
         IF OBJECT_ID('tempdb..#DBCC_OUTPUT') IS NOT NULL 
@@ -646,13 +628,24 @@ AS
 
         WHILE @@FETCH_STATUS = 0 BEGIN 
 
-            SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + REPLACE(@fileName, @databaseToRestore, @restoredName) + '.';
+			-- NOTE: FULL filename (path + name) can NOT be > 260 (259?) chars long. 
+			SET @restoredFileName = @fileName;
+			IF @databaseToRestore <> @restoredName
+				SET @restoredFileName = @restoredName;
+
+			IF @ndfCount > 0 
+				SET @restoredFileName = @restoredFileName + CAST((@ndfCount + 1) AS sysname);
+
+            SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + @restoredFileName + '.';
             IF @fileId = 1
                 SET @move = @move + N'mdf';
             IF @fileId = 2
                 SET @move = @move + N'ldf';
-            IF @fileId NOT IN (1, 2)
+
+            IF @fileId NOT IN (1, 2) BEGIN
                 SET @move = @move + N'ndf';
+				SET @ndfCount = @ndfCount + 1;
+			END;
 
             SET @move = @move + N''', '
 
@@ -685,22 +678,27 @@ AS
             SELECT @statusDetail = N'Unexpected Exception while executing FULL Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();			
         END CATCH
 
+		-- Update MetaData: 
+		BEGIN TRY
+			EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+
+			UPDATE @restoredFiles 
+			SET 
+				[Applied] = GETDATE(), 
+				[BackupCreated] = @backupDate, 
+				[BackupSize] = @backupSize, 
+				[Compressed] = @compressed, 
+				[Encrypted] = @encrypted
+			WHERE 
+				[FileName] = @backupName;
+		END TRY 
+		BEGIN CATCH 
+			SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error updating list of restored files after FULL. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+		END CATCH;
+
         IF @statusDetail IS NOT NULL BEGIN
             GOTO NextDatabase;
         END;
-
-		-- Update MetaData: 
-		EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
-
-		UPDATE @restoredFiles 
-		SET 
-			[Applied] = GETDATE(), 
-			[BackupCreated] = @backupDate, 
-			[BackupSize] = @backupSize, 
-			[Compressed] = @compressed, 
-			[Encrypted] = @encrypted
-		WHERE 
-			[FileName] = @backupName;
         
 		-- Restore any DIFF backups if present:
         SET @serializedFileList = NULL;
@@ -708,7 +706,7 @@ AS
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
             @Mode = N'DIFF', 
-            @LastAppliedFile = @backupName, 
+			@LastAppliedFinishTime = @backupDate, 
             @Output = @serializedFileList OUTPUT;
 		
 		IF (SELECT dbo.[is_xml_empty](@serializedFileList)) = 0 BEGIN 
@@ -742,23 +740,28 @@ AS
             BEGIN CATCH
                 SELECT @statusDetail = N'Unexpected Exception while executing DIFF Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
             END CATCH
+				
+			BEGIN TRY
+				-- Update MetaData: 
+				EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+
+				UPDATE @restoredFiles 
+				SET 
+					[Applied] = GETDATE(), 
+					[BackupCreated] = @backupDate, 
+					[BackupSize] = @backupSize, 
+					[Compressed] = @compressed, 
+					[Encrypted] = @encrypted
+				WHERE 
+					[FileName] = @backupName;
+			END TRY
+			BEGIN CATCH 
+				SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error updating list of restored files after DIFF. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+			END CATCH;
 
             IF @statusDetail IS NOT NULL BEGIN
                 GOTO NextDatabase;
             END;
-
-			-- Update MetaData: 
-			EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
-
-			UPDATE @restoredFiles 
-			SET 
-				[Applied] = GETDATE(), 
-				[BackupCreated] = @backupDate, 
-				[BackupSize] = @backupSize, 
-				[Compressed] = @compressed, 
-				[Encrypted] = @encrypted
-			WHERE 
-				[FileName] = @backupName;
 		END;
 
         -- Restore any LOG backups if specified and if present:
@@ -772,7 +775,7 @@ AS
                 @DatabaseToRestore = @databaseToRestore, 
                 @SourcePath = @sourcePath, 
                 @Mode = N'LOG', 
-                @LastAppliedFile = @backupName,
+				@LastAppliedFinishTime = @backupDate,
                 @Output = @serializedFileList OUTPUT;
 
 			WITH shredded AS ( 
@@ -813,30 +816,27 @@ AS
                 END TRY
                 BEGIN CATCH
                     SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-
                 END CATCH
 
-				-- Update MetaData: 
-				EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+				BEGIN TRY
+					-- Update MetaData: 
+					EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
 
-				UPDATE @restoredFiles 
-				SET 
-					[Applied] = GETDATE(), 
-					[BackupCreated] = @backupDate, 
-					[BackupSize] = @backupSize, 
-					[Compressed] = @compressed, 
-					[Encrypted] = @encrypted, 
-					[Comment] = @statusDetail
-				WHERE 
-					[FileName] = @backupName;
+					UPDATE @restoredFiles 
+					SET 
+						[Applied] = GETDATE(), 
+						[BackupCreated] = @backupDate, 
+						[BackupSize] = @backupSize, 
+						[Compressed] = @compressed, 
+						[Encrypted] = @encrypted, 
+						[Comment] = @statusDetail
+					WHERE 
+						[FileName] = @backupName;
 
-				-- S4-86: Account for scenarios where we're told that the T-LOG is too 'early' (i.e., old): 
-				IF @statusDetail LIKE '%terminates%which is too early%a more recent log backup%can be restored%' BEGIN
-					SET @ignoredLogFiles += 1;  
-
-					IF @ignoredLogFiles < 3					
-						SET @statusDetail = NULL; 	
-				END;
+				END TRY 
+				BEGIN CATCH 
+					SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error updating list of restored files after LOG. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+				END CATCH;
 
                 IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
@@ -851,9 +851,8 @@ AS
                         @DatabaseToRestore = @databaseToRestore, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
-                        @LastAppliedFile = @backupName,
+						@LastAppliedFinishTime = @backupDate,
                         @Output = @serializedFileList OUTPUT;
-
 
 					WITH shredded AS ( 
 						SELECT 
@@ -1029,40 +1028,26 @@ NextDatabase:
         -- Drop the database if specified and if all SAFE drop precautions apply:
         IF @DropDatabasesAfterRestore = 1 BEGIN
             
-            -- Make sure we can/will ONLY restore databases that we've restored in this session. 
-            SELECT @executeDropAllowed = restore_succeeded FROM dbo.restore_log WHERE restored_as = @restoredName AND execution_id = @executionID;
+            -- Make sure we can/will ONLY restore databases that we've restored in this session:
+			SELECT @restoreStart = restore_start 
+			FROM dbo.[restore_log] 
+			WHERE [database] = @databaseToRestore AND [restored_as] = @restoredName AND [execution_id] = @executionID;
+			
+			SET @executeDropAllowed = 0;
+			IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName AND [create_date] >= @restoreStart)
+				SET @executeDropAllowed = 1;
 
             IF @PrintOnly = 1 AND @DropDatabasesAfterRestore = 1
                 SET @executeDropAllowed = 1; 
             
-            IF ISNULL(@executeDropAllowed, 0) = 0 BEGIN 
-
-				--MKC: BUG S4-11 - see the alternate 'option' for processing this below. But, given the potential for RISK (i.e., to dropping a real db), 'erroring out' here seems like the best and safest solution.
-                UPDATE dbo.restore_log
-                SET 
-                    [dropped] = 'ERROR', 
-                    error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
-                WHERE 
-                    restore_id = @restoreLogId;
-
-				--MKC: Bug S4-11 - the flow below MIGHT work... but I don't BELIEVE that the logic for SET @executeDropAllowed = 1 is fully thought out... so, until I assess that further, this whole block of code will be ignored. 
-				--IF @restoredName <> @databaseToRestore BEGIN
-				--	SET @executeDropAllowed = 1;  -- @AllowReplace and @DropDatabasesAfterRestore can NOT both be set to true. So, if the restoredDB.name <> backupSourceDB.name then... we can drop this database
-				--  END;
-				--ELSE BEGIN 
-				--	-- otherwise, we can't... this could be a legit/production db so we can't drop it. So flag it as a problem: 
-				--	UPDATE dbo.restore_log
-				--	SET 
-				--		[dropped] = 'ERROR', 
-				--		error_details = ISNULL(error_details, N'') + @crlf + N'Database was NOT successfully restored - but WAS slated to be DROPPED as part of processing.'
-				--	WHERE 
-				--		restore_id = @restoreLogId;
-				--END;
-
-            END;
-
             IF (@executeDropAllowed = 1) AND EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName) BEGIN -- this is a db we restored (or tried to restore) in this 'session' - so we can drop it:
-                SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';';
+                
+				SET @command = N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';';
+
+				IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @restoredName AND [state_desc] = N'ONLINE') BEGIN
+					SET @command = N'ALTER DATABASE ' + QUOTENAME(@restoredName) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + @crlf
+						+ N'DROP DATABASE ' + QUOTENAME(@restoredName) + N';' + @crlf + @crlf;
+				END;
 
                 BEGIN TRY 
                     IF @PrintOnly = 1 
@@ -1074,10 +1059,17 @@ NextDatabase:
                         WHERE 
                             restore_id = @restoreLogId;
 
-                        EXEC sys.sp_executesql @command;
+						EXEC @execOutcome = dbo.[execute_command]
+							@Command = @command, 
+							@DelayBetweenAttempts = N'8 seconds',
+							@IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
+							@Results = @execResults OUTPUT;
+
+						IF @execOutcome <> 0 
+							SET @statusDetail = N'Error with CLEANUP / DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
 
                         IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
-                            SET @statusDetail = N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
+                            SET @statusDetail = @statusDetail + @crlf + N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
 
                             SET @failedDropCount = @failedDropCount +1;
                           END;

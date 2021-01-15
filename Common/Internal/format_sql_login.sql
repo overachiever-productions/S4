@@ -128,11 +128,10 @@ END; ';
         END;
   
         -- initialize output with basic details:
-        SET @template = REPLACE(@template, N'{Attributes}', @attributes);
-		SET @output = REPLACE(@template, N'{Name}', @Name);
-		SET @output = REPLACE(@template, N'{EscapedName}', REPLACE(@Name, N'''', N''''''));
-
-
+        SET @output = REPLACE(@template, N'{Attributes}', @attributes);
+		SET @output = REPLACE(@output, N'{Name}', @Name);
+		SET @output = REPLACE(@output, N'{EscapedName}', REPLACE(@Name, N'''', N''''''));
+		
         IF (@Password LIKE '0x%') --AND (@Password NOT LIKE '%HASHED')
             SET @Password = @Password + N' HASHED';
         ELSE 

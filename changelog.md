@@ -2,6 +2,21 @@
 
 # Change Log
 
+## [8.5.3502] - 2021-01-15
+
+### Changed 
+- `dbo.restore_databases` now allows-for > 1 .ndf file during restore-tests and DR restores. Previous logic was limited to treating any/all .ndf files as <db_name>.ndf which didn't work.
+- `dbo.restore_databases` and `dbo.apply_logs` both now use the COMPLETION time-stamp of the backup file most-recently restored INSTEAD of the time-stamp associated with the file-name itself - correcting `“The log in this backup set terminates at LSNXXXX, which is too early to apply to the database…”` errors. 
+- `dbo.apply_logs` now performs additional checks BEFORE attempting to restore databases against dbs that might be already ONLINE or that haven't been set up for additional RESTORE operations (i.e., it's been made more user-friendly).
+- Major overhaul of post-restore cleanup logic in dbo.restore_databases for scenarios where @DropDatabasesAfterRestore is true. New logic queries dbo.restore_log against source db-name, restored (target) db-name, execution id, AND the timestamp of the target db's creation to ensure that S4 is ONLY dropping dbs created during restore tests, then uses more-aggressive techniques to force/ensure that target dbs are dropped. 
+
+### Fixed
+- Corrected bug in `dbo.restore_databases` that assumed that database files (mdf, ldf, ndf) would ALWAYS be in format of `<db_name>.<ext>`. This older oversight (leaning too heavily upon convention) could/would result in attempts to restore test/'copy' database files 'over the top' of production files (which would obviously fail) because file-name creation logic for non-DR restores would be a simple question of REPLACE() against source db-name to 'new' db-name (which won't work on a DB named, say, `Widgets` if the mdf for said database is `Gears.mdf` and so on).
+- Removed last vestiges of `xp_deletefile` (found in `dbo.remove_backup_files`) - which should prevent problems with leaked file-handles causing 'lock ups' against Windows directories (for backup files).
+- Bug-Fixes to problems with error, warning, and status/output reporting in `dbo.apply_logs`.
+
+
+
 ## [8.4.3491] - 2021-01-04  
 
 ### Added  

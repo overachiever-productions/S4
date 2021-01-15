@@ -97,6 +97,7 @@
 			- Add Index ID into TABLE locks - assuming it's ever anything OTHER than 1 or (and, even then, i'd like to use the name of the IX or 'HEAP')... 
 
 			- Look at creating the STATEMENTS needed to pull/return outputs for PAGE, KEY, and ROW identifiers... (PAGE and KEY are 'easy-ish' = they're just SELECT * FROM [dbid]..[objectid] WHERE %%physloc|lockres%%... = (formatted for whatever type). 
+													e.g., SELECT * FROM Billing.dbo.Entries WHERE %%lockres%% = '(12345678)';
 				Rows... harder, I'd have to figure out the ... PK? on the row? or the IX 'key'? and then ... translate that into an id? ... guessing it COULD? be done? but... not sure... 
 						meh. not SUPER hard... but it'll take some work. But, DBCC PAGE (output type of 3 will get what is needed): 
 										DBCC PAGE('Widgets', 1, 689098, 3) WITH TABLERESULTS;

@@ -126,13 +126,6 @@ AS
     END;
 
     -----------------------------------------------------------------------------
-    -- Construct list of databases to process:
-	DECLARE @applicableDatabases table (
-		entry_id int IDENTITY(1,1) NOT NULL, 
-		source_database_name sysname NOT NULL,
-		target_database_name sysname NOT NULL
-	);
-
 	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
 	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
@@ -167,31 +160,6 @@ AS
 		SET @SourceDatabases = REPLACE(@SourceDatabases, N'{READ_FROM_FILESYSTEM}', @serialized); 
 	END;
 
-	DECLARE @possibleDatabases table ( 
-		row_id int IDENTITY(1,1) NOT NULL, 
-		[database_name] sysname NOT NULL
-	); 
-
-	INSERT INTO @possibleDatabases ([database_name])
-	EXEC dbo.list_databases 
-        @Targets = @SourceDatabases,         
-        @Exclusions = @Exclusions,		
-        @Priorities = @Priorities,
-
-		@ExcludeSimpleRecovery = 1, 
-		@ExcludeRestoring = 0, -- we're explicitly targetting just these in fact... 
-		@ExcludeRecovering = 1; -- we don't want these... (they're 'too far gone')
-
-	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
-	SELECT [database_name] [source_database_name], REPLACE(@TargetDbMappingPattern, N'{0}', [database_name]) [target_database_name] FROM @possibleDatabases ORDER BY [row_id];
-
-    IF NOT EXISTS (SELECT NULL FROM @applicableDatabases) BEGIN
-        SET @earlyTermination = N'Databases specified for apply_logs operation: [' + @SourceDatabases + ']. However, none of the databases specified can have T-LOGs applied - as there are no databases in STANDBY or NORECOVERY mode.';
-        GOTO FINALIZE;
-    END;
-
-    PRINT '-- Databases To Attempt Log Application Against: ' + @serialized;
-
     -----------------------------------------------------------------------------
 	-- start processing:
 	DECLARE @executionID uniqueidentifier = NEWID();
@@ -223,6 +191,45 @@ AS
 
 	-- meta-data variables:
 	DECLARE @backupDate datetime, @backupSize bigint, @compressed bit, @encrypted bit;
+
+    -- Construct list of databases to process:
+	DECLARE @applicableDatabases table (
+		entry_id int IDENTITY(1,1) NOT NULL, 
+		source_database_name sysname NOT NULL,
+		target_database_name sysname NOT NULL
+	);
+
+	DECLARE @possibleDatabases table ( 
+		row_id int IDENTITY(1,1) NOT NULL, 
+		[database_name] sysname NOT NULL
+	); 
+
+	INSERT INTO @possibleDatabases ([database_name])
+	EXEC dbo.list_databases 
+        @Targets = @SourceDatabases,         
+        @Exclusions = @Exclusions,		
+        @Priorities = @Priorities,
+
+		@ExcludeSimpleRecovery = 1, 
+		@ExcludeRestoring = 0, -- we're explicitly targetting just these in fact... 
+		@ExcludeRecovering = 1; -- we don't want these... (they're 'too far gone')
+
+	INSERT INTO @applicableDatabases ([source_database_name], [target_database_name])
+	SELECT [database_name] [source_database_name], REPLACE(@TargetDbMappingPattern, N'{0}', [database_name]) [target_database_name] FROM @possibleDatabases ORDER BY [row_id];
+
+	-- exclude online DBs - as we, obviously, can't apply logs to them:
+	DELETE FROM @applicableDatabases WHERE [target_database_name] IN (SELECT [name] FROM sys.databases WHERE [state_desc] = N'ONLINE');
+
+	-- also exclude DBs where target isn't online or doesn't exist: 
+	DELETE FROM @applicableDatabases WHERE [target_database_name] NOT IN (SELECT [name] FROM sys.databases);
+
+    IF NOT EXISTS (SELECT NULL FROM @applicableDatabases) BEGIN
+        SET @earlyTermination = N'Databases specified for apply_logs operation: [' + @SourceDatabases + ']. However, none of the databases specified can have T-LOGs applied - as there are no databases in STANDBY or NORECOVERY mode.';
+        GOTO FINALIZE;
+    END;
+	
+	-- Begin application of logs:
+    PRINT '-- Databases To Attempt Log Application Against: ' + @serialized;
 
 	DECLARE @logFilesToRestore table ( 
 		id int IDENTITY(1,1) NOT NULL, 
@@ -288,7 +295,7 @@ AS
 			@Mode = N'LOG', 
 			@LastAppliedFile = @latestPreviousFileRestored, 
 			@Output = @backupFilesList OUTPUT;
-
+		
 		-- reset values per every 'loop' of main processing body:
 		DELETE FROM @logFilesToRestore;
 
@@ -399,7 +406,7 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
                         @DatabaseToRestore = @sourceDbName, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
-                        @LastAppliedFile = @backupName,
+						@LastAppliedFinishTime = @backupDate,
                         @Output = @backupFilesList OUTPUT;
 
 					WITH shredded AS ( 
@@ -536,16 +543,22 @@ NextDatabase:
 			END;
 		END;
 
-		SET @outputSummary = N'Applied the following Logs: ' + @crlf;
+		-- Report on outcome for manual operations/interactions: 
+		IF @logsWereApplied = 1 BEGIN
+			SET @outputSummary = N'Applied the following Logs: ' + @crlf;
 
-		SELECT 
-			@outputSummary = @outputSummary + @tab + [FileName] + @crlf
-		FROM 
-			@appliedFiles 
-		ORDER BY 
-			ID;
+			SELECT 
+				@outputSummary = @outputSummary + @tab + [FileName] + @crlf
+			FROM 
+				@appliedFiles 
+			ORDER BY 
+				ID;
 
-		EXEC [dbo].[print_long_string] @outputSummary;
+			EXEC [dbo].[print_long_string] @outputSummary;
+		END; ELSE BEGIN
+			IF NULLIF(@statusDetail,'') IS NULL
+				PRINT N'Success. No new/applicable logs found.';
+		END;
 
 		FETCH NEXT FROM [restorer] INTO @sourceDbName, @targetDbName;
 	END; 
@@ -562,7 +575,7 @@ FINALIZE:
 	END;
 
 	DECLARE @messageSeverity sysname = N'';
-	DECLARE @message nvarchar(MAX); 
+	DECLARE @message nvarchar(MAX) = N'';
 
 	IF EXISTS (SELECT NULL FROM @warnings) BEGIN 
 		SET @messageSeverity = N'WARNING';
@@ -586,7 +599,10 @@ FINALIZE:
 		ELSE 
 			SET @messageSeverity = N'ERRROR';
 
-		SET @message = @message + N'The following ERRORs were encountered: ' + @crlf 
+		SET @message = @message + N'The following ERRORs were encountered: ' + @crlf;
+
+		IF NULLIF(@earlyTermination, N'') IS NOT NULL 
+			SET @message = @message + @earlyTermination;
 
 		SELECT 
 			@message  = @message + @crlf
@@ -599,7 +615,7 @@ FINALIZE:
 			[restore_id];
 	END; 
 
-	IF @message IS NOT NULL BEGIN 
+	IF NULLIF(@message, N'') IS NOT NULL BEGIN 
 
 		IF @AlertOnStaleOnly = 1 BEGIN
 			IF @messageSeverity NOT LIKE '%WARNING%' BEGIN
