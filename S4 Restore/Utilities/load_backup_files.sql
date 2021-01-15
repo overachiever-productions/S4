@@ -119,7 +119,7 @@ AS
 				@Encrypted = NULL;
 		END;
 
-		IF @LastAppliedFile IS NULL BEGIN 
+		IF @LastAppliedFinishTime IS NULL BEGIN 
 			RAISERROR(N'Execution in ''DIFF'' or ''LOG'' Mode requires either a valid @LastAppliedFile or @LastAppliedFinishTime for filtering.', 16, 1);
 			RETURN -20;
 		END;
