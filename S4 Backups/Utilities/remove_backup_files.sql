@@ -1,8 +1,8 @@
 /*
 	NOTES:
-        - This sproc adheres to the PROJECT/REPLY usage convention.
-
-		- WARNING: This script does what it says - it'll remove files exactly as specified. 
+        - WARNING: This script does what it says - it'll remove files exactly as specified. 
+		
+		- This sproc adheres to the PROJECT/REPLY usage convention.
 			   
 		- Not yet documented. 
 
@@ -14,21 +14,15 @@
 				Then again? maybe NOT... 
 
 
+	SAMPLE SIGNATURE:
 
-*/
-
-
-
-/*
-
-
-EXEC dbo.remove_backup_files 
-	@BackupType = 'FULL', -- sysname
-    @DatabasesToProcess = N'{READ_FROM_FILESYSTEM}', -- nvarchar(1000)
-    @DatabasesToExclude = N'', -- nvarchar(600)
-    @TargetDirectory = N'D:\SQLBackups', -- nvarchar(2000)
-    @Retention = '12m', -- int
-    @PrintOnly = 1 -- bit
+		EXEC dbo.remove_backup_files 
+			@BackupType = 'FULL', -- sysname
+			@DatabasesToProcess = N'{READ_FROM_FILESYSTEM}', -- nvarchar(1000)
+			@DatabasesToExclude = N'', -- nvarchar(600)
+			@TargetDirectory = N'D:\SQLBackups', -- nvarchar(2000)
+			@Retention = '12m', -- int
+			@PrintOnly = 1 -- bit
 
 */
 
@@ -173,17 +167,11 @@ AS
 		END;
 	END;
 
-	DECLARE @routeInfoAsOutput bit = 0;
-	IF @Output IS NULL
-		SET @routeInfoAsOutput = 1; 
-
 	IF @PrintOnly = 1 BEGIN 
-		IF @routeInfoAsOutput = 1 BEGIN
-			IF @retentionType = 'b'
-				PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
-			ELSE 
-				PRINT '-- Retention specification is to remove backups created before [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
-		END;
+		IF @retentionType = 'b'
+			PRINT '-- Retention specification is to keep the last ' + CAST(@retentionValue AS sysname) + ' backup(s).';
+		ELSE 
+			PRINT '-- Retention specification is to remove backups created before [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
 	END;
 
 	-- normalize paths: 
@@ -242,15 +230,17 @@ AS
 
 	DECLARE @targetDirectories table (
         [entry_id] int IDENTITY(1,1) NOT NULL, 
-        [directory_name] sysname NOT NULL
+		[database_name] sysname NOT NULL,
+        [directory_name] sysname NULL
     ); 
 
-	-- S4-349: https://overachieverllc.atlassian.net/browse/S4-349 ... 
-	INSERT INTO @targetDirectories ([directory_name])
+	INSERT INTO @targetDirectories ([database_name])
 	EXEC dbo.list_databases
 	    @Targets = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
 		@ExcludeSimpleRecovery = @excludeSimple;
+
+	UPDATE @targetDirectories SET [directory_name] = [database_name] WHERE [directory_name] IS NULL;
 
 	-----------------------------------------------------------------------------
 	-- Account for backups of system databases with the server-name in the path:  
@@ -260,19 +250,20 @@ AS
 		DECLARE @serverName sysname = N'\' + REPLACE(@@SERVERNAME, N'\', N'_'); -- account for named instances. 
 
 		-- and, note that IF we hand off the name of an invalid directory (i.e., say admindb backups are NOT being treated as system - so that D:\SQLBackups\admindb\SERVERNAME\ was invalid, then xp_dirtree (which is what's used to query for files) will simply return 'empty' results and NOT throw errors.
-		INSERT INTO @targetDirectories (directory_name)
+		INSERT INTO @targetDirectories ([database_name], [directory_name])
 		SELECT 
-			directory_name + @serverName 
+			[database_name],
+			[directory_name] + @serverName 
 		FROM 
 			@targetDirectories
 		WHERE 
-			directory_name IN (N'master', N'msdb', N'model', N'admindb'); 
-
+			[directory_name] IN (N'master', N'msdb', N'model', N'admindb'); 
 	END;
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:
 
+	DECLARE @currentDb sysname;
 	DECLARE @currentDirectory sysname;
 	DECLARE @command nvarchar(MAX);
 	DECLARE @targetPath nvarchar(512);
@@ -304,14 +295,14 @@ AS
 
 	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
-		directory_name
+		[database_name], [directory_name]
 	FROM 
 		@targetDirectories
 	ORDER BY 
 		[entry_id];
 
 	OPEN processor;
-	FETCH NEXT FROM processor INTO @currentDirectory;
+	FETCH NEXT FROM processor INTO @currentDb, @currentDirectory;
 
 	WHILE @@FETCH_STATUS = 0 BEGIN;
 		
@@ -325,13 +316,12 @@ AS
 		SET @serializedFiles = NULL;
 
 		IF @PrintOnly = 1 BEGIN
-			IF @routeInfoAsOutput = 1
-				PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDirectory + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''LIST''; ';
+			PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDb + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''LIST''; ';
 		END;
 
 		-- Load a list of files available for the target db: 
 		EXEC dbo.load_backup_files 
-			@DatabaseToRestore = @currentDirectory, 
+			@DatabaseToRestore = @currentDb, 
 			@SourcePath = @targetPath, 
 			@Mode = N'LIST', 
 			@Output = @serializedFiles OUTPUT;
@@ -520,9 +510,8 @@ AS
 			SET @command = N'del /q /f "' + @targetPath + N'\' + @file + N'"';
 
 			IF @PrintOnly = 1 BEGIN 
-				IF @routeInfoAsOutput = 1
-					PRINT N'--    ' + @command;
-				END;
+				PRINT N'--    ' + @command;
+			  END;
 			ELSE BEGIN; 
 
 				BEGIN TRY
@@ -559,7 +548,7 @@ AS
 		CLOSE nuker;
 		DEALLOCATE nuker;
 
-		FETCH NEXT FROM processor INTO @currentDirectory;
+		FETCH NEXT FROM processor INTO @currentDb, @currentDirectory;
 	END
 
 	CLOSE processor;
@@ -577,6 +566,10 @@ AS
 	DECLARE @errorInfo nvarchar(MAX) = N'';
 	DECLARE @crlf nchar(2) = CHAR(13) + CHAR(10);
 	DECLARE @tab nchar(1) = CHAR(9);
+
+	DECLARE @routeInfoAsOutput bit = 0;
+	IF @Output IS NULL
+		SET @routeInfoAsOutput = 1; 
 
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN;
 		
