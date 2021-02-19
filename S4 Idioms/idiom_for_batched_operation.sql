@@ -186,7 +186,7 @@ DECLARE @initialBatchSize int = @BatchSize;
 	END;
 
 	IF @TreatDeadlocksAsErrors = 1 BEGIN 
-		SET @initialization = REPLACE(@initialization, N'{deadlock_declaration}', @crlf + 'DECLARE @deadlockOccurred bit = 0;');
+		SET @initialization = REPLACE(@initialization, N'{deadlock_declaration}', @crlf + N'DECLARE @deadlockOccurred bit = 0;');
 	  END; 
 	ELSE BEGIN 
 		SET @initialization = REPLACE(@initialization, N'{deadlock_declaration}', N'');
@@ -278,7 +278,7 @@ WHILE @currentRowsProcessed = @BatchSize BEGIN
 	END CATCH;
 END;
 
-'
+';
 	
 	DECLARE @maxSeconds nvarchar(MAX) = N'IF DATEDIFF(SECOND, @startTime, GETDATE()) >= {Max_Allowed_Execution_Seconds} BEGIN 
 			INSERT INTO [{logging_table_name}] (
@@ -302,7 +302,7 @@ END;
 			SET @errorsOccured = 1;
 
 			GOTO Finalize;		
-		END;'
+		END;';
 	DECLARE @tempdbTerminate nvarchar(MAX) = N'IF OBJECT_ID(N''tempdb..{tempdb_safe_stop_name}'') IS NOT NULL BEGIN 
 			INSERT INTO [{logging_table_name}] (
 				[timestamp],
