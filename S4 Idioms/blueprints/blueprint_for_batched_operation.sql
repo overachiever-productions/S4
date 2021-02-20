@@ -36,20 +36,24 @@ GO
 CREATE PROC dbo.[blueprint_for_batched_operation]
 	@DefaultNumberOfDaysToKeep						int, 
 	@DefaultBatchSize								int, 
-	@DefaultWaitDuration							sysname		= N'00:00:01.55',
+	@DefaultWaitDuration							sysname			= N'00:00:01.55',
 
-	@TargetDatabase									sysname		= N'<db_name_here>',
-	@GeneratedSprocName								sysname		= N'<sproc_name_here>', 
-	@ConfigurationKey								sysname		= NULL,				-- if present, then config is possible.
-	@ConfigurationTableName							sysname		= NULL, 
+	@TargetDatabase									sysname			= N'<db_name_here>',
+	@GeneratedSprocName								sysname			= N'<sproc_name_here>', 
 
-	@ProcessingHistoryTableName						sysname		= NULL,
+	@BatchStatement									nvarchar(MAX)	= NULL,		
+	@BatchModeStatementType							sysname			= N'DELETE',   -- { DELETE | MOVE | NONE } 
 
-	@AllowDynamicBatchSizing						bit			= 1, 
-	@AllowMaxErrors									bit			= 1, 
-	@AllowDeadlocksAsErrors							bit			= 1, 
-	@AllowMaxExecutionSeconds						bit			= 1, 
-	@AllowStopOnTempTableExists						bit			= 1
+	@ConfigurationKey								sysname			= NULL,				-- if present, then config is possible.
+	@ConfigurationTableName							sysname			= NULL, 
+
+	@ProcessingHistoryTableName						sysname			= NULL,
+	@AllowDynamicBatchSizing						bit				= 1, 
+	@AllowMaxErrors									bit				= 1, 
+	@AllowDeadlocksAsErrors							bit				= 1, 
+	@AllowMaxExecutionSeconds						bit				= 1, 
+	@AllowStopOnTempTableExists						bit				= 1, 
+	@LoggingHistoryTableName						sysname			= NULL
 AS
     SET NOCOUNT ON; 
 
@@ -62,10 +66,12 @@ AS
 	SET @TargetDatabase = ISNULL(NULLIF(@TargetDatabase, N''), N'<db_name_here>');
 	SET @GeneratedSprocName = ISNULL(NULLIF(@GeneratedSprocName, N''), N'<sproc_name_here>');
 	SET @DefaultWaitDuration = ISNULL(NULLIF(@DefaultWaitDuration, N''), N'00:00:01.500');
+	SET @BatchModeStatementType = ISNULL(NULLIF(@BatchModeStatementType, N''), N'DELETE');
 	
 	SET @ConfigurationKey = NULLIF(@ConfigurationKey, N'');
 	SET @ConfigurationTableName = NULLIF(@ConfigurationTableName, N'');
 	SET @ProcessingHistoryTableName = NULLIF(@ProcessingHistoryTableName, N'');
+	SET @BatchStatement = NULLIF(@BatchStatement, N'');
 
 	IF (@DefaultBatchSize IS NULL OR @DefaultBatchSize < 0) OR (@DefaultNumberOfDaysToKeep IS NULL OR @DefaultNumberOfDaysToKeep < 0) BEGIN 
 		RAISERROR('@DefaultBatchSize and @DefaultNumberOfDaysToKeep must both be set to non-NULL values > 0 - even when @UseConfig = 1.', 16, 1);
@@ -90,6 +96,86 @@ AS
 	DECLARE @loggingTableName sysname = N'#batched_operation_' + LEFT(CAST(NEWID() AS sysname), 8);
 
 	---------------------------------------------------------------------------------------------------
+	-- Batch Statement Defaults/Templates:
+	---------------------------------------------------------------------------------------------------
+	IF @BatchStatement IS NULL BEGIN 
+		IF UPPER(@BatchModeStatementType) = N'NONE' BEGIN
+
+			SET @BatchStatement = N'Specify your batched T-SQL operation here. Note, you''ll want to try to use PKs/CLIXes and avoid NON-SARGable operations as much as possible.';
+		END;
+
+		IF UPPER(@BatchModeStatementType) = N'MOVE' BEGIN 
+			SET @BatchStatement = N'			-- NOTE: you''ll have to create this table up BEFORE the WHILE @currentRowsProcessed = @BatchSize BEGIN loop starts... 
+			--  it holds details on the rows REMOVED from the old table and to be SHOVED into the new table ... 
+			--CREATE TABLE #MigrationTable (
+			--	migration_row_id int IDENTITY(1,1) NOT NULL, 
+				
+			--	-- now, ''duplicate'' the schema of the table/rows you''ll be moving - i.e., column-names, data-types, and NULL/NON-NULL (you can ignore constraints).
+
+			--	[column_1_to_copy] datatype_here [NOT NULL, 
+			--	[column_2_to_copy] datatype_here NOT NULL, 
+			--	-- etc.
+			--	[column_N_to_copy] datatype_here NOT NULL
+			--);
+
+
+			TRUNCATE TABLE #MigrationTable;
+			UPDATE [x] WITH(ROWLOCK)
+			SET
+				[x].[CopiedToNewTable] = 1  -- i.e., some sort of column to ''mark'' rows as transactionally moved. ALTER <myTable> ADD CopiedToNewTable bit NULL; -- if you make this NON-NULL, it''ll be a size of data operation.
+			OUTPUT
+				[Deleted].[column_1_to_copy],
+				[Deleted].[column_2_to_copy],
+				[Deleted].[column_3_to_copy],
+				[Deleted].[column_4_to_copy],
+				-- etc... 
+				[Deleted].[column_N_to_copy]
+			INTO #MigrationTable
+			FROM 
+				( 
+					SELECT TOP (@BatchSize) * FROM [<table_to_move_rows_from, sysname, MySourceTable>] WHERE ([CopiedToNewTable] IS NULL OR [CopiedToNewTable] = 0) ORDER BY [<optional_orderby_column, sysname, CanBeRemoved>]
+				) [x];
+
+			--SELECT * FROM #MigrationTable
+
+			INSERT INTO [<table_to_move_rows_TO, sysname, MyTargetTable>] WITH(ROWLOCK) (
+				[column_1_to_copy],
+				[column_2_to_copy],
+				[column_3_to_copy],
+				[column_4_to_copy],
+				-- etc
+				[column_N_to_copy]
+			)
+			SELECT
+				[column_1_to_copy],
+				[column_2_to_copy],
+				[column_3_to_copy],
+				[column_4_to_copy], 
+				-- etc
+				[column_N_to_copy]
+			FROM
+				 #MigrationTable;
+
+				 -- USUALLY makes sense to let the engine figure out the best way to sort/order-by
+			-- Later - i.e., once all rows are moved or ... whenever you want, you can DELETE FROM <your_source_table> WHERE [CopiedToNewTable] = 1'
+		END;
+
+		IF UPPER(@BatchModeStatementType) = N'DELETE' BEGIN 
+			SET @BatchStatement = N'			
+				DELETE [t]
+				FROM dbo.[<target_table, sysname, TableToDeleteFrom>] t WITH(ROWLOCK)
+				INNER JOIN (
+					SELECT TOP (@BatchSize) 
+						[<id_column, sysname, NameOfPrimaryKeyOrClixID>]  
+					FROM 
+						dbo.[<target_table, sysname, TableToDeleteFrom>] WITH(NOLOCK)  
+					WHERE 
+						[<timestamp_column, sysname, NameOfTimeStampColumn>] < DATEADD(DAY, 0 - @DaysWorthOfDataToKeep, GETUTCDATE()) 
+					) x ON t.[<id_column, sysname, NameOfPrimaryKeyOrClixID>]= x.[<id_column, sysname, NameOfPrimaryKeyOrClixID>];';
+		END;
+	END;
+
+	---------------------------------------------------------------------------------------------------
 	-- Sproc Signature and Configuration Settings:
 	---------------------------------------------------------------------------------------------------
 
@@ -108,9 +194,7 @@ AS
 	-- NOTE: this code was generated from admindb.dbo.blueprint_for_batched_operation.
 	
 	-- Parameter Scrubbing/Cleanup:
-	{cleanup}
-
-	{configuration}
+	{cleanup}{configuration}
 	';
 
 	DECLARE @parameters nvarchar(MAX) = N'	@DaysWorthOfDataToKeep					int			= {default_retention},
@@ -120,7 +204,7 @@ AS
 	@PersistHistory							bit			= {default_save_history}';
 
 	DECLARE @cleanup nvarchar(MAX) = N'SET @WaitForDelay = NULLIF(@WaitForDelay, N'''');{configKeys}{tempTableName}';
-	DECLARE @configuration nvarchar(MAX) = N'---------------------------------------------------------------------------------------------------------------
+	DECLARE @configuration nvarchar(MAX) = @crlf + @crlf + @tab + N'---------------------------------------------------------------------------------------------------------------
 	-- Optional Retrieval of Settings via Configuration Table:
 	---------------------------------------------------------------------------------------------------------------
 	IF @ConfigurationKey IS NOT NULL BEGIN 
@@ -181,7 +265,6 @@ AS
 			RETURN -100;
 		END CATCH
 	END; ';
-	DECLARE @declarations nvarchar(MAX) = N'';
 
 	SET @parameters = REPLACE(@parameters, N'{default_retention}', @DefaultNumberOfDaysToKeep);
 	SET @parameters = REPLACE(@parameters, N'{default_batch_size}', @DefaultBatchSize);
@@ -191,10 +274,13 @@ AS
 	IF @useConfiguration = 1 BEGIN
 		SET @parameters = REPLACE(@parameters, N'{configuration}', @crlf + @tab + N'@ConfigurationKey						sysname		= NULL,' + @crlf + @tab + '@ConfigurationTable						sysname		= NULL, ');	
 		SET @cleanup = REPLACE(@cleanup, N'{configKeys}', @crlf + @tab + N'SET @ConfigurationKey = NULLIF(@ConfigurationKey, N'''');' + @crlf + @tab + N'SET @ConfigurationTable = NULLIF(@ConfigurationTable, N'''');');
+
+		SET @configuration = REPLACE(@configuration, N'{configuration_table_name}', @ConfigurationTableName);
 	  END;
 	ELSE BEGIN
 		SET @parameters = REPLACE(@parameters, N'{configuration}', N'');	
 		SET @cleanup = REPLACE(@cleanup, N'{configKeys}', N'');
+		SET @configuration = N'';
 	END;
 
 	IF @AllowDynamicBatchSizing = 1 BEGIN
@@ -230,19 +316,16 @@ AS
 		SET @cleanup = REPLACE(@cleanup, N'{tempTableName}', N'');
 	END;
 	
-	SET @configuration = REPLACE(@configuration, N'{configuration_table_name}', @ConfigurationTableName);
-
 	SET @signature = REPLACE(@signature, N'{target_database}', @TargetDatabase);
 	SET @signature = REPLACE(@signature, N'{sproc_name}', @GeneratedSprocName);
 	SET @signature = REPLACE(@signature, N'{parameters}', @parameters);
 	SET @signature = REPLACE(@signature, N'{cleanup}', @cleanup);
 	SET @signature = REPLACE(@signature, N'{configuration}', @configuration);
 
-
 	---------------------------------------------------------------------------------------------------
 	-- Initialization:
 	---------------------------------------------------------------------------------------------------
-DECLARE @initialization nvarchar(MAX) = N'	---------------------------------------------------------------------------------------------------------------
+	DECLARE @initialization nvarchar(MAX) = N'	---------------------------------------------------------------------------------------------------------------
 	-- Initialization:
 	---------------------------------------------------------------------------------------------------------------
 	SET NOCOUNT ON; 
@@ -303,7 +386,7 @@ DECLARE @initialization nvarchar(MAX) = N'	-------------------------------------
 				-------------------------------------------------------------------------------------------------
 !!!!!!!!-- Specify YOUR code here, i.e., this is just a TEMPLATE:
 				{Batch_Statement} 
-!!!!!!!! - end YOUR code... 
+!!!!!!!! / YOUR code... 
 
 				-------------------------------------------
 
@@ -505,9 +588,9 @@ DECLARE @initialization nvarchar(MAX) = N'	-------------------------------------
 		SET @body = REPLACE(@body, N'{TreatDeadlocksAsErrors}', N'');
 	END;
 
-	--SET @body = REPLACE(@body, N'{Batch_Statement}', @tab + @tab + @tab + @BatchStatement);
+	SET @body = REPLACE(@body, N'{Batch_Statement}', @tab + @tab + @tab + @BatchStatement);
 	SET @body = REPLACE(@body, N'{logging_table_name}', @LoggingTableName);
-
+	
 
 	---------------------------------------------------------------------------------------------------
 	-- Finalization:
