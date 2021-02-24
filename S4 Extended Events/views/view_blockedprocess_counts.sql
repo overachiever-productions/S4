@@ -37,7 +37,7 @@ CREATE PROC dbo.[view_blockedprocess_counts]
 	@Granularity								sysname			= N'HOUR',   -- { DAY | HOUR | MINUTE } WHERE MINUTE ends up being tackled in 5 minute increments (not 1 minute).
 	@OptionalStartTime							datetime		= NULL, 
 	@OptionalEndTime							datetime		= NULL, 
-	@ConvertTimesFromUtc								bit			= 1
+	@ConvertTimesFromUtc						bit				= 1
 AS
     SET NOCOUNT ON; 
 
@@ -73,7 +73,7 @@ AS
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		SET @timePredicates = N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
 	END;	
 	
 	CREATE TABLE #blocked ( 
