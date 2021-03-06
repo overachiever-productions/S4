@@ -58,6 +58,9 @@
 					i.e., something along those lines is cleaner/better. 
 				
 
+	vNEXT:
+		- Optimization Idea - if ... CPU has been < @Threshold for all minutes reported/checked... then don't BOTHER looking for 'exceptions' caused by various jobs... 
+			or, in other words, if there's NOTHING to report because there have NOT been ANY problems, don't bother running a bunch of checks/comparisons to see what jobs might've caused problems (as there weren't any problems).
 
 	
 		EXEC [admindb].dbo.[verify_cpu_thresholds]
@@ -144,11 +147,10 @@ AS
 
 	-- and get a list of jobs running in the last N minutes: 
 	DECLARE @runningJobs xml;
-	DECLARE @SerializedOutput xml;
 	EXEC dbo.[list_running_jobs]
 		@StartTime = @lastCheckupExecutionTime,
 		@EndTime = @now,
-		@SerializedOutput = @runningJobs OUTPUT
+		@SerializedOutput = @runningJobs OUTPUT;
 	
 	CREATE TABLE #running_jobs (
 		row_id int IDENTITY(1,1) NOT NULL, 
