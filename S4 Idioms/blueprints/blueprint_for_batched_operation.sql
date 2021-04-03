@@ -12,15 +12,15 @@
 				@GeneratedSprocName = N'TEST_DELETE_SPROC',
 				@DefaultNumberOfDaysToKeep = 90,
 				@DefaultBatchSize = 20000, 
-				@ConfigurationKey = N'Actions.Something', 
-				@ConfigurationTableName = N'dbo.DeleteConfigurations';
-				--@ConfigurationKey = NULL,
-				--@ConfigurationTableName = NULL,
-				--@AllowDynamicSizing = 1,
-				--@AllowMaxErrors = 1,
-				--@AllowDeadlocksAsErrors = 1,
-				--@AllowMaxExecutionSeconds = 1,
-				--@AllowStopOnTempTableExists = 1
+				@AllowConfigTableOverride = 1, 
+				@ConfigurationTableName = N'dbo.DeleteConfigurations',
+				@AllowDynamicBatchSizing = 1,
+				@AllowMaxErrors = 1,
+				@AllowDeadlocksAsErrors = 1,
+				@AllowMaxExecutionSeconds = 1,
+				@AllowStopOnTempTableExists = 1, 
+				@LoggingHistoryTableName = N'cleanup_history';
+
 
 
 
@@ -39,21 +39,23 @@ CREATE PROC dbo.[blueprint_for_batched_operation]
 	@DefaultWaitDuration							sysname			= N'00:00:01.55',
 
 	@TargetDatabase									sysname			= N'<db_name_here>',
+	@GeneratedSprocSchema							sysname			= N'dbo',
 	@GeneratedSprocName								sysname			= N'<sproc_name_here>', 
 
+	@PreProcessingStatement							nvarchar(MAX)	= NULL,
 	@BatchStatement									nvarchar(MAX)	= NULL,		
 	@BatchModeStatementType							sysname			= N'DELETE',   -- { DELETE | MOVE | NONE } 
 
-	@ConfigurationKey								sysname			= NULL,				-- if present, then config is possible.
+	@AllowConfigTableOverride						bit				= 1,				-- if present, then config is possible.
 	@ConfigurationTableName							sysname			= NULL, 
 
-	@ProcessingHistoryTableName						sysname			= NULL,
 	@AllowDynamicBatchSizing						bit				= 1, 
 	@AllowMaxErrors									bit				= 1, 
 	@AllowDeadlocksAsErrors							bit				= 1, 
 	@AllowMaxExecutionSeconds						bit				= 1, 
 	@AllowStopOnTempTableExists						bit				= 1, 
-	@LoggingHistoryTableName						sysname			= NULL
+	@LoggingHistoryTableName						sysname, 
+	@DefaultHistoryLoggingLevel						sysname			= N'SIMPLE'		-- { SIMPLE | DETAIL }  -- errors are always included... 
 AS
     SET NOCOUNT ON; 
 
@@ -67,25 +69,23 @@ AS
 	SET @GeneratedSprocName = ISNULL(NULLIF(@GeneratedSprocName, N''), N'<sproc_name_here>');
 	SET @DefaultWaitDuration = ISNULL(NULLIF(@DefaultWaitDuration, N''), N'00:00:01.500');
 	SET @BatchModeStatementType = ISNULL(NULLIF(@BatchModeStatementType, N''), N'DELETE');
-	
-	SET @ConfigurationKey = NULLIF(@ConfigurationKey, N'');
+	SET @DefaultHistoryLoggingLevel = ISNULL(NULLIF(@DefaultHistoryLoggingLevel, N''), N'SIMPLE');
+
 	SET @ConfigurationTableName = NULLIF(@ConfigurationTableName, N'');
-	SET @ProcessingHistoryTableName = NULLIF(@ProcessingHistoryTableName, N'');
+	SET @LoggingHistoryTableName = NULLIF(@LoggingHistoryTableName, N'');
 	SET @BatchStatement = NULLIF(@BatchStatement, N'');
+	SET @PreProcessingStatement = NULLIF(@PreProcessingStatement, N'');
+	   
+	--IF (@DefaultBatchSize IS NULL OR @DefaultBatchSize < 0) OR (@DefaultNumberOfDaysToKeep IS NULL OR @DefaultNumberOfDaysToKeep < 0) BEGIN 
+	--	RAISERROR('@DefaultBatchSize and @DefaultNumberOfDaysToKeep must both be set to non-NULL values > 0 - even when @UseConfig = 1.', 16, 1);
+	--	RETURN -6;
+	--END;
 
-	IF (@DefaultBatchSize IS NULL OR @DefaultBatchSize < 0) OR (@DefaultNumberOfDaysToKeep IS NULL OR @DefaultNumberOfDaysToKeep < 0) BEGIN 
-		RAISERROR('@DefaultBatchSize and @DefaultNumberOfDaysToKeep must both be set to non-NULL values > 0 - even when @UseConfig = 1.', 16, 1);
-		RETURN -6;
-	END;
-
-	DECLARE @useConfiguration bit = 0;
-	IF (@ConfigurationKey IS NOT NULL) OR (@ConfigurationTableName IS NOT NULL) BEGIN 
-		IF (@ConfigurationKey IS NULL) OR (@ConfigurationTableName IS NULL) BEGIN 
-			RAISERROR(N'@ConfigurationKey and @ConfigurationTableName must BOTH be specified in order to allow use of configuration-table overrides.', 16, 1);
+	IF @AllowConfigTableOverride = 1 BEGIN 
+		IF @ConfigurationTableName IS NULL BEGIN
+			RAISERROR(N'A configuration table must be supplied via the @ConfigurationTableName parameter when @AllowConfigTableOverride is set to 1.', 16, 1);
 			RETURN -10;
 		END;
-
-		SET @useConfiguration = 1;
 	END;
 
 	------------------------------------------------------------------------------------------------------------------------------
@@ -170,9 +170,14 @@ AS
 					FROM 
 						dbo.[<target_table, sysname, TableToDeleteFrom>] WITH(NOLOCK)  
 					WHERE 
-						[<timestamp_column, sysname, NameOfTimeStampColumn>] < DATEADD(DAY, 0 - @DaysWorthOfDataToKeep, GETUTCDATE()) 
+						[<timestamp_column, sysname, NameOfTimeStampColumn>] < DATEADD(DAY, 0 - @DaysWorthOfDataToKeep, @startTime) 
 					) x ON t.[<id_column, sysname, NameOfPrimaryKeyOrClixID>]= x.[<id_column, sysname, NameOfPrimaryKeyOrClixID>];';
 		END;
+
+		SET @BatchStatement = N'!!!!!!!!-- Specify YOUR code here, i.e., this is just a TEMPLATE:
+				' + @BatchStatement + N' 
+!!!!!!!! / YOUR code... ';
+
 	END;
 
 	---------------------------------------------------------------------------------------------------
@@ -182,11 +187,11 @@ AS
 	DECLARE @signature nvarchar(MAX) = N'USE [{target_database}];
 GO
 
-IF OBJECT_ID(''dbo.{sproc_name}'',''P'') IS NOT NULL
-	DROP PROC dbo.[{sproc_name}];
+IF OBJECT_ID(''{schema}.{sproc_name}'',''P'') IS NOT NULL
+	DROP PROC [{schema}].[{sproc_name}];
 GO
 
-CREATE PROC dbo.[{sproc_name}]
+CREATE PROC [{schema}].[{sproc_name}]
 {parameters}
 AS
     SET NOCOUNT ON; 
@@ -198,63 +203,55 @@ AS
 	';
 
 	DECLARE @parameters nvarchar(MAX) = N'	@DaysWorthOfDataToKeep					int			= {default_retention},
-	@KeepAllDataNewerThan					datetime	= NULL, 
 	@BatchSize								int			= {default_batch_size},
 	@WaitForDelay							sysname		= N''{default_wait_for}'',{configuration}{allow_batch_tuning}{total_cleanup_seconds}{default_max_errors}{deadlocks_as_errors}{safe_stop_name}
-	@PersistHistory							bit			= {default_save_history}';
+	@HistoryLoggingLevel					sysname		= N''{default_save_history}''   -- { SIMPLE | DETAIL }  -- errors are always logged...  ';
 
-	DECLARE @cleanup nvarchar(MAX) = N'SET @WaitForDelay = NULLIF(@WaitForDelay, N'''');{configKeys}{tempTableName}';
+	DECLARE @cleanup nvarchar(MAX) = N'SET @WaitForDelay = NULLIF(@WaitForDelay, N'''');{tempTableName}';
 	DECLARE @configuration nvarchar(MAX) = @crlf + @crlf + @tab + N'---------------------------------------------------------------------------------------------------------------
 	-- Optional Retrieval of Settings via Configuration Table:
 	---------------------------------------------------------------------------------------------------------------
-	IF @ConfigurationKey IS NOT NULL BEGIN 
+	IF @OverrideWithConfigParameters = 1 BEGIN 
+		
+		DECLARE @enabled bit;
+		DECLARE @configurationKey sysname = OBJECT_NAME(@@PROCID);--{dynamic_batching_params2}{max_errors2}
 
 		BEGIN TRY 
 			-- Reset/Load Input Values from Config Table INSTEAD of via parameters passed in to sproc: 
 			DECLARE @configError nvarchar(MAX) = N'''';
 			DECLARE @configSQL nvarchar(MAX) = N''SELECT 
+				@enabled = [enabled],
+				@DaysWorthOfDataToKeep = [retention_days],
 				@BatchSize = [batch_size],
-				@WaitForDelay = [wait_for_delay],
-				@MaxExecutionSeconds = [max_execution_seconds],
-				@TreatDeadlocksAsErrors = [treat_deadlocks_as_errors],
-				@MaxAllowedErrors = [max_allowed_errors],
-				@AllowDynamicBatchSizing = [enable_dynamic_batch_sizing],
-				@MaxAllowedBatchSizeMultiplier = [max_batch_size_multiplier],
-				@TargetBatchMilliseconds = [target_batch_milliseconds],
-				@StopIfTempTableExists = [stop_if_tempdb_table_exists],
-				@PersistHistory = [persist_history]		
+				@WaitForDelay = [wait_for_delay],{max_exections_select}{deadlocks_select}{max_errors_select}{dynamic_batching_select}{temp_select}
+				@HistoryLoggingLevel = [logging_level]		
 			FROM 
 				{configuration_table_name}
 			WHERE	
-				[configuration_key] = @ConfigurationKey; '';
+				[procedure_name] = @configurationKey; '';
 
 			EXEC sp_executesql 
 				@configSQL, 
-				N''@BatchSize int OUTPUT,
-				@WaitForDelay sysname OUTPUT,
-				@AllowDynamicBatchSizing bit OUTPUT,
-				@MaxAllowedBatchSizeMultiplier int OUTPUT, 
-				@TargetBatchMilliseconds int OUTPUT,
-				@MaxExecutionSeconds int OUTPUT,
-				@MaxAllowedErrors int OUTPUT,
-				@TreatDeadlocksAsErrors bit OUTPUT,
-				@StopIfTempTableExists sysname OUTPUT,
-				@PersistHistory bit OUTPUT, 
-				@ConfigurationKey sysname'', 
+				N''@enabled bit OUTPUT, 
+				@DaysWorthOfDataToKeep int OUTPUT, 
+				@BatchSize int OUTPUT,
+				@WaitForDelay sysname OUTPUT,{dynamic_batching_def}{max_exections_def}{deadlocks_def}{max_errors_def}{temp_def}
+				@HistoryLoggingLevel sysname OUTPUT, 
+				@configurationKey sysname'',
+				@enabled = @enabled OUTPUT,
+				@DaysWorthOfDataToKeep = @DaysWorthOfDataToKeep OUTPUT,
 				@BatchSize = @BatchSize OUTPUT,
-				@WaitForDelay = @WaitForDelay OUTPUT,
-				@AllowDynamicBatchSizing = @AllowDynamicBatchSizing OUTPUT,
-				@MaxAllowedBatchSizeMultiplier = @MaxAllowedBatchSizeMultiplier OUTPUT,
-				@TargetBatchMilliseconds = @TargetBatchMilliseconds OUTPUT,
-				@MaxExecutionSeconds = @MaxExecutionSeconds OUTPUT,
-				@MaxAllowedErrors = @MaxAllowedErrors OUTPUT,
-				@TreatDeadlocksAsErrors = @TreatDeadlocksAsErrors OUTPUT,
-				@StopIfTempTableExists = @StopIfTempTableExists OUTPUT,
-				@PersistHistory = @PersistHistory OUTPUT,
-				@ConfigurationKey = @ConfigurationKey;
+				@WaitForDelay = @WaitForDelay OUTPUT,{dynamic_batching_assignment}{max_exections_assignment}{deadlocks_assignment}{max_errors_assignment}{temp_assignment}
+				@HistoryLoggingLevel = @HistoryLoggingLevel OUTPUT,
+				@configurationKey = @configurationKey;
 
 			IF @BatchSize IS NULL BEGIN
-				RAISERROR(''Invalid Configuration Key Specified. Key: %s did NOT match any keys in table: {configuration_table_name}. Unable to continue. Terminating.'', 16, 1, @ConfigurationKey);
+				RAISERROR(''Invalid Configuration Definiition Specified. Key: %s did NOT match any configured [procedure_name] in table: {configuration_table_name}. Unable to continue. Terminating.'', 16, 1, @configurationKey);
+			END;
+
+			IF @enabled <> 1 BEGIN 
+				PRINT N''Procedure '' + @configurationKey + N'' has been marked as DISABLED in table {configuration_table_name}. Execution is terminating gracefully.;'';
+				RETURN 0;
 			END;
 
 		END TRY 
@@ -264,18 +261,27 @@ AS
 			RAISERROR(''Unexecpted Error Attempting retrieval of Configuration Values from Configuration Table {configuration_table_name}. Unable to continue. Terminating.'', 16, 1);
 			RETURN -100;
 		END CATCH
+
 	END; ';
 
 	SET @parameters = REPLACE(@parameters, N'{default_retention}', @DefaultNumberOfDaysToKeep);
 	SET @parameters = REPLACE(@parameters, N'{default_batch_size}', @DefaultBatchSize);
 	SET @parameters = REPLACE(@parameters, N'{default_wait_for}', @DefaultWaitDuration);
-	SET @parameters = REPLACE(@parameters, N'{default_save_history}', 0);	
+	SET @parameters = REPLACE(@parameters, N'{default_save_history}', @DefaultHistoryLoggingLevel);	
 
-	IF @useConfiguration = 1 BEGIN
-		SET @parameters = REPLACE(@parameters, N'{configuration}', @crlf + @tab + N'@ConfigurationKey						sysname		= NULL,' + @crlf + @tab + '@ConfigurationTable						sysname		= NULL, ');	
-		SET @cleanup = REPLACE(@cleanup, N'{configKeys}', @crlf + @tab + N'SET @ConfigurationKey = NULLIF(@ConfigurationKey, N'''');' + @crlf + @tab + N'SET @ConfigurationTable = NULLIF(@ConfigurationTable, N'''');');
+	IF @AllowConfigTableOverride = 1 BEGIN
+		SET @parameters = REPLACE(@parameters, N'{configuration}', @crlf + @tab + N'@OverrideWithConfigParameters			bit			= 0, ');	
 
 		SET @configuration = REPLACE(@configuration, N'{configuration_table_name}', @ConfigurationTableName);
+
+		IF @AllowDynamicBatchSizing = 1 BEGIN
+			SET @configuration = REPLACE(@configuration, N'{dynamic_batching_params}', @crlf + @tab + @tab + N'DECLARE @AllowDynamicBatchSizing bit;
+		DECLARE @MaxAllowedBatchSizeMultiplier int;
+		DECLARE @TargetBatchMilliseconds int;');
+		  END; 
+		ELSE BEGIN 
+			SET @configuration = REPLACE(@configuration, N'{dynamic_batching_params}', N'');
+		END;
 	  END;
 	ELSE BEGIN
 		SET @parameters = REPLACE(@parameters, N'{configuration}', N'');	
@@ -284,39 +290,84 @@ AS
 	END;
 
 	IF @AllowDynamicBatchSizing = 1 BEGIN
-		SET @parameters = REPLACE(@parameters, N'{allow_batch_tuning}', @crlf + @tab + N'@AllowDynamicBatchSizing				bit			= 0,' + @crlf + @tab + '@MaxAllowedBatchSizeMultiplier			int			= 5, ' + @crlf + @tab + N'@TargetBatchMilliseconds				int			= 4200,');	
+		SET @parameters = REPLACE(@parameters, N'{allow_batch_tuning}', @crlf + @tab + N'@AllowDynamicBatchSizing				bit			= 0,' + @crlf + @tab + '@MaxAllowedBatchSizeMultiplier			int			= 5, ' + @crlf + @tab + N'@TargetBatchMilliseconds				int			= 2800,');	
+		SET @configuration = REPLACE(@configuration, N'{dynamic_batching_select}', @crlf + @tab + @tab + @tab + @tab + N'@AllowDynamicBatchSizing = [enable_dynamic_batch_sizing],
+				@MaxAllowedBatchSizeMultiplier = [max_batch_size_multiplier],
+				@TargetBatchMilliseconds = [target_batch_milliseconds],');
+		SET @configuration = REPLACE(@configuration, N'{dynamic_batching_def}', @crlf + @tab + @tab + @tab + @tab + N'@AllowDynamicBatchSizing bit OUTPUT,
+				@MaxAllowedBatchSizeMultiplier int OUTPUT, 
+				@TargetBatchMilliseconds int OUTPUT,');
+
+		SET @configuration = REPLACE(@configuration, N'{dynamic_batching_assignment}', @crlf + @tab + @tab + @tab + @tab + N'@AllowDynamicBatchSizing = @AllowDynamicBatchSizing OUTPUT,
+				@MaxAllowedBatchSizeMultiplier = @MaxAllowedBatchSizeMultiplier OUTPUT,
+				@TargetBatchMilliseconds = @TargetBatchMilliseconds OUTPUT,');
 	  END;
 	ELSE BEGIN 
 		SET @parameters = REPLACE(@parameters, N'{allow_batch_tuning}', N'');	
+		SET @configuration = REPLACE(@configuration, N'{dynamic_batching_select}', N'');
+		SET @configuration = REPLACE(@configuration, N'{dynamic_batching_def}', N'');
+		SET @configuration = REPLACE(@configuration, N'{dynamic_batching_assignment}', N'');
 	END;
 
-	IF @AllowMaxExecutionSeconds = 1  
+	IF @AllowMaxExecutionSeconds = 1 BEGIN
 		SET @parameters = REPLACE(@parameters, N'{total_cleanup_seconds}', @crlf + @tab + N'@MaxExecutionSeconds					int			= NULL,');
-	ELSE 
+		SET @configuration = REPLACE(@configuration, N'{max_exections_select}', @crlf + N'				@MaxExecutionSeconds = [max_execution_seconds],');
+		SET @configuration = REPLACE(@configuration, N'{max_exections_def}', @crlf + N'				@MaxExecutionSeconds int OUTPUT,');
+		SET @configuration = REPLACE(@configuration, N'{max_exections_assignment}', @crlf + N'				@MaxExecutionSeconds = @MaxExecutionSeconds OUTPUT,');
+	  END;
+	ELSE BEGIN
 		SET @parameters = REPLACE(@parameters, N'{total_cleanup_seconds}', N'');	
+		SET @configuration = REPLACE(@configuration, N'{max_exections_select}', N'');
+		SET @configuration = REPLACE(@configuration, N'{max_exections_def}', N'');
+		SET @configuration = REPLACE(@configuration, N'{max_exections_assignment}', N'');
+	END;
 
 	IF @AllowMaxErrors = 1 BEGIN
 		SET @parameters = REPLACE(@parameters, N'{default_max_errors}', @crlf + @tab + N'@MaxAllowedErrors						int			= 1,');
+		SET @configuration = REPLACE(@configuration, N'{max_errors}', @crlf + @tab + @tab + N'DECLARE @MaxAllowedErrors int;');
+		SET @configuration = REPLACE(@configuration, N'{max_errors_select}', @crlf + N'				@MaxAllowedErrors = [max_allowed_errors],');
+		SET @configuration = REPLACE(@configuration, N'{max_errors_def}', @crlf + N'				@MaxAllowedErrors int OUTPUT,');
+		SET @configuration = REPLACE(@configuration, N'{max_errors_assignment}', @crlf + N'				@MaxAllowedErrors = @MaxAllowedErrors OUTPUT,');
 	  END;
 	ELSE BEGIN 
 		SET @parameters = REPLACE(@parameters, N'{default_max_errors}', N'');
+		SET @configuration = REPLACE(@configuration, N'{max_errors}', N'');
+		SET @configuration = REPLACE(@configuration, N'{max_errors_select}', N'');
+		SET @configuration = REPLACE(@configuration, N'{max_errors_def}', N'');
+		SET @configuration = REPLACE(@configuration, N'{max_errors_assignment}', N'');
 	END;
 
-	IF @AllowDeadlocksAsErrors = 1 
+	IF @AllowDeadlocksAsErrors = 1 BEGIN
 		SET @parameters = REPLACE(@parameters, N'{deadlocks_as_errors}',  @crlf + @tab + N'@TreatDeadlocksAsErrors					bit			= 0,');
-	ELSE 
+		SET @configuration = REPLACE(@configuration, N'{deadlocks_select}', @crlf + N'				@TreatDeadlocksAsErrors = [treat_deadlocks_as_errors],');
+		SET @configuration = REPLACE(@configuration, N'{deadlocks_def}', @crlf + N'				@TreatDeadlocksAsErrors bit OUTPUT,');
+		SET @configuration = REPLACE(@configuration, N'{deadlocks_assignment}', @crlf + N'				@TreatDeadlocksAsErrors = @TreatDeadlocksAsErrors OUTPUT,');
+	  END;
+	ELSE BEGIN
 		SET @parameters = REPLACE(@parameters, N'{deadlocks_as_errors}', N'');
+		SET @configuration = REPLACE(@configuration, N'{deadlocks_select}', N'');
+		SET @configuration = REPLACE(@configuration, N'{deadlocks_def}', N'');
+		SET @configuration = REPLACE(@configuration, N'{deadlocks_assignment}', N'');
+	END;
 
 	IF @AllowStopOnTempTableExists  = 1 BEGIN 
 		SET @parameters = REPLACE(@parameters, N'{safe_stop_name}', @crlf + @tab + N'@StopIfTempTableExists					sysname		= NULL,');
 		SET @cleanup = REPLACE(@cleanup, N'{tempTableName}', @crlf + @tab + N'SET @StopIfTempTableExists = ISNULL(@StopIfTempTableExists, N'''');');
+		SET @configuration = REPLACE(@configuration, N'{temp_select}', @crlf + N'				@StopIfTempTableExists = [stop_if_tempdb_table_exists],');
+		SET @configuration = REPLACE(@configuration, N'{temp_def}', @crlf + N'				@StopIfTempTableExists sysname OUTPUT,');
+		SET @configuration = REPLACE(@configuration, N'{temp_assignment}', @crlf + N'				@StopIfTempTableExists = @StopIfTempTableExists OUTPUT,');
 	  END;
 	ELSE BEGIN
 		SET @parameters = REPLACE(@parameters, N'{safe_stop_name}', N'');
 		SET @cleanup = REPLACE(@cleanup, N'{tempTableName}', N'');
+
+		SET @configuration = REPLACE(@configuration, N'{temp_select}', N'');
+		SET @configuration = REPLACE(@configuration, N'{temp_def}', N'');
+		SET @configuration = REPLACE(@configuration, N'{temp_assignment}', N'');
 	END;
 	
 	SET @signature = REPLACE(@signature, N'{target_database}', @TargetDatabase);
+	SET @signature = REPLACE(@signature, N'{schema}', @GeneratedSprocSchema);
 	SET @signature = REPLACE(@signature, N'{sproc_name}', @GeneratedSprocName);
 	SET @signature = REPLACE(@signature, N'{parameters}', @parameters);
 	SET @signature = REPLACE(@signature, N'{cleanup}', @cleanup);
@@ -338,14 +389,14 @@ AS
 		[detail] nvarchar(MAX) NOT NULL
 	); 
 
-	-- Processing (variables/etc.)
+	-- Processing Declarations:
+	DECLARE @continue bit = 1;
 	DECLARE @currentRowsProcessed int = @BatchSize; 
 	DECLARE @totalRowsProcessed int = 0;
 	DECLARE @errorDetails nvarchar(MAX);
-	DECLARE @errorsOccured bit = 0;
 	DECLARE @currentErrorCount int = 0;{deadlock_declaration}
 	DECLARE @startTime datetime = GETDATE();
-	DECLARE @batchStart datetime;{dynamic_batching_declarations}
+	DECLARE @batchStart datetime;{dynamic_batching_declarations}{preProcessingDirectives}
 ';
 
 	SET @initialization = REPLACE(@initialization, N'{logging_table_name}', @loggingTableName);
@@ -365,7 +416,14 @@ AS
 		SET @initialization = REPLACE(@initialization, N'{dynamic_batching_declarations}', @crlf + @tab + @dynamicBatches);
 	  END; 
 	ELSE BEGIN 
-		SET @initialization = REPLACE(@initialization, N'{dynamic_batching_declarations}', N'{}');
+		SET @initialization = REPLACE(@initialization, N'{dynamic_batching_declarations}', N'');
+	END;
+
+	IF @PreProcessingStatement IS NOT NULL BEGIN 
+		SET @initialization = REPLACE(@initialization, N'{preProcessingDirectives}', @crlf + @tab + @PreProcessingStatement + @crlf);
+	  END;
+	ELSE BEGIN 
+		SET @initialization = REPLACE(@initialization, N'{preProcessingDirectives}', N'');
 	END;
 
 	---------------------------------------------------------------------------------------------------
@@ -374,7 +432,7 @@ AS
 	DECLARE @body nvarchar(MAX) = N'	---------------------------------------------------------------------------------------------------------------
 	-- Processing:
 	---------------------------------------------------------------------------------------------------------------
-	WHILE @currentRowsProcessed = @BatchSize BEGIN 
+	WHILE @continue = 1 BEGIN 
 	
 		SET @batchStart = GETDATE();
 	
@@ -384,17 +442,16 @@ AS
 				-------------------------------------------------------------------------------------------------
 				-- batched operation code:
 				-------------------------------------------------------------------------------------------------
-!!!!!!!!-- Specify YOUR code here, i.e., this is just a TEMPLATE:
 				{Batch_Statement} 
-!!!!!!!! / YOUR code... 
 
 				-------------------------------------------
-
 				SELECT 
 					@currentRowsProcessed = @@ROWCOUNT, 
 					@totalRowsProcessed = @totalRowsProcessed + @@ROWCOUNT;
 
 			COMMIT; 
+
+			IF @currentRowsProcessed <> @BatchSize SET @continue = 0;
 
 			INSERT INTO [{logging_table_name}] (
 				[timestamp],
@@ -438,15 +495,13 @@ AS
 					FOR JSON PATH, ROOT(''detail'')
 				) [detail];
 					   
-			SET @errorsOccured = 1;
-		
 			{MaxErrors}
 		END CATCH;
 	END;
 
 	';
 
-	DECLARE @maxSeconds nvarchar(MAX) = N'	IF DATEDIFF(SECOND, @startTime, GETDATE()) >= @MaxExecutionSeconds BEGIN 
+	DECLARE @maxSeconds nvarchar(MAX) = N'	IF @MaxExecutionSeconds > 0 AND (DATEDIFF(SECOND, @startTime, GETDATE()) >= @MaxExecutionSeconds) BEGIN 
 				INSERT INTO [{logging_table_name}] (
 					[timestamp],
 					[is_error],
@@ -465,8 +520,6 @@ AS
 						FOR JSON PATH, ROOT(''detail'')
 					) [detail];
 			
-				SET @errorsOccured = 1;
-
 				GOTO Finalize;		
 			END;';
 	DECLARE @tempdbTerminate nvarchar(MAX) = N'	IF OBJECT_ID(N''tempdb..'' + @StopIfTempTableExists) IS NOT NULL BEGIN 
@@ -488,8 +541,6 @@ AS
 						FOR JSON PATH, ROOT(''detail'')
 					) [detail];
 			
-				SET @errorsOccured = 1;
-
 				GOTO Finalize;
 			END;';
 	DECLARE @dynamicTuning nvarchar(MAX) = N'	-- Dynamic Tuning:
@@ -509,8 +560,7 @@ AS
 					IF @BatchSize < (@initialBatchSize / @MaxAllowedBatchSizeMultiplier)
 						SET @BatchSize = (@initialBatchSize / @MaxAllowedBatchSizeMultiplier);
 				END;
-			END; 
-			IF @BatchSize <> @currentRowsProcessed SET @currentRowsProcessed = @BatchSize; -- preserve looping capabilities (i.e., AFTER we''ve logged details). ';
+			END; ';
 	DECLARE @deadlocksAsErrors nvarchar(MAX) = N'IF ERROR_NUMBER() = 1205 BEGIN
 		
 				INSERT INTO [{logging_table_name}] (
@@ -552,7 +602,6 @@ AS
 				GOTO Finalize;
 			END;';
 
-
 	IF @AllowMaxErrors = 1 BEGIN 
 		SET @body = REPLACE(@body, N'{MaxErrors}', @maxErrors);
 	  END; 
@@ -588,7 +637,7 @@ AS
 		SET @body = REPLACE(@body, N'{TreatDeadlocksAsErrors}', N'');
 	END;
 
-	SET @body = REPLACE(@body, N'{Batch_Statement}', @tab + @tab + @tab + @BatchStatement);
+	SET @body = REPLACE(@body, N'{Batch_Statement}', @BatchStatement);
 	SET @body = REPLACE(@body, N'{logging_table_name}', @LoggingTableName);
 	
 
@@ -601,40 +650,41 @@ AS
 
 	Finalize:
 
-	{deadlock_report}IF @errorsOccured = 1 BEGIN 
-		SET @PersistHistory = 1;
-	END;
+	{deadlock_report}
 
-	IF @PersistHistory = 1 BEGIN 
-		DECLARE @executionID uniqueidentifier = NEWID();
+	DECLARE @executionID uniqueidentifier = NEWID();
 
-		IF EXISTS (SELECT NULL FROM sys.tables WHERE [name] = N''{History_Table_Name}'') BEGIN
+	IF EXISTS (SELECT NULL FROM sys.tables WHERE [object_id] = OBJECT_ID(N''{History_Table_Name}'')) BEGIN
 			
-			INSERT INTO [{History_Table_Name}] (
-				[execution_id],
-				[detail_id],
-				[timestamp],
-				[is_error],
-				[detail]
-			)
-			SELECT 
-				@executionID [execution_id],
-				[detail_id],
-				[timestamp],
-				[is_error],
-				[detail]
-			FROM 
-				[{logging_table_name}] 
-			ORDER BY 
-				[detail_id];
-
-		  END;
-		ELSE BEGIN 
-			SELECT * FROM [{logging_table_name}] ORDER BY [detail_id];
-
-			RAISERROR(N''Unable to persist processing history data into long-term storage. Storage Table not found/specified.'', 16, 1);
+		IF @HistoryLoggingLevel = N''SIMPLE'' BEGIN 
+			DELETE FROM {History_Table_Name} WHERE is_error = 0 OR [detail_id] <> (SELECT MAX([detail_id]) FROM {History_Table_Name});
 		END;
 
+		INSERT INTO {History_Table_Name} (
+			[execution_id],
+			[procedure_name],
+			[detail_id],
+			[timestamp],
+			[is_error],
+			[detail]
+		)
+		SELECT 
+			@executionID [execution_id],
+			OBJECT_NAME(@@PROCID) [procedure_name],
+			[detail_id],
+			[timestamp],
+			[is_error],
+			[detail]
+		FROM 
+			[{logging_table_name}] 
+		ORDER BY 
+			[detail_id];
+
+		END;
+	ELSE BEGIN 
+		SELECT * FROM [{logging_table_name}] ORDER BY [detail_id];
+
+		RAISERROR(N''Unable to persist processing history data into long-term storage. Storage Table not found/specified.'', 16, 1);
 	END;
 
 	RETURN 0;
@@ -642,7 +692,6 @@ GO';
 
 	DECLARE @deadlockBlock nvarchar(MAX) = N'IF @deadlockOccurred = 1 BEGIN 
 		PRINT N''NOTE: One or more deadlocks occurred.''; 
-		SET @PersistHistory = 1;
 	END;'
 
 	IF @AllowDeadlocksAsErrors = 1 BEGIN 
@@ -652,8 +701,10 @@ GO';
 		SET @finalize = REPLACE(@finalize, N'{deadlock_report}', N'');
 	END;
 
+	IF PARSENAME(@LoggingHistoryTableName, 2) IS NULL SET @LoggingHistoryTableName = N'dbo.' + @LoggingHistoryTableName;
+	
 	SET @finalize = REPLACE(@finalize, N'{logging_table_name}', @LoggingTableName);
-	SET @finalize = REPLACE(@finalize, N'{History_Table_Name}', ISNULL(@ProcessingHistoryTableName, N''));
+	SET @finalize = REPLACE(@finalize, N'{History_Table_Name}', ISNULL(QUOTENAME(PARSENAME(@LoggingHistoryTableName, 2)) + N'.' + QUOTENAME(PARSENAME(@LoggingHistoryTableName, 1)), N''));
 
 	---------------------------------------------------------------------------------------------------
 	-- Projection/Print-Out:

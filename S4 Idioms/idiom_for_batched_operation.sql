@@ -159,6 +159,7 @@ DECLARE @WaitForDelay sysname = N''{wait_for}'';
 DECLARE @BatchSize int = {batch_size};{Max_Allowed_Errors}{Dynamic_Batching_Params}
 
 -- Processing (variables/etc.)
+DECALRE @continue bit = 1;
 DECLARE @currentRowsProcessed int = @BatchSize; 
 DECLARE @totalRowsProcessed int = 0;
 DECLARE @errorDetails nvarchar(MAX);
@@ -207,7 +208,7 @@ DECLARE @initialBatchSize int = @BatchSize;
 	DECLARE @body nvarchar(MAX) = N'---------------------------------------------------------------------------------------------------------------
 -- Processing:
 ---------------------------------------------------------------------------------------------------------------
-WHILE @currentRowsProcessed = @BatchSize BEGIN 
+WHILE @continue = 1 BEGIN 
 	
 	SET @batchStart = GETDATE();
 	
@@ -229,6 +230,8 @@ WHILE @currentRowsProcessed = @BatchSize BEGIN
 				@totalRowsProcessed = @totalRowsProcessed + @@ROWCOUNT;
 
 		COMMIT; 
+
+		IF @currentRowsProcessed <> @BatchSize SET @continue = 0;
 
 		INSERT INTO [{logging_table_name}] (
 			[timestamp],
