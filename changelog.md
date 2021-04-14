@@ -2,6 +2,26 @@
 
 # Change Log
 
+
+## [8.6.3591] - 2021-04-14
+
+### Changed 
+- `dbo.list_collisions` now included `host_process_id` to better help with tracking down locking/blocking root-causers. 
+- `dbo.process_synchronization_failover` now 'calls into' `dbo.process_synchronization_status` to allow 'forking' of logic for failovers AND server-startups to be processed by the same root logic. 
+
+### Fixed 
+- Bug-fixes for removal of backup files to account for host-name in path of backups for system databases.
+- Minor bug fixes for case sensitivity collations/servers. 
+
+### Added 
+- Initial addition of idioms and blueprints (blueprints are 'more weaponized' idioms - in the form of code that generates idiomatic sprocs/etc.).
+- Diagnostics to extract and report on large-grants from XE trace. 
+- New stored procedure: `dbo.list_cpu_history` - simplifies extraction of last 256 mins of CPU usage by means of calling a single sproc. 
+- Reporting / Email Alerts possible via initial addition of `dbo.verify_cpu_thresholds`. 
+- Initial implementation of `dbo.verify_ple_thresholds`. 
+- Initial addition of `dbo.verify_dev_configurations` - as logic to execute with SQL Server Agent jobs on a dev server - i.e., to verify SIMPLE recovery/etc. 
+- Initial addition of `dbo.process_synchronization_server_start`.
+
 ## [8.5.3502] - 2021-01-15
 
 ### Changed 

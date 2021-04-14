@@ -1,5 +1,5 @@
 --##OUTPUT: \\Deployment
---##NOTE: This is a build file only (i.e., it stores upgade/install directives + place-holders for code to drop into admindb, etc.)
+--##NOTE: This is a build file only (i.e., it stores upgrade/install directives + place-holders for code to drop into admindb, etc.)
 /*
 
 	REFERENCE:
@@ -519,6 +519,9 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Performance\list_collisions.sql
 
+-----------------------------------
+--##INCLUDE: S4 Performance\list_cpu_history.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Migration
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -547,6 +550,15 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Monitoring\monitor_transaction_durations.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\verify_cpu_thresholds.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\verify_ple_thresholds.sql
+
+-----------------------------------
+--##INCLUDE: S4 Monitoring\verify_dev_configurations.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Diagnostics
@@ -599,6 +611,11 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\refresh_code.sql
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Idioms
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- SQL Server Agent Jobs
@@ -661,7 +678,13 @@ END;
 --##INCLUDE: S4 High Availability\compare_jobs.sql
 
 -----------------------------------
+--##INCLUDE: S4 High Availability\Failover\process_synchronization_status.sql
+
+-----------------------------------
 --##INCLUDE: S4 High Availability\Failover\process_synchronization_failover.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\Failover\process_synchronization_server_start.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\Failover\verify_job_states.sql

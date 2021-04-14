@@ -52,17 +52,71 @@ AS
 	IF @PrintOnly = 0
 		WAITFOR DELAY '00:00:05.00'; -- No, really, give things about 5 seconds (just to let db states 'settle in' to synchronizing/synchronized).
 
-	DECLARE @serverName sysname = @@SERVERNAME;
-	DECLARE @username sysname;
-	DECLARE @report nvarchar(200);
 
-	DECLARE @orphans table (
-		UserName sysname,
-		UserSID varbinary(85)
-	);
+	DECLARE @printedCommands xml; 
+	DECLARE @syncSummary xml;
 
-	-- Start by querying current/event-ing server for list of databases and states:
+	EXEC [dbo].[process_synchronization_status]
+		@PrintOnly = @PrintOnly,
+		@PrintedCommands = @printedCommands OUTPUT,
+		@SynchronizationSummary = @syncSummary OUTPUT
+	
+	
+	IF @PrintOnly = 1 BEGIN
+		DECLARE @commands table (
+			command_id int NOT NULL, 
+			command nvarchar(MAX) NOT NULL 
+		);
+
+		WITH shredded AS ( 
+			SELECT 
+				[data].[row].value(N'@command_id[1]', N'int') [command_id], 
+				[data].[row].value(N'.[1]', N'nvarchar(MAX)') [command]
+			FROM 
+				@printedCommands.nodes(N'//command') [data]([row])
+		)
+
+		INSERT INTO @commands (
+			[command_id],
+			[command]
+		)
+		SELECT 
+			[command_id],
+			[command]
+		FROM 
+			[shredded] 
+		ORDER BY 
+			[command_id];
+		
+		DECLARE @commandText nvarchar(MAX); 
+
+		DECLARE [command_walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			command 
+		FROM 
+			@commands 
+		ORDER BY 
+			[command_id];
+		
+		OPEN [command_walker];
+		FETCH NEXT FROM [command_walker] INTO @commandText;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			PRINT @commandText; 
+		
+			FETCH NEXT FROM [command_walker] INTO @commandText;
+		END;
+		
+		CLOSE [command_walker];
+		DEALLOCATE [command_walker];
+
+		PRINT N'';
+
+	END;
+
 	DECLARE @databases table (
+		[row_id] int NOT NULL, 
 		[db_name] sysname NOT NULL, 
 		[sync_type] sysname NOT NULL, -- 'Mirrored' or 'AvailabilityGroup'
 		[ag_name] sysname NULL, 
@@ -77,213 +131,62 @@ AS
 		[other_status] nvarchar(max) NULL
 	);
 
-	-- account for Mirrored databases:
-	INSERT INTO @databases ([db_name], [sync_type], [role], [state], [owner])
-	SELECT 
-		d.[name] [db_name],
-		N'MIRRORED' [sync_type],
-		dm.mirroring_role_desc [role], 
-		dm.mirroring_state_desc [state], 
-		sp.[name] [owner]
-	FROM sys.database_mirroring dm
-	INNER JOIN sys.databases d ON dm.database_id = d.database_id
-	LEFT OUTER JOIN sys.server_principals sp ON sp.sid = d.owner_sid
-	WHERE 
-		dm.mirroring_guid IS NOT NULL
-	ORDER BY 
-		d.[name];
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value(N'row_id[1]', N'int') [row_id],
+			[data].[row].value(N'db_name[1]', N'sysname') [db_name],
+			[data].[row].value(N'sync_type[1]', N'sysname') [sync_type],
+			[data].[row].value(N'ag_name[1]', N'sysname') [ag_name],
+			[data].[row].value(N'primary_server[1]', N'sysname') [primary_server],
+			[data].[row].value(N'role[1]', N'sysname') [role],
+			[data].[row].value(N'state[1]', N'sysname') [state],
+			[data].[row].value(N'is_suspended[1]', N'sysname') [is_suspended],
+			[data].[row].value(N'is_ag_member[1]', N'sysname') [is_ag_member],
+			[data].[row].value(N'owner[1]', N'sysname') [owner],
+			[data].[row].value(N'jobs_status[1]', N'nvarchar(MAX)') [jobs_status],
+			[data].[row].value(N'users_status[1]', N'nvarchar(MAX)') [users_status],
+			[data].[row].value(N'other_status[1]', N'nvarchar(MAX)') [other_status]
+		FROM 
+			@syncSummary.nodes(N'//database') [data]([row])
 
-	-- account for AG databases:
-	INSERT INTO @databases ([db_name], [sync_type], [ag_name], [primary_server], [role], [state], [is_suspended], [is_ag_member], [owner])
-	SELECT
-		dbcs.[database_name] [db_name],
-		N'AVAILABILITY_GROUP' [sync_type],
-		ag.[name] [ag_name],
-		ISNULL(agstates.primary_replica, '') [primary_server],
-		ISNULL(arstates.role_desc,'UNKNOWN') [role],
-		ISNULL(dbrs.synchronization_state_desc, 'UNKNOWN') [state],
-		ISNULL(dbrs.is_suspended, 0) [is_suspended],
-		ISNULL(dbcs.is_database_joined, 0) [is_ag_member], 
-		x.[owner]
-	FROM
-		master.sys.availability_groups AS ag
-		LEFT OUTER JOIN master.sys.dm_hadr_availability_group_states AS agstates ON ag.group_id = agstates.group_id
-		INNER JOIN master.sys.availability_replicas AS ar ON ag.group_id = ar.group_id
-		INNER JOIN master.sys.dm_hadr_availability_replica_states AS arstates ON ar.replica_id = arstates.replica_id AND arstates.is_local = 1
-		INNER JOIN master.sys.dm_hadr_database_replica_cluster_states AS dbcs ON arstates.replica_id = dbcs.replica_id
-		LEFT OUTER JOIN master.sys.dm_hadr_database_replica_states AS dbrs ON dbcs.replica_id = dbrs.replica_id AND dbcs.group_database_id = dbrs.group_database_id
-		LEFT OUTER JOIN (SELECT d.name, sp.name [owner] FROM master.sys.databases d INNER JOIN master.sys.server_principals sp ON d.owner_sid = sp.sid) x ON x.name = dbcs.database_name
-	ORDER BY
-		ag.name ASC,
-		dbcs.database_name;
-
-	-- process:
-	DECLARE processor CURSOR LOCAL FAST_FORWARD FOR 
-	SELECT 
-		[db_name], 
+	)
+	
+	INSERT INTO @databases (
+		[row_id],
+		[db_name],
+		[sync_type],
+		[ag_name],
+		[primary_server],
 		[role],
-		[state]
+		[state],
+		[is_suspended],
+		[is_ag_member],
+		[owner],
+		[jobs_status],
+		[users_status],
+		[other_status]
+	)
+	SELECT 
+		[row_id],
+		[db_name],
+		[sync_type],
+		[ag_name],
+		[primary_server],
+		[role],
+		[state],
+		[is_suspended],
+		[is_ag_member],
+		[owner],
+		[jobs_status],
+		[users_status],
+		[other_status] 
 	FROM 
-		@databases
+		[shredded]
 	ORDER BY 
-		[db_name];
+		[row_id];
 
-	DECLARE @currentDatabase sysname, @currentRole sysname, @currentState sysname; 
-	DECLARE @enabledOrDisabled bit; 
-	DECLARE @jobsStatus nvarchar(max);
-	DECLARE @usersStatus nvarchar(max);
-	DECLARE @otherStatus nvarchar(max);
 
-	DECLARE @ownerChangeCommand nvarchar(max);
-
-	OPEN processor;
-	FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
-
-	WHILE @@FETCH_STATUS = 0 BEGIN
-		
-		IF @currentState IN ('SYNCHRONIZED','SYNCHRONIZING') BEGIN 
-			IF @currentRole IN (N'PRIMARY', N'PRINCIPAL') BEGIN 
-				-----------------------------------------------------------------------------------------------
-				-- specify jobs status:
-				SET @enabledOrDisabled = 1;
-
-				-----------------------------------------------------------------------------------------------
-				-- set database owner to 'sa' if it's not owned currently by 'sa':
-				IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE name = @currentDatabase AND owner_sid = 0x01) BEGIN 
-					SET @ownerChangeCommand = N'ALTER AUTHORIZATION ON DATABASE::[' + @currentDatabase + N'] TO sa;';
-
-					IF @PrintOnly = 1
-						PRINT @ownerChangeCommand;
-					ELSE 
-						EXEC sp_executesql @ownerChangeCommand;
-				END
-
-				-----------------------------------------------------------------------------------------------
-				-- attempt to fix any orphaned users: 
-				DELETE FROM @orphans;
-				SET @report = N'[' + @currentDatabase + N'].dbo.sp_change_users_login ''Report''';
-
-				INSERT INTO @orphans
-				EXEC(@report);
-
-				DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR
-				SELECT UserName FROM @orphans;
-
-				OPEN fixer;
-				FETCH NEXT FROM fixer INTO @username;
-
-				WHILE @@FETCH_STATUS = 0 BEGIN
-
-					BEGIN TRY 
-						IF @PrintOnly = 1 
-							PRINT 'Processing Orphans for Principal Database ' + @currentDatabase
-						ELSE
-							EXEC sp_change_users_login @Action = 'Update_One', @UserNamePattern = @username, @LoginName = @username;  -- note: this only attempts to repair bindings in situations where the Login name is identical to the User name
-					END TRY 
-					BEGIN CATCH 
-						-- swallow... 
-					END CATCH
-
-					FETCH NEXT FROM fixer INTO @username;
-				END
-
-				CLOSE fixer;
-				DEALLOCATE fixer;
-
-				----------------------------------
-				-- Report on any logins that couldn't be corrected:
-				DELETE FROM @orphans;
-
-				INSERT INTO @orphans
-				EXEC(@report);
-
-				IF (SELECT COUNT(*) FROM @orphans) > 0 BEGIN 
-					SET @usersStatus = N'Orphaned Users Detected (attempted repair did NOT correct) : ';
-					SELECT @usersStatus = @usersStatus + UserName + ', ' FROM @orphans;
-
-					SET @usersStatus = LEFT(@usersStatus, LEN(@usersStatus) - 1); -- trim trailing , 
-					END
-				ELSE 
-					SET @usersStatus = N'No Orphaned Users Detected';					
-
-			  END 
-			ELSE BEGIN -- we're NOT the PRINCIPAL instance:
-				SELECT 
-					@enabledOrDisabled = 0,  -- make sure all jobs are disabled
-					@usersStatus = N'', -- nothing will show up...  
-					@otherStatus = N''; -- ditto
-			  END
-
-		  END
-		ELSE BEGIN -- db isn't in SYNCHRONIZED/SYNCHRONIZING state... 
-			-- can't do anything because of current db state. So, disable all jobs for db in question, and 'report' on outcome. 
-			SELECT 
-				@enabledOrDisabled = 0, -- preemptively disable
-				@usersStatus = N'Unable to process - due to database state',
-				@otherStatus = N'Database in non synchronized/synchronizing state';
-		END
-
-		-----------------------------------------------------------------------------------------------
-		-- Process Jobs (i.e. toggle them on or off based on whatever value was set above):
-		BEGIN TRY 
-			DECLARE toggler CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT 
-				sj.job_id, sj.name
-			FROM 
-				msdb.dbo.sysjobs sj
-				INNER JOIN msdb.dbo.syscategories sc ON sc.category_id = sj.category_id
-			WHERE 
-				LOWER(sc.name) = LOWER(@currentDatabase);
-
-			DECLARE @jobid uniqueidentifier; 
-			DECLARE @jobname sysname;
-
-			OPEN toggler; 
-			FETCH NEXT FROM toggler INTO @jobid, @jobname;
-
-			WHILE @@FETCH_STATUS = 0 BEGIN 
-		
-				IF @PrintOnly = 1 BEGIN 
-					PRINT 'EXEC msdb.dbo.sp_updatejob @job_name = ''' + @jobname + ''', @enabled = ' + CAST(@enabledOrDisabled AS varchar(1)) + ';'
-				  END
-				ELSE BEGIN
-					EXEC msdb.dbo.sp_update_job
-						@job_id = @jobid, 
-						@enabled = @enabledOrDisabled;
-				END
-
-				FETCH NEXT FROM toggler INTO @jobid, @jobname;
-			END 
-
-			CLOSE toggler;
-			DEALLOCATE toggler;
-
-			IF @enabledOrDisabled = 1
-				SET @jobsStatus = N'Jobs set to ENABLED';
-			ELSE 
-				SET @jobsStatus = N'Jobs set to DISABLED';
-
-		END TRY 
-		BEGIN CATCH 
-
-			SELECT @jobsStatus = N'ERROR while attempting to set Jobs to ' + CASE WHEN @enabledOrDisabled = 1 THEN ' ENABLED ' ELSE ' DISABLED ' END + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(20)) + N' -> ' + ERROR_MESSAGE();
-		END CATCH
-
-		-----------------------------------------------------------------------------------------------
-		-- Update the status for this job. 
-		UPDATE @databases 
-		SET 
-			[jobs_status] = @jobsStatus,
-			[users_status] = @usersStatus,
-			[other_status] = @otherStatus
-		WHERE 
-			[db_name] = @currentDatabase;
-
-		FETCH NEXT FROM processor INTO @currentDatabase, @currentRole, @currentState;
-	END
-
-	CLOSE processor;
-	DEALLOCATE processor;
+	DECLARE @serverName sysname = @@SERVERNAME;
 	
 	-----------------------------------------------------------------------------------------------
 	-- final report/summary. 
