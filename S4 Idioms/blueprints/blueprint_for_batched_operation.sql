@@ -1,5 +1,14 @@
 /*
 
+	vNEXT:
+		- There's an ugly overload in this code currently - if @DefaultWaitDuration = N'N/A'
+			then 2 things (yup, there's the overload) will happen: 
+				a. we won't, obvious, execute a WAIT FOR DELAY (that's logical). 
+				b. BAD: we'll also / instead: SET @continue = 0; 
+						That was a bit of a hack... 
+						but, ultimately, i need to define 'looping' as an OPTION or not... and then have that be a distinct directive - out/apart from wait for delay.
+
+
 	BLUEPRINT: 
 		This script: 
 			- does NOT create/template batched operations (admindb.dbo.idiom_for_batched_operations does that). 
@@ -469,8 +478,8 @@ AS
 						DATEDIFF(MILLISECOND, @startTime, GETDATE())[progress.total_milliseconds]
 					FOR JSON PATH, ROOT(''detail'')
 				) [detail];{MaxSeconds}{TerminateIfTempObject}{DynamicTuning}
-		
-			WAITFOR DELAY @WaitForDelay;
+			
+			{delay}
 		END TRY
 		BEGIN CATCH 
 			
@@ -637,6 +646,14 @@ AS
 		SET @body = REPLACE(@body, N'{TreatDeadlocksAsErrors}', N'');
 	END;
 
+	IF @DefaultWaitDuration = N'N/A' BEGIN
+		SET @body = REPLACE(@body, N'{delay}', N'SET @continue = 0; -- no waiting/looping...');
+	  END;
+	ELSE BEGIN 
+		SET @body = REPLACE(@body, N'{delay}', N'WAITFOR DELAY @WaitForDelay;');
+	END;
+
+
 	SET @body = REPLACE(@body, N'{Batch_Statement}', @BatchStatement);
 	SET @body = REPLACE(@body, N'{logging_table_name}', @LoggingTableName);
 	
@@ -648,16 +665,14 @@ AS
 	-- Finalization/Reporting:
 	---------------------------------------------------------------------------------------------------------------
 
-	Finalize:
-
-	{deadlock_report}
+	Finalize:{deadlock_report}
 
 	DECLARE @executionID uniqueidentifier = NEWID();
 
 	IF EXISTS (SELECT NULL FROM sys.tables WHERE [object_id] = OBJECT_ID(N''{History_Table_Name}'')) BEGIN
 			
 		IF @HistoryLoggingLevel = N''SIMPLE'' BEGIN 
-			DELETE FROM {History_Table_Name} WHERE is_error = 0 OR [detail_id] <> (SELECT MAX([detail_id]) FROM {History_Table_Name});
+			DELETE FROM {logging_table_name} WHERE is_error = 0 AND [detail_id] <> (SELECT MAX([detail_id]) FROM {logging_table_name});
 		END;
 
 		INSERT INTO {History_Table_Name} (
@@ -695,7 +710,7 @@ GO';
 	END;'
 
 	IF @AllowDeadlocksAsErrors = 1 BEGIN 
-		SET @finalize = REPLACE(@finalize, N'{deadlock_report}', @deadlockBlock + @crlf + @crlf + @tab);
+		SET @finalize = REPLACE(@finalize, N'{deadlock_report}', @crlf + @crlf + @tab + @deadlockBlock);
 	  END; 
 	ELSE BEGIN 
 		SET @finalize = REPLACE(@finalize, N'{deadlock_report}', N'');

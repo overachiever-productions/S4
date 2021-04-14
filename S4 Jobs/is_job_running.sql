@@ -1,7 +1,5 @@
 /*
 
-
-
 	EXAMPLES: 
 		'EXEC' style: 
 			DECLARE @isRunning bit; 
@@ -16,9 +14,6 @@
 
 		SELECT style: 
 			SELECT admindb.dbo.is_job_running('Fake Job');
-
-
-
 
 */
 
