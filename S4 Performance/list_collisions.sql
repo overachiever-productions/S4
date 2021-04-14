@@ -260,7 +260,8 @@ AS
 					[c].[statement_source],	
 					[s].[login_name], 
 					[s].[host_name], 
-					[s].[program_name]			
+					[s].[program_name], 
+					[s].[host_process_id]
 				FROM 
 					#core c2 
 					LEFT OUTER JOIN sys.[dm_exec_sessions] s ON c2.[session_id] = [s].[session_id]

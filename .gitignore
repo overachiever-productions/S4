@@ -15,3 +15,4 @@ __Misc Ideas*
 /S4 Extended Event Sessions/Extraction/extract_blockedprocesses_trace.sql
 /S4 Extended Event Sessions/Extraction/extract_deadlock_trace.sql
 /S4 PowerShell*
+Build-LabServer.ps1

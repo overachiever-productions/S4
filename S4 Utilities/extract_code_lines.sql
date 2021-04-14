@@ -33,7 +33,6 @@ AS
 		RETURN -2;
 	END;
 
-
 	DECLARE @targetDatabase sysname, @targetSchema sysname, @targetObjectName sysname;
 	SELECT 
 		@targetDatabase = PARSENAME(@TargetModule, 3), 
@@ -82,7 +81,7 @@ AS
 	DECLARE @startLine int = @TargetLine - @BeforeAndAfterLines;
 	DECLARE @endLine int = @TargetLine + @BeforeAndAfterLines;
 
-	IF @startline < 0 SET @startLine = 0;
+	IF @startLine < 0 SET @startLine = 0;
 	IF @endLine > @lineCount SET @endLine = @lineCount;
 
 	DECLARE @tab nchar(1) = NCHAR(9);

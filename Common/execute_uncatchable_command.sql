@@ -149,7 +149,7 @@ AS
 	DELETE r
 	FROM 
 		#Results r 
-		INNER JOIN @filters x ON x.filter_type = @FilterType AND r.RESULT LIKE x.filter_text;
+		INNER JOIN @filters x ON x.filter_type = @FilterType AND r.result LIKE x.filter_text;
 
 	IF EXISTS (SELECT NULL FROM #Results WHERE result IS NOT NULL) BEGIN;
 		SET @Result = '';

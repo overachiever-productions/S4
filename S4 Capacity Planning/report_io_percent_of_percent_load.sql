@@ -102,13 +102,13 @@ AS
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @sql nvarchar(MAX);
 
-	SET @sql = N'SELECT @serverName = (SELECT TOP 1 [server_name] FROM ' + @SourceTable + N'); ';
+	SET @sql = N'SELECT @serverName = (SELECT TOP 1 [server_name] FROM ' + @normalizedName + N'); ';
 	DECLARE @serverName sysname; 
 	EXEC [sys].[sp_executesql]
 		@sql, 
 		N'@serverName sysname OUTPUT', 
 		@serverName = @serverName OUTPUT;
-	
+
 	DECLARE @drives table (
 		row_id int IDENTITY(1,1) NOT NULL, 
 		[drive] sysname NOT NULL
@@ -192,7 +192,7 @@ AS
 		@maxIOPs = MAX([IOPs.{driveName}]), 
 		@maxThroughput = MAX([MB Throughput.{driveName}])
 	FROM 
-		' + @SourceTable + N'; ';
+		' + @normalizedName + N'; ';
 
 	DECLARE @aggregateIOPsTemplate nvarchar(MAX) = N'WITH partitioned AS ( 
 
@@ -211,7 +211,7 @@ AS
 			CASE WHEN ([IOPs.{driveName}] > (@comparedIOPs * 1.2)) THEN 1 ELSE 0 END [121%+ usage]
 
 		FROM 
-			' + @SourceTable + N'
+			' + @normalizedName + N'
 
 	),
 	aggregated AS ( 
@@ -270,7 +270,7 @@ AS
 			CASE WHEN ([MB Throughput.{driveName}] > (@comparedThroughput * 1.2)) THEN 1 ELSE 0 END [121%+ usage]
 
 		FROM 
-			' + @SourceTable + N'
+			' + @normalizedName + N'
 
 	),
 	aggregated AS ( 
