@@ -17,8 +17,8 @@ IF OBJECT_ID('dbo.enable_alert_filtering','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[enable_alert_filtering]
-    @TargetAlerts                   nvarchar(MAX)           = N'{ALL}', 
-    @ExcludedAlerts                 nvarchar(MAX)           = NULL,                        -- N'%18, %4605%, Severity%, etc..'. NOTE: 1480, if present, is filtered automatically.. 
+    @TargetAlerts                   nvarchar(MAX)           = N'SEVERITY',					-- { SEVERITY | IO | SEVERITY_AND_IO }
+    @ExcludedAlerts                 nvarchar(MAX)           = NULL,							-- N'%18, %4605%, Severity%, etc..'. NOTE: 1480, if present, is filtered automatically.. 
     @AlertsProcessingJobName        sysname                 = N'Filter Alerts', 
     @AlertsProcessingJobCategory    sysname                 = N'Alerting',
 	@OperatorName				    sysname					= N'Alerts',
@@ -27,6 +27,11 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	IF UPPER(@TargetAlerts) NOT IN (N'SEVERITY', N'IO', N'SEVERITY_AND_IO') BEGIN 
+		RAISERROR('Allowed inputs for @Target Alerts are { SEVERITY | IO | SEVERITY_AND_IO }. Specific alerts my be removed from targeting via @ExcludedAlerts.', 16, 1);
+		RETURN -1;
+	END;
 
     ------------------------------------
     -- create a 'response' job: 
@@ -111,7 +116,7 @@ AS
       END;
     ELSE BEGIN 
         -- vNEXT: verify that the @OperatorName and @MailProfileName in job-step 1 are the same as @inputs... 
-        PRINT 'TODO/vNEXT. [1]';
+        PRINT 'Alert Response-Job Already Exists (created previously). Please MANUALLY verify that the operator and profile defined is correct.';
     END;
 
     ------------------------------------
@@ -124,7 +129,7 @@ AS
         [name] sysname NOT NULL 
     );
 
-    IF UPPER(@TargetAlerts) = N'{ALL}' BEGIN 
+    IF UPPER(@TargetAlerts) IN (N'SEVERITY', N'SEVERITY_AND_IO') BEGIN 
         INSERT INTO @targets (
             [name] 
         )
@@ -132,22 +137,23 @@ AS
             s.[name] 
         FROM 
             msdb.dbo.[sysalerts] s
-      END;
-    ELSE BEGIN 
-        INSERT INTO @inclusions (
-            [name]
-        )
-        SELECT [result] FROM [dbo].[split_string](@TargetAlerts, N',', 1);
+		WHERE 
+			[name] LIKE 'Severity%'
+    END;
 
+	IF UPPER(@TargetAlerts) IN (N'IO', N'SEVERITY_AND_IO') BEGIN 
         INSERT INTO @targets (
-            [name]
+            [name] 
         )
         SELECT 
-            a.[name]
+            s.[name] 
         FROM 
-            msdb.dbo.[sysalerts] a
-            INNER JOIN @inclusions i ON a.[name] LIKE i.[name];
-    END;
+            msdb.dbo.[sysalerts] s
+		WHERE 
+			[name] LIKE N'82%'
+			AND 
+			[name] LIKE N'605 -%'
+	END;
 
     DECLARE @exclusions table ( 
         [name] sysname NOT NULL
