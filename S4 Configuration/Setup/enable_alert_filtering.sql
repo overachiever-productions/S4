@@ -2,21 +2,18 @@
     TODO: 
         - add error handling (try/catch/etc.)
 
-		- ALL is a bad-ish default. Might make more sense to use tokens ... e.g.., SEVERITY and IO and so on ... and default to jsut SEVERITY?
-
-    vNEXT: 
-        - at least 2x ... inline/in-code... 
-
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.enable_alert_filtering','P') IS NOT NULL
-	DROP PROC dbo.[enable_alert_filtering];
+/* HACK: note that this sproc has an UGLY work-around at the bottom of the sproc (i.e., this code file) to get around an ugly bug within Powershell... */
+
+IF OBJECT_ID('dbo.enable_alert_filtering_x','P') IS NOT NULL
+	DROP PROC dbo.[enable_alert_filtering_x];
 GO
 
-CREATE PROC dbo.[enable_alert_filtering]
+CREATE PROC dbo.[enable_alert_filtering_x]
     @TargetAlerts                   nvarchar(MAX)           = N'SEVERITY',					-- { SEVERITY | IO | SEVERITY_AND_IO }
     @ExcludedAlerts                 nvarchar(MAX)           = NULL,							-- N'%18, %4605%, Severity%, etc..'. NOTE: 1480, if present, is filtered automatically.. 
     @AlertsProcessingJobName        sysname                 = N'Filter Alerts', 
@@ -58,13 +55,13 @@ AS
         --          being done below. And, if it is, raise a WARNING... but don't raise an error OR kill execution... 
         DECLARE @command nvarchar(MAX) = N'
         DECLARE @ErrorNumber int, @Severity int;
-        SET @ErrorNumber = CONVERT(int, N''$(ESCAPE_SQUOTE(A-ERR))'');
-        SET @Severity = CONVERT(int, N''$(ESCAPE_NONE(A-SEV))'');
+        SET @ErrorNumber = CONVERT(int, N''$`(ESCAPE_SQUOTE(A-ERR))'');
+        SET @Severity = CONVERT(int, N''$`(ESCAPE_NONE(A-SEV))'');
 
         EXEC admindb.dbo.process_alerts 
 	        @ErrorNumber = @ErrorNumber, 
 	        @Severity = @Severity,
-	        @Message = N''$(ESCAPE_SQUOTE(A-MSG))'', 
+	        @Message = N''$`(ESCAPE_SQUOTE(A-MSG))'', 
             @OperatorName = N''{operator}'', 
             @MailProfileName = N''{profile}''; ';
 
@@ -210,3 +207,20 @@ AS
 
     RETURN 0;
 GO
+
+/* HACK: Powershell's Invoke-SqlCmd is choking on the dollar-sign in front of (ESCAPE_SQUOTE... even with -DisableParameters set to true. This is an ugly work-around to 
+			allow admindb and all code to be deployed via Powershell if/as desired - by escaping that $ with a ` (inside a place-holder sproc) then doing a 'replace' ... etc.
+*/
+DECLARE @definition nvarchar(MAX) = (SELECT [definition] FROM sys.[sql_modules] WHERE [object_id] = OBJECT_ID('dbo.enable_alert_filtering_x'));
+DECLARE @drop nvarchar(MAX) = N'IF OBJECT_ID(''dbo.[enable_alert_filtering_x]'',''P'') IS NOT NULL BEGIN 
+	DROP PROC dbo.[enable_alert_filtering_x]; 
+END;
+';
+EXEC sys.sp_executesql @drop;
+
+SET @definition = REPLACE(@definition, N'`', N'');
+SET @definition = REPLACE(@definition, N'enable_alert_filtering_x', N'enable_alert_filtering');
+SET @drop = REPLACE(@drop, N'enable_alert_filtering_x', N'enable_alert_filtering');
+
+EXEC sys.sp_executesql @drop;
+EXEC sys.sp_executesql @definition;
