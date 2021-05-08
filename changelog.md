@@ -1,6 +1,13 @@
 ﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 
 # Change Log
+  
+## [8.7.3614] - 2021-05-07
+
+### Changed
+- Signature (parameters) change to `dbo.enable_alert_filtering` to now allow only `{ SEVERITY | IO | SEVERITY_AND_IO }` vs the option for `{ALL}` previously - which wasn't even implemented (i.e., previous implementation was not only 'odd' but a bug.).
+- Ginormous hack/work-around within `dbo.enable_alert_filtering` to address ugly bug in SqlServer Powershell's (latest 21.x or whatever) Invoke-SqlCmd NOT 'obeying' the -DisableParameters switch. 
+- Minor tweak to `dbo.list_cpu_history` to allow `@LastNMinutesOnly` (for use in metrics collection/capture).
 
 
 ## [8.6.3591] - 2021-04-14
