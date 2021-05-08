@@ -29,24 +29,34 @@ IF OBJECT_ID('dbo.list_cpu_history','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[list_cpu_history]
+	@LastNMinutesOnly					int				= 256,				-- default to max allowable
 	@SerializedOutput					xml				= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
+	SET @LastNMinutesOnly = ISNULL(@LastNMinutesOnly, 256); 
+
+	IF @LastNMinutesOnly > 256 OR @LastNMinutesOnly < 1 BEGIN 
+		RAISERROR('@LastNMinutesOnly must be >= 1 minute and < 256 minutes. Leave NULL for default of 256 minutes.', 16, 1);
+		RETURN -1;
+	END;
+
 	-- https://troubleshootingsql.com/2009/12/30/how-to-find-out-the-cpu-usage-information-for-the-sql-server-process-using-ring-buffers/
 	DECLARE @ticksSinceServerStart bigint = (SELECT [cpu_ticks] / ([cpu_ticks] / [ms_ticks]) FROM [sys].[dm_os_sys_info] WITH (NOLOCK));
 	DECLARE @now datetime = GETDATE();
 
 	WITH core AS ( 
-		SELECT TOP(256) 
+		SELECT TOP(@LastNMinutesOnly) 
 			[timestamp], 
 			CAST([record] AS xml) [record]
 		FROM 
 			sys.[dm_os_ring_buffers] WITH(NOLOCK)
 		WHERE 
 			[ring_buffer_type] = N'RING_BUFFER_SCHEDULER_MONITOR'
+		ORDER BY 
+			[timestamp] DESC
 
 	), 
 	extracted AS ( 
@@ -60,7 +70,7 @@ AS
 	)
 		
 	SELECT 
-		[timestamp],
+		DATEADD(MINUTE, DATEDIFF(MINUTE, 0, [timestamp]), 0) [timestamp],
 		[record_id],
 		[system_idle],
 		[sql_usage]
@@ -96,7 +106,7 @@ AS
 	FROM 
 		[#raw_results] 
 	ORDER BY 
-		[record_id];
+		[timestamp] DESC;
 
 	RETURN 0;
 GO
