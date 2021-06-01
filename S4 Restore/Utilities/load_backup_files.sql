@@ -210,8 +210,7 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
-		
-		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
+		DELETE FROM @orderedResults WHERE [timestamp] < @LastAppliedFinishTime;
 		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
 
