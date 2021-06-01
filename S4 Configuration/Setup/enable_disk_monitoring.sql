@@ -21,7 +21,6 @@ CREATE PROC dbo.[enable_disk_monitoring]
 	@MailProfileName					sysname				= N'General',
 	@EmailSubjectPrefix					nvarchar(50)		= N'[DriveSpace Checks] ',
 	@CheckFrequencyInterval				sysname				= N'20 minutes', 
-	
 	@OverWriteExistingJob				bit					= 0
 AS
     SET NOCOUNT ON; 

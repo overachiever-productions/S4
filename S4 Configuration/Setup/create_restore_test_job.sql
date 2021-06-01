@@ -31,7 +31,7 @@ GO
 
 CREATE PROC dbo.[create_restore_test_job]
     @JobName						sysname				= N'Database Backups - Regular Restore Tests',
-	@RestoreTestStartTime			time				= N'22:05:00',
+	@RestoreTestStartTime			time				= N'22:30:00',
 	@TimeZoneForUtcOffset			sysname				= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@JobCategoryName				sysname				= N'Backups',
 	@AllowForSecondaries			bit					= 0,									-- IF AG/Mirrored environment (secondaries), then wrap restore-test in IF is_primary_server check... 
