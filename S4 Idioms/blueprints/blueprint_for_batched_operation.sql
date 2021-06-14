@@ -196,7 +196,7 @@ AS
 	DECLARE @signature nvarchar(MAX) = N'USE [{target_database}];
 GO
 
-IF OBJECT_ID(''{schema}.{sproc_name}'',''P'') IS NOT NULL
+IF OBJECT_ID(''[{schema}].[{sproc_name}]'',''P'') IS NOT NULL
 	DROP PROC [{schema}].[{sproc_name}];
 GO
 
