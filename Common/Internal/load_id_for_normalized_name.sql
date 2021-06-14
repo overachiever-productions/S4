@@ -62,7 +62,7 @@ AS
 		END;
 	END;
 
-	SET @sql = N'SELECT @targetObjectId = [object_id] FROM [' + @targetDatabase + N'].sys.objects WHERE schema_id = SCHEMA_ID(@targetSchema) AND [name] = @targetObjectName; ';
+	SET @sql = N'SELECT @targetObjectId = o.[object_id] FROM [' + @targetDatabase + N'].sys.objects o INNER JOIN [' + @targetDatabase + N'].sys.[schemas] s ON [o].[schema_id] = [s].[schema_id] WHERE s.[name] = @targetSchema AND o.[name] = @targetObjectName; '
 
 	EXEC [sys].[sp_executesql]
 		@sql, 
