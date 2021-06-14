@@ -45,6 +45,9 @@ AS
 	-- {copyright}
 
 	-- TODO: validate inputs: 
+	SET @EncryptionCertName = NULLIF(@EncryptionCertName, N'');
+	SET @DiffBackupsStartTime = NULLIF(@DiffBackupsStartTime, N'');
+	SET @TimeZoneForUtcOffset = NULLIF(@TimeZoneForUtcOffset, N'');
 
 	IF NULLIF(@DiffBackupsStartTime, N'') IS NOT NULL AND @DiffBackupsRunEvery IS NULL BEGIN 
 		RAISERROR('@DiffBackupsRunEvery must be set/specified when a @DiffBackupsStartTime is specified.', 16, 1);

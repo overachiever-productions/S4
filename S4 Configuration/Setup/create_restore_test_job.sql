@@ -56,6 +56,9 @@ AS
 	-- {copyright}
 
 	-- TODO: validate inputs... 
+	SET @TimeZoneForUtcOffset = NULLIF(@TimeZoneForUtcOffset, N'');
+	SET @Priorities = NULLIF(@Priorities, N'');
+	SET @AllowReplace = NULLIF(@AllowReplace, N'');
 
 	-- translate 'local' timezone to UTC-zoned servers:
 	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
