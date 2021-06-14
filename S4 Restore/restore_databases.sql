@@ -815,7 +815,7 @@ AS
                     END;
                 END TRY
                 BEGIN CATCH
-                    SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+					SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
                 END CATCH
 
 				BEGIN TRY
@@ -832,6 +832,11 @@ AS
 						[Comment] = @statusDetail
 					WHERE 
 						[FileName] = @backupName;
+
+					/* swallow these errors for now... */
+					IF @statusDetail LIKE '%Msg 4326%too early%' BEGIN
+						SET @statusDetail = NULL;
+					END;
 
 				END TRY 
 				BEGIN CATCH 
