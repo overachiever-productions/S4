@@ -32,8 +32,11 @@ AS
 	CREATE TABLE #targets (
 		row_id int IDENTITY(1,1) NOT NULL, 
 		session_id int NOT NULL, 
+		login_name sysname NOT NULL,
 		[host_name] sysname NULL, 
 		[program_name] sysname NULL, 
+		[status] sysname NULL, 
+		[last_request_end_time] datetime NULL,
 		[workgroup] sysname NULL, 
 		[pool] sysname NULL, 
 		[killed] datetime NULL, 
@@ -43,9 +46,12 @@ AS
 	DECLARE @crlfTabTab sysname = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9);
 	DECLARE @selectionSql nvarchar(MAX) = N'
 	SELECT 
-		s.[session_id], 
+		s.[session_id],
+		s.[login_name],
 		s.[host_name], 
 		s.[program_name], 
+		s.[status], 
+		s.[last_request_end_time],
 		g.[name] [workgroup],
 		p.[name] [pool]
 	FROM 
@@ -83,8 +89,11 @@ AS
 LoadAndKill:
 	INSERT INTO [#targets] (
 		[session_id],
+		[login_name],
 		[host_name],
 		[program_name],
+		[status], 
+		[last_request_end_time],
 		[workgroup],
 		[pool]
 	)
@@ -96,15 +105,29 @@ LoadAndKill:
 
 	IF @ListOnly = 1 BEGIN 
 		SELECT 
-			[row_id],
 			[session_id],
+			[login_name],
 			[host_name],
+			CASE 
+				WHEN [status] = 'sleeping' THEN 
+					CASE 
+						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 2880 THEN 'sleeping - DAYS (2+)'
+						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 1440 THEN 'sleeping - DAY'
+						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 120 THEN 'sleeping - HOURS+'
+						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 60 THEN 'sleeping - HOUR+'
+						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 10 THEN 'sleeping - MINUTES (10+)'
+						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 2 THEN 'sleeping - MINUTES'
+						ELSE 'sleeping - SECONDS'
+					END
+				ELSE [status]
+			END [state], 
 			[program_name],
 			[workgroup],
 			[pool]
 		FROM 
 			[#targets]
 		ORDER BY 
+			[state],
 			[session_id];
 
 		RETURN 0;
@@ -165,7 +188,6 @@ LoadAndKill:
 
 	IF EXISTS (SELECT NULL FROM [#targets] WHERE [error] IS NOT NULL) BEGIN 
 		SELECT 
-			[row_id],
 			[session_id],
 			[host_name],
 			[program_name],
