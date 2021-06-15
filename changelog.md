@@ -2,6 +2,23 @@
 
 # Change Log
   
+## [8.8.3652] - 2021-06-14
+
+### Changed
+- Numerous modifications to setup/configuration scripts (sprocs) to allow better idempotent deployment in conjunction with Proviso.
+- Tweak to `dbo.restore_databases` and supporting logic (sprocs) to address 'ties' for time-stamp overlap of FULL/DIFF backups and T-LOG backups to use EARLY T-LOGs vs favoring attempt to try and grab more 'recent' options. (In conjunction with bug-fixe listed below.)
+
+### Fixed 
+- Bug-fix for object parsing + identification in 'other' databases. 
+- Initial bug-fix for Error 4326 LSN 'too early' problems when automating restore of T-LOGs created concurrent with previous FULL/DIFF backup. (Subsequent fix will address this problem via inspection of LSNs vs simply 'swallowing' errors with 'too early' issues and applying next T-LOGs.)
+
+### Added 
+- Initial options for scripting db file movement via `dbo.script_dbfile_movement_template` to allow streamlined movement of files without detaching databases. 
+- Sproc to kill Resource Governor connections in pools/workload-groups OTHER than default/internal + ability to 'kill self'. 
+- Initial addition of Capacity Planning logic and routines in the form of `translate_xxx_counters` + `report_xxx_percent_of_percent_load` and other similar analytics/metrics-assessment routines. 
+- Initial addition of idiom for batched_operations. 
+- New XE view: `dbo.view_largegrant_problems` to display/rank 'worst' grant problems from extracted/translated XE traces. 
+  
 ## [8.7.3614] - 2021-05-07
 
 ### Changed

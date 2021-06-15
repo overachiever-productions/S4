@@ -478,6 +478,9 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Configuration\Setup\define_masterkey_encryption.sql
 
+-----------------------------------
+--##INCLUDE: S4 Configuration\script_dbfile_movement_template.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -575,6 +578,34 @@ GO
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Extended Events
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\translation\translate_blockedprocesses_trace.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\translation\translate_deadlock_trace.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\translation\translate_largegrant_trace.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_blockedprocess_chronology.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_blockedprocess_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_deadlock_chronology.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_largegrant_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_largegrant_problems.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -612,10 +643,22 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Utilities\refresh_code.sql
 
+-----------------------------------
+--##INCLUDE: S4 Utilities\extract_directory_from_fullpath.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\extract_filename_from_fullpath.sql
+
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Idioms
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Idioms\idiom_for_batched_operation.sql
+
+-----------------------------------
+--##INCLUDE: S4 Idioms\blueprints\blueprint_for_batched_operation.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- SQL Server Agent Jobs
@@ -635,6 +678,51 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Resource Governor
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Resource Governor\kill_resource_governor_connections.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Capacity Planning
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\extraction\translate_cpu_counters.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\extraction\translate_io_perfcounters.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\extraction\translate_memory_counters.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_cpu_and_sql_exception_percentages.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_cpu_and_sql_threshold_exceptions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_cpu_percent_of_percent_load.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_io_percent_of_percent_load.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_io_threshold_exceptions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_memory_percent_of_percent_load.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_throughput_percent_of_percent_load.sql
+
+-----------------------------------
+--##INCLUDE: S4 Capacity Planning\report_trace_continuity.sql
+
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- High-Availability (Setup, Monitoring, and Failover):
