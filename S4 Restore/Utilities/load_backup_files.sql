@@ -21,6 +21,34 @@
 							This could/would/did lead to the dreaded "This LSN is too recent to apply... " errors... for which S4 code USED to try and 'loop' through the next N T-LOGs as a work-around).
 
 
+	PROBLEM/ISSUE: 
+		It's ENTIRELY possible to have FULL (or DIFF) backups that execute CONCURRENTLY with T-LOG backups. In this kind of scenario, it's ENTIRELY possible for either of the following outcomes to occur: 
+				a. FULL supersedes current T-LOG meaning that if we have a FULL and T-LOG both created at 21:00... we'd do FULL_2100 + LOG_2110 (i..e, entirely next T-LOG - 10 mins later). 
+				or 
+				b. FULL and current/concurrent T-LOG overlap meaning we'd need FULL_2100 + LOG_2100 - or the 2 backups created at the SAME TIME (no 10 minute gap as above). 
+
+				The ONLY way to know - for sure - which scenario we're in is to look at the First/Last LSNs for the backups involved. 
+
+					In cases like this... 
+						I'd have to do the following in terms of business logic: 
+							a. watch for scenarios where T-LOGs 'overlapped' the previous FULL/DIFF
+							b. grab 'both' the overlapping and 'next' T-LOGs. 
+							c. when I have a scenario like this
+								i. read the header details for both 'concurrent' and 'next' T-LOGs 
+								ii. determine which one to use 'next' (i.e., LOG_2100 or LOG_2110?)
+								iii. keep the OUTPUT/DIRECTIVES 'clean' by skipping any T-LOGS not needed (or, hell, maybe just putting in a comment "-- overlaps, but too early so skipped" 
+										or whatever... 
+
+							otherwise, the LOGIC for how to detect which T-LOG is correct is to look at the 
+									???? 
+
+
+				It's also possible to 'cheat' and simply watch for Error 4326 "which is too early to apply to the database" and ... simply 'skip' to the next backup.
+					Or, in other words, if we always grab FULL_2100 + LOG_2100 + LOG_2110 ... we'd get 4326 on LOG_2100 in scenario B (but not in scenario A above - i.e., in scenario A, LOG_2100 would work)
+							and then simply, 'skip' to LOG_2110... 
+
+
+
 	SIGNATURES / EXAMPLES: 
 
         -- Expect PROJECTion as output:
@@ -105,6 +133,8 @@ AS
 		RETURN -1;
 	END; 
 
+	DECLARE @firstLSN decimal(25,0), @lastLSN decimal(25,0);
+
 	IF @Mode IN (N'DIFF', N'LOG') BEGIN
 
 		IF @LastAppliedFinishTime IS NULL AND @LastAppliedFile IS NOT NULL BEGIN 
@@ -115,7 +145,9 @@ AS
 				@BackupDate = @LastAppliedFinishTime OUTPUT, 
 				@BackupSize = NULL, 
 				@Compressed = NULL, 
-				@Encrypted = NULL;
+				@Encrypted = NULL, 
+				@FirstLSN = @firstLSN OUTPUT, 
+				@LastLSN = @lastLSN OUTPUT;
 		END;
 
 		IF @LastAppliedFinishTime IS NULL BEGIN 
@@ -145,7 +177,7 @@ AS
 	DECLARE @orderedResults table ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
 		[output] varchar(500) NOT NULL, 
-		[timestamp] datetime NOT NULL 
+		[timestamp] datetime NOT NULL
 	);
 
 	INSERT INTO @orderedResults (
@@ -210,8 +242,10 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
-		
-		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
+
+--SELECT @firstLSN [firstLSN], @lastLSN [lastLSN];
+
+		DELETE FROM @orderedResults WHERE [timestamp] < @LastAppliedFinishTime;
 		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
 

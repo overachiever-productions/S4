@@ -62,8 +62,8 @@ CREATE PROC dbo.configure_database_mail
     @SmtpPortNumber                 int                 = 587, 
     @SmtpRequiresSSL                bit                 = 1, 
     @SmtpAuthType                   sysname             = N'BASIC',         -- WINDOWS | BASIC | ANONYMOUS
-    @SmptUserName                   sysname				= N'',
-    @SmtpPassword                   sysname				= N'', 
+    @SmptUserName                   sysname				= NULL,
+    @SmtpPassword                   sysname				= NULL, 
 	@SendTestEmailUponCompletion	bit					= 1
 AS
     SET NOCOUNT ON; 
@@ -77,6 +77,8 @@ AS
 	IF @return <> 0 
 		RETURN @return;
 
+	SET @SmtpAccountName = ISNULL(NULLIF(@SmtpAccountName, N''), N'Default SMTP Account');
+
 	-----------------------------------------------------------------------------
 	-- Verify that the SQL Server Agent is running
 	IF NOT EXISTS (SELECT NULL FROM sys.[dm_server_services] WHERE [servicename] LIKE '%Agent%' AND [status_desc] = N'Running') BEGIN
@@ -85,7 +87,6 @@ AS
 	END;
 
 	-----------------------------------------------------------------------------
-    -- TODO: validate all inputs.. 
     IF NULLIF(@ProfileName, N'') IS NULL OR NULLIF(@OperatorName, N'') IS NULL OR NULLIF(@OperatorEmail, N'') IS NULL BEGIN 
         RAISERROR(N'@ProfileName, @OperatorName, and @OperatorEmail are all REQUIRED parameters.', 16, 1);
         RETURN -1;
@@ -131,42 +132,64 @@ AS
     --------------------------------------------------------------
     -- Create Profile: 
     DECLARE @profileID int; 
-	  
-	-- TODO: attempt to load @profileID from queries to see if it @exists (so to speak). If it does, move on. If not, create the profile and 'load' @profileID in the process.
-    EXEC msdb.dbo.[sysmail_add_profile_sp] 
-        @profile_name = @ProfileName, 
-        @description = N'S4-Created Profile... ', 
-        @profile_id = @profileID OUTPUT;
+	SELECT @profileID = profile_id FROM msdb.dbo.[sysmail_profile] WHERE [name] = @ProfileName;
+	
+	IF @profileID IS NULL BEGIN 
+		EXEC msdb.dbo.[sysmail_add_profile_sp] 
+			@profile_name = @ProfileName, 
+			@description = N'S4-Created Profile... ', 
+			@profile_id = @profileID OUTPUT;		
+	END;
 
     --------------------------------------------------------------
     -- Create an Account: 
-    DECLARE @AccountID int; 
+    DECLARE @accountID int; 
     DECLARE @useDefaultCredentials bit = 0;  -- username/password. 
     IF UPPER(@SmtpAuthType) = N'WINDOWS' SET @useDefaultCredentials = 1;  -- use windows. 
     IF UPPER(@SmtpAuthType) = N'ANONYMOUS' SET @useDefaultCredentials = 0;  
 
-    EXEC msdb.dbo.[sysmail_add_account_sp]
-        @account_name = @SmtpAccountName,
-        @email_address = @SmtpOutgoingEmailAddress,
-        @display_name = @SmtpOutgoingDisplayName,
-        --@replyto_address = N'',
-        @description = @SmtpAccountDescription,
-        @mailserver_name = @SmtpServerName,
-        @mailserver_type = N'SMTP',
-        @port = @SmtpPortNumber,
-        @username = @SmptUserName,
-        @password = @SmtpPassword,
-        @use_default_credentials = @useDefaultCredentials,
-        @enable_ssl = @SmtpRequiresSSL,
-        @account_id = @AccountID OUTPUT;
+	SELECT @accountID = account_id FROM msdb.dbo.[sysmail_account] WHERE [name] = @SmtpAccountName;
+	IF @accountID IS NULL BEGIN 
+		EXEC msdb.dbo.[sysmail_add_account_sp]
+			@account_name = @SmtpAccountName,
+			@email_address = @SmtpOutgoingEmailAddress,
+			@display_name = @SmtpOutgoingDisplayName,
+			--@replyto_address = N'',
+			@description = @SmtpAccountDescription,
+			@mailserver_name = @SmtpServerName,
+			@mailserver_type = N'SMTP',
+			@port = @SmtpPortNumber,
+			@username = @SmptUserName,
+			@password = @SmtpPassword,
+			@use_default_credentials = @useDefaultCredentials,
+			@enable_ssl = @SmtpRequiresSSL,
+			@account_id = @accountID OUTPUT;
+	  END;
+	ELSE BEGIN 
+		EXEC msdb.dbo.[sysmail_update_account_sp]
+			@account_id = @accountID,
+			@account_name = @SmtpAccountName,
+			@email_address = @SmtpOutgoingEmailAddress,
+			@display_name = @SmtpOutgoingDisplayName,
+			--@replyto_address = N'',
+			@description = @SmtpAccountDescription,
+			@mailserver_name = @SmtpServerName,
+			@mailserver_type = N'SMTP',
+			@port = @SmtpPortNumber,
+			@username = @SmptUserName,
+			@password = @SmtpPassword,
+			@use_default_credentials = @useDefaultCredentials,
+			@enable_ssl = @SmtpRequiresSSL;
+	END;
 
     --------------------------------------------------------------
-    -- Bind Account to Profile: 
-    EXEC msdb.dbo.sysmail_add_profileaccount_sp 
-	    @profile_id = @profileID,
-        @account_id = @AccountID, 
-        @sequence_number = 1;  -- primary/initial... 
-
+    -- Bind Account to Profile:
+	IF NOT EXISTS (SELECT NULL FROM msdb.dbo.[sysmail_profileaccount] WHERE [profile_id] = @profileID AND [account_id] = @accountID) BEGIN
+		EXEC msdb.dbo.sysmail_add_profileaccount_sp 
+			@profile_id = @profileID,
+			@account_id = @accountID, 
+			@sequence_number = 1;  
+	END;
 
     --------------------------------------------------------------
     -- set as default: 
@@ -176,10 +199,12 @@ AS
 
     --------------------------------------------------------------
     -- Create Operator: 
-    EXEC msdb.dbo.[sp_add_operator]
-        @name = @OperatorName,
-        @enabled = 1,
-        @email_address = @OperatorEmail;
+	IF NOT EXISTS (SELECT NULL FROM msdb.dbo.[sysoperators] WHERE [name] = @OperatorName AND [email_address] = @OperatorEmail) BEGIN
+		EXEC msdb.dbo.[sp_add_operator]
+			@name = @OperatorName,
+			@enabled = 1,
+			@email_address = @OperatorEmail;
+	END;
 
     --------------------------------------------------------------
     -- Enable SQL Server Agent to use Database Mail and enable tokenization:
@@ -221,6 +246,9 @@ AS
 
 	*/
 
+	IF @SendTestEmailUponCompletion = 0 
+		RETURN 0;
+
 	--------------------------------------------------------------
 	-- Send a test email - to verify that the SQL Server Agent can correctly send email... 
 
@@ -238,5 +266,6 @@ Triggered by dbo.configure_database_mail. S4 version ' + @version + N'.
 		@name = @OperatorName, 
 		@subject = N'', 
 		@body = @body;
+
     RETURN 0;
 GO

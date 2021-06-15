@@ -28,9 +28,9 @@ IF OBJECT_ID('dbo.create_index_maintenance_jobs','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[create_index_maintenance_jobs]
-	@DailyJobRunsOnDays							sysname					= N'M,T,W,Th,F',			-- allow for whatever makes sense - i.e., all... or M,W,F and so on... 
+	@DailyJobRunsOnDays							sysname					= N'M,W,F',			-- allow for whatever makes sense - i.e., all... or M,W,F and so on... 
 	@WeekendJobRunsOnDays						sysname					= N'Sa, Su',				-- allow for one or both... 
-	@IXMaintenanceJobStartTime					sysname					= N'22:00:00',				-- or whatever... (and note that UTC offset here ... could be tricky... 
+	@IXMaintenanceJobStartTime					sysname					= N'21:50:00',				-- or whatever... (and note that UTC offset here ... could be tricky... 
 	@TimeZoneForUtcOffset						sysname					= NULL,						-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@JobsNamePrefix								sysname					= N'Index Maintenance - ',
 	@JobsCategoryName							sysname					= N'Database Maintenance',							
@@ -42,8 +42,13 @@ AS
 	-- {copyright}
 	
 	-- Validate Inputs: 
-	SET @DailyJobRunsOnDays = NULLIF(@DailyJobRunsOnDays, N'');
-	SET @WeekendJobRunsOnDays = NULLIF(@WeekendJobRunsOnDays, N'');
+	SET @DailyJobRunsOnDays = ISNULL(NULLIF(@DailyJobRunsOnDays, N''), N'M,W,F');
+	SET @WeekendJobRunsOnDays = ISNULL(NULLIF(@WeekendJobRunsOnDays, N''), N'Su');
+	
+	SET @TimeZoneForUtcOffset = NULLIF(@TimeZoneForUtcOffset, N'');
+
+
+
 
 	DECLARE @days table (
 		abbreviation sysname,

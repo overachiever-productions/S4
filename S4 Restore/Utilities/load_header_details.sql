@@ -28,7 +28,9 @@ CREATE PROC dbo.load_header_details
 	@BackupDate					datetime		            OUTPUT, 
 	@BackupSize					bigint			            OUTPUT, 
 	@Compressed					bit				            OUTPUT, 
-	@Encrypted					bit				            OUTPUT
+	@Encrypted					bit				            OUTPUT, 
+	@FirstLSN					decimal(25,0)				= NULL	OUTPUT, 
+	@LastLSN					decimal(25,0)				= NULL	OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -132,7 +134,9 @@ AS
 		@BackupDate = [BackupFinishDate], 
 		@BackupSize = CAST((ISNULL([CompressedBackupSize], [BackupSize])) AS bigint), 
 		@Compressed = [Compressed], 
-		@Encrypted =ISNULL(@encryptionValue, 0)
+		@Encrypted = ISNULL(@encryptionValue, 0), 
+		@FirstLSN = [FirstLSN], 
+		@LastLSN = [LastLSN]
 	FROM 
 		[#header];
 
