@@ -47,9 +47,6 @@ AS
 	
 	SET @TimeZoneForUtcOffset = NULLIF(@TimeZoneForUtcOffset, N'');
 
-
-
-
 	DECLARE @days table (
 		abbreviation sysname,
 		day_name sysname, 
@@ -63,12 +60,16 @@ AS
 	)
 	VALUES	
 		(N'Su', N'Sunday', 1),
+		(N'Sun', N'Sunday', 1),
 		(N'M', N'Monday', 2),
 		(N'T', N'Tuesday', 4),
+		(N'Tu', N'Tuesday', 4),
 		(N'W', N'Wednesday', 8),
 		(N'Th', N'Thursday', 16),
+		(N'Thu', N'Thursday', 16),
 		(N'F', N'Friday', 32),
-		(N'Sa', N'Saturday', 64);
+		(N'Sa', N'Saturday', 64),
+		(N'Sat', N'Saturday', 64);
 
 	-- TODO: verify that @DailyJobsRunsOnDays and @WeekendJobRunsOnDays are 'in' the approved [abbreviation]s defined in @days.
 
