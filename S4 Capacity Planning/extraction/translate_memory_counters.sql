@@ -137,7 +137,7 @@ AS
 		TRY_CAST([\\'+ @serverName + N'\PhysicalDisk(_Total)\Avg. Disk sec/Write] as decimal(24,20)) [avg_total_disk_sec/write],		
 		CAST([\\'+ @serverName + N'\SQLServer:Buffer Manager\Buffer cache hit ratio] as decimal(24,16)) [buffer_cache_hit_ratio],		
 		CAST([\\'+ @serverName + N'\SQLServer:Buffer Manager\Page life expectancy] as int) [ple],
-		CAST([\\'+ @serverName + N'\SQLServer:Databases(_Total)\Transactions/sec] as decimal(22,16)) [database_total_transactions/sec],
+		CAST(NULLIF([\\'+ @serverName + N'\SQLServer:Databases(_Total)\Transactions/sec], N'''') as decimal(22,16)) [database_total_transactions/sec],
 		CAST([\\'+ @serverName + N'\SQLServer:General Statistics\Transactions] as int) [general_transactions_current],
 		CAST(([\\'+ @serverName + N'\SQLServer:Memory Manager\Granted Workspace Memory (KB)] / (1024.0 * 1024.0)) as decimal(22,2)) [granted_workspace_memory_GBs],
 		CAST([\\'+ @serverName + N'\SQLServer:Memory Manager\Memory Grants Outstanding] as int) [grants_outstanding],
