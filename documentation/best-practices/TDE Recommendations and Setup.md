@@ -1,4 +1,4 @@
-﻿# TDE Recommendations and Setup
+# TDE Recommendations and Setup
 
 <div class="stub">
     NOTE: 
@@ -9,11 +9,26 @@
 
 
     TODO: 
-        Integrate the following 3x links into the mix relative to TDE 'strength'. 
+        - Integrate the following 3x links into the mix relative to TDE 'strength'. 
             - https://simonmcauliffe.com/technology/tde/
             - https://matthewmcgiffen.com/2018/01/03/how-secure-is-transparent-data-encryption-tde-and-how-to-prevent-hacking/
             - https://dba.stackexchange.com/questions/225049/will-tde-encryption-protect-my-sql-database-from-hacker-in-this-scenario
-
+        - Create a TOC for this 'article'. 
+        - Add in information about DB-SIZE increases
+            - e.g., DB of 9728MB pre-TDE ended up being 9728MB POST-TDE (i.e., NO change in size AT ALL)
+            - and another DB: 74GB pre-TDE, 74GB post-TDE (no change AT ALL)
+            - don't REALLY need this info, but it's something people ask about all the time.
+                - i.e., move all of the info above (about sizing/etc.) into an overview section of the doc - i.e., what to expect and/or FAQs... 
+            - TODO: 
+                - add in sizing info about BACKUPS with/without TDE: 
+                    - 9GB database -> TDE: 8.3GB (hmm... this is SQL2017 - 14.0.3370). Oooof - NON-TDE: 1.9GB... 
+                    - 74GB database -> meh... 
+                - hmmm. 8GB database. on SQL 2019 - 15.0.2000.5
+                    - with TDE. Backup is 5.9GB in size. (which sucks.)
+                    - WITHOUT TDE, backup is 1.3GB in size. Well... shizzzzzle. 
+                - 74GB DB on SQL Server 2019. 
+                    - Without TDE, backup is 27.6GB in size. 
+                    - WITH TDE, backup is ... 76GB in size. WTF? (though, this DB had 4-5 files/filegroups, AND FTIs)
 </div>
 
 
@@ -210,6 +225,8 @@ This is the 'master' certificate that you'll use to sign the encryption keys for
 ```sql
 USE [master];
 GO
+
+-- MKC TODO: make this script idempotent and/or check for presence of cert prior to creation... 
 
 CREATE CERTIFICATE DataEncryptionCertificate
 WITH 

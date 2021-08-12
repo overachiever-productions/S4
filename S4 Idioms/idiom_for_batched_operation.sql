@@ -1,15 +1,24 @@
 /*
 
-EXEC admindb.dbo.[idiom_for_batched_operation]
-	@BatchSize = 2000,
-	--@WaitFor = NULL,
-	@MaxExecutionSeconds = 800,
-	@AllowDynamicBatchSizing = 1,
-	--@TargetBatchMilliseconds = 0,
-	--@MaxAllowedErrors = 0,
-	--@TreatDeadlocksAsErrors = NULL,
-	--@PersistLoggingDetails = NULL,
-	@StopIfTempTableExists = N'##stop_word';
+		vNEXT: 
+			- Option to THROW if # of rows DELETED/PROCESSED > @BatchCount  (i.e., assume we're DELETEing rows... and expect to DELETE 1000 rows a pop, and our first 
+					iteration DELETEs 800,000 rows ... 
+							the loop will stop, 
+									but, rather than 'failing silently', would be way better to throw some sort of ugly exception "i.e., woah, come look at this".
+
+
+
+
+		EXEC admindb.dbo.[idiom_for_batched_operation]
+			@BatchSize = 2000,
+			--@WaitFor = NULL,
+			@MaxExecutionSeconds = 800,
+			@AllowDynamicBatchSizing = 1,
+			--@TargetBatchMilliseconds = 0,
+			--@MaxAllowedErrors = 0,
+			--@TreatDeadlocksAsErrors = NULL,
+			--@PersistLoggingDetails = NULL,
+			@StopIfTempTableExists = N'##stop_word';
 
 */
 
@@ -159,7 +168,7 @@ DECLARE @WaitForDelay sysname = N''{wait_for}'';
 DECLARE @BatchSize int = {batch_size};{Max_Allowed_Errors}{Dynamic_Batching_Params}
 
 -- Processing (variables/etc.)
-DECALRE @continue bit = 1;
+DECLARE @continue bit = 1;
 DECLARE @currentRowsProcessed int = @BatchSize; 
 DECLARE @totalRowsProcessed int = 0;
 DECLARE @errorDetails nvarchar(MAX);

@@ -539,6 +539,7 @@ AS
 			[synchronization_delay (RPO)] decimal(20, 2) NOT NULL,
 			[recovery_time (RTO)] decimal(20, 2) NOT NULL,
 			-- raw data: 
+			[is_failover_ready] bit NULL,
 			[redo_queue_size] decimal(20, 2) NULL,
 			[redo_rate] decimal(20, 2) NULL,
 			[primary_last_commit] datetime NULL,
@@ -553,15 +554,18 @@ AS
 					[drs].[last_commit_time],
 					CAST([drs].[redo_queue_size] AS decimal(20,2)) [redo_queue_size],   -- KB of log data not yet ''checkpointed'' on the secondary... 
 					CAST([drs].[redo_rate] AS decimal(20,2)) [redo_rate],		-- avg rate (in KB) at which redo (i.e., inverted checkpoints) are being applied on the secondary... 
-					[drs].[is_primary_replica] [is_primary]
+					[drs].[is_primary_replica] [is_primary],
+					[cs].[is_failover_ready]
 				FROM
 					[sys].[dm_hadr_database_replica_states] AS [drs]
 					INNER JOIN [sys].[availability_databases_cluster] AS [adc] ON [drs].[group_id] = [adc].[group_id] AND [drs].[group_database_id] = [adc].[group_database_id]
+					INNER JOIN [sys].[dm_hadr_database_replica_cluster_states] [cs] ON [drs].[replica_id] = [cs].[replica_id]
 			), 
 			[primary] AS ( 
 				SELECT
 					[database_name],
-					[last_commit_time] [primary_last_commit]
+					[last_commit_time] [primary_last_commit], 
+					[is_failover_ready]
 				FROM
 					[metrics]
 				WHERE
@@ -584,11 +588,16 @@ AS
 				p.[database_name], 
 				@iterations [iteration], 
 				GETDATE() [timestamp],
-				DATEDIFF(SECOND, ISNULL(s.[secondary_last_commit], GETDATE()), ISNULL(p.[primary_last_commit], DATEADD(MINUTE, -10, GETDATE()))) [synchronization_delay (RPO)],
-				CAST((CASE 
-					WHEN s.[redo_queue_size] = 0 THEN 0 
-					ELSE ISNULL(s.[redo_queue_size], 0) / s.[redo_rate]
-				END) AS decimal(20, 2)) [recovery_time (RTO)],
+				CASE
+					WHEN p.[is_failover_ready] = 1 THEN 0 
+					ELSE ISNULL(DATEDIFF(MILLISECOND, s.[secondary_last_commit], p.[primary_last_commit]), -2000)
+				END [synchronization_delay (RPO)],
+				CASE 
+					WHEN ISNULL(s.[redo_queue_size], 0) = 0 THEN 0
+					--WHEN ISNULL(s.[redo_rate], 0) = 0 THEN 0 
+					ELSE CAST((s.[redo_queue_size] / s.[redo_rate]) as decimal(20,2))
+				END [recovery_time (RTO)],
+				p.[is_failover_ready],
 				s.[redo_queue_size], 
 				s.[redo_rate], 
 				p.[primary_last_commit], 
@@ -606,6 +615,7 @@ AS
 				[timestamp],
 				[synchronization_delay (RPO)],
 				[recovery_time (RTO)],
+				[is_failover_ready],
 				[redo_queue_size],
 				[redo_rate],
 				[primary_last_commit],

@@ -44,6 +44,21 @@ AS
 
 	-- {copyright}
 
+	-----------------------------------------------------------------------------
+	-- Dependencies Validation:
+    DECLARE @check int;
+
+	EXEC @check = dbo.verify_advanced_capabilities;
+    IF @check <> 0
+        RETURN @check;
+
+    EXEC @check = dbo.verify_alerting_configuration
+        @JobOperatorToAlertOnErrors, 
+        @ProfileToUseForAlerts;
+
+    IF @check <> 0 
+        RETURN @check;
+
 	-- TODO: validate inputs: 
 	SET @EncryptionCertName = NULLIF(@EncryptionCertName, N'');
 	SET @DiffBackupsStartTime = NULLIF(@DiffBackupsStartTime, N'');
