@@ -1,6 +1,18 @@
-﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
+![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 
 # Change Log
+
+## [9.0] - 2021-08-12 
+Improved RPO/RTO monitoring metrics for synchronized databases. 
+
+### Changed 
+- Minor improvements to `dbo.create_consistency_checks` and `dbo.create_index_maintenance_jobs`. 
+- Full overhaul of `dbo.verify_data_synchronization` to address issues with red-herring alerts for low-use AG/synchronized databases.
+
+### Added
+- `dbo.verify_drivespace` now allows notifications based on percentage of disk used vs just GBs free.
+- `dbo.count_rows` - simple helper utility using sys.partitions to allow quick row-counts of target tables.
+- `dbo.extract_code_context` - helper utility to extract all matches of `@TargetPattern` in sys.sql_modules and display matches + before/after lines of code. 
   
 ## [8.8.3652] - 2021-06-14
 
