@@ -95,9 +95,7 @@ END;
 			PRINT @command; 
 		ELSE 
 			EXEC sp_executesql @command;
-
 	END;
-
 
 	DECLARE @outcome nvarchar(MAX);
 

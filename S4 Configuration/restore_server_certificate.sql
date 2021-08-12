@@ -19,8 +19,8 @@ CREATE PROC dbo.[restore_server_certificate]
 	@PrivateKeyEncryptionPassword					sysname			= NULL,	
 	@MasterKeyEncryptionPassword					sysname			= NULL,
 	@OptionalNewCertificateName						sysname			= NULL, 
-	@FullCertificateFilePath						sysname			= NULL, 
-	@FullKeyFilePath								sysname			= NULL, 
+	@FullCertificateFilePath						sysname			= NULL,			-- specific/direct paths if @CertificateAndKeyRootDirectory needs to be overridden.
+	@FullKeyFilePath								sysname			= NULL,			-- ditto.
 	--@RestoreOnPartner								bit				= 0, 
 	@PrintOnly										bit				= 0
 AS
