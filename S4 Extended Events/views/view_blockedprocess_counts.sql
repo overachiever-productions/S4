@@ -262,7 +262,8 @@ AS
 		
 		SELECT 
 			t.row_id,
-			t.[start] [time_period], 
+			--t.[start] [time_period], 
+			DATEADD(MINUTE, 0 - @timeOffset, t.[start]) [time_period], 
 			--b.[start_time],
 			--b.[end_time], 
 			b.[transaction_id], 
