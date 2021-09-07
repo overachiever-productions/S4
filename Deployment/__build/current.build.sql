@@ -419,19 +419,10 @@ GO
 --##INCLUDE: S4 Configuration\update_server_name.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\script_login.sql
-
------------------------------------
---##INCLUDE: S4 Configuration\script_logins.sql
-
------------------------------------
 --##INCLUDE: S4 Configuration\force_removal_of_tempdb_file.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\configure_tempdb_files.sql
-
------------------------------------
---##INCLUDE: S4 Configuration\export_server_logins.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\script_server_configuration.sql
@@ -476,10 +467,31 @@ GO
 --##INCLUDE: S4 Configuration\Setup\create_index_maintenance_jobs.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Setup\create_consistency_check_jobs.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Setup\define_masterkey_encryption.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\script_dbfile_movement_template.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\script_login.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\script_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\export_server_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\prevent_user_access.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\script_security_mappings.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\import_security_mappings.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
