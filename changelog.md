@@ -2,6 +2,16 @@
 
 # Change Log
 
+## [9.1] - 2021-09-07
+Minor Bug Fixes. 
+
+### Fixed
+- Minor Tweak to `dbo.create_server_certificate` to prevent error/exception when `@PrintOnly = 1` for testing/scoping.
+- Verified that `dbo.script_logins` can/does/will process WINDOWS GROUP Logins without issues. 
+
+### Added
+- Initial addition of 3x new sprocs useful in creation/definition of dev/test databases and/or in QA environments: `dbo.prevent_user_access`, `dbo.script_security_mappings`, `dbo.import_security_mappgings`. NON-documented. 
+
 ## [9.0] - 2021-08-12 
 Improved RPO/RTO monitoring metrics for synchronized databases. 
 
