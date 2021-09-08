@@ -4,7 +4,6 @@
 		Enable @CreateOnPartner functionality - via CERTENCODED: https://docs.microsoft.com/en-us/sql/t-sql/functions/certencoded-transact-sql?view=sql-server-ver15
 
 
-
 */
 
 USE [admindb];
@@ -40,7 +39,6 @@ AS
 	SET @CertificateExpiryVector = ISNULL(@CertificateExpiryVector, N'10 years');
 	SET @PrintOnly = ISNULL(@PrintOnly, 0);
 	--SET @CreateOnPartner = ISNULL(@CreateOnPartner, 0);
-
 	
 	IF @CertificateName IS NULL BEGIN 
 		RAISERROR('@CertificateName is Required.', 16, 1);
@@ -120,12 +118,32 @@ WITH
 	END CATCH;
 
 	IF @BackupDirectory IS NOT NULL AND @EncryptionKeyPassword IS NOT NULL BEGIN 
-		EXEC dbo.[backup_server_certificate]
-			@CertificateName = @CertificateName,
-			@BackupDirectory = @BackupDirectory,
-			@CopyToBackupDirectory = @CopyToBackupDirectory,
-			@EncryptionKeyPassword = @EncryptionKeyPassword,
-			@PrintOnly = @PrintOnly;
+		IF @PrintOnly = 1 BEGIN 
+			
+			PRINT N'';
+			PRINT N'------------------------------------------------------------------------------------------------';
+			PRINT N'-- Skipping Certificate Backup (because @PrintOnly = 1). However, command WOULD look similar to: ';
+
+			DECLARE @backup nvarchar(MAX) = N'EXEC dbo.[backup_server_certificate]
+	@CertificateName = N''' + @CertificateName + N''',
+	@BackupDirectory = N''' + @BackupDirectory + ''',
+	--@CopyToBackupDirectory = @CopyToBackupDirectory,
+	@EncryptionKeyPassword = N''' + @EncryptionKeyPassword + N''',
+	@PrintOnly = 1; ';
+
+			EXEC dbo.[print_long_string] @backup;
+
+			PRINT N'------------------------------------------------------------------------------------------------';
+
+		  END; 
+		ELSE BEGIN
+			EXEC dbo.[backup_server_certificate]
+				@CertificateName = @CertificateName,
+				@BackupDirectory = @BackupDirectory,
+				@CopyToBackupDirectory = @CopyToBackupDirectory,
+				@EncryptionKeyPassword = @EncryptionKeyPassword,
+				@PrintOnly = @PrintOnly;
+		END;
 	  END;
 	ELSE BEGIN 
 		RAISERROR('WARNING: Please use admindb.dbo.backup_server_certificate to create a backup of %s - to protect against disasters.', 6, 1, @CertificateName)

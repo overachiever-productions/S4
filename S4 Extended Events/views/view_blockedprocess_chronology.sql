@@ -251,8 +251,8 @@ AS
 			--[w].[report_id],
 			[w].[report_id] [original_report_id],
 			[w].[database_name],
-			--DATEADD(MINUTE, 0 - @timeOffset, [w].[timestamp]) [timestamp],
-			[w].[timestamp],
+			DATEADD(MINUTE, 0 - @timeOffset, [w].[timestamp]) [timestamp],
+			--[w].[timestamp],
 			[a].[process_count],
 
 			ISNULL([c].[blocking_chain], N'    ' + CAST([w].[blocked_id] AS sysname) + N' -> (' + CAST([w].[blocked_id] AS sysname) + N')') [blocking_chain],
