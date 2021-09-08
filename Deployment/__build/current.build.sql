@@ -467,7 +467,7 @@ GO
 --##INCLUDE: S4 Configuration\Setup\create_index_maintenance_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\Setup\create_consistency_check_jobs.sql
+--##INCLUDE: S4 Configuration\Setup\create_consistency_checks_job.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\Setup\define_masterkey_encryption.sql
