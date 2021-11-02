@@ -27,6 +27,15 @@
     TODO:
         - Look at implementing MINIMAL 'retry' logic - as per dba_BackupDatabases. Or... maybe don't... 
 
+		- DOCUMENT the PRESERVE_FILENAMES directive. Basically, assume we're MOVING databases from C:\Cluster Storage\Volume 1\some other path
+				to D:\SQLData. 
+				And we don't want mega-down-time for those moves. We could restore using restore_databases with these directives: 
+								@RestoredDbNamePattern = N'xx{0}',
+								@Directives = N'PRESERVE_FILENAMES',
+				At this point, if we restore, say, Billing as xxBilling (on the D:\ drive) the new database name is definitely xxBilling
+						BUT, the filenames are all 'clean' and good - so that all we have to do is change the database name (i.e., LOGICAL name) and ... we're GOLDEN.
+
+
         - Possible issue where TIMING isn't the right way to determine which LOG backups to use. i.e., suppose we start a FULL _OR_ DIFF backup at 6PM - and it takes 20 minutes to exeucte. 
             then... suppose we're doing T-LOG backups every 5 minutes - i.e., 5 after the hour. 
                 I'm _PRETTY_ sure that we'd want the 6:25 backup as our next T-LOG backup... 
@@ -219,7 +228,7 @@ AS
 		SELECT * FROM dbo.[split_string](@Directives, N',', 1);
 
 		-- verify that only supported directives are defined: 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER')) BEGIN
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER', N'PRESERVE_FILENAMES')) BEGIN
 			RAISERROR(N'Invalid @Directives value specified. Permitted values are { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }.', 16, 1);
 			RETURN -20;
 		END;
@@ -630,11 +639,15 @@ AS
 
 			-- NOTE: FULL filename (path + name) can NOT be > 260 (259?) chars long. 
 			SET @restoredFileName = @fileName;
-			IF @databaseToRestore <> @restoredName
-				SET @restoredFileName = @restoredName;
+			
+			IF NOT EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] = N'PRESERVE_FILENAMES') BEGIN 
 
-			IF @ndfCount > 0 
-				SET @restoredFileName = @restoredFileName + CAST((@ndfCount + 1) AS sysname);
+				IF @databaseToRestore <> @restoredName
+					SET @restoredFileName = @restoredName;
+
+				IF @ndfCount > 0 
+					SET @restoredFileName = @restoredFileName + CAST((@ndfCount + 1) AS sysname);
+			END;
 
             SET @move = @move + N'MOVE ''' + @logicalFileName + N''' TO ''' + CASE WHEN @fileId = 2 THEN @RestoredRootLogPath ELSE @RestoredRootDataPath END + N'\' + @restoredFileName + '.';
             IF @fileId = 1
