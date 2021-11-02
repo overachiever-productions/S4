@@ -743,7 +743,6 @@ DoneRemovingFilesBeforeBackup:
 						WHERE
 							backup_id = @currentOperationID;
 					END;
-
 				END TRY
 				BEGIN CATCH
 
