@@ -2,6 +2,47 @@
 
 	-- Barely even a stub at this point... 
 
+	Here's what I want this to show (i.e., a list of columns): 
+		- database_name
+		- state_desc
+		- mirrored or AG'd or read-only or any other non-standard-ish something... 
+		- file_count
+		- files (xml with a list of files in it - i.e., each file's id, type, logical-name, physical-name, size, used%/free%). 
+		- db_size
+		- db_space_free
+		- db_size_%_used
+		- log size
+		- log_%_used
+		- log_as_%_of_db_size (better name needed, obviously)
+		- total_vlfs_count
+		- '' (spacer)
+		- recovery_model
+		- page_verify
+		- compat_level
+		- snapshot_isolation
+		- rcsi (0 or 1)
+		- problems (comma-delimited list of issues like, auto_close, auto_shrink, parameterization_forced, async_stats_off, etc. 
+		
+
+HERE's how to get space used (free) for DATA FILES (it's really the ONLY way I've got - unless I want to do sp_space_used/etc.)
+	FODDER: 
+
+						SELECT
+							DB_NAME() [database_name],
+							[name] AS [file_name],
+							CAST(([size] / 128.0) AS decimal(22,2)) AS [file_size_mb],
+							CAST(([size] / 128.0 - CAST(FILEPROPERTY([name], 'SpaceUsed') AS int) / 128.0) AS decimal(22,2)) AS [free_space_mb]
+						FROM
+							[sys].[database_files];
+
+
+						--SELECT * FROM sys.[database_files];
+
+	 Basically, just create a dynamic query that iterates through each DB, and drops the results of the ABOVE into #space-used table... so'z I can do JOINs against it later on... 
+
+
+
+
 */
 
 USE [admindb];

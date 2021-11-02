@@ -1,5 +1,8 @@
 /*
     NOTE: 
+        - This sproc adheres to the PROJECT/RETURN usage convention.
+
+    NOTE: 
         - returns the latest _COMPLETION_ time. 
             IF a job is currently RUNNING (i.e., in the process of running and has NOT yet completed), then the current 'run' is 100% ignored by DESIGN. 
 
