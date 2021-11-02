@@ -47,13 +47,13 @@ AS
 	DECLARE @results xml;
 	EXEC @return = admindb.dbo.[execute_command]
 		@Command = @partnerTest,
-		@ExecutionType = N'EXEC',
+		@ExecutionType = N'SQLCMD',
 		@ExecutionAttemptsCount = 0,
 		@IgnoredResults = N'[COMMAND_SUCCESS]',
-		@Results = @results OUTPUT;
+		@Outcome = @results OUTPUT;
 
 	IF @return <> 0 BEGIN 
-		SET @output = (SELECT @results.value('(/results/result)[1]', 'nvarchar(MAX)'));
+		SELECT @output = dbo.[translate_executed_command_error](@results);
 	END;
 
 	IF @output IS NOT NULL BEGIN
