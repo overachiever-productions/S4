@@ -13,12 +13,8 @@
 		- This sproc explicitly uses RAISERROR instead of THROW for 'backwards compat' down to SQL Server 2008. 
 
 	TODO:
-		- test/validate (and clean-up) on case-sensitive server (as much as those suck).
 		- Review and potentially integrate any details defined here: 
 			http://vickyharp.com/2013/12/killing-sessions-with-external-wait-types/
-
-		- Better Error Handling. 
-			Right now... many of the operations that UPDATE a row in ... dba_BackupDatabases_Log... are NOT doing ErrorMessage = ErrorMessage + @ErrorMessage - meaning code is overwriting previous details... 
 
 		- vNEXT: 
 			In addition to the 'retry' logic stuff below... need to 'decouple' secondary/copy-to backups from this sproc. 
