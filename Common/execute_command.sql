@@ -24,68 +24,77 @@
 
 
 		----------------------------------------------------------------------------------------------
-				DECLARE
-					@Succeeded int,
-					@outcome xml;
+			-- example of ALL results/outputs being whitelisted:
 
-				EXEC @Succeeded = [admindb].dbo.[execute_command]
+				DECLARE
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
+
+				EXEC [admindb].dbo.[execute_command]
 					@Command = N'ping 10.0.0.1', -- nvarchar(max)
 					@ExecutionType = N'SHELL', -- sysname
 					@ExecutionAttemptsCount = 2, -- int
 					@IgnoredResults = N'Reply from 10.0.%',
-					@SafeResults = N'%_%',
-					@Outcome = @outcome OUTPUT;
+					@SafeResults = N'{ALL}',
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-				SELECT @Succeeded, @outcome;
+				SELECT @outcome, @errorMessage;
 				GO
 
 		----------------------------------------------------------------------------------------------
 				DECLARE
-					@Succeeded int,
-					@outcome xml;
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
 
-				EXEC @Succeeded = [admindb].dbo.[execute_command]
+				EXEC [admindb].dbo.[execute_command]
 					@Command = N'SELECT COUNT(*) [total] FROM Counters.dbo.MeM_Disk1;', -- nvarchar(max)
 					@ExecutionType = N'PARTNER', -- sysname
 					@ExecutionAttemptsCount = 2, -- int
 					@IgnoredResults = N'{ROWS_AFFECTED}, %----%',
 					--@SafeResults = N'{ALL}',
 					--@ErrorResults = N'total',
-					@Outcome = @outcome OUTPUT;
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-				SELECT @Succeeded, @outcome;
+				SELECT @outcome, @errorMessage;
 				GO
 
 		----------------------------------------------------------------------------------------------
+			-- unexpected / un-white-listed results (i.e., failure):
 				DECLARE
-					@Succeeded int,
-					@Results xml;
-				EXEC @Succeeded = [admindb].dbo.[execute_command]
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
+
+				EXEC [admindb].dbo.[execute_command]
 					@Command = N'ping 10.0.0.1', -- nvarchar(max)
 					@ExecutionType = N'SHELL', -- sysname
 					@ExecutionAttemptsCount = 2, -- int
 					--@DelayBetweenAttempts = NULL, -- sysname
 					@IgnoredResults = N'oink, failure example,{ROWS_AFFECTED}, %This is a sample % wildcard message%, %another wildcard%, {COMMAND_SUCCESS}', -- nvarchar(2000)
-					@Outcome = @Results OUTPUT;
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-				SELECT @Succeeded, @Results;
+				SELECT @outcome, @errorMessage;
 				GO
 
 		----------------------------------------------------------------------------------------------
 			-- exception/error example: 
-
+-- TODO: fix this ... there's an error/exception - but it's NOT the thrown exception, instead it's a problem with the command and (presumably?) escaped quotes?
 				DECLARE
-					@Succeeded int,
-					@Results xml;
-				EXEC @Succeeded = [admindb].dbo.[execute_command]
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
+
+				EXEC [admindb].dbo.[execute_command]
 					@Command = N'RAISERROR(''doh!'', 16, 1);', -- nvarchar(max)
 					@ExecutionType = N'SQLCMD', -- sysname
 					@ExecutionAttemptsCount = 1, -- int
 					--@DelayBetweenAttempts = NULL, -- sysname
 					@IgnoredResults = N'oink, failure example,{ROWS_AFFECTED}, %This is a sample % wildcard message%, %another wildcard%, {COMMAND_SUCCESS}', -- nvarchar(2000)
-					@Outcome = @Results OUTPUT;
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-				SELECT @Succeeded, @Results;
+				SELECT @outcome, @errorMessage;
 				GO
 
 
@@ -119,7 +128,8 @@ CREATE PROC dbo.[execute_command]
     @SafeResults							nvarchar(2000)				= N'',								-- { ALL | custom_pattern } just like @IgnoredResults but marked as 'safe' (i.e., ALSO ignored and won't trigger error conditions), meaning that they're something the user wants back (e.g., results of a ping 10.0.0.1... various 'bits' of result could be flagged as SAFE.
 	@ErrorResults							nvarchar(2000)				= N'',								-- 'Inverse' of @SafeResults - i.e., if setting @SafeResults to {ALL}... that's a pain IF there's one or three various bits of exact text that result in an error... 
 	@PrintOnly                              bit                         = 0,
-	@Outcome								xml							OUTPUT
+	@Outcome								xml							OUTPUT, 
+	@ErrorMessage							nvarchar(MAX)				OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -146,8 +156,6 @@ AS
 
 	-- if @ExecutionType = PARTNER, make sure we have a PARTNER entry in sys.servers... 
 	--  or, vNEXT: @ExecutionType of PARTNER:SQL-130-11B can/will ultimately be allowed... 
-
-	-- for SQLCMD, SHELL, POSH, and PARTNER... final 'statement' needs to be varchar(4000) or less. 
 
     -- validate @DelayBetweenAttempts (if required/present):
     IF @ExecutionAttemptsCount > 1 BEGIN
@@ -242,6 +250,8 @@ AS
 
 	-- TODO: {SHRINKLOG}
 	-- TODO: {DBCC} (success)
+	-- TODO: {COPYFILE}
+	-- TODO: {S3COPYFILE}
 
 	INSERT INTO @filters ([filter_type], [filter_text])
 	SELECT 'CUSTOM_IGNORED', [result] FROM dbo.[split_string](@IgnoredResults, N',', 1) WHERE LEN([result]) > 0;
@@ -308,14 +318,14 @@ AS
 		RETURN -100;
 	END;
 	
-	DECLARE @ExecutionAttemptCount int = 0; 
+	DECLARE @executionCount int = 0;
 	DECLARE @succeeded bit = 0;
 	DECLARE @executionTime datetime;
 	DECLARE @exceptionOccurred bit = 0;
     
 ExecutionAttempt:
 	
-	SET @ExecutionAttemptCount = @ExecutionAttemptCount + 1;
+	SET @executionCount = @executionCount + 1;
 	SET @result = NULL;
 	SET @succeeded = 0;
 	SET @exceptionOccurred = 0;
@@ -323,70 +333,72 @@ ExecutionAttempt:
 
 	DELETE FROM #Results;
 
+	IF @PrintOnly = 1 BEGIN 
+		PRINT N'-- xp_cmdshell ''' + @xpCmd + ''';';
+        PRINT @xpCmd;
+		SET @succeeded = 1; 
+		GOTO Terminate;
+	END;
+
 	BEGIN TRY 
+		--PRINT @xpCmd;
 
-        IF @PrintOnly = 1 BEGIN
-			PRINT N'-- xp_cmdshell ''' + @xpCmd + ''';';
-            PRINT @xpCmd;
-			SET @succeeded = 1; 
-			GOTO Terminate;
-		  END;
-        ELSE BEGIN
-			--PRINT @xpCmd;
+		INSERT INTO #Results (result) 
+		EXEC master.sys.[xp_cmdshell] @xpCmd;
 
-			INSERT INTO #Results (result) 
-			EXEC master.sys.[xp_cmdshell] @xpCmd;
+		DELETE FROM [#Results] WHERE [result] IS NULL;
 
-			DELETE FROM [#Results] WHERE [result] IS NULL;
+IF @Command LIKE '%ping%' AND @executionCount > 1 BEGIN 
+	RAISERROR('this is a fake exception', 16, 1);
+END;
 
+		UPDATE r 
+		SET 
+			r.[ignored_match] = x.[filter_type]
+		FROM 
+			[#Results] r
+			LEFT OUTER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]) 
+				OR (x.[filter_type] IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result] = r.[result]); 
+
+		IF EXISTS (SELECT NULL FROM @explicitErrors) BEGIN 
 			UPDATE r 
 			SET 
-				r.[ignored_match] = x.[filter_type]
+				r.[explicit_error] = x.error_text
 			FROM 
-				[#Results] r
-				LEFT OUTER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]) 
-					OR (x.[filter_type] IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result] = r.[result]); 
+				[#Results] r 
+				INNER JOIN @explicitErrors x ON (r.[result] LIKE x.[error_text]) OR (r.[result] = x.[error_text]);
+		END;
 
-			IF EXISTS (SELECT NULL FROM @explicitErrors) BEGIN 
-				UPDATE r 
-				SET 
-					r.[explicit_error] = x.error_text
-				FROM 
-					[#Results] r 
-					INNER JOIN @explicitErrors x ON (r.[result] LIKE x.[error_text]) OR (r.[result] = x.[error_text]);
-			END;
+		SELECT @result = (SELECT 
+			result_id [result_row/@result_id], 
+			CASE WHEN [ignored_match] IN (N'SAFE', N'SAFE_WILDCARD') THEN NULL ELSE [ignored_match] END [result_row/@ignored],
+			CASE WHEN [ignored_match] IN (N'SAFE', N'SAFE_WILDCARD') THEN [ignored_match] ELSE NULL END [result_row/@safe],
+			[explicit_error] [result_row/@explicit_error],
+			CASE 
+				WHEN [ignored_match] IS NOT NULL AND [explicit_error] IS NOT NULL THEN 1
+				WHEN [ignored_match] IS NULL THEN 1
+				ELSE 0 
+			END [result_row/@is_error],
+			[result] [result_row]
+		FROM 
+			[#Results] 
+		ORDER BY 
+			[result_id]
+		FOR XML PATH(''), TYPE);
 
-			SELECT @result = (SELECT 
-				result_id [result_row/@result_id], 
-				CASE WHEN [ignored_match] IN (N'SAFE', N'SAFE_WILDCARD') THEN NULL ELSE [ignored_match] END [result_row/@ignored],
-				CASE WHEN [ignored_match] IN (N'SAFE', N'SAFE_WILDCARD') THEN [ignored_match] ELSE NULL END [result_row/@safe],
-				[explicit_error] [result_row/@explicit_error],
+		/* Determine Success or Error based on ... ignored/safe vs explicit errors and ... NULLs/etc. */
+		WITH simplified AS ( 
+			SELECT 
 				CASE 
 					WHEN [ignored_match] IS NOT NULL AND [explicit_error] IS NOT NULL THEN 1
 					WHEN [ignored_match] IS NULL THEN 1
 					ELSE 0 
-				END [result_row/@is_error],
-				[result] [result_row]
+				END [success]
 			FROM 
 				[#Results] 
-			ORDER BY 
-				[result_id]
-			FOR XML PATH(''), TYPE);
+		) 
 
-			/* Determine Success or Error based on ... ignored/safe vs explicit errors and ... NULLs/etc. */
-			WITH simplified AS ( 
-				SELECT 
-					CASE 
-						WHEN [ignored_match] IS NOT NULL AND [explicit_error] IS NOT NULL THEN 1
-						WHEN [ignored_match] IS NULL THEN 1
-						ELSE 0 
-					END [success]
-				FROM 
-					[#Results] 
-			) 
-
-			SELECT @succeeded = CASE WHEN MAX(success) > 0 THEN 0 ELSE 1 END FROM [simplified];
-        END;
+		SELECT @succeeded = CASE WHEN MAX(success) > 0 THEN 0 ELSE 1 END FROM [simplified];
 	END TRY
 
 	BEGIN CATCH 
@@ -417,7 +429,7 @@ ExecutionAttempt:
 
 Terminate:
 	IF @succeeded = 0 BEGIN 
-		IF @ExecutionAttemptCount < @ExecutionAttemptsCount BEGIN 
+		IF @executionCount < @ExecutionAttemptsCount BEGIN 
 			WAITFOR DELAY @delay; 
 			GOTO ExecutionAttempt;
 		END;
@@ -440,6 +452,43 @@ Terminate:
 
 	IF @succeeded = 1
 		RETURN 0;
+
+	/* Otherwise: serialize/output error details: */
+	SET @ErrorMessage = N'';
+	
+	WITH core AS ( 
+		SELECT 
+			[i].[iteration_id],
+			x.result_row.value(N'(@result_id)', N'int') [row_id], 
+			x.result_row.value(N'(@is_error)', N'bit') [is_error], 
+			CAST(0 AS bit) [is_exception],
+			x.result_row.value(N'.', N'nvarchar(max)') [content]
+		FROM 
+			@iterations i  
+			CROSS APPLY i.result.nodes(N'/result_row') x(result_row)
+		WHERE 
+			[i].[exception] = 0
+
+		UNION SELECT 
+			[i].[iteration_id],
+			1 [row_id], 
+			0 [is_error], 
+			CAST(1 AS bit) [is_exception],
+			N'EXCEPTION::> ErrorNumber: ' + CAST(x.exception.value(N'(@error_number)', N'int') AS sysname) + N', LineNumber: ' + CAST(x.exception.value(N'(@error_line)', N'int') AS sysname) + N', Severity: ' + CAST(x.exception.value(N'(@severity)', N'int') AS sysname) + N', Message: ' + x.exception.value(N'.', N'nvarchar(max)') [content]
+			
+		FROM 
+			@iterations i 
+			CROSS APPLY i.result.nodes(N'/exception') x(exception)
+	) 
+
+	SELECT 
+		@ErrorMessage = @ErrorMessage + [content] + @crlf
+	FROM 
+		core 
+	WHERE 
+		[is_error] = 1 OR [is_exception] = 1
+	ORDER BY	
+		[iteration_id], [row_id];
 
 	RETURN -1;
 GO
