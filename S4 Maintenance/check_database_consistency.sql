@@ -95,7 +95,8 @@ AS
 	DECLARE @errors table ( 
 		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[database_name] sysname NOT NULL, 
-		[error_message] xml NOT NULL
+		[results] xml NOT NULL, 
+		[error_message] nvarchar(MAX) NULL
 	);
 	
 	DECLARE @currentDbName sysname; 
@@ -108,6 +109,8 @@ AS
     ELSE 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N'');
 
+
+	DECLARE @outcome xml;
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
     SELECT 
         [database_name]
@@ -123,29 +126,27 @@ AS
 
 		SET @sql = REPLACE(@template, N'{DbName}', @currentDbName);
 
-		IF @PrintOnly = 1 
-			PRINT @sql; 
-		ELSE BEGIN 
-			DECLARE @results xml;
-			EXEC @succeeded = dbo.[execute_command]
-			    @Command = @sql,
-			    @ExecutionType = N'SQLCMD',
-			    @ExecutionAttemptsCount = 1,
-			    @DelayBetweenAttempts = NULL,
-			    @IgnoredResults = N'[COMMAND_SUCCESS]',
-			    @PrintOnly = 0,
-			    @Results = @results OUTPUT;
+		EXEC @succeeded = dbo.[execute_command]
+			@Command = @sql,
+			@ExecutionType = N'SQLCMD',
+			@ExecutionAttemptsCount = 1,
+			@DelayBetweenAttempts = NULL,
+			@IgnoredResults = N'[COMMAND_SUCCESS]',
+			@PrintOnly = @PrintOnly,
+			@Outcome = @outcome OUTPUT, 
+			@ErrorMessage = @errorMessage OUTPUT;
 
-			IF @succeeded <> 0 BEGIN 
-				INSERT INTO @errors (
-				    [database_name],
-				    [error_message]
-				)
-				VALUES (
-					@currentDbName, 
-					@results
-				);
-			END;
+		IF @succeeded <> 0 BEGIN 
+			INSERT INTO @errors (
+				[database_name],
+				[results], 
+				[error_message]
+			)
+			VALUES (
+				@currentDbName, 
+				@outcome,
+				@errorMessage
+			);
 		END;
 
         FETCH NEXT FROM [walker] INTO @currentDbName;    
@@ -166,7 +167,7 @@ AS
 		SET @emailBody = N'The following problems were encountered: ' + @crlf; 
 
 		SELECT 
-			@emailBody = @emailBody + UPPER([database_name]) + @crlf + @tab + CAST([error_message] AS nvarchar(MAX)) + @crlf + @crlf
+			@emailBody = @emailBody + N'------------------------------------------------' + @crlf + N'DATABASE:' + @crlf + @tab + UPPER([database_name]) + @crlf + N'ERRORS: ' + @crlf + @tab + [error_message] + @crlf + N'XML EXECUTION DETAILS: ' + @crlf + @tab + CAST([results] AS nvarchar(MAX)) + @crlf + @crlf
 		FROM 
 			@errors 
 		ORDER BY 
