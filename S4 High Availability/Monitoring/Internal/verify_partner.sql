@@ -1,4 +1,8 @@
 /*
+	CONVENTIONS:
+		- INTERNAL
+		- PROJECT OR RETURN
+
 	PURPOSE: 
 		- wrapper for checking to ensure that a linked server (i.e., PARTNER) is actually up/accessible. 
 
@@ -16,13 +20,6 @@
 					as this is easier than trying to run some sort of SELECT or anything else where I'd have to filter 'succes'/output against what
 					things would look like IF there were an error. 
 
-
-
-
-	CONVENTIONS:
-		- INTERNAL
-		- PROJECT OR RETURN
-
 */
 
 USE [admindb];
@@ -39,21 +36,23 @@ AS
 
 	-- {copyright}
 
-	DECLARE @return int;
 	DECLARE @output nvarchar(MAX);
 
 	DECLARE @partnerTest nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.verify_online;'
 
-	DECLARE @results xml;
-	EXEC @return = admindb.dbo.[execute_command]
+	DECLARE @outcome xml;
+	DECLARE @return int;
+	DECLARE @errorMessage nvarchar(MAX);
+	EXEC @return = dbo.[execute_command]
 		@Command = @partnerTest,
 		@ExecutionType = N'SQLCMD',
 		@ExecutionAttemptsCount = 0,
 		@IgnoredResults = N'[COMMAND_SUCCESS]',
-		@Outcome = @results OUTPUT;
+		@Outcome = @outcome OUTPUT, 
+		@ErrorMessage = @errorMessage OUTPUT;
 
-	IF @return <> 0 BEGIN 
-		SELECT @output = dbo.[translate_executed_command_error](@results);
+	IF @errorMessage IS NOT NULL BEGIN
+		SET @output = @errorMessage;
 	END;
 
 	IF @output IS NOT NULL BEGIN
