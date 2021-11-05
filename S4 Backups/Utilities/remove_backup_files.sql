@@ -123,11 +123,11 @@ AS
 
 	IF UPPER(@Retention) = N'INFINITE' BEGIN 
 		PRINT N'-- INFINITE retention detected. Terminating cleanup process.';
-		RETURN 0; -- success
+		RETURN 0;
 	END;
 
 	IF UPPER(@Retention) LIKE '%B%' OR UPPER(@Retention) LIKE '%BACKUP%' BEGIN 
-		-- Backups to be kept by # of backups NOT by timestamp
+		
 		DECLARE @boundary int = PATINDEX(N'%[^0-9]%', @Retention)- 1;
 
 		IF @boundary < 1 BEGIN 
@@ -174,10 +174,8 @@ AS
 			PRINT '-- Retention specification is to remove backups created before [' + CONVERT(sysname, @retentionCutoffTime, 120) + N'].';
 	END;
 
-	-- normalize paths: 
 	SET @TargetDirectory = dbo.[normalize_file_path](@TargetDirectory);
 
-	-- verify that path exists:
 	DECLARE @isValid bit;
 	EXEC dbo.check_paths @TargetDirectory, @isValid OUTPUT;
 	IF @isValid = 0 BEGIN;
@@ -193,7 +191,6 @@ AS
 	IF @BackupType = N'LOG'
 		SET @excludeSimple = 1;
 
-	-- Replace {READ_FROM_FILESYSTEM} with a list of DBs to process in @TargetDirectory:
 	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
@@ -262,16 +259,13 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Process files for removal:
-
 	DECLARE @currentDb sysname;
 	DECLARE @currentDirectory sysname;
 	DECLARE @command nvarchar(MAX);
 	DECLARE @targetPath nvarchar(512);
-	DECLARE @outcome varchar(4000);
 	DECLARE @errorMessage nvarchar(MAX) = N'';
 	DECLARE @file nvarchar(512);
-	DECLARE @commandOutcome int;
-	DECLARE @commandResults xml;
+	DECLARE @outcome xml;
 
 	DECLARE @serializedFiles xml; 
 
@@ -310,7 +304,6 @@ AS
 
 		-- cleanup from previous passes
 		SET @errorMessage = NULL;
-		SET @outcome = NULL;
 		
 		DELETE FROM @files;
 		SET @serializedFiles = NULL;
@@ -319,7 +312,6 @@ AS
 			PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDb + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''LIST''; ';
 		END;
 
-		-- Load a list of files available for the target db: 
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @currentDb, 
 			@SourcePath = @targetPath, 
@@ -346,11 +338,9 @@ AS
 		ORDER BY 
 			id;
 
-		-- Now process different retention types (i.e., b or time/vector-based expiry):
 		IF @retentionType = 'b' BEGIN -- Remove all backups of target type except the most recent N (where N is @retentionValue).
 			
-			-- clear out any state from previous iterations.
-
+			-- clear out any state from previous iterations:
 			DELETE FROM @lastN;
 
 			IF @BackupType IN ('LOG', '{ALL}') BEGIN
@@ -413,56 +403,6 @@ AS
 				@files x 
 				INNER JOIN @lastN l ON x.id = l.original_id AND x.[file_name] = l.backup_name;
 
-			-- and delete all, enumerated, files that are left:
-/*
-			DECLARE nuker CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT [file_name] FROM @files ORDER BY id;
-
-			OPEN nuker;
-			FETCH NEXT FROM nuker INTO @file;
-
-			WHILE @@FETCH_STATUS = 0 BEGIN;
-
-				-- reset per each 'grab':
-				SET @errorMessage = NULL;
-				SET @outcome = NULL
-
-				SET @command = N'EXECUTE master.sys.xp_delete_file 0, N''' + @targetPath + N'\' + @file + ''', N''bak'', N''' + REPLACE(CONVERT(nvarchar(20), GETDATE(), 120), ' ', 'T') + ''', 0;';
-				--SET @command = N'del /q /f "' + @targetPath + N'\' + @file + '" ';
-
-				IF @PrintOnly = 1 BEGIN 
-					IF @routeInfoAsOutput = 1
-						PRINT @command;
-				  END;
-				ELSE BEGIN; 
-
-					BEGIN TRY
-						EXEC dbo.execute_uncatchable_command @command, 'DELETEFILE', @result = @outcome OUTPUT;
-						
-						IF @outcome IS NOT NULL 
-							SET @errorMessage = ISNULL(@errorMessage, '')  + @outcome + N' ';
-
-					END TRY 
-					BEGIN CATCH
-						SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected error deleting backup [' + @file + N'] from [' + @targetPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-					END CATCH
-
-				END;
-
-				IF @errorMessage IS NOT NULL BEGIN;
-					SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';
-
-					INSERT INTO @errors ([error_message])
-					VALUES (@errorMessage);
-				END
-
-				FETCH NEXT FROM nuker INTO @file;
-
-			END;
-
-			CLOSE nuker;
-			DEALLOCATE nuker;
-*/
 		  END;
 		ELSE BEGIN -- Any backups older than @RetentionCutoffTime are removed. 
 
@@ -505,35 +445,24 @@ AS
 
 			-- reset per each 'grab':
 			SET @errorMessage = NULL;
-			SET @outcome = NULL;
-
 			SET @command = N'del /q /f "' + @targetPath + N'\' + @file + N'"';
 
-			IF @PrintOnly = 1 BEGIN 
-				PRINT N'--    ' + @command;
-			  END;
-			ELSE BEGIN; 
-
-				BEGIN TRY
+			BEGIN TRY
 					
-					EXEC @commandOutcome = dbo.[execute_command]
-						@Command = @command,
-						@ExecutionType = N'SHELL',
-						@ExecutionAttemptsCount = 1,
-						@IgnoredResults = N'[DELETEFILE]',
-						@PrintOnly = @PrintOnly,
-						@Results = @commandResults OUTPUT;
+				EXEC dbo.[execute_command]
+					@Command = @command,
+					@ExecutionType = N'SHELL',
+					@ExecutionAttemptsCount = 1,
+					@IgnoredResults = N'[DELETEFILE]',
+					@PrintOnly = @PrintOnly,
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-					IF @commandOutcome <> 0 BEGIN 
-						SET @errorMessage = ISNULL(@errorMessage, N'') + CAST(@commandResults.value(N'(/results/result)[1]', N'nvarchar(MAX)') AS nvarchar(MAX)) + N' ';
-					END;
+			END TRY 
+			BEGIN CATCH
+				SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting Backup File with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+			END CATCH
 
-				END TRY 
-				BEGIN CATCH
-					SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting DIFF/FULL Backup with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-				END CATCH
-
-			END;
 
 			IF @errorMessage IS NOT NULL BEGIN;
 				SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';
@@ -556,6 +485,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Cleanup:
+
 	IF (SELECT CURSOR_STATUS('local','nuker')) > -1 BEGIN;
 		CLOSE nuker;
 		DEALLOCATE nuker;
