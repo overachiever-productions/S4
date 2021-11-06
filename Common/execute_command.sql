@@ -97,19 +97,6 @@
 				SELECT @outcome, @errorMessage;
 				GO
 
-
-
-
-TODO:
-    Impacts the following sprocs (i.e., the changes above will apply to all of the following callers): 
-
-		check_database_consistency
-				x establish_directory
-				x remove_backup_files
-				x restore_databases
-				meh... shrink_logfiles
-				x verify_partner
-
 */
 
 USE [admindb];
@@ -347,10 +334,6 @@ ExecutionAttempt:
 		EXEC master.sys.[xp_cmdshell] @xpCmd;
 
 		DELETE FROM [#Results] WHERE [result] IS NULL;
-
-IF @Command LIKE '%ping%' AND @executionCount > 1 BEGIN 
-	RAISERROR('this is a fake exception', 16, 1);
-END;
 
 		UPDATE r 
 		SET 
