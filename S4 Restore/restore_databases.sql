@@ -354,8 +354,8 @@ AS
 	DECLARE @ndfCount int = 0;
 
 	-- dbo.execute_command variables: 
-	DECLARE @execOutcome bit;
 	DECLARE @execResults xml;
+	DECLARE @errorMessage nvarchar(MAX);
 
 	DECLARE @ignoredLogFiles int = 0;
 
@@ -501,14 +501,20 @@ AS
 							END;
 						ELSE BEGIN
 							
-							EXEC @execOutcome = dbo.[execute_command]
+							EXEC dbo.[execute_command]
 								@Command = @command, 
 								@DelayBetweenAttempts = N'8 seconds',
-								@IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
-								@Results = @execResults OUTPUT;
+								@IgnoredResults = N'{COMMAND_SUCCESS},{USE_DB_SUCCESS},{SINGLE_USER}', 
+								@Outcome = @execResults OUTPUT, 
+								@ErrorMessage = @errorMessage OUTPUT;
 
-							IF @execOutcome <> 0 
-								SET @statusDetail = N'Error with SINGLE_USER > DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
+							IF dbo.[transient_error_occurred](@execResults) = 1 BEGIN 
+								SET @statusDetail = N'NOTE: Transient Error Detected with SINGLE_USER > DROP operations::> ' + CAST(@execResults AS nvarchar(MAX));
+							END;
+							
+							IF @errorMessage IS NOT NULL BEGIN 
+								SET @statusDetail = N'Error with SINGLE_USER > DROP operations::>  Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+							END;
 						END;
 
 					  END;
@@ -521,15 +527,21 @@ AS
 						  END;
 						ELSE BEGIN 
 							
-							EXEC @execOutcome = dbo.[execute_command]
+							EXEC dbo.[execute_command]
 								@Command = @command, 
 								@DelayBetweenAttempts = N'8 seconds',
-								@IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
-								@Results = @execResults OUTPUT;
+								@IgnoredResults = N'{COMMAND_SUCCESS},{USE_DB_SUCCESS},{SINGLE_USER}', 
+								@Outcome = @execResults OUTPUT, 
+								@ErrorMessage = @errorMessage OUTPUT;
 							
-							IF @execOutcome <> 0 
-								SET @statusDetail = N'Error with DROP DATABASE: ' + CAST(@execResults AS nvarchar(MAX));
 
+							IF dbo.[transient_error_occurred](@execResults) = 1 BEGIN 
+								SET @statusDetail = N'NOTE: Transient Error Detected with DROP DATABASE::> ' + CAST(@execResults AS nvarchar(MAX));
+							END; 
+
+							IF @errorMessage IS NOT NULL BEGIN 
+								SET @statusDetail = N'Error with DROP DATABASE::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+							END;
 						END;
 
 					END;
@@ -1077,14 +1089,20 @@ NextDatabase:
                         WHERE 
                             restore_id = @restoreLogId;
 
-						EXEC @execOutcome = dbo.[execute_command]
+						EXEC dbo.[execute_command]
 							@Command = @command, 
 							@DelayBetweenAttempts = N'8 seconds',
-							@IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS],[SINGLE_USER]', 
-							@Results = @execResults OUTPUT;
+							@IgnoredResults = N'{COMMAND_SUCCESS},{USE_DB_SUCCESS},{SINGLE_USER}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
 
-						IF @execOutcome <> 0 
-							SET @statusDetail = N'Error with CLEANUP / DROP operations: ' + CAST(@execResults AS nvarchar(MAX));
+						IF dbo.[transient_error_occurred](@execResults) = 1 BEGIN 
+							SET @statusDetail = N'NOTE: Transient Error Detected with CLEANUP + DROP operations::> ' + CAST(@execResults AS nvarchar(MAX));
+						END;
+							
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error with CLEANUP + DROP operations::>  Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 
                         IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
                             SET @statusDetail = @statusDetail + @crlf + N'Executed command to DROP database [' + @restoredName + N']. No exceptions encountered, but database still in place POST-DROP.';
