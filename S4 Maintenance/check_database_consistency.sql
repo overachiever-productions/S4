@@ -131,7 +131,7 @@ AS
 			@ExecutionType = N'SQLCMD',
 			@ExecutionAttemptsCount = 1,
 			@DelayBetweenAttempts = NULL,
-			@IgnoredResults = N'[COMMAND_SUCCESS]',
+			@IgnoredResults = N'{COMMAND_SUCCESS}',
 			@PrintOnly = @PrintOnly,
 			@Outcome = @outcome OUTPUT, 
 			@ErrorMessage = @errorMessage OUTPUT;

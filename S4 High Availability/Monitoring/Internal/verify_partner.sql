@@ -47,7 +47,7 @@ AS
 		@Command = @partnerTest,
 		@ExecutionType = N'SQLCMD',
 		@ExecutionAttemptsCount = 0,
-		@IgnoredResults = N'[COMMAND_SUCCESS]',
+		@IgnoredResults = N'{COMMAND_SUCCESS}',
 		@Outcome = @outcome OUTPUT, 
 		@ErrorMessage = @errorMessage OUTPUT;
 

@@ -453,7 +453,7 @@ AS
 					@Command = @command,
 					@ExecutionType = N'SHELL',
 					@ExecutionAttemptsCount = 1,
-					@IgnoredResults = N'[DELETEFILE]',
+					@IgnoredResults = N'{DELETEFILE}',
 					@PrintOnly = @PrintOnly,
 					@Outcome = @outcome OUTPUT, 
 					@ErrorMessage = @errorMessage OUTPUT;
