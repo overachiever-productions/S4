@@ -30,3 +30,4 @@ CREATE TYPE dbo.backup_history_entry AS TABLE (
 	[offsite_details] nvarchar(max) NULL,
 	[error_details] nvarchar(max) NULL
 );
+GO
