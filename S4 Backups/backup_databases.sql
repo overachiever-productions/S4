@@ -1,5 +1,18 @@
 /*
 
+	LOGIC (FATAL Errors vs Logged Errors) 
+		Goal is to accomplish as MANY tasks relative to a backup (or group of backups) as POSSIBLE. Obviously, if we're trying to backup to a directory that doesn't exist, and so on... then, some things are fatal. 
+		But other things are not... 
+			Overall chain of operations and fatal or not is: 
+				Validations			(Can be fatal or not - just depends)
+				Create Backup		Fatal if it fails. 
+				Verify Backup		Fatal? 
+				Copy Backup			Non-Fatal - log and continue
+				Offsite Copy		Non-Fatal - log and continue
+				Cleanup Files		Non-Fatal - log and continue
+
+
+
 	NOTES:
 		- There's a serious bug/problem with T-SQL and how it handles TRY/CATCH (or other error-handling) operations:
 			https://connect.microsoft.com/SQLServer/feedback/details/746979/try-catch-construct-catches-last-error-only
@@ -46,56 +59,16 @@
 				http://dba.stackexchange.com/questions/152622/differential-backups-are-not-supported-on-secondary-replicas
 
 		- vNEXT: Potentially look at an @NumberOfFiles option - for striping backups across multiple files
-			Note that this would also require changes to dbo.dba_RestoreDatabases (i.e., to allow multiple files per 'logical' file) and
 			there aren't THAT many benefits (in most cases) to having multiple files (though I have seen some perf benefits in the past on SOME systems)
 
-	FODDER: 
-		- Non-Scientific metrics for S3 CPU usage and timing. 
-			CONTEXT: Write-S3Object defaults to using 10 concurrent connections - which, for larger files, can HAMMER the CPU on BIG boxes. 
-				Specifically, on 8+ core boxes, the upload of a 1-2GB+ file can/will spike CPU usage up into the 80 or 90% range. (Which is ridiculous.) 
-				Metrics below are non-scientific assessments of file-sizes and timings: 
-
-				1GB File - 8 core VM
-					10 threads 
-						80-90% CPU usage - ~12 seconds
-					6 threads 
-						~62% CPU Usage - ~9 seconds
-					2 threads 
-						20-25% CPU usage - ~24 seconds 
-					1 thread 
-						~13% CPU usage - ~50 seconds 
-
-				45 GB File - 8 core VM
-					10 threads
-						75 - 82% CPU Usage - ~280 seconds
-					6 threads 
-						48 - 70% CPU Usage - 395 seconds 
-					2 threads 
-						16-25% CPU usage - 1100 seconds 
-					1 thread 
-						8 - 14% CPU usage - ... doh, didn't collect (2 threads is optimal anyhow). 
 
 
-				aws cli metrics - i.e., for the same tests (ish) above... here's how the aws cli performed: 
-
-				1GB File  - 8 Core VM
-					6 threads 
-						30-50% CPU usage - 11 seconds - (slight less CPU usage, slightly longer upload). 
-					2 threads 
-						20% CPU Usage - 25 seconds (slightly tamer CPU)
-			
-				45 GB File - 8 Core VM
-					6 Threads 
-						30 - 46% CPU usage - 450 seconds (much better CPU usage - fair bit longer duration)
-					2 threads 
-						25% CPU Usage - 1146 seconds (again, better CPU, slightly longer duration)
+-- REFACTORING:
+--  need to make sure that @cummulativeErrorMessage isn't 'leaking' info from ONE step/section of processing (e.g., backups, verify, copy, offsitecopy, cleanup, etc) to the next. 
+--		not sure when/where I thought that all of the SET @x = ISNULL(@x, N'') + x-data-here ... was a good idea. it was a hack... and it has made things stupid hard. 
+--  ARGUABLY, with the above, i should be able to UPDATE @executionDetails SET error_message|copy_message|whatever = @currentNasty... instead of carrying stuff along in @cummulative variables... 
 
 
-				AWS CLI commands - sample/example operations: 
-
-					aws s3 cp "G:\SQLBackups\DIFF_WidgetsAB8_backup_2020_03_11_002313_5580517.bak" "s3://ts-database-backup/mike_test2/DIFF_WidgetsAB8_backup_2020_03_11_002313_5580517.bak"
-
-					i.e., the exact syntax above 100% schleps a file up into S3. 
 
 */
 
@@ -381,11 +354,11 @@ AS
 	----------------------------------------------------------------------------------------------------------------------------------------------------------
 	-----------------------------------------------------------------------------
 	-- meta-data:
-	DECLARE @executionID uniqueidentifier = NEWID();
 	DECLARE @operationStart datetime;
-	DECLARE @errorMessage nvarchar(MAX);
-	DECLARE @copyMessage nvarchar(MAX);
-	DECLARE @currentOperationID int;
+	DECLARE @executionID uniqueidentifier = NEWID();
+	
+	DECLARE @currentBackupHistoryId int;
+	DECLARE @executionDetails dbo.backup_history_entry;  /* TVP... */
 
 	DECLARE @currentDatabase sysname;
 	DECLARE @backupPath nvarchar(2000);
@@ -401,15 +374,19 @@ AS
 	DECLARE @offset sysname;
 	DECLARE @backupName sysname;
 	DECLARE @encryptionClause nvarchar(2000);
-	DECLARE @copyStart datetime;
-	DECLARE @outcome varchar(4000);
 
+	DECLARE @outcome xml;
+	DECLARE @errorMessage nvarchar(MAX);
+
+	DECLARE @copyStart datetime;
+	DECLARE @copyDetails xml;
 	DECLARE @offSiteCopyStart datetime;
-	DECLARE @offSiteCopyMessage nvarchar(MAX);
+	DECLARE @offSiteCopyDetails xml;
+
+	DECLARE @cleanupErrorOccurred bit;
 
 	DECLARE @command nvarchar(MAX);
 
-	-- Begin the backups:
 	DECLARE backups CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
 		[database_name] 
@@ -423,20 +400,19 @@ AS
 	FETCH NEXT FROM backups INTO @currentDatabase;
 	WHILE @@FETCH_STATUS = 0 BEGIN
 		
-		SET @errorMessage = NULL;
-		SET @copyMessage = NULL;
+		DELETE @executionDetails;
 		SET @outcome = NULL;
-		SET @currentOperationID = NULL;
+		SET @currentBackupHistoryId = NULL;
+		SET @errorMessage = NULL; 
 
--- TODO: Full details here: https://overachieverllc.atlassian.net/browse/S4-107
--- TODO: this logic is duplicated in dbo.list_databases. And, while we NEED this check here ... the logic should be handled in a UDF or something - so'z there aren't 2x locations for bugs/issues/etc. 
+		-- TODO: Full details here: https://overachieverllc.atlassian.net/browse/S4-107
 		-- start by making sure the current DB (which we grabbed during initialization) is STILL online/accessible (and hasn't failed over/etc.): 
 		DECLARE @synchronized table ([database_name] sysname NOT NULL);
 		INSERT INTO @synchronized ([database_name])
 		SELECT [name] FROM sys.databases WHERE UPPER(state_desc) <> N'ONLINE';  -- mirrored dbs that have failed over and are now 'restoring'... 
 
 		-- account for SQL Server 2008/2008 R2 (i.e., pre-HADR):
-		IF (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) >= 11 BEGIN
+		IF (SELECT dbo.[get_engine_version]()) > 11.0 BEGIN
 			INSERT INTO @synchronized ([database_name])
 			EXEC sp_executesql N'SELECT d.[name] FROM sys.databases d INNER JOIN sys.dm_hadr_availability_replica_states hars ON d.replica_id = hars.replica_id WHERE hars.role_desc != ''PRIMARY'';'	
 		END
@@ -456,37 +432,48 @@ AS
 		SET @copyToBackupPath = REPLACE(@backupPath, @BackupDirectory, @CopyToBackupDirectory); 
 
 		SET @operationStart = GETDATE();
-		IF (@LogSuccessfulOutcomes = 1) AND (@PrintOnly = 0)  BEGIN
-			INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start)
-			VALUES(@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart);
-			
-			SELECT @currentOperationID = SCOPE_IDENTITY();
-		END;
+		
+		INSERT INTO @executionDetails (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, [backup_succeeded])
+		VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, 0);
+
+		EXEC dbo.[log_backup_history_detail] 
+			@LogSuccessfulOutcomes = @LogSuccessfulOutcomes, 
+			@ExecutionDetails = @executionDetails, 
+			@BackupHistoryId = @currentBackupHistoryId OUTPUT;  
 
 		IF @RemoveFilesBeforeBackup = 1 BEGIN
-			GOTO RemoveOlderFiles;  -- zip down into the logic for removing files, then... once that's done... we'll get sent back up here (to DoneRemovingFilesBeforeBackup) to execute the backup... 
+			GOTO RemoveOlderFiles; 
 
 DoneRemovingFilesBeforeBackup:
 		END
 
-        SET @outcome = NULL;
 		BEGIN TRY
             EXEC dbo.establish_directory
                 @TargetDirectory = @backupPath, 
                 @PrintOnly = @PrintOnly,
-                @Error = @outcome OUTPUT;
+                @Error = @errorMessage OUTPUT;
 
-			IF @outcome IS NOT NULL
-				SET @errorMessage = ISNULL(@errorMessage, '') + N' Error verifying directory: [' + @backupPath + N']: ' + @outcome;
+			IF @errorMessage IS NOT NULL
+				SET @errorMessage = N' Error verifying directory: [' + @backupPath + N']: ' + @errorMessage;
 
 		END TRY
 		BEGIN CATCH 
-			SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception attempting to validate file path for backup: [' + @backupPath + N']. Error: [' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N']. Backup Filepath non-valid. Cannot continue with backup.';
+			SET @errorMessage = ISNULL(@errorMessage, '') + N'Exception attempting to validate file path for backup: [' + @backupPath + N']. Error: [' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N']. Backup Filepath non-valid. Cannot continue with backup.';
 		END CATCH;
 
-		-- Normally, it wouldn't make sense to 'bail' on backups simply because we couldn't remove an older file. But, when the directive is to RemoveFilesBEFORE backups, we have to 'bail' to avoid running out of disk space when we can't delete files BEFORE backups. 
-		IF @errorMessage IS NOT NULL
+		-- No directory = FATAL: log and GOTO NextDatabase... 
+		IF @errorMessage IS NOT NULL BEGIN 
+			UPDATE @executionDetails 
+			SET 
+				[error_details] = ISNULL([error_details], N'') + @errorMessage + N' '
+			WHERE 
+				[execution_id] = @executionID;			
+			
 			GOTO NextDatabase;
+		END;
+
+		-----------------------------------------------------------------------------
+		-- Create/Execute Backup Command:
 
 		-- Create a Backup Name: 
 		SET @extension = N'.bak';
@@ -532,6 +519,9 @@ DoneRemovingFilesBeforeBackup:
 		ELSE 
 			SET @command = REPLACE(@command, N'{ENCRYPTION}','');
 
+		-- account for 'partial' backups: 
+		SET @command = REPLACE(@command, N'{FILE|FILEGROUP}', @fileOrFileGroupDirective);
+
 		-- Account for TDE and 2016+ Compression: 
 		IF EXISTS (SELECT NULL FROM sys.[dm_database_encryption_keys] WHERE [database_id] = DB_ID(@currentDatabase) AND [encryption_state] <> 0) BEGIN 
 
@@ -547,40 +537,49 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN 
 			SET @command = REPLACE(@command, N'{MAXTRANSFER}', N'');
 		END;
+		
+		BEGIN TRY 
+			
+			SET @errorMessage = NULL;
 
-		-- account for 'partial' backups: 
-		SET @command = REPLACE(@command, N'{FILE|FILEGROUP}', @fileOrFileGroupDirective);
+			EXEC dbo.[execute_command]
+				@Command = @command,
+				@ExecutionType = N'SQLCMD',
+				@ExecutionAttemptsCount = 1,
+				@IgnoredResults = N'{BACKUP}',
+				@PrintOnly = @PrintOnly,
+				@Outcome = @outcome OUTPUT,
+				@ErrorMessage = @errorMessage OUTPUT;
+			
+			IF @errorMessage IS NOT NULL 
+				SET @errorMessage = N'Error with BACKUP command: ' + @errorMessage;
 
-		IF @PrintOnly = 1
-			PRINT @command;
-		ELSE BEGIN
-			BEGIN TRY
-				SET @outcome = NULL;
-				EXEC dbo.execute_uncatchable_command @command, 'BACKUP', @Result = @outcome OUTPUT;
+		END TRY 
+		BEGIN CATCH 
+			SET @errorMessage = N'Exception executing backup with the following command: [' + @command + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+		END CATCH;
 
-				IF @outcome IS NOT NULL
-					SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-			END TRY
-			BEGIN CATCH
-				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected Exception executing backup with the following command: [' + @command + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-			END CATCH;
-		END;
+		UPDATE @executionDetails 
+		SET 
+			backup_end = GETDATE(),
+			backup_succeeded = CASE WHEN @errorMessage IS NULL THEN 1 ELSE 0 END, 
+			verification_start = CASE WHEN @errorMessage IS NULL THEN GETDATE() ELSE NULL END, 
+			[error_details] = ISNULL([error_details], N'') + @errorMessage + N' '
+		WHERE 
+			[execution_id] = @executionID;
 
+		EXEC dbo.[log_backup_history_detail] 
+			@LogSuccessfulOutcomes = @LogSuccessfulOutcomes, 
+			@ExecutionDetails = @executionDetails, 
+			@BackupHistoryId = @currentBackupHistoryId OUTPUT;  
+
+		-- Backup failed, FATAL - already logged, so Goto NextDatabase.
 		IF @errorMessage IS NOT NULL
 			GOTO NextDatabase;
 
-		IF @LogSuccessfulOutcomes = 1 BEGIN
-			UPDATE dbo.backup_log 
-			SET 
-				backup_end = GETDATE(),
-				backup_succeeded = 1, 
-				verification_start = GETDATE()
-			WHERE 
-				backup_id = @currentOperationID;
-		END;
-
 		-----------------------------------------------------------------------------
 		-- Kick off the verification:
+		SET @errorMessage = NULL;
 		SET @command = N'RESTORE VERIFYONLY FROM DISK = N''' + @backupPath + N'\' + @backupName + N''' WITH NOUNLOAD, NOREWIND;';
 
 		IF @PrintOnly = 1 
@@ -588,118 +587,102 @@ DoneRemovingFilesBeforeBackup:
 		ELSE BEGIN
 			BEGIN TRY
 				EXEC sys.sp_executesql @command;
-
-				IF @LogSuccessfulOutcomes = 1 BEGIN
-					UPDATE dbo.backup_log
-					SET 
-						verification_end = GETDATE(),
-						verification_succeeded = 1
-					WHERE
-						backup_id = @currentOperationID;
-				END;
 			END TRY
 			BEGIN CATCH
-				SET @errorMessage = ISNULL(@errorMessage, '') + N'Unexpected exception during backup verification for backup of database: ' + @currentDatabase + '. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-
-					UPDATE dbo.backup_log
-					SET 
-						verification_end = GETDATE(),
-						verification_succeeded = 0,
-						error_details = @errorMessage
-					WHERE
-						backup_id = @currentOperationID;
-
-				GOTO NextDatabase;
+				SET @errorMessage = N'Exception during backup verification for backup of database: [' + @currentDatabase + ']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 			END CATCH;
 		END;
 
+		UPDATE @executionDetails
+		SET 
+			verification_end = GETDATE(),
+			verification_succeeded = CASE WHEN @errorMessage IS NULL THEN 1 ELSE 0 END,
+			[error_details] = ISNULL([error_details], N'') + @errorMessage + N' '
+		WHERE
+			[execution_id] = @executionID;
+
+		EXEC dbo.[log_backup_history_detail] 
+			@LogSuccessfulOutcomes = @LogSuccessfulOutcomes, 
+			@ExecutionDetails = @executionDetails, 
+			@BackupHistoryId = @currentBackupHistoryId OUTPUT;  
+
+		-- Fatal. Logged... so go next... 
+		IF @errorMessage IS NOT NULL 
+			GOTO NextDatabase;
+
 		-----------------------------------------------------------------------------
 		-- Now that the backup (and, optionally/ideally) verification are done, copy the file to a secondary location if specified:
+		SET @errorMessage = NULL;
+		SET @copyDetails = NULL;
 		IF NULLIF(@CopyToBackupDirectory, N'') IS NOT NULL BEGIN
 			
 			SET @copyStart = GETDATE();
-            SET @copyMessage = NULL;
 
             BEGIN TRY 
                 EXEC dbo.establish_directory
                     @TargetDirectory = @copyToBackupPath, 
                     @PrintOnly = @PrintOnly,
-                    @Error = @outcome OUTPUT;                
+                    @Error = @errorMessage OUTPUT;                
 
-                IF @outcome IS NOT NULL
-				    SET @errorMessage = ISNULL(@errorMessage, '') + N' Error verifying COPY_TO directory: ' + @copyToBackupPath + N': ' + @copyMessage;   
+                IF @errorMessage IS NOT NULL
+				    SET @errorMessage = N'Error verifying COPY_TO directory: [' + @copyToBackupPath + N']: ' + @errorMessage;  
 
             END TRY
             BEGIN CATCH 
-                SET @copyMessage = N'Unexpected exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N'. Detail: [' + ISNULL(@copyMessage, '') + N']';
+                SET @errorMessage = N'Exception attempting to validate COPY_TO file path for backup: [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
             END CATCH
 
-			-- if we didn't run into validation errors, we can go ahead and try the copyTo process: 
-			IF @copyMessage IS NULL BEGIN
+			IF @errorMessage IS NULL BEGIN
+				
+				SET @command = N'XCOPY "' + @backupPath + N'\' + @backupName + N'" "' + @copyToBackupPath + N'\" /q';  -- XCOPY supported on Windows 2003+; robocopy is supported on Windows 2008+
 
-				DECLARE @copyOutput table ([output] nvarchar(2000));
-				DELETE FROM @copyOutput;
+				BEGIN TRY 
+					EXEC dbo.[execute_command]
+						@Command = @command,
+						@ExecutionType = N'SHELL',
+						@ExecutionAttemptsCount = 2,
+						@DelayBetweenAttempts = N'5 seconds',
+						@IgnoredResults = N'{COPYFILE}',
+						@PrintOnly = @PrintOnly,
+						@Outcome = @outcome OUTPUT,
+						@ErrorMessage = @errorMessage OUTPUT; 
 
-				-- XCOPY supported on Windows 2003+; robocopy is supported on Windows 2008+
-				SET @command = 'EXEC xp_cmdshell ''XCOPY "' + @backupPath + N'\' + @backupName + '" "' + @copyToBackupPath + '\"''';
+					IF @errorMessage IS NOT NULL OR dbo.[transient_error_occurred](@outcome) = 1 
+						SET @copyDetails = @outcome;
 
-				IF @PrintOnly = 1
-					PRINT @command;
-				ELSE BEGIN
-					BEGIN TRY
-
-						INSERT INTO @copyOutput ([output])
-						EXEC sys.sp_executesql @command;
-
-						IF NOT EXISTS(SELECT NULL FROM @copyOutput WHERE [output] LIKE '%1 file(s) copied%') BEGIN; -- there was an error, and we didn't copy the file.
-							SET @copyMessage = ISNULL(@copyMessage, '') + (SELECT TOP 1 [output] FROM @copyOutput WHERE [output] IS NOT NULL AND [output] NOT LIKE '%0 file(s) copied%') + N' ';
-						END;
-
-						IF @LogSuccessfulOutcomes = 1 BEGIN 
-							UPDATE dbo.backup_log
-							SET 
-								copy_succeeded = 1,
-								copy_seconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
-								failed_copy_attempts = 0
-							WHERE
-								backup_id = @currentOperationID;
-						END;
-					END TRY
-					BEGIN CATCH
-
-						SET @copyMessage = ISNULL(@copyMessage, '') + N'Unexpected error copying backup to [' + @copyToBackupPath + @serverName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-					END CATCH;
-				END;
+				END TRY 
+				BEGIN CATCH 
+					SET @errorMessage = N'Exception copying backup to [' + @copyToBackupPath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				END CATCH;
 		    END;
 
-			IF @copyMessage IS NOT NULL BEGIN
+			UPDATE @executionDetails
+			SET 
+				copy_succeeded = CASE WHEN @errorMessage IS NULL THEN 1 ELSE 0 END, 
+				copy_seconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
+				failed_copy_attempts = (SELECT @outcome.value(N'count(/iterations/iteration)', N'int')) - 1, 
+				copy_details = CAST(@copyDetails AS nvarchar(MAX)), 
+				[error_details] = ISNULL([error_details], N'') + @errorMessage + N' '
+			WHERE 
+				[execution_id] = @executionID;
 
-				IF @currentOperationID IS NULL BEGIN
-					-- if we weren't logging successful operations, this operation isn't now a 100% failure, but there are problems, so we need to create a row for reporting/tracking purposes:
-					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded)
-					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(),0);
+			EXEC dbo.[log_backup_history_detail] 
+				@LogSuccessfulOutcomes = @LogSuccessfulOutcomes, 
+				@ExecutionDetails = @executionDetails, 
+				@BackupHistoryId = @currentBackupHistoryId OUTPUT;  
+			
+			-- NON-FATAL... (if there were errors)
 
-					SELECT @currentOperationID = SCOPE_IDENTITY();
-				END
-
-				UPDATE dbo.backup_log
-				SET 
-					copy_succeeded = 0, 
-					copy_seconds = DATEDIFF(SECOND, @copyStart, GETDATE()), 
-					failed_copy_attempts = 1, 
-					copy_details = @copyMessage, 
-					[error_details] = CASE WHEN [error_details] IS NULL THEN N'File Copy Failure.' ELSE 'File Copy Failure. ' + [error_details] END
-				WHERE 
-					backup_id = @currentOperationID;
-			END;
 		END;
 
 		-----------------------------------------------------------------------------
 		-- Process @OffSite backups as necessary: 
+		SET @errorMessage = NULL;
+		SET @offSiteCopyDetails = NULL;
+		SET @outcome = NULL;
 		IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
 			
 			SET @offSiteCopyStart = GETDATE();
-			SET @offSiteCopyMessage = NULL; 
 
 			DECLARE @offsiteCopy table ([row_id] int IDENTITY(1, 1) NOT NULL, [output] nvarchar(2000));
 			DELETE FROM @offsiteCopy;
@@ -707,174 +690,133 @@ DoneRemovingFilesBeforeBackup:
 			SET @s3FullFileKey = @s3KeyPath + '\' + @currentDatabase + N'\' + @backupName;
 			SET @s3fullOffSitePath = N'S3::' + @s3BucketName + N':' + @s3FullFileKey;
 
-			SET @command = 'EXEC xp_cmdshell ''PowerShell.exe -Command "Write-S3Object -BucketName ''''' + @s3BucketName + ''''' -Key ''''' + @s3FullFileKey + ''''' -File ''''' + @backupPath + '\' + @backupName + ''''' -ConcurrentServiceRequest 2 " ''; ';
+			SET @command = N'Write-S3Object -BucketName ''' + @s3BucketName + N''' -Key ''' + @s3FullFileKey + N''' -File ''' + @backupPath + N'\' + @backupName + N''' -ConcurrentServiceRequest 2';
 
-			IF @PrintOnly = 1 
-				PRINT @command;
-			ELSE BEGIN 
-				BEGIN TRY
-					INSERT INTO @offsiteCopy ([output])
-					EXEC sys.sp_executesql @command;
+			BEGIN TRY 
+				EXEC dbo.[execute_command]
+					@Command = @command,
+					@ExecutionType = N'POSH',
+					@ExecutionAttemptsCount = 3,
+					@DelayBetweenAttempts = N'3 seconds',
+					@IgnoredResults = N'{S3COPYFILE}',
+					@PrintOnly = @PrintOnly,
+					@Outcome = @outcome OUTPUT,
+					@ErrorMessage = @errorMessage OUTPUT
 
-					DELETE FROM @offsiteCopy WHERE [output] IS NULL;
+			END TRY 
+			BEGIN CATCH
+				SET @errorMessage = N'Exception copying backup to OffSite Location [' + @s3fullOffSitePath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+			END CATCH;
 
-					IF EXISTS (SELECT NULL FROM @offsiteCopy) BEGIN -- error, which we need to capture/document:
-						SET @offSiteCopyMessage = N'ERROR: ';
-						SELECT 
-							@offSiteCopyMessage = @offSiteCopyMessage + [output] + @crlf
-						FROM 
-							@offsiteCopy 
-						ORDER BY 
-							[row_id];
-					END;
-
-					IF @LogSuccessfulOutcomes = 1 BEGIN 
-						UPDATE dbo.backup_log
-						SET 
-							offsite_path = @s3fullOffSitePath,
-							offsite_succeeded = 1,
-							offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
-							failed_offsite_attempts = 0
-						WHERE
-							backup_id = @currentOperationID;
-					END;
-				END TRY
-				BEGIN CATCH
-
-					SET @offSiteCopyMessage = ISNULL(@offSiteCopyMessage, N'') + N'Unexpected error copying backup to OffSite Location [' + @s3fullOffSitePath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
-				END CATCH;
+			IF @errorMessage IS NOT NULL OR dbo.[transient_error_occurred](@outcome) = 1 BEGIN
+				SET @offSiteCopyDetails = @outcome;
 			END;
-			
-			IF @offSiteCopyMessage IS NOT NULL BEGIN
-				IF @currentOperationID IS NULL BEGIN
-					-- if we weren't already logging successful outcomes, need to create a new entry for this failure/problem:
-					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, offsite_path, backup_start, backup_end, backup_succeeded)
-					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @s3fullOffSitePath, @operationStart, GETDATE(),0);
-					
-					SELECT @currentOperationID = SCOPE_IDENTITY();
-				END
 
-				UPDATE dbo.backup_log
-				SET 
-					offsite_succeeded = 0, 
-					offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
-					failed_offsite_attempts = 1, 
-					offsite_details = @offSiteCopyMessage, 
-					[error_details] = CASE WHEN [error_details] IS NULL THEN N'OffSite File Copy Failure.' ELSE 'OffSite File Copy Failure. ' + [error_details] END
-				WHERE 
-					backup_id = @currentOperationID;				
-			END;
+			UPDATE @executionDetails
+			SET 
+				offsite_path = @s3fullOffSitePath,
+				offsite_succeeded = CASE WHEN @errorMessage IS NULL THEN 1 ELSE 0 END,
+				offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
+				failed_offsite_attempts = ((SELECT @outcome.value(N'count(/iterations/iteration)', N'int')) - (CASE WHEN @errorMessage IS NULL THEN 0 ELSE 1 END)), 
+				offsite_details = CAST(@offSiteCopyDetails AS nvarchar(MAX)), 
+				[error_details] = ISNULL([error_details], N'') + @errorMessage + N' '
+			WHERE
+				[execution_id] = @executionID;
+
+			EXEC dbo.[log_backup_history_detail] 
+				@LogSuccessfulOutcomes = @LogSuccessfulOutcomes, 
+				@ExecutionDetails = @executionDetails, 
+				@BackupHistoryId = @currentBackupHistoryId OUTPUT;  
+
+			-- NON-FATAL... (if there were errors)
+
 		END;
 
 		-----------------------------------------------------------------------------
 		-- Remove backups:
-		-- Branch into this logic either by means of a GOTO (called from above) or by means of evaluating @RemoveFilesBeforeBackup.... 
 		IF @RemoveFilesBeforeBackup = 0 BEGIN;
-			
 RemoveOlderFiles:
+			SET @cleanupErrorOccurred = 0;
+			SET @errorMessage = NULL;
 			BEGIN TRY
-
-				IF @PrintOnly = 1 BEGIN;
-					PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @BackupDirectory + ''', @Retention = ''' + @BackupRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
-					
-                    EXEC dbo.remove_backup_files
-                        @BackupType = @BackupType,
-                        @DatabasesToProcess = @currentDatabase,
-                        @TargetDirectory = @BackupDirectory,
-                        @Retention = @BackupRetention, 
-						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
-						@OperatorName = @OperatorName,
-						@MailProfileName  = @DatabaseMailProfile,
-						@Output = NULL, 
-
-						-- note:
-                        @PrintOnly = 1;
-
-				  END;
-				ELSE BEGIN;
-					SET @outcome = NULL;
-					EXEC dbo.remove_backup_files
-						@BackupType= @BackupType,
-						@DatabasesToProcess = @currentDatabase,
-						@TargetDirectory = @BackupDirectory,
-						@Retention = @BackupRetention,
-						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
-						@OperatorName = @OperatorName,
-						@MailProfileName  = @DatabaseMailProfile, 
-						@Output = @outcome OUTPUT;
-
-					IF @outcome IS NOT NULL 
-						SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + ' ';
-
-				END
-
-				IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
 				
-					IF @PrintOnly = 1 BEGIN;
-						PRINT '-- EXEC dbo.remove_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @TargetDirectory = ''' + @CopyToBackupDirectory + ''', @Retention = ''' + @CopyToRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
-						
-						EXEC dbo.remove_backup_files
-							@BackupType= @BackupType,
-							@DatabasesToProcess = @currentDatabase,
-							@TargetDirectory = @CopyToBackupDirectory,
-							@Retention = @CopyToRetention, 
-							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
-							@OperatorName = @OperatorName,
-							@MailProfileName  = @DatabaseMailProfile,
-							@Output = NULL,
-
-							--note:
-							@PrintOnly = 1;
-
-					  END;
-					ELSE BEGIN;
-						SET @outcome = NULL;
-					
-						EXEC dbo.remove_backup_files
-							@BackupType= @BackupType,
-							@DatabasesToProcess = @currentDatabase,
-							@TargetDirectory = @CopyToBackupDirectory,
-							@Retention = @CopyToRetention, 
-							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
-							@OperatorName = @OperatorName,
-							@MailProfileName  = @DatabaseMailProfile,
-							@Output = @outcome OUTPUT;					
-					
-						IF @outcome IS NOT NULL
-							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-					END
-				END
-
-				IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
-
-					IF @PrintOnly = 1 BEGIN 
-						PRINT '-- EXEC dbo.remove_offsite_backup_files @BackupType = ''' + @BackupType + ''', @DatabasesToProcess = ''' + @currentDatabase + ''', @OffSiteBackupPath = ''' + @OffSiteBackupPath + ''', @OffSiteRetention = ''' + @OffSiteRetention + ''', @ServerNameInSystemBackupPath = ' + CAST(@AddServerNameToSystemBackupPath AS sysname) + N',  @PrintOnly = 1;';
-					  END; 
-					ELSE BEGIN 
-						SET @outcome = NULL;
-
-						EXEC dbo.[remove_offsite_backup_files]
-							@BackupType = @BackupType,
-							@DatabasesToProcess = @currentDatabase,
-							@OffSiteBackupPath = @OffSiteBackupPath,
-							@OffSiteRetention = @OffSiteRetention,
-							@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
-							@OperatorName = @OperatorName,
-							@MailProfileName = @DatabaseMailProfile,
-							@Output = @outcome OUTPUT;
-						
-						IF @outcome IS NOT NULL
-							SET @errorMessage = ISNULL(@errorMessage, '') + @outcome + N' ';
-					END;
-				END;
+				EXEC dbo.remove_backup_files
+                    @BackupType = @BackupType,
+                    @DatabasesToProcess = @currentDatabase,
+                    @TargetDirectory = @BackupDirectory,
+                    @Retention = @BackupRetention, 
+					@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
+					@OperatorName = @OperatorName,
+					@MailProfileName  = @DatabaseMailProfile,
+					@Output = @errorMessage OUTPUT, 
+					@PrintOnly = @PrintOnly;
 
 			END TRY 
 			BEGIN CATCH 
-				SET @errorMessage = ISNULL(@errorMessage, '') + 'Unexpected Error removing backups. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+				SET @errorMessage = ISNULL(@errorMessage, '') + 'Exception removing backups. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
 			END CATCH
 
+			IF @errorMessage IS NOT NULL BEGIN
+				UPDATE @executionDetails SET [error_details] = ISNULL([error_details], N'') + @errorMessage + N' ' WHERE [execution_id] = @executionID;
+				SET @cleanupErrorOccurred = 1;
+			END;
+			
+			IF NULLIF(@CopyToBackupDirectory,'') IS NOT NULL BEGIN;
+				SET @errorMessage = NULL;
+
+				BEGIN TRY 
+					EXEC dbo.remove_backup_files
+						@BackupType= @BackupType,
+						@DatabasesToProcess = @currentDatabase,
+						@TargetDirectory = @CopyToBackupDirectory,
+						@Retention = @CopyToRetention, 
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
+						@OperatorName = @OperatorName,
+						@MailProfileName  = @DatabaseMailProfile,
+						@Output = @errorMessage OUTPUT, 
+						@PrintOnly = @PrintOnly;
+
+				END TRY 
+				BEGIN CATCH 
+					SET @errorMessage = ISNULL(@errorMessage, '') + 'Exception removing COPY_TO backups. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+				END CATCH;
+				
+				IF @errorMessage IS NOT NULL BEGIN
+					UPDATE @executionDetails SET [error_details] = ISNULL([error_details], N'') + @errorMessage + N' ' WHERE [execution_id] = @executionID;
+					SET @cleanupErrorOccurred = 1;
+				END;
+					
+			END;
+
+			IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
+				SET @errorMessage = NULL;
+		
+				BEGIN TRY 
+					EXEC dbo.[remove_offsite_backup_files]
+						@BackupType = @BackupType,
+						@DatabasesToProcess = @currentDatabase,
+						@OffSiteBackupPath = @OffSiteBackupPath,
+						@OffSiteRetention = @OffSiteRetention,
+						@ServerNameInSystemBackupPath = @AddServerNameToSystemBackupPath,
+						@OperatorName = @OperatorName,
+						@MailProfileName = @DatabaseMailProfile,
+						@Output = @errorMessage OUTPUT, 
+						@PrintOnly = @PrintOnly;
+
+				END TRY 
+				BEGIN CATCH 
+					SET @errorMessage = ISNULL(@errorMessage, '') + 'Exception removing OFFSITE backups. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+				END CATCH;
+
+				IF @errorMessage IS NOT NULL BEGIN
+					UPDATE @executionDetails SET [error_details] = ISNULL([error_details], N'') + @errorMessage + N' ' WHERE [execution_id] = @executionID;
+					SET @cleanupErrorOccurred = 1;
+				END;
+
+			END;
+
 			IF @RemoveFilesBeforeBackup = 1 BEGIN;
-				IF @errorMessage IS NULL -- there weren't any problems/issues - so keep processing.
+				IF @cleanupErrorOccurred = 0 -- there weren't any problems/issues - so keep processing.
 					GOTO DoneRemovingFilesBeforeBackup;
 
 				-- otherwise, the remove operations failed, they were set to run FIRST, which means we now might not have enough disk - so we need to 'fail' this operation and move on to the next db... 
@@ -883,31 +825,18 @@ RemoveOlderFiles:
 		END
 
 NextDatabase:
+		EXEC dbo.[log_backup_history_detail] 
+			@LogSuccessfulOutcomes = @LogSuccessfulOutcomes, 
+			@ExecutionDetails = @executionDetails, 
+			@BackupHistoryId = @currentBackupHistoryId OUTPUT;  
+
+		PRINT '
+';
+
 		IF (SELECT CURSOR_STATUS('local','nuker')) > -1 BEGIN;
 			CLOSE nuker;
 			DEALLOCATE nuker;
 		END;
-
-		IF NULLIF(@errorMessage,'') IS NOT NULL BEGIN;
-			IF @PrintOnly = 1 
-				PRINT @errorMessage;
-			ELSE BEGIN;
-				IF @currentOperationID IS NULL BEGIN;
-					INSERT INTO dbo.backup_log (execution_id, backup_date, [database], backup_type, backup_path, copy_path, backup_start, backup_end, backup_succeeded, error_details)
-					VALUES (@executionID, GETDATE(), @currentDatabase, @BackupType, @backupPath, @copyToBackupPath, @operationStart, GETDATE(), 0, @errorMessage);
-				  END;
-				ELSE BEGIN;
-					UPDATE dbo.backup_log
-					SET 
-						error_details = @errorMessage
-					WHERE 
-						backup_id = @currentOperationID;
-				END;
-			END;
-		END; 
-
-		PRINT '
-';
 
 		FETCH NEXT FROM backups INTO @currentDatabase;
 	END;
