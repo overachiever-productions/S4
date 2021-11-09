@@ -1,5 +1,22 @@
 /*
 
+PICKUP/NEXT: 
+	Need to standardize and simplify the @Command handling. 
+	Specifically: 
+		- all callers will define 'native' commands for whatever 'shell' they're trying to use... 
+			e.g., PARTNERs will simply run SQL statements. 
+			e.g., SHELL will be a set of simple CMD-line statemetns, e.g., 'Ping 10.10.0.1' 
+			e.g., POSH will be the PoshCommands - such as: 'Write-S3Object -BucketName ''string here'' -Stuff ''another string'' -Switch -CommandSOmething 2';
+
+		- this sproc will 
+			a. verify they don't have padding/overhead/gunk (i.e., that a call to SHELL doesn't have/contain xp_executesql and/or that a PARTNER or SQLCMD doesn't have sqlcmd and so on... 
+			b. 'wrap' the contents of each command into the syntax/commands needed. 
+
+			(This means that code that calls into these piglets does NOT have to worry about escaping strings and crap... just define the commands 'natively' and this 'shell-wrapper' will do what we need. 
+		- document the exact types of inputs by 'shell'/@ExecutionType i.e., make it so that this is easy to 'read the docs' on/against in the future. 
+
+
+
 	INTERPRETING OUTPUT:
 		- command outcome/success will be indicated by the RETURN value of dbo.execute_command. 
 			If the value is 0, then the @Command sent in either INITIALLY executed as desired or EVENTUALLY executed - based on 'retry' rules. 
@@ -235,10 +252,22 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'');
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{COPYFILE}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('COPYFILE', '%1 file(s) copied%');
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{COPYFILE}', N'');
+	END;
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{S3COPYFILE}', N'')))) BEGIN
+		-- PlaceHolder: there isn't, currently, any 'noise' output from Write-S3Object...
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{S3COPYFILE}', N'');
+	END;
+
 	-- TODO: {SHRINKLOG}
 	-- TODO: {DBCC} (success)
-	-- TODO: {COPYFILE}
-	-- TODO: {S3COPYFILE}
 
 	INSERT INTO @filters ([filter_type], [filter_text])
 	SELECT 'CUSTOM_IGNORED', [result] FROM dbo.[split_string](@IgnoredResults, N',', 1) WHERE LEN([result]) > 0;
@@ -286,8 +315,8 @@ AS
     END;
     
     IF UPPER(@ExecutionType) IN (N'SQLCMD', N'PARTNER') BEGIN
-        SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(REPLACE(CAST(@Command AS varchar(2000)), '''', ''''''), @crlf, ' ') + '"';
-    
+		SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+
         IF UPPER(@ExecutionType) = N'SQLCMD' BEGIN 
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
 			    SET @serverName = N' -S .\' + @@SERVICENAME;
@@ -301,8 +330,7 @@ AS
     END;
 
 	IF UPPER(@ExecutionType) IN (N'POSH') BEGIN 
-		RAISERROR(N'Powershell is not yet supported.', 16, 1);
-		RETURN -100;
+		SET @xpCmd = 'Powershell.exe -Command "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
 	END;
 	
 	DECLARE @executionCount int = 0;
