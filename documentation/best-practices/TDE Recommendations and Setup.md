@@ -29,6 +29,11 @@
                 - 74GB DB on SQL Server 2019. 
                     - Without TDE, backup is 27.6GB in size. 
                     - WITH TDE, backup is ... 76GB in size. WTF? (though, this DB had 4-5 files/filegroups, AND FTIs)
+    TODO: add this as fodder about recommendations for needing newer CPUs: 
+        https://techcommunity.microsoft.com/t5/running-sap-applications-on-the/transparent-data-encryption-tde-acceleration-for-sql-2016-in/ba-p/368053
+        
+        More good fodder: 
+            https://docs.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver15
 </div>
 
 

@@ -1,5 +1,31 @@
 /*
 
+NOTE/REMINDER: 
+	dbo.backup_databases 
+	NOW supports a 'marker' directive - i.e., : 
+
+	EXEC admindb.dbo.[backup_databases]
+			@BackupType = N'FULL',
+			@DatabasesToBackup = N'TeamSupportFIS',
+			@DatabasesToExclude = N'%s4test',
+			@BackupDirectory = N'{DEFAULT}',
+			@CopyToBackupDirectory = N'\\{PARTNER}\SQLBackups',
+			@OffSiteBackupPath = N'S3::ts-database-backup:prod\FIS\',
+			@BackupRetention = N'3 days',
+			@CopyToRetention = N'3 days',
+			@OffSiteRetention = N'infinite',
+			@LogSuccessfulOutcomes = 1,
+			@AllowNonAccessibleSecondaries = 1,
+-- this guy:
+	@Directives = N'Marker:CheckPoint_0',
+			@OperatorName = N'Alerts',
+			@MailProfileName = N'General',
+			@PrintOnly = 1;
+
+
+
+
+
 	vNEXT:
 		- This is all pretty happy-path - and assumes no problems/issues. So, basically, add some 'error' handling and/or various condition-checks and options for ... recovery. 
 					(NOTE: normally... RAISERROR(xxx, 27,1) WITH LOG or whatever would be a great way to terminate execution of a script like this. 

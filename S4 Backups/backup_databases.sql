@@ -97,7 +97,7 @@ CREATE PROC dbo.backup_databases
 	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
 	@AddServerNameToSystemBackupPath	bit										= 0,							-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
 	@AllowNonAccessibleSecondaries		bit										= 0,							-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
-	@Directives							nvarchar(400)							= NULL,							-- { COPY_ONLY | FILE:logical_file_name | FILEGROUP:file_group_name }  - NOTE: NOT mutually exclusive. Also, MULTIPLE FILE | FILEGROUP directives can be specified - just separate with commas. e.g., FILE:secondary, FILE:tertiarty. 
+	@Directives							nvarchar(400)							= NULL,							-- { COPY_ONLY | FILE:logical_file_name | FILEGROUP:file_group_name | MARKER:file-name-tail-marker }  - NOTE: NOT mutually exclusive. Also, MULTIPLE FILE | FILEGROUP directives can be specified - just separate with commas. e.g., FILE:secondary, FILE:tertiarty. 
 	@LogSuccessfulOutcomes				bit										= 0,							-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
 	@OperatorName						sysname									= N'Alerts',
 	@MailProfileName					sysname									= N'General',
@@ -233,6 +233,7 @@ AS
 
 	DECLARE @isCopyOnlyBackup bit = 0;
 	DECLARE @fileOrFileGroupDirective nvarchar(2000) = '';
+	DECLARE @markerOverride sysname;
 
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
 		SET @Directives = LTRIM(RTRIM(@Directives));
@@ -251,8 +252,8 @@ AS
 			@rowDelimiter = N',', 
 			@columnDelimiter = N':';
 
-		IF NOT EXISTS (SELECT NULL FROM @allDirectives WHERE (UPPER([directive_type]) = N'COPY_ONLY') OR (UPPER([directive_type]) = N'FILE') OR (UPPER([directive_type]) = N'FILEGROUP')) BEGIN
-			RAISERROR(N'Invalid @Directives value specified. Permitted values are { COPY_ONLY | FILE:logical_name | FILEGROUP:group_name } only.', 16, 1);
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) NOT IN (N'COPY_ONLY', N'FILE', N'FILEGROUP', N'MARKER')) BEGIN
+			RAISERROR(N'Invalid @Directives value specified. Permitted values are { COPY_ONLY | FILE:logical_name | FILEGROUP:group_name | MARKER:filename_tail_marker } only.', 16, 1);
 			RETURN -20;
 		END;
 
@@ -278,6 +279,15 @@ AS
 				row_id;
 
 			SET @fileOrFileGroupDirective = NCHAR(13) + NCHAR(10) + NCHAR(9) + LEFT(@fileOrFileGroupDirective, LEN(@fileOrFileGroupDirective) -1) + NCHAR(13) + NCHAR(10)+ NCHAR(9) + NCHAR(9);
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) = N'MARKER') BEGIN
+			IF (SELECT COUNT(*) FROM @allDirectives WHERE UPPER([directive_type]) = N'MARKER') > 1 BEGIN 
+				RAISERROR(N'Only a single MARKER directive may be provided per backup execution.', 16, 1);
+				RETURN -200;
+			END;
+			
+			SELECT @markerOverride = logical_name FROM @allDirectives WHERE UPPER([directive_type]) = N'MARKER';
 		END;
 	END;
 
@@ -483,6 +493,8 @@ DoneRemovingFilesBeforeBackup:
 		SET @now = GETDATE();
 		SET @timestamp = REPLACE(REPLACE(REPLACE(CONVERT(sysname, @now, 120), '-','_'), ':',''), ' ', '_');
 		SET @offset = RIGHT(CAST(CAST(RAND() AS decimal(12,11)) AS varchar(20)),7);
+		IF NULLIF(@markerOverride, N'') IS NOT NULL
+			SET @offset = @markerOverride;
 
 		SET @backupName = @BackupType + N'_' + @currentDatabase + (CASE WHEN @fileOrFileGroupDirective = '' THEN N'' ELSE N'_PARTIAL' END) + '_backup_' + @timestamp + '_' + @offset + @extension;
 
