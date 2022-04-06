@@ -116,6 +116,21 @@ AS
 		END;
 	END;
 
+	CREATE TABLE #ExtractionMapping ( 
+		row_id int NOT NULL, 
+		[database_id] int NOT NULL,         -- source_id (i.e., from production)
+        [metadata_name] sysname NOT NULL,   -- db for which OBJECT_ID(), PAGE/HOBT/KEY/etc. lookups should be executed against - LOCALLY
+        [mapped_name] sysname NULL          -- friendly-name (i.e., if prod_db_name = widgets, and local meta-data-db = widgets_copyFromProd, friendly_name makes more sense as 'widgets' but will DEFAULT to widgets_copyFromProd (if friendly is NOT specified)
+	); 
+
+	IF NULLIF(@OptionalDbTranslationMappings, N'') IS NOT NULL BEGIN
+		INSERT INTO #ExtractionMapping ([row_id], [database_id], [metadata_name], [mapped_name])
+		EXEC dbo.[shred_string] 
+		    @Input = @OptionalDbTranslationMappings, 
+		    @RowDelimiter = N',',
+		    @ColumnDelimiter = N'|'
+	END;
+
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- XEL Extraction: 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -128,16 +143,34 @@ AS
 		timestamp_utc datetime NOT NULL 
 	);
 	
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
+	DECLARE @sql nvarchar(MAX) = N'WITH core AS ( 
+		SELECT 
+			[object_name],
+			CAST([event_data] as xml) [event_data]
+		FROM 
+			sys.[fn_xe_file_target_read_file](@extractionPath, NULL, NULL, NULL)
+		WHERE 
+			object_name = N''blocked_process_report''
+	), 
+	stamped AS ( 
+		SELECT 
+			[object_name], 
+			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [datetime_utc],
+			[event_data]
+		FROM 
+			core 
+	)
+	
+	SELECT 
 		[object_name],
 		CAST([event_data] as xml) [event_data],
-		CAST([timestamp_utc] as datetime) [datetime_utc]
+		[datetime_utc]
 	FROM 
-		sys.[fn_xe_file_target_read_file](@extractionPath, NULL, NULL, NULL)
+		stamped
 	WHERE 
 		object_name = N''blocked_process_report''
 		{DateLimits};';
-
+	
 	DECLARE @dateLimits nvarchar(MAX) = N'';
 	IF @OptionalUTCStartTime IS NOT NULL BEGIN 
 		SET @dateLimits = N'AND CAST([timestamp_utc] as datetime) >= ''' + CONVERT(sysname, @OptionalUTCStartTime, 121) + N'''';
@@ -267,7 +300,6 @@ AS
 	ORDER BY 
 		[meta].[timestamp], [report].[report_id];
 
-
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Statement Normalization: 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -380,7 +412,6 @@ AS
 		blocking_request = COALESCE([normalized_blocking_request], blocking_request, N''), 
 		blocked_request = COALESCE([normalized_blocked_request], [blocked_request], N'');
 
-
 	-- Statement Extraction (from Sprocs): 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	SELECT 
@@ -423,6 +454,8 @@ AS
 	DECLARE @start int;
 	DECLARE @end int;
 
+	DECLARE @logicalDbName sysname;
+
 	DECLARE extracting CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT row_id, [database_name], request, blocking_start_offset, blocking_end_offset FROM [#statement_blocking];
 
@@ -431,11 +464,13 @@ AS
 
 	WHILE @@FETCH_STATUS = 0 BEGIN
 		
+		SELECT @logicalDbName = ISNULL((SELECT mapped_name FROM [#ExtractionMapping] WHERE [metadata_name] = @sourceDatabase), @sourceDatabase);
+
 		SET @objectId = CAST(REPLACE(RIGHT(@sproc, CHARINDEX(' = ', REVERSE(@sproc))), ']', '') AS int);
 		SET @statement = NULL; 
 
 		EXEC dbo.[extract_statement]
-			@TargetDatabase = @sourceDatabase,
+			@TargetDatabase = @logicalDbName,
 			@ObjectID = @objectId, 
 			@OffsetStart = @start, 
 			@OffsetEnd = @end, -- int
@@ -461,12 +496,14 @@ AS
 	FETCH NEXT FROM [extracted] INTO @rowID, @sourceDatabase, @sproc, @start, @end;
 
 	WHILE @@FETCH_STATUS = 0 BEGIN
+
+		SELECT @logicalDbName = ISNULL((SELECT mapped_name FROM [#ExtractionMapping] WHERE [metadata_name] = @sourceDatabase), @sourceDatabase);
 		
 		SET @objectId = CAST(REPLACE(RIGHT(@sproc, CHARINDEX(' = ', REVERSE(@sproc))), ']', '') AS int);
 		SET @statement = NULL; 
 
 		EXEC dbo.[extract_statement]
-			@TargetDatabase = @sourceDatabase, -- sysname
+			@TargetDatabase = @logicalDbName, -- sysname
 			@ObjectID = @objectId, -- int
 			@OffsetStart = @start, -- int
 			@OffsetEnd = @end, -- int
