@@ -1,8 +1,15 @@
 /*
 
 	vNEXT: 
+		- Provide an option to exclude operations like: 
+			- UPDATE STATS or IX REBUILD/ETC. or BACKUP (hmm, does that execute within a given db?) ... and so on. 
+		
 		- Add CPU_DEVIATION and DURATION_DEVIATION ... or something similar - i.e., plans/queries where the avg is nothing close to the MAX_xxx value from sys.query_store_runtime_stats
 		- Could also add MOST_FAILED or CPU_FAILED or whatever... i.e., failed/aborted queries ordered by ... something.
+
+		- ADD WAITS i.e., order by highest # of waits, descending - which i can get from sys.query_store_wait_stats ... see:
+			https://docs.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store?view=sql-server-ver15
+			example of "Highest Wait Durations"
 
 	TODO: 
 		- there's a fun BUG with XML ... 
@@ -17,9 +24,6 @@
 				XML datatype instance has too many levels of nested nodes. Maximum allowed depth is 128 levels.
 			Which is happening when trying to cast the nvarchar(MAX) plan to ... xml... 
 					so... i might need to ... try and just grab the plan_handle instead? 
-
-	TODO: 
-		'COMPILECOUNTS' is STOOOPID slow... 
 
 	FODDER: 
 			https://docs.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store?view=sql-server-ver15
@@ -40,7 +44,7 @@ GO
 
 CREATE PROC dbo.[view_querystore_consumers]
 	@TargetDatabase								sysname			= NULL, 
-	@MostExpensiveBy							sysname			= N'DURATION',		-- { CPU | DURATION | EXECUTIONCOUNTS | READS | WRITES | ROWCOUNTS | TEMPDB | GRANTS | TLOG | PLANCOUNTS | COMPILECOUNTS }
+	@MostExpensiveBy							sysname			= N'DURATION',		-- { CPU | DURATION | EXECUTIONCOUNTS | READS | WRITES | ROWCOUNTS | TEMPDB | GRANTS | TLOG | PLANCOUNTS | COMPILECOUNTS | DOP }
 	@TopResults									int				= 30,
 	@OptionalStartTime							datetime		= NULL, 
 	@OptionalEndTime							datetime		= NULL 
@@ -52,25 +56,32 @@ AS
 	-- {copyright}
 	SET @MostExpensiveBy = ISNULL(NULLIF(@MostExpensiveBy, N''), N'DURATION');
 
-	IF UPPER(@MostExpensiveBy) NOT IN (N'CPU', N'DURATION', N'EXECUTIONCOUNTS', N'READS', N'WRITES', N'ROWCOUNTS', N'TEMPDB', N'GRANTS', N'TLOG', N'PLANCOUNTS', N'COMPILECOUNTS') BEGIN
-		RAISERROR('Allowed values for @MostExpensiveBy are { CPU | DURATION | EXECUTIONCOUNTS | READS | WRITES | ROWCOUNTS | TEMPDB | GRANTS | TLOG | PLANCOUNTS | COMPILECOUNTS}.', 16, 1);
+	IF UPPER(@MostExpensiveBy) NOT IN (N'CPU', N'DURATION', N'EXECUTIONCOUNTS', N'READS', N'WRITES', N'ROWCOUNTS', N'TEMPDB', N'GRANTS', N'TLOG', N'PLANCOUNTS', N'COMPILECOUNTS', N'DOP') BEGIN
+		RAISERROR('Allowed values for @MostExpensiveBy are { CPU | DURATION | EXECUTIONCOUNTS | READS | WRITES | ROWCOUNTS | TEMPDB | GRANTS | TLOG | PLANCOUNTS | COMPILECOUNTS | DOP }.', 16, 1);
 		RETURN -10;
+	END;
+
+	-- meh: 
+	IF UPPER(@MostExpensiveBy) = N'COMPILECOUNTS' BEGIN 
+		RAISERROR('Sorry, COMPILECOUNTS is not YET implemented.', 16, 1);
+		RETURN -11;
 	END;
 
 	DECLARE @orderBy sysname;
 	SET @orderBy = (SELECT 
 		CASE @MostExpensiveBy 
-			WHEN N'CPU' THEN N'x.[total_cpu_time_ms]'
-			WHEN N'DURATION' THEN N'x.[total_duration_ms]'
-			WHEN N'EXECUTIONCOUNTS' THEN N'x.[total_executions]'
-			WHEN N'READS' THEN N'x.[total_io_reads]'
-			WHEN N'WRITES' THEN N'x.[total_io_writes]'
-			WHEN N'ROWCOUNTS' THEN N'x.[total_row_counts]'
-			WHEN N'TEMPDB' THEN N'x.[total_tempdb_space_used]'
-			WHEN N'GRANTS' THEN N'x.[total_used_memory]'
-			WHEN N'TLOG' THEN N'x.[total_log_bytes_used]'
-			WHEN N'PLANCOUNTS' THEN N'[plan_count]'
-			WHEN N'COMPILECOUNTS' THEN N'[q].[count_compiles]'
+			WHEN N'CPU' THEN N'[total_cpu_time]'
+			WHEN N'DURATION' THEN N'[total_duration]'
+			WHEN N'EXECUTIONCOUNTS' THEN N'[executions_count]'
+			WHEN N'READS' THEN N'[total_logical_reads]'
+			WHEN N'WRITES' THEN N'[total_logical_writes]'
+			WHEN N'ROWCOUNTS' THEN N'[total_row_count]'
+			WHEN N'TEMPDB' THEN N'[total_tempdb_space_used]'
+			WHEN N'GRANTS' THEN N'[total_used_memory]'
+			WHEN N'TLOG' THEN N'[total_log_bytes_used]'
+			WHEN N'PLANCOUNTS' THEN N'[plans_count]'
+			WHEN N'COMPILECOUNTS' THEN N'[compiles_count]'
+			WHEN N'DOP' THEN N'[max_dop]'
 			ELSE NULL
 		END);
 	
@@ -80,340 +91,256 @@ AS
 	END;
 
 	DECLARE @sql nvarchar(MAX); 
-	DECLARE @qsStart datetime, @qsEnd datetime; 
+	DECLARE @startTime datetime, @endTime datetime; 
 	
 	SET @sql = N'SELECT 
-		@qsStart = CAST(MIN(start_time) AS datetime), 
-		@qsEnd = CAST(MAX(end_time) AS datetime) 
+		@startTime = CAST(MIN(start_time) AS datetime), 
+		@endTime = CAST(MAX(end_time) AS datetime) 
 	FROM 
 		[{targetDB}].sys.[query_store_runtime_stats_interval]; ';
 	
 	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
 	EXEC sys.[sp_executesql]
 		@sql, 
-		N'@qsStart datetime OUTPUT, @qsEnd datetime OUTPUT', 
-		@qsStart = @qsStart OUTPUT,
-		@qsEnd = @qsEnd OUTPUT;
-
-	DECLARE @minutes int;
-	SET @sql = N'SELECT @minutes = interval_length_minutes FROM [{targetDB}].sys.[database_query_store_options]; ';
-	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
-
-	EXEC sys.sp_executesql
-		@sql, 
-		N'@minutes int OUTPUT', 
-		@minutes = @minutes OUTPUT;
+		N'@startTime datetime OUTPUT, @endTime datetime OUTPUT', 
+		@startTime = @startTime OUTPUT,
+		@endTime = @endTime OUTPUT;
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		IF @OptionalStartTime > @qsStart 
-			SET @qsStart = @OptionalStartTime;
+		IF @OptionalStartTime > @startTime 
+			SET @startTime = @OptionalStartTime;
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		IF @OptionalEndTime < @qsEnd
-			SET @qsEnd = @OptionalEndTime;
+		IF @OptionalEndTime < @endTime
+			SET @endTime = @OptionalEndTime;
 	END;
 
-	DECLARE @startTime datetime, @endTime datetime;
-	SELECT 
-		@startTime = DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @qsStart) / @minutes * @minutes, 0), 
-		@endTime = DATEADD(MINUTE, @minutes, DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @qsEnd) / @minutes * @minutes, 0));
-	
-	DECLARE @startInterval int, @endInterval int;
-	SET @sql = N'SET @startInterval = (SELECT TOP 1 [runtime_stats_interval_id] FROM [{targetDB}].sys.[query_store_runtime_stats_interval] WHERE [start_time] >= @startTime); ';
-	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
-	EXEC sys.[sp_executesql]
-		@sql, 
-		N'@startTime datetime, @startInterval int OUTPUT', 
-		@startTime = @startTime,
-		@startInterval = @startInterval OUTPUT;
-
-	SET @sql = N'SET @endInterval = (SELECT TOP 1 [runtime_stats_interval_id] FROM [{targetDB}].sys.[query_store_runtime_stats_interval] WHERE [end_time] <= @endTime ORDER BY [end_time] DESC); ';
-	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
-	EXEC sys.[sp_executesql]
-		@sql, 
-		N'@endTime datetime, @endInterval int OUTPUT', 
-		@endTime = @endTime,
-		@endInterval = @endInterval OUTPUT;
-
 	CREATE TABLE #TopQueryStoreStats (
-		[row_id] int IDENTITY(1,1) NOT NULL,
-		[plan_id] bigint NOT NULL, 
-		[total_executions] bigint NOT NULL,
-		[avg_duration_ms] float NOT NULL,
-		[total_duration_ms] float NOT NULL,
-		[avg_cpu_time_ms] float NOT NULL, 
-		[total_cpu_time_ms] float NOT NULL, 
-		[avg_io_reads] float NOT NULL, 
-		[total_io_reads] float NOT NULL, 
-		[avg_io_writes] float NOT NULL,
-		[total_io_writes] float NOT NULL,
+		[row_id] int IDENTITY(1, 1) NOT NULL,
+		[query_id] bigint NOT NULL,
+		[plans_count] int NOT NULL,
+		[compiles_count] bigint NOT NULL,
+		[executions_count] bigint NOT NULL,
+		[avg_cpu_time] float NOT NULL,
+		[total_cpu_time] float NOT NULL,
+		[avg_duration] float NOT NULL,
+		[total_duration] float NOT NULL,
+		[avg_logical_reads] float NOT NULL,
+		[total_logical_reads] float NOT NULL,
+		[avg_logical_writes] float NOT NULL,
+		[total_logical_writes] float NOT NULL,
+		[avg_physical_reads] float NOT NULL,
+		[total_physical_reads] float NOT NULL,
 		[avg_used_memory] float NOT NULL,
 		[total_used_memory] float NOT NULL,
-		[avg_row_counts] float NOT NULL,
-		[total_row_counts] float NOT NULL,
-		[avg_log_bytes_used] float NOT NULL,
-		[total_log_bytes_used] float NOT NULL,
-		[avg_tempdb_space_used] float NOT NULL,
-		[total_tempdb_space_used] float NOT NULL
+		[avg_rowcount] float NOT NULL,
+		[total_rowcount] float NOT NULL,
+		[avg_log_bytes_used] float NULL,
+		[total_log_bytes_used] float NULL,
+		[avg_tempdb_space_used] float NULL,
+		[total_tempdb_space_used] float NULL,
+		[max_dop] bigint NOT NULL,
+		[min_dop] bigint NOT NULL
 	);
 
 	SET @sql = N'WITH core AS ( 
-		SELECT 
-			s.[plan_id],
-			s.[count_executions],
-			CAST(s.[avg_duration] / 1000.0 as decimal(24,2)) [avg_duration_ms],
-			CAST(s.[avg_cpu_time] / 1000.0 as decimal(24,2)) [avg_cpu_time_ms],
-			s.[avg_logical_io_reads],
-			s.[avg_logical_io_writes],
-			s.[avg_physical_io_reads],
-			s.[avg_query_max_used_memory],
-			s.[avg_rowcount],
-			s.[avg_log_bytes_used],
-			s.[avg_tempdb_space_used]
-		FROM 
-			[{targetDB}].sys.[query_store_runtime_stats] s
-			INNER JOIN [{targetDB}].sys.[query_store_runtime_stats_interval] i ON s.[runtime_stats_interval_id] = i.[runtime_stats_interval_id]
-		WHERE 
-			s.[runtime_stats_interval_id] >= @startInterval
-			AND s.[runtime_stats_interval_id] <= @endInterval
-	), 
-	aggregated AS ( 
-		SELECT 
-			[plan_id],
-			SUM([count_executions]) [total_executions],
-			AVG([avg_duration_ms]) [avg_duration_ms],
-			SUM([avg_duration_ms]) [total_duration_ms],
-			AVG([avg_cpu_time_ms]) [avg_cpu_time_ms],
-			SUM([avg_cpu_time_ms]) [total_cpu_time_ms],
-			AVG([avg_logical_io_reads]) [avg_io_reads],
-			SUM([avg_logical_io_reads]) [total_io_reads],
-			AVG([avg_logical_io_writes]) [avg_io_writes],
-			SUM([avg_logical_io_writes]) [total_io_writes],
-			AVG([avg_query_max_used_memory]) [avg_used_memory],
-			SUM([avg_query_max_used_memory]) [total_used_memory],
-			AVG([avg_rowcount]) [avg_row_counts],
-			SUM([avg_rowcount]) [total_row_counts],
-			AVG([avg_log_bytes_used]) [avg_log_bytes_used],
-			SUM([avg_log_bytes_used]) [total_log_bytes_used],
-			AVG([avg_tempdb_space_used]) [avg_tempdb_space_used], 
-			SUM([avg_tempdb_space_used]) [total_tempdb_space_used] 
-		FROM 
-			core 
-		GROUP BY 
-			[plan_id]
-	)
-
 	SELECT 
-		[plan_id],
-		[total_executions],
-		[avg_duration_ms],
-		[total_duration_ms],
-		[avg_cpu_time_ms],
-		[total_cpu_time_ms],
-		[avg_io_reads],
-		[total_io_reads],
-		[avg_io_writes],
-		[total_io_writes],
-		[avg_used_memory],
-		[total_used_memory],
-		[avg_row_counts],
-		[total_row_counts],
-		[avg_log_bytes_used],
-		[total_log_bytes_used],
-		[avg_tempdb_space_used],
-		[total_tempdb_space_used] 
+		p.[query_id],
+		COUNT(DISTINCT s.[plan_id]) [plans_count],
+		SUM(p.[count_compiles]) [compiles_count],
+		SUM(s.[count_executions]) [executions_count],
+		SUM(s.[avg_cpu_time]) [avg_cpu_time],
+		SUM(s.[avg_cpu_time] * s.[count_executions]) [total_cpu_time],
+		SUM(s.[avg_duration]) [avg_duration],
+		SUM(s.[avg_duration] * s.[count_executions]) [total_duration],
+		SUM(s.[avg_logical_io_reads]) [avg_logical_reads],
+		SUM(s.[avg_logical_io_reads] * s.[count_executions]) [total_logical_reads],
+		SUM(s.[avg_logical_io_writes]) [avg_logical_writes],
+		SUM(s.[avg_logical_io_writes] * s.[count_executions]) [total_logical_writes],
+		SUM(s.[avg_physical_io_reads]) [avg_physical_reads],
+		SUM(s.[avg_physical_io_reads] * s.[count_executions]) [total_physical_reads],
+		SUM(s.[avg_query_max_used_memory]) [avg_used_memory],
+		SUM(s.[avg_query_max_used_memory] * s.[count_executions]) [total_used_memory],
+		SUM(s.[avg_rowcount]) [avg_rowcount],
+		SUM(s.[avg_rowcount] * s.[count_executions]) [total_rowcount],
+		SUM(s.[avg_log_bytes_used]) [avg_log_bytes_used],
+		SUM(s.[avg_log_bytes_used] * s.[count_executions]) [total_log_bytes_used],
+		SUM(s.[avg_tempdb_space_used]) [avg_tempdb_space_used], 
+		SUM(s.[avg_tempdb_space_used] * s.[count_executions]) [total_tempdb_space_used],
+		MAX(s.[max_dop]) [max_dop], 
+		MIN(s.[min_dop]) [min_dop]
 	FROM 
-		[aggregated]; ';
+		[{targetDB}].sys.[query_store_runtime_stats] s
+		LEFT OUTER JOIN [{targetDB}].sys.[query_store_plan] p ON s.[plan_id] = p.[plan_id]
+	WHERE 
+		NOT (s.first_execution_time > @endTime OR s.last_execution_time < @startTime)
+	GROUP BY 
+		p.[query_id]
+) 
 
-	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
-
-	INSERT INTO [#TopQueryStoreStats] (
-		[plan_id],
-		[total_executions],
-		[avg_duration_ms],
-		[total_duration_ms],
-		[avg_cpu_time_ms],
-		[total_cpu_time_ms],
-		[avg_io_reads],
-		[total_io_reads],
-		[avg_io_writes],
-		[total_io_writes],
-		[avg_used_memory],
-		[total_used_memory],
-		[avg_row_counts],
-		[total_row_counts],
-		[avg_log_bytes_used],
-		[total_log_bytes_used],
-		[avg_tempdb_space_used],
-		[total_tempdb_space_used] 
-	)
-	EXEC sys.[sp_executesql] 
-		@sql, 
-		N'@TopResults int, @startInterval int, @endInterval int', 
-		@TopResults = @TopResults,
-		@startInterval = @startInterval, 
-		@endInterval = @endInterval;
-
-	CREATE TABLE #TopRows (
-		[row_id] int IDENTITY(1, 1) NOT NULL,
-		[plan_id] bigint NOT NULL,
-		[query_id] bigint NOT NULL,
-		[plan_count] int NULL,
-		[plan_compiles] bigint NULL,
-		[query_compiles] bigint NULL,
-		[query_sql_text] nvarchar(MAX) NOT NULL, 
-		[query_plan] nvarchar(MAX) NULL,
-		[total_executions] bigint NOT NULL,
-		[avg_duration_ms] float NOT NULL,
-		[total_duration_ms] float NOT NULL,
-		[avg_cpu_time_ms] float NOT NULL,
-		[total_cpu_time_ms] float NOT NULL,
-		[avg_io_reads] float NOT NULL,
-		[total_io_reads] float NOT NULL,
-		[avg_io_writes] float NOT NULL,
-		[total_io_writes] float NOT NULL,
-		[avg_used_memory] float NOT NULL,
-		[total_used_memory] float NOT NULL,
-		[avg_row_counts] float NOT NULL,
-		[total_row_counts] float NOT NULL,
-		[avg_log_bytes_used] float NOT NULL,
-		[total_log_bytes_used] float NOT NULL,
-		[avg_tempdb_space_used] float NOT NULL,
-		[total_tempdb_space_used] float NOT NULL
-	);
-
-	SET @sql = N'SELECT TOP(@TopResults)
-		[x].[plan_id],
-		[p].[query_id],
-		(SELECT COUNT(*) FROM [{targetDB}].sys.[query_store_plan] x2 WHERE x2.[query_id] = [p].[query_id]) [plan_count], 
-		[p].[count_compiles] [plan_compiles], 
-		[q].[count_compiles] [query_compiles], 
-		[t].[query_sql_text],
-		[p].[query_plan],
-		[x].[total_executions],
-		[x].[avg_duration_ms],
-		[x].[total_duration_ms],
-		[x].[avg_cpu_time_ms],
-		[x].[total_cpu_time_ms],
-		[x].[avg_io_reads],
-		[x].[total_io_reads],
-		[x].[avg_io_writes],
-		[x].[total_io_writes],
-		[x].[avg_used_memory],
-		[x].[total_used_memory],
-		[x].[avg_row_counts],
-		[x].[total_row_counts],
-		[x].[avg_log_bytes_used],
-		[x].[total_log_bytes_used],
-		[x].[avg_tempdb_space_used],
-		[x].[total_tempdb_space_used] 
-	FROM 
-		[#TopQueryStoreStats] x
-		LEFT OUTER JOIN [{targetDB}].sys.[query_store_plan] p ON [x].[plan_id] = [p].[plan_id]
-		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query] q ON [p].[query_id] = [q].[query_id]
-		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query_text] t ON [q].[query_text_id] = [t].[query_text_id]
-	ORDER BY 
-		{orderBy} DESC; ';
+SELECT TOP (@TopResults)
+	[query_id],
+	[plans_count],
+	[compiles_count],
+	[executions_count],
+	[avg_cpu_time],
+	[total_cpu_time],
+	[avg_duration],
+	[total_duration],
+	[avg_logical_reads],
+	[total_logical_reads],
+	[avg_logical_writes],
+	[total_logical_writes],
+	[avg_physical_reads],
+	[total_physical_reads],
+	[avg_used_memory],
+	[total_used_memory],
+	[avg_rowcount],
+	[total_rowcount],
+	[avg_log_bytes_used],
+	[total_log_bytes_used],
+	[avg_tempdb_space_used],
+	[total_tempdb_space_used],
+	[max_dop],
+	[min_dop] 
+FROM 
+	core 
+ORDER BY 
+	{orderBy} DESC; ';
 
 	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
 	SET @sql = REPLACE(@sql, N'{orderBy}', @orderBy);
 
-	INSERT INTO [#TopRows] (
-		[plan_id],
+	INSERT INTO [#TopQueryStoreStats] (
 		[query_id],
-		[plan_count],
-		[plan_compiles],
-		[query_compiles],
-		[query_sql_text], 
-		[query_plan],
-		[total_executions],
-		[avg_duration_ms],
-		[total_duration_ms],
-		[avg_cpu_time_ms],
-		[total_cpu_time_ms],
-		[avg_io_reads],
-		[total_io_reads],
-		[avg_io_writes],
-		[total_io_writes],
+		[plans_count],
+		[compiles_count],
+		[executions_count],
+		[avg_cpu_time],
+		[total_cpu_time],
+		[avg_duration],
+		[total_duration],
+		[avg_logical_reads],
+		[total_logical_reads],
+		[avg_logical_writes],
+		[total_logical_writes],
+		[avg_physical_reads],
+		[total_physical_reads],
 		[avg_used_memory],
 		[total_used_memory],
-		[avg_row_counts],
-		[total_row_counts],
+		[avg_rowcount],
+		[total_rowcount],
 		[avg_log_bytes_used],
 		[total_log_bytes_used],
 		[avg_tempdb_space_used],
-		[total_tempdb_space_used]
+		[total_tempdb_space_used],
+		[max_dop],
+		[min_dop]
 	)
 	EXEC sys.[sp_executesql] 
 		@sql, 
-		N'@TopResults int', 
-		@TopResults = @TopResults;
+		N'@TopResults int, @startTime datetime, @endTime datetime', 
+		@TopResults = @TopResults,
+		@startTime = @startTime, 
+		@endTime = @endTime;
 
-	WITH core AS (
+	CREATE TABLE #details ( 
+		[row_id] int NOT NULL, 
+		[query_id] bigint NOT NULL,
+		[most_recent_plan] nvarchar(MAX) NULL, 
+		[query_text] nvarchar(MAX) NULL 
+	); 
 
-	SELECT 
+	SET @sql = N'SELECT 
 		[x].[row_id],
-		[x].[query_sql_text],
-		TRY_CAST([x].[query_plan] AS xml) [query_plan],
-		[x].[total_executions],
-		CAST(([x].[avg_duration_ms] / 1000.0) AS decimal(24,2)) [avg_duration_ms],
-		CAST(([x].[total_duration_ms] / 1000.0) AS decimal(24,2)) [total_duration_ms],
-		CAST(([x].[avg_cpu_time_ms] / 1000.0) AS decimal(24,2)) [avg_cpu_time_ms],
-		CAST(([x].[total_cpu_time_ms] / 1000.0) AS decimal(24,2)) [total_cpu_time_ms],
-		CAST(([x].[avg_io_reads] * 8.0 / 1073741824) AS decimal(24,2)) [avg_io_reads],
-		CAST(([x].[total_io_reads] * 8.0 / 1073741824) AS decimal(24,2)) [total_io_reads],
-		CAST(([x].[avg_io_writes] * 8.0 / 1073741824) AS decimal(24,2)) [avg_io_writes],
-		CAST(([x].[total_io_writes] * 8.0 / 1073741824) AS decimal(24,2)) [total_io_writes],
-		CAST(([x].[avg_used_memory] * 8.0 / 1073741824) AS decimal(24,2)) [avg_used_memory],
-		CAST(([x].[total_used_memory] * 8.0 / 1073741824) AS decimal(24,2)) [total_used_memory],
-		CAST([x].[avg_row_counts] AS decimal(24,2)) [avg_row_counts],
-		CAST([x].[total_row_counts] AS decimal(24,2)) [total_row_counts],
-		CAST(([x].[avg_log_bytes_used] / 1073741824.0) AS decimal(24,2)) [avg_log_bytes_used],
-		CAST(([x].[total_log_bytes_used] / 1073741824.0) AS decimal(24,2)) [total_log_bytes_used],
-		CAST(([x].[avg_tempdb_space_used] * 8.0 / 1073741824) AS decimal(24,2)) [avg_tempdb_space_used],
-		CAST(([x].[total_tempdb_space_used] * 8.0 / 1073741824) AS decimal(24,2)) [total_tempdb_space_used],
-
 		[x].[query_id],
-		[x].[plan_id],
-		[x].[plan_count],
-		[x].[plan_compiles],
-		[x].[query_compiles]
-
+		(SELECT TOP (1) p.[query_plan] FROM [{targetDB}].sys.[query_store_plan] p WHERE p.[query_id] = x.[query_id] ORDER BY [plan_id] DESC) [most_recent_plan], 
+		[t].[query_sql_text]
 	FROM 
-		[#TopRows] x
+		[#TopQueryStoreStats] [x]
+		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query] q ON [x].[query_id] = [q].[query_id]
+		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query_text] t ON [q].[query_text_id] = [t].[query_text_id]; ';
+
+	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
+
+	INSERT INTO [#details] (
+		[row_id],
+		[query_id],
+		[most_recent_plan],
+		[query_text]
+	)
+	EXEC sys.[sp_executesql]
+		@sql;
+
+
+	WITH expanded AS ( 
+		SELECT 
+			[x].[row_id],
+			[x].[query_id],
+			[d].[query_text], 
+			TRY_CAST([d].[most_recent_plan] AS xml) [query_plan],
+			[x].[plans_count],
+			[x].[compiles_count],
+			[x].[executions_count],
+			CAST(([x].[avg_duration] / 1000.0) AS decimal(24,2)) [avg_duration_ms],
+			CAST(([x].[total_duration] / 1000.0) AS decimal(24,2)) [total_duration_ms],
+			CAST(([x].[avg_cpu_time] / 1000.0) AS decimal(24,2)) [avg_cpu_time_ms],
+			CAST(([x].[total_cpu_time] / 1000.0) AS decimal(24,2)) [total_cpu_time_ms],
+			CAST(([x].[avg_logical_reads] * 8.0 / 1073741824) AS decimal(24,2)) [avg_logical_reads],
+			CAST(([x].[total_logical_reads] * 8.0 / 1073741824) AS decimal(24,2)) [total_logical_reads],
+			CAST(([x].[avg_logical_writes] * 8.0 / 1073741824) AS decimal(24,2)) [avg_logical_writes],
+			CAST(([x].[total_logical_writes] * 8.0 / 1073741824) AS decimal(24,2)) [total_logical_writes],
+			CAST(([x].[avg_physical_reads] * 8.0 / 1073741824) AS decimal(24,2)) [avg_physical_reads],
+			CAST(([x].[total_physical_reads] * 8.0 / 1073741824) AS decimal(24,2)) [total_physical_reads],
+			CAST(([x].[avg_used_memory] * 8.0 / 1073741824) AS decimal(24,2)) [avg_used_memory],
+			CAST(([x].[total_used_memory] * 8.0 / 1073741824) AS decimal(24,2)) [total_used_memory],
+			CAST(([x].[avg_rowcount]) AS decimal(24,2)) [avg_rowcount],
+			CAST(([x].[total_rowcount]) AS decimal(24,2)) [total_rowcount],
+			CAST(([x].[avg_log_bytes_used] / 1073741824.0) AS decimal(24,2)) [avg_log_bytes_used],
+			CAST(([x].[total_log_bytes_used] / 1073741824.0) AS decimal(24,2)) [total_log_bytes_used],
+			CAST(([x].[avg_tempdb_space_used] * 8.0 / 1073741824) AS decimal(24,2)) [avg_tempdb_space_used],
+			CAST(([x].[total_tempdb_space_used] * 8.0 / 1073741824) AS decimal(24,2)) [total_tempdb_space_used],
+			[x].[max_dop],
+			[x].[min_dop]
+		FROM 
+			[#TopQueryStoreStats] [x] 
+			INNER JOIN [#details] [d] ON [x].[row_id] = [d].[row_id]
 	)
 
 	SELECT 
-		[x].[row_id],
-		[x].[query_sql_text],
-		CASE WHEN x.[query_plan] IS NULL THEN (SELECT x2.[plan_id] [plan_id_with_more_than_128_xml_levels] FROM [core] x2 WHERE x2.[row_id] = x.[row_id] FOR XML AUTO, TYPE) ELSE x.[query_plan] END [query_plan],
-		[x].[total_executions] [execution_count],
-		[x].[avg_duration_ms],
-		[x].[avg_cpu_time_ms],
-		dbo.[format_timespan]([x].[total_duration_ms]) [aggregate_duration],
-		dbo.[format_timespan]([x].[total_cpu_time_ms]) [aggregate_cpu_time],
-		[x].[avg_io_reads] [avg_reads_GB],
-		[x].[total_io_reads] [aggregate_reads_GB],
-		[x].[avg_io_writes] [avg_writes_GB],
-		[x].[total_io_writes] [aggregate_writes_GB],
-		[x].[avg_used_memory] [avg_grant_GB],
-		[x].[total_used_memory] [aggregate_grant_GB],
-		[x].[avg_row_counts] [avg_row_count],
-		[x].[total_row_counts] [aggregate_row_count],
-		[x].[avg_log_bytes_used] [avg_log_GB],
-		[x].[total_log_bytes_used] [aggregate_log_GB],
-		[x].[avg_tempdb_space_used] [avg_tempdb_GB],
-		[x].[total_tempdb_space_used] [aggregate_tempdb_GB],
-		[x].[query_id],
-		[x].[plan_id],
-		[x].[plan_count],
-		[x].[plan_compiles],
-		[x].[query_compiles]
+		--[row_id],
+		[query_id],
+		[query_text],
+		--CASE WHEN [query_plan] IS NULL THEN (SELECT [most_recent_plan] FROM [#details] x WHERE x.[row_id] = [expanded].[row_id]) ELSE [query_plan] END [query_plan],
+		[query_plan],
+		[plans_count],
+		--[compiles_count],
+		[executions_count] [execution_count],
+		dbo.format_timespan([avg_duration_ms]) [avg_duration],
+		dbo.format_timespan([avg_cpu_time_ms]) [avg_cpu_time],
+		dbo.format_timespan([total_duration_ms]) [total_duration],
+		dbo.format_timespan([total_cpu_time_ms]) [total_cpu_time],
+		[avg_logical_reads] [avg_reads_GB],
+		[total_logical_reads] [total_reads_GB],
+		[avg_logical_writes] [avg_writes_GB],
+		[total_logical_writes] [total_writes_GB],
+		--[avg_physical_reads],
+		--[total_physical_reads],
+		[avg_used_memory] [avg_grant_GB],
+		[total_used_memory] [total_grant_GB],
+		[avg_rowcount],
+		[total_rowcount],
+		[avg_log_bytes_used] [avg_log_GB],
+		[total_log_bytes_used] [total_log_GB],
+		[avg_tempdb_space_used] [avg_spills_GB],
+		[total_tempdb_space_used] [total_spills_GB],
+		[max_dop],
+		[min_dop]
 	FROM 
-		core x 
+		[expanded]
 	ORDER BY 
-		x.[row_id];
+		[row_id];
 
 	RETURN 0;
 GO

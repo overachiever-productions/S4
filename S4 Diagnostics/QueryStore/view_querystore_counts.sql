@@ -115,8 +115,8 @@ AS
 		[avg_physical_io_reads] float NOT NULL,
 		[avg_query_max_used_memory] float NOT NULL,
 		[avg_rowcount] float NOT NULL,
-		[avg_log_bytes_used] float NOT NULL,
-		[avg_tempdb_space_used]	 float NOT NULL		
+		[avg_log_bytes_used] float NULL,
+		[avg_tempdb_space_used]	 float NULL		
 	);
 
 	SET @sql = N'SELECT 
