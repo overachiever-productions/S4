@@ -72,6 +72,7 @@ AS
 		
 		ISNULL(r.wait_resource, '') wait_resource,
 		r.[last_wait_type] [wait_type],
+		s.[is_user_process],
 		CASE [dtat].[transaction_type]
 			WHEN 1 THEN 'Read/Write'
 			WHEN 2 THEN 'Read-Only'
@@ -335,6 +336,7 @@ AS
 		
 		--dbo.format_timespan([c].[duration]) [duration],		
         
+		CASE WHEN [c].[is_user_process] = 1 THEN 0 ELSE 1 END [is_system],
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
         [c].[isolation_level],
@@ -346,8 +348,7 @@ AS
 		[#core] c 
 		LEFT OUTER JOIN #chain x ON [c].[session_id] = [x].[session_id]
 		LEFT OUTER JOIN [#context] cx ON [c].[session_id] = [cx].[session_id]
-		LEFT OUTER JOIN [#statements] s ON c.[session_id] = s.[session_id] 
-		LEFT OUTER JOIN [#plans] p ON [c].[session_id] = [p].[session_id]
+		LEFT OUTER JOIN [#statements] s ON c.[session_id] = s.[session_id]{plans_join}
 	ORDER BY 
 		x.level, c.total_elapsed_time DESC;
 	';
@@ -357,10 +358,14 @@ AS
 	ELSE 
 		SET @finalProjection = REPLACE(@finalProjection, N'{context}', N'');
 
-	IF @IncludePlans = 1 
+	IF @IncludePlans = 1 BEGIN
 		SET @finalProjection = REPLACE(@finalProjection, N'{query_plan}', N' ,[p].[query_plan] ');
-	ELSE 
+		SET @finalProjection = REPLACE(@finalProjection, N'{plans_join}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N'LEFT OUTER JOIN [#plans] p ON [c].[session_id] = [p].[session_id]');
+	  END;
+	ELSE BEGIN 
 		SET @finalProjection = REPLACE(@finalProjection, N'{query_plan}', N'');
+		SET @finalProjection = REPLACE(@finalProjection, N'{plans_join}', N'');
+	END;
 
 	-- final projection:
 	EXEC sp_executesql @finalProjection;
