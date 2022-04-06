@@ -34,6 +34,10 @@
         
         More good fodder: 
             https://docs.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver15
+            
+            
+    TODO: review this documentation: 
+        https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/enable-encrypted-connections-to-the-database-engine?view=sql-server-ver15
 </div>
 
 

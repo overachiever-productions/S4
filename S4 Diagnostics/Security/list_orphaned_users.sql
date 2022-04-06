@@ -91,8 +91,7 @@ AS
 
 	CREATE TABLE #Orphans (
 		[name] sysname NOT NULL, 
-		[sid] varbinary(85) NOT NULL, 
-		[disabled] bit NULL
+		[sid] varbinary(85) NOT NULL
 	);	
 
 	SELECT 
@@ -121,7 +120,7 @@ AS
 	INNER JOIN @ingnoredLogins x ON l.[name] LIKE x.[login_name];
 
 	DECLARE @currentDatabase sysname;
-	DECLARE @dbPrincipalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE type IN (''S'', ''U'') AND name NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
+	DECLARE @dbPrincipalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE [type] IN (''S'', ''U'') AND [name] NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
 	DECLARE @sql nvarchar(MAX);
 	DECLARE @text nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -160,8 +159,7 @@ AS
 		row_id int IDENTITY(1,1) NOT NULL, 
 		[database] sysname NOT NULL, 
 		[login_name] sysname NOT NULL, 
-		[sid] varbinary(85) NOT NULL, 
-		[disabled] bit NOT NULL 
+		[sid] varbinary(85) NOT NULL
 	);
 
 	WHILE @@FETCH_STATUS = 0 BEGIN
@@ -179,16 +177,14 @@ AS
 		FROM [#Users] u 
 		INNER JOIN @ignoredUsers x ON u.[name] LIKE x.[user_name];
 
-		INSERT INTO [#Orphans] ([name],	[sid], [disabled])
+		INSERT INTO [#Orphans] ([name],	[sid])
 		SELECT 
 			u.[name], 
-			u.[sid], 
-			l.[is_disabled]
+			u.[sid]
 		FROM 
 			[#Users] u 
-			INNER JOIN [#Logins] l ON u.[sid] = l.[sid] 
 		WHERE 
-			l.[name] IS NOT NULL OR l.[sid] IS NULL;
+			u.[sid] NOT IN (SELECT [sid] FROM [#Logins]);
 
 		IF EXISTS (SELECT NULL FROM [#Orphans]) BEGIN
 			IF @projectInsteadOfSendXmlAsOutput = 1 BEGIN 
@@ -199,11 +195,13 @@ AS
 
 				SET @text = N'';
 				SELECT 
-					@text = @text +  N'-- ORPHAN: ' + [name] + N' (SID: ' + CONVERT(sysname, [sid], 1) + CASE WHEN [disabled] = 1 THEN N') - DISABLED ' ELSE N') ' END + @crlf
+					@text = @text +  N'-- ORPHAN: ' + [name] + N' (SID: ' + CONVERT(sysname, [sid], 1) + N') ' + @crlf
 				FROM 
 					[#Orphans] 
 				ORDER BY 
 					[name];
+
+				SET @text = @text + @crlf;
 
 				EXEC [dbo].[print_long_string] @text;
 
@@ -212,14 +210,12 @@ AS
 				INSERT INTO [#xmlOutput] (
 					[database],
 					[login_name],
-					[sid],
-					[disabled]
+					[sid]
 				)
 				SELECT 
 					@currentDatabase [database],
-					[name] [login_name],
-					[sid],
-					[disabled]
+					[name] [user_name],
+					[sid]
 				FROM 
 					[#Orphans]
 				ORDER BY 
@@ -232,10 +228,9 @@ AS
 
 	IF @projectInsteadOfSendXmlAsOutput = 0 BEGIN 
 		SELECT @Output = (SELECT 
-			[database] [login/@database],
-			CONVERT(sysname, [sid], 1) [login/@sid],
-			[disabled] [login/@disabled],
-			[login_name] [login]
+			[database] [user/@database],
+			CONVERT(sysname, [sid], 1) [user/@sid],
+			[login_name] [user]
 		FROM 
 			[#xmlOutput] 
 		ORDER BY 
@@ -245,3 +240,6 @@ AS
 
 	CLOSE [walker];
 	DEALLOCATE [walker];
+
+	RETURN 0
+GO
