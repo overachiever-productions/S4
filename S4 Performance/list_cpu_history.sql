@@ -105,6 +105,8 @@ AS
 		[system_idle]
 	FROM 
 		[#raw_results] 
+	WHERE 
+		[sql_usage] IS NOT NULL -- hack
 	ORDER BY 
 		[timestamp] DESC;
 
