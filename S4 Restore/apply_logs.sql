@@ -85,6 +85,12 @@ AS
         RETURN -22;
     END;
 
+	IF UPPER(@RecoveryType) = N'RECOVER' SET @RecoveryType = N'RECOVERY';
+	IF(@RecoveryType) NOT IN (N'NORECOVERY', N'RECOVERY', N'STANDBY') BEGIN 
+		RAISERROR(N'Allowable @RecoveryType options are { NORECOVERY | RECOVERY | STANDBY }. The value [%s] is not supported.', 16, 1, @RecoveryType);
+		RETURN -32;
+	END;
+
 	DECLARE @vectorError nvarchar(MAX);
 	DECLARE @vector bigint;  -- represents # of MILLISECONDS that a 'restore' operation is allowed to be stale
 
@@ -597,7 +603,7 @@ FINALIZE:
 		IF @messageSeverity <> '' 
 			SET @messageSeverity = N'ERROR & WARNING';
 		ELSE 
-			SET @messageSeverity = N'ERRROR';
+			SET @messageSeverity = N'ERROR';
 
 		SET @message = @message + N'The following ERRORs were encountered: ' + @crlf;
 

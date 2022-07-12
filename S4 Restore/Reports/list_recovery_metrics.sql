@@ -2,7 +2,44 @@
 /*
 	
 	refactor. 
-		this MIGHT? make more sense to rename as VIEW_recovery_metrics?
+		dbo.report_recovery_metrics
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+AVG/MAX durations and file-counts for restore + consistency checks: 
+
+					WITH core AS ( 
+						SELECT 
+							[database],
+							DATEDIFF(MILLISECOND, [restore_start], [restore_end]) [restore_duration],
+							DATEDIFF(MILLISECOND, [consistency_start], [consistency_end]) [consistency_duration], 
+							ISNULL(restored_files.value('count(/files/file)', 'int'), 0) [restored_file_count]
+						FROM 
+							dbo.[restore_log] 
+						WHERE 
+							[operation_date] > DATEADD(DAY, 0 - 30, GETDATE())
+							AND [error_details] IS NULL
+					) 
+
+					SELECT 
+						[database], 
+						dbo.[format_timespan](AVG(restore_duration)) [avg_restore_duration], 
+						dbo.[format_timespan](MAX(restore_duration)) [max_restore_duration], 
+	
+						dbo.[format_timespan](AVG([consistency_duration])) [avg_consistency_duration], 
+						dbo.[format_timespan](MAX([consistency_duration])) [max_consistency_duration], 
+	
+						AVG([restored_file_count]) [avg_file_count], 
+						MAX([restored_file_count]) [max_file_count]
+					FROM 
+						core
+					GROUP BY 
+						[database]
+					ORDER BY 
+						[avg_restore_duration] DESC;
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 
 	-- permutations... 
@@ -329,7 +366,7 @@ AS
 		FROM 
 			#facts f
 		ORDER BY 
-			f.[row_number]; ';
+			f.[row_number] DESC; ';
 
 		IF (SELECT dbo.[get_engine_version]()) <= 10.5 BEGIN 
 			-- TODO: the fix here won't be too hard. i.e., I just need to do the following: 

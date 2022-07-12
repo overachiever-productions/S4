@@ -1,17 +1,19 @@
 /*
 
-   PICKUP/NEXT:
-        v6.5 - currently in the middle of a MAJOR 'refactor' - which is a lot more like a rewrite/re-think (to enable all sorts of retry-interactions and better auditing + flow-of-control).
+PICKUP/NEXT: 
+	Need to standardize and simplify the @Command handling. 
+	Specifically: 
+		- all callers will define 'native' commands for whatever 'shell' they're trying to use... 
+			e.g., PARTNERs will simply run SQL statements. 
+			e.g., SHELL will be a set of simple CMD-line statemetns, e.g., 'Ping 10.10.0.1' 
+			e.g., POSH will be the PoshCommands - such as: 'Write-S3Object -BucketName ''string here'' -Stuff ''another string'' -Switch -CommandSOmething 2';
 
-    TODO:
-        - move this into \internal ... 
-    
+		- this sproc will 
+			a. verify they don't have padding/overhead/gunk (i.e., that a call to SHELL doesn't have/contain xp_executesql and/or that a PARTNER or SQLCMD doesn't have sqlcmd and so on... 
+			b. 'wrap' the contents of each command into the syntax/commands needed. 
 
-    vNEXT: 
-        -- Hmmm. All of this 'hard-coded' stuff is all fine. 
-            but... what if there were a table for command_results or something like that - i.e. key value entries for things to ignore? 
-                along with a number of DEFAULT (S4) entries to ignore... 
-                and... the ability to add 'custom' ignore thingies... 
+			(This means that code that calls into these piglets does NOT have to worry about escaping strings and crap... just define the commands 'natively' and this 'shell-wrapper' will do what we need. 
+		- document the exact types of inputs by 'shell'/@ExecutionType i.e., make it so that this is easy to 'read the docs' on/against in the future. 
 
 
 
@@ -29,222 +31,88 @@
 				RETURN value of 0 and @Results contains 1 or more rows (i.e., there were one or more INITIAL failures (detailed by @Results per each attempt) and then the @Command succceeded). 
 				RETURN value of 1 and @Results contains 1 or more rows (i.e., the @command NEVER succeeded and each time it was attempted the specific error/outcome was added as a new 'row' in @Results).
 
-	TODO: 
-		- should I put @PrintOnly in here? 
-			that'd streamline the HELL out of a lot of other code... 
+
+	vNEXT:
+        - allow {DEFAULT} tokens/valus to be passed into @DelayBetweenAttempts and @IgnoredResults
+            i.e., if those values are set to {DEFAULT}... then load in the defaults (2 and 5s - respectively)
+		- allow the OPTION for PARTNER:serverNameHere ... or, maybe LINKED:serverNameHere... 
+
+	SAMPLE SIGNATURES (these are pretty ugly/raw): 
 
 
-	vNEXT: 
-		- I could probably create an @ExecutionType of REMOTE:NAME
-			where REMOTE would tell us to look into sys.servers for ... WHERE [name] = 'NAME'... 
-				meaning that ... if a remote server is set up... we should be able to work against it ... 
+		----------------------------------------------------------------------------------------------
+			-- example of ALL results/outputs being whitelisted:
 
+				DECLARE
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
 
-	FODDER: 
-		additional info on how there's a known error/busted/problem with SQL Server: 
-			https://feedback.azure.com/forums/908035-sql-server/suggestions/32901061-make-is-possible-to-retrieve-all-error-messages-in
+				EXEC [admindb].dbo.[execute_command]
+					@Command = N'ping 10.0.0.1', -- nvarchar(max)
+					@ExecutionType = N'SHELL', -- sysname
+					@ExecutionAttemptsCount = 2, -- int
+					@IgnoredResults = N'Reply from 10.0.%',
+					@SafeResults = N'{ALL}',
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-			https://feedback.azure.com/forums/908035-sql-server/suggestions/33673684-try-catch-should-always-work
+				SELECT @outcome, @errorMessage;
+				GO
 
+		----------------------------------------------------------------------------------------------
+				DECLARE
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
 
+				EXEC [admindb].dbo.[execute_command]
+					@Command = N'SELECT COUNT(*) [total] FROM Counters.dbo.MeM_Disk1;', -- nvarchar(max)
+					@ExecutionType = N'PARTNER', -- sysname
+					@ExecutionAttemptsCount = 2, -- int
+					@IgnoredResults = N'{ROWS_AFFECTED}, %----%',
+					--@SafeResults = N'{ALL}',
+					--@ErrorResults = N'total',
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-v6.5 Refactor / REWRITE 
+				SELECT @outcome, @errorMessage;
+				GO
 
-    Changes to Make: 
-        - allow [DEFAULT] tokens/valus to be passed into @DelayBetweenAttempts and @IgnoredResults
-            i.e., if those values are set to [DEFAULT]... then load in the defaults (2 and 5s - respectively)
+		----------------------------------------------------------------------------------------------
+			-- unexpected / un-white-listed results (i.e., failure):
+				DECLARE
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
 
-        - @RetryCount has been changed to @ExecutionAttemptsCount (might want to make that @TotalExecutionAttemptsCount (though that's a bit of a mouth-ful). 
-            I'll have to change this through all callers... 
+				EXEC [admindb].dbo.[execute_command]
+					@Command = N'ping 10.0.0.1', -- nvarchar(max)
+					@ExecutionType = N'SHELL', -- sysname
+					@ExecutionAttemptsCount = 2, -- int
+					--@DelayBetweenAttempts = NULL, -- sysname
+					@IgnoredResults = N'oink, failure example,{ROWS_AFFECTED}, %This is a sample % wildcard message%, %another wildcard%, {COMMAND_SUCCESS}', -- nvarchar(2000)
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-        - still bugged that I came up with an option for EXEC and... there's no real way to capture any of the output... 
-            that seems insane/bad/stupid/dumb. 
-                arguably... i MIGHT want to drop it as an option (entirely) and just use SQLCMD instead ... cuz a KEY part of the 'rewrite' is to 
-                    address the idea/need to CAPTURE all output and store/save it... etc. 
+				SELECT @outcome, @errorMessage;
+				GO
 
-            NOTE: 
-                the ONLY reason that 'EXEC' is an ExecutionType is cuz i (rightly-ish) realized that dbo.execute_command (with 'retry' logic built in)
-                    would be a GREAT way to make everything 'retry-able' - including 'simple stuff' that didn't need to be executed in an external thread... 
-                        the rub, of course, is that I can't get the outputs... 
-                            meaning that either: 
-                                a) i figure out SOME way to get outputs from sp_executesql (yeah... no)
-                                b) I figure out a SMART/RELIABLE way to wrap every input/command into a try/catch/capture... of some sorts that accomplishes the above
-                                    
-                                        EXAMPLE: 
-                                            assume that @Command = N'USE [dbname];  CHECKPOINT;]; 
+		----------------------------------------------------------------------------------------------
+			-- exception/error example: 
+-- TODO: fix this ... there's an error/exception - but it's NOT the thrown exception, instead it's a problem with the command and (presumably?) escaped quotes?
+				DECLARE
+					@outcome xml, 
+					@errorMessage nvarchar(MAX);
 
-                                            in, say, 99.9% of cases, that'll work JUST fine... unless, of course, [dbname] doesn't exist. 
-                                            HAPPILY, with a TRY/CATCH wrapped around the call to sp_executesql @Command... i'll capture crap like that. 
+				EXEC [admindb].dbo.[execute_command]
+					@Command = N'RAISERROR(''doh!'', 16, 1);', -- nvarchar(max)
+					@ExecutionType = N'SQLCMD', -- sysname
+					@ExecutionAttemptsCount = 1, -- int
+					--@DelayBetweenAttempts = NULL, -- sysname
+					@IgnoredResults = N'oink, failure example,{ROWS_AFFECTED}, %This is a sample % wildcard message%, %another wildcard%, {COMMAND_SUCCESS}', -- nvarchar(2000)
+					@Outcome = @outcome OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-                                            but... what about non errors - is there ANY way to do something like... dynamically wrap @command with: 
-                                                    
-                                                            BEGIN TRY 
-
-                                                                   EXEC @completedCorrectly = sp_executesql @command ... 
-
-                                                            END TRY
-                                                            BEGIN CATCH 
-                                                                ... 
-                                                            END CATCH
-                                                    
-                                                            -- is there a way to read the output buffer? 
-
-                                            YES... (well - ish and MAYBE)
-                                                project details found here: 
-                                                    
-
-
-
-                                                                    The only way I can think to possibly pull-off option b here would be to: 
-                                                                        i) somehow tweak/modify 'sp_outputbuffer' to a point where it would be viable/reliable in terms 
-                                                                            of what ever it is that it's parsing... 
-                                                                                https://www.itprotoday.com/sql-server/cool-way-spy-output-buffer
-
-                                                                                seriously... he's removing a bunch of stuff. 
-                                                                                    what if I figured out some way to REMOVE the 'text' and chained the HEX out into something
-                                                                                        then CONVERTED/TRANSLATED the hex into something good? 
-
-                                                                        ii) could somehow mark and trace... 
-                                                                                e.g., each EXEC operation would run something like the following: 
-
-
-                                                                                            PRINT 'EXEC marker here';
-                                                                                            SET @spid = @@SPID; 
-
-                                                                                            EXEC sp_executesql @command... 
-
-                                                                                        and then... SOMEHOW ... a) grab that @spid value (might be able to 'infuse' that into the @command 
-                                                                                            itself... but that's damned sketchy/crazy... 
-
-                                                                                            and, b) (once i get the spid), run DBCC OUTPUTBUFFER ... clean up the data
-                                                                                                and ... return everything since the 'EXEC marker here';
-                                                                                                    seems insanely hard... 
-                                                                                    Oh... wait. 
-                                                                                        dummy. 
-
-                                                                                        EXEC doesn't leave my current spid... 
-                                                                                            so... this is a lot simpler: 
-
-                                                                                            1. drop a marker. 
-                                                                                            2. exec @worked = sp_executesql @command
-                                                                                            3. EXEC load_buffer_since_mark(@spid, 'mark name here'); 
-                                                                                                
-                                                                                                report on what I find in 3... 
-                                                                                  
-
-
-
-
-                                                                                ALTER PROC sp_outputbuffer
-                                                                                    -- Produce cleaned-up DBCC OUTPUTBUFFER report for a given SPID.
-                                                                                    -- Author: Andrew Zanevsky, 2001-06-29
-
-                                                                                    @spid smallint
-                                                                                AS
-                                                                                    SET NOCOUNT ON;
-                                                                                    SET ANSI_PADDING ON;
-
-                                                                                    DECLARE
-                                                                                        @outputbuffer varchar(80),
-                                                                                        @clean varchar(16),
-                                                                                        @pos smallint;
-
-                                                                                    CREATE TABLE #out (
-                                                                                        -- Primary key on IDENTITY column prevents rows
-                                                                                        -- from changing order when you update them later.
-                                                                                        line int IDENTITY PRIMARY KEY CLUSTERED,
-                                                                                        dirty varchar(255) NULL,
-                                                                                        clean varchar(16) NULL
-                                                                                    );
-
-                                                                                    INSERT #out (
-                                                                                        dirty
-                                                                                    )
-                                                                                    EXEC ('DBCC OUTPUTBUFFER(' + @spid + ') WITH NO_INFOMSGS');
-
-                                                                                    SET @pos = 0;
-                                                                                    WHILE @pos < 16
-                                                                                        BEGIN
-                                                                                            SET @pos = @pos + 1;
-                                                                                            -- 1. Eliminate 0x00 symbols.
-                                                                                            -- 2. Keep line breaks.
-                                                                                            -- 3. Eliminate dots substituted by DBCC OUTPUTBUFFER
-                                                                                            --  for nonprintable symbols, but keep real dots.
-                                                                                            -- 4. Keep all printable characters.
-                                                                                            -- 5. Convert anything else to blank,
-                                                                                            --  but compress multiple blanks to one.
-                                                                                            UPDATE
-                                                                                                #out
-                                                                                            SET
-                                                                                                clean = ISNULL(clean, '') + CASE
-                                                                                                                                WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) = '0a' THEN CHAR(10)
-                                                                                                                                WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) BETWEEN '20' AND '7e' THEN SUBSTRING(dirty, 61 + @pos, 1)
-                                                                                                                                ELSE ' '
-                                                                                                                            END
-                                                                                            WHERE
-                                                                                                CASE
-                                                                                                    WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) = '0a' THEN 1
-                                                                                                    WHEN SUBSTRING(dirty, 61 + @pos, 1) = '.' AND SUBSTRING(dirty, 9 + @pos * 3, 2) <> '2e' THEN 0
-                                                                                                    WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) BETWEEN '20' AND '7e' THEN 1
-                                                                                                    WHEN SUBSTRING(dirty, 9 + @pos * 3, 2) = '00' THEN 0
-                                                                                                    WHEN RIGHT('x' + clean, 1) IN (' ', CHAR(10)) THEN 0
-                                                                                                    ELSE 1
-                                                                                                END = 1;
-                                                                                        END;
-
-                                                                                    DECLARE c_output CURSOR FOR SELECT clean FROM #out;
-                                                                                    OPEN c_output;
-                                                                                    FETCH c_output
-                                                                                    INTO
-                                                                                        @clean;
-
-                                                                                    SET @outputbuffer = '';
-
-                                                                                    WHILE @@FETCH_STATUS = 0
-                                                                                        BEGIN
-                                                                                            SET @outputbuffer = @outputbuffer + CASE
-                                                                                                                                    WHEN RIGHT(@outputbuffer, 1) = ' ' OR @outputbuffer = '' THEN LTRIM(ISNULL(@clean, ''))
-                                                                                                                                    ELSE ISNULL(@clean, '')
-                                                                                                                                END;
-
-                                                                                            IF DATALENGTH(@outputbuffer) > 64 BEGIN
-                                                                                    PRINT @outputbuffer;
-                                                                                    SET @outputbuffer = '';
-                                                                                    END;
-
-                                                                                            FETCH c_output
-                                                                                            INTO
-                                                                                                @clean;
-                                                                                        END;
-                                                                                    PRINT @outputbuffer;
-
-                                                                                    CLOSE c_output;
-                                                                                    DEALLOCATE c_output;
-
-                                                                                    DROP TABLE #out;
-
-                                                                                GO
-
-
-
-                                c) I get rid of EXEC as an option... 
-
-
-        - @Results needs to be re-named to @Outcomes ... i.e., to match the xml node being sent out... 
-
-        - Callers will need to be able to a) store/keep (eventually) the outcomes and b) parse/examine them for any kinds of non-success details
-            so that ... 
-
-
-    Impacts the following sprocs (i.e., the changes above will apply to all of the following callers): 
-
-        establish_directory
-        restore_databases
-        shrink_logfiles
-        execute_command
-
-
-
+				SELECT @outcome, @errorMessage;
+				GO
 
 */
 
@@ -252,17 +120,20 @@ USE [admindb];
 GO
 
 IF OBJECT_ID('dbo.execute_command','P') IS NOT NULL
-	DROP PROC dbo.execute_command;
+	DROP PROC dbo.[execute_command];
 GO
 
-CREATE PROC dbo.execute_command
+CREATE PROC dbo.[execute_command]
 	@Command								nvarchar(MAX), 
-	@ExecutionType							sysname						= N'EXEC',							-- { EXEC | SQLCMD | SHELL | PARTNER }
+	@ExecutionType							sysname						= N'SQLCMD',						-- { SQLCMD | SHELL | POSH | PARTNER }
 	@ExecutionAttemptsCount					int							= 2,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
 	@DelayBetweenAttempts					sysname						= N'5s',
-	@IgnoredResults							nvarchar(2000)				= N'[COMMAND_SUCCESS]',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, [tokens]'. Allowed Tokens: [COMMAND_SUCCESS] | [USE_DB_SUCCESS] | [ROWS_AFFECTED] | [BACKUP] | [RESTORE] | [SHRINKLOG] | [DBCC] ... 
-    @PrintOnly                              bit                         = 0,
-	@Results								xml							OUTPUT
+	@IgnoredResults							nvarchar(2000)				= N'{COMMAND_SUCCESS}',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, {tokens}'. Allowed Tokens: {COMMAND_SUCCESS} | {USE_DB_SUCCESS} | {ROWS_AFFECTED} | {BACKUP} | {RESTORE} | {SHRINKLOG} | {DBCC} ... 
+    @SafeResults							nvarchar(2000)				= N'',								-- { ALL | custom_pattern } just like @IgnoredResults but marked as 'safe' (i.e., ALSO ignored and won't trigger error conditions), meaning that they're something the user wants back (e.g., results of a ping 10.0.0.1... various 'bits' of result could be flagged as SAFE.
+	@ErrorResults							nvarchar(2000)				= N'',								-- 'Inverse' of @SafeResults - i.e., if setting @SafeResults to {ALL}... that's a pain IF there's one or three various bits of exact text that result in an error... 
+	@PrintOnly                              bit                         = 0,
+	@Outcome								xml							OUTPUT, 
+	@ErrorMessage							nvarchar(MAX)				OUTPUT
 AS
 	SET NOCOUNT ON; 
 
@@ -274,20 +145,21 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
+	SET @ExecutionType = ISNULL(@ExecutionType, N'SQLCMD');
+	SET @IgnoredResults = NULLIF(@IgnoredResults, N'');
+	SET @SafeResults = NULLIF(@SafeResults, N'');
+
 	IF @ExecutionAttemptsCount <= 0 SET @ExecutionAttemptsCount = 1;
 
     IF @ExecutionAttemptsCount > 0 
 
-    IF UPPER(@ExecutionType) NOT IN (N'EXEC', N'SQLCMD', N'SHELL', N'PARTNER') BEGIN 
-        RAISERROR(N'Permitted @ExecutionType values are { EXEC | SQLCMD | SHELL | PARTNER }.', 16, 1);
+    IF UPPER(@ExecutionType) NOT IN (N'SQLCMD', N'SHELL', N'POSH', N'PARTNER') BEGIN 
+        RAISERROR(N'Permitted @ExecutionType values are { SQLCMD | SHELL | POSH | PARTNER }.', 16, 1);
         RETURN -2;
     END; 
 
 	-- if @ExecutionType = PARTNER, make sure we have a PARTNER entry in sys.servers... 
-
-
-	-- for SQLCMD, SHELL, and PARTNER... final 'statement' needs to be varchar(4000) or less. 
-
+	--  or, vNEXT: @ExecutionType of PARTNER:SQL-130-11B can/will ultimately be allowed... 
 
     -- validate @DelayBetweenAttempts (if required/present):
     IF @ExecutionAttemptsCount > 1 BEGIN
@@ -313,31 +185,31 @@ AS
 		filter_text varchar(2000) NOT NULL
 	); 
 	
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[USE_DB_SUCCESS]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{USE_DB_SUCCESS}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('USE_DB_SUCCESS', 'Changed database context to ''%');
 		
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[USE_DB_SUCCESS]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{USE_DB_SUCCESS}', N'');
 	END; 
 
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[COMMAND_SUCCESS]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{COMMAND_SUCCESS}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('COMMAND_SUCCESS', 'Command(s) completed successfully.');
 		
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[COMMAND_SUCCESS]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{COMMAND_SUCCESS}', N'');
 	END; 
 
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[ROWS_AFFECTED]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{ROWS_AFFECTED}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('ROWS_AFFECTED', '% rows affected)%');
 		
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[ROWS_AFFECTED]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{ROWS_AFFECTED}', N'');
 	END; 
 
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[BACKUP]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{BACKUP}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('BACKUP', 'Processed % pages for database %'),
@@ -347,18 +219,18 @@ AS
 			('BACKUP', 'BACKUP DATABASE...FILE=<name> successfully processed % pages in % seconds %).'), -- for file/filegroup backups
 			('BACKUP', 'The log was not truncated because records at the beginning %sp_repldone% to mark transactions as distributed %');  -- NOTE: should only be enabled on systems where there's a JOB to force cleanup of replication in log... 
 		
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[BACKUP]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{BACKUP}', N'');
 	END; 
 
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[DELETEFILE]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{DELETEFILE}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('DELETEFILE', 'Command(s) completed successfully.');
 		
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[DELETEFILE]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{DELETEFILE}', N'');
 	END; 
 	
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[RESTORE]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{RESTORE}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('RESTORE', 'RESTORE DATABASE successfully processed % pages in %'),
@@ -369,35 +241,73 @@ AS
 			('RESTORE', 'RESTORE DATABASE ... FILE=<name> successfully processed % pages in % seconds %).'),  -- partial recovery operations... 
             ('RESTORE', 'DBCC execution completed. If DBCC printed error messages, contact your system administrator.');  -- if CDC was enabled on source (even if we don't issue KEEP_CDC), some sort of DBCC command fires during RECOVERY.
 		
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[RESTORE]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{RESTORE}', N'');
 	END;
 
-	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'[SINGLE_USER]', N'')))) BEGIN
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
 			('SINGLE_USER', 'Nonqualified transactions are being rolled back. Estimated rollback completion%');
 					
-		SET @IgnoredResults = REPLACE(@IgnoredResults, N'[SINGLE_USER]', N'');
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'');
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{COPYFILE}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('COPYFILE', '%1 file(s) copied%');
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{COPYFILE}', N'');
+	END;
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{S3COPYFILE}', N'')))) BEGIN
+		-- PlaceHolder: there isn't, currently, any 'noise' output from Write-S3Object...
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{S3COPYFILE}', N'');
+	END;
+
+	-- TODO: {SHRINKLOG}
+	-- TODO: {DBCC} (success)
+
 	INSERT INTO @filters ([filter_type], [filter_text])
-	SELECT 'CUSTOM', [result] FROM dbo.[split_string](@IgnoredResults, N',', 1) WHERE LEN([result]) > 0;
+	SELECT 'CUSTOM_IGNORED', [result] FROM dbo.[split_string](@IgnoredResults, N',', 1) WHERE LEN([result]) > 0;
+
+	IF @SafeResults IS NOT NULL BEGIN 
+		IF UPPER(@SafeResults) = N'{ALL}' BEGIN 
+			INSERT INTO @filters ([filter_type], [filter_text]) 
+			VALUES ('SAFE_WILDCARD', N'%_%');
+		  END; 
+		ELSE BEGIN
+			INSERT INTO @filters ([filter_type], [filter_text])
+			SELECT 'SAFE', [result] FROM dbo.[split_string](@SafeResults, N',', 1) WHERE LEN([result]) > 0;
+		END;
+	END;
+
+	DECLARE @explicitErrors table (error_id int IDENTITY(1,1) NOT NULL, error_text sysname); 
+	IF @ErrorResults IS NOT NULL BEGIN 
+		INSERT INTO @explicitErrors ([error_text])
+		SELECT [result] FROM dbo.[split_string](@ErrorResults, N',', 1) WHERE LEN([result]) > 0;
+	END;
 
 	CREATE TABLE #Results (
 		result_id int IDENTITY(1,1),
-		result nvarchar(MAX)
+		result nvarchar(MAX), 
+		ignored_match sysname NULL, 
+		explicit_error sysname NULL
 	);
 
-	DECLARE @result nvarchar(MAX);
-	DECLARE @resultDetails table ( 
-		result_id int IDENTITY(1,1) NOT NULL, 
-		execution_time datetime NOT NULL DEFAULT (GETDATE()),
-		result nvarchar(MAX) NOT NULL
+	DECLARE @result xml;
+	DECLARE @iterations table ( 
+		iteration_id int IDENTITY(1,1) NOT NULL, 
+		execution_time datetime NOT NULL,
+		succeeded bit NOT NULL, 
+		exception bit NOT NULL,
+		result xml NOT NULL
 	);
 
 	DECLARE @xpCmd varchar(2000);
 	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
-	DECLARE @serverName sysname = '';
+	DECLARE @serverName sysname = '.';
     DECLARE @execOutput int;
 
 	IF UPPER(@ExecutionType) = N'SHELL' BEGIN
@@ -405,116 +315,191 @@ AS
     END;
     
     IF UPPER(@ExecutionType) IN (N'SQLCMD', N'PARTNER') BEGIN
-        SET @xpCmd = 'sqlcmd {0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
-    
+		SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+
         IF UPPER(@ExecutionType) = N'SQLCMD' BEGIN 
-		
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
 			    SET @serverName = N' -S .\' + @@SERVICENAME;
-		
-		    SET @xpCmd = REPLACE(@xpCmd, '{0}', @serverName);
 	    END; 
 
 	    IF UPPER(@ExecutionType) = N'PARTNER' BEGIN 
 		    SELECT @serverName = REPLACE([data_source], N'tcp:', N'') FROM sys.servers WHERE [name] = N'PARTNER';
-
-		    SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
 	    END; 
+
+		SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
     END;
+
+	IF UPPER(@ExecutionType) IN (N'POSH') BEGIN 
+		SET @xpCmd = 'Powershell.exe -Command "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+	END;
 	
-	DECLARE @ExecutionAttemptCount int = 0; -- set to 1 during first exectuion attempt:
+	DECLARE @executionCount int = 0;
 	DECLARE @succeeded bit = 0;
+	DECLARE @executionTime datetime;
+	DECLARE @exceptionOccurred bit = 0;
     
 ExecutionAttempt:
 	
-	SET @ExecutionAttemptCount = @ExecutionAttemptCount + 1;
+	SET @executionCount = @executionCount + 1;
 	SET @result = NULL;
+	SET @succeeded = 0;
+	SET @exceptionOccurred = 0;
+	SET @executionTime = GETDATE();
+
+	DELETE FROM #Results;
+
+	IF @PrintOnly = 1 BEGIN 
+		PRINT N'-- xp_cmdshell ''' + @xpCmd + ''';';
+        PRINT @xpCmd;
+		SET @succeeded = 1; 
+		GOTO Terminate;
+	END;
 
 	BEGIN TRY 
+		--PRINT @xpCmd;
 
-		IF UPPER(@ExecutionType) = N'EXEC' BEGIN 
-			
-            SET @execOutput = NULL;
+		INSERT INTO #Results (result) 
+		EXEC master.sys.[xp_cmdshell] @xpCmd;
 
-            IF @PrintOnly = 1 
-                PRINT @Command 
-            ELSE 
-			    EXEC @execOutput = sp_executesql @Command; 
+		DELETE FROM [#Results] WHERE [result] IS NULL;
 
-            IF @execOutput = 0
-                SET @succeeded = 1;
+		UPDATE r 
+		SET 
+			r.[ignored_match] = x.[filter_type]
+		FROM 
+			[#Results] r
+			LEFT OUTER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]) 
+				OR (x.[filter_type] IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result] = r.[result]); 
 
-		  END; 
-		ELSE BEGIN 
-			DELETE FROM #Results;
-
-            IF @PrintOnly = 1
-                PRINT @xpCmd 
-            ELSE BEGIN
-			    INSERT INTO #Results (result) 
-			    EXEC master.sys.[xp_cmdshell] @xpCmd;
-
--- v6.5
--- don't delete... either: a) update to set column treat_as_handled = 1 or... b) just use a sub-select/filter in the following query... or something. 
---  either way, the idea is: 
---              we capture ALL output - and spit it out for review/storage/auditing/trtoubleshooting and so on. 
----                 but .. only certain outputs are treated as ERRORS or problems... 
-			    DELETE r
-			    FROM 
-				    #Results r 
-				    INNER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]);
-
-			    IF EXISTS(SELECT NULL FROM [#Results] WHERE [result] IS NOT NULL) BEGIN 
-				    SET @result = N'';
-				    SELECT 
-					    @result = @result + [result] + CHAR(13) + CHAR(10)
-				    FROM 
-					    [#Results] 
-				    WHERE 
-					    [result] IS NOT NULL
-				    ORDER BY 
-					    [result_id]; 
-									
-			      END;
-			    ELSE BEGIN 
-				    SET @succeeded = 1;
-			    END;
-            END;
+		IF EXISTS (SELECT NULL FROM @explicitErrors) BEGIN 
+			UPDATE r 
+			SET 
+				r.[explicit_error] = x.error_text
+			FROM 
+				[#Results] r 
+				INNER JOIN @explicitErrors x ON (r.[result] LIKE x.[error_text]) OR (r.[result] = x.[error_text]);
 		END;
 
+		SELECT @result = (SELECT 
+			result_id [result_row/@result_id], 
+			CASE WHEN [ignored_match] IN (N'SAFE', N'SAFE_WILDCARD') THEN NULL ELSE [ignored_match] END [result_row/@ignored],
+			CASE WHEN [ignored_match] IN (N'SAFE', N'SAFE_WILDCARD') THEN [ignored_match] ELSE NULL END [result_row/@safe],
+			[explicit_error] [result_row/@explicit_error],
+			CASE 
+				WHEN [ignored_match] IS NOT NULL AND [explicit_error] IS NOT NULL THEN 1
+				WHEN [ignored_match] IS NULL THEN 1
+				ELSE 0 
+			END [result_row/@is_error],
+			[result] [result_row]
+		FROM 
+			[#Results] 
+		ORDER BY 
+			[result_id]
+		FOR XML PATH(''), TYPE);
+
+		/* Determine Success or Error based on ... ignored/safe vs explicit errors and ... NULLs/etc. */
+		WITH simplified AS ( 
+			SELECT 
+				CASE 
+					WHEN [ignored_match] IS NOT NULL AND [explicit_error] IS NOT NULL THEN 1
+					WHEN [ignored_match] IS NULL THEN 1
+					ELSE 0 
+				END [success]
+			FROM 
+				[#Results] 
+		) 
+
+		SELECT @succeeded = CASE WHEN MAX(success) > 0 THEN 0 ELSE 1 END FROM [simplified];
 	END TRY
 
 	BEGIN CATCH 
-		SET @result = N'EXCEPTION: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
+		WITH faked AS ( 
+			SELECT 
+				ERROR_NUMBER() [error_number], 
+				ERROR_LINE() [error_line], 
+				ERROR_SEVERITY() [severity],
+				ERROR_MESSAGE() [error_message]
+		)
+		
+		SELECT @result = (SELECT 
+			[error_number] [exception/@error_number], 
+			[error_line] [exception/@error_line], 
+			[severity] [exception/@severity],
+			[error_message] [exception]
+		FROM 
+			faked
+		FOR XML PATH(''), TYPE);
+
+		SET @exceptionOccurred = 1;
 	END CATCH;
-	
+
 	IF @result IS NOT NULL BEGIN 
-		INSERT INTO @resultDetails ([result])
-		VALUES 
-			(@result);
+		INSERT INTO @iterations ([result], [execution_time], [succeeded], [exception])
+		VALUES (@result, @executionTime, @succeeded, @exceptionOccurred);
 	END; 
 
+Terminate:
 	IF @succeeded = 0 BEGIN 
-		IF @ExecutionAttemptCount < @ExecutionAttemptsCount BEGIN 
+		IF @executionCount < @ExecutionAttemptsCount BEGIN 
 			WAITFOR DELAY @delay; 
 			GOTO ExecutionAttempt;
 		END;
 	END;  
 
-	IF EXISTS(SELECT NULL FROM @resultDetails) BEGIN
-		SELECT @Results = (SELECT 
-			[result_id] [result/@id],  
-            [execution_time] [result/@timestamp], 
-            [result]
-		FROM 
-			@resultDetails 
-		ORDER BY 
-			[result_id]
-		FOR XML PATH(''), ROOT('results'));
-	END; 
+	SELECT @Outcome = (SELECT 
+		CASE 
+			WHEN [exception] = 1 THEN N'EXCEPTION' 
+			WHEN [exception] = 0 AND [succeeded] = 1 THEN N'SUCCEEDED'
+			ELSE N'FAILED'
+		END [iteration/@execution_outcome],
+		[iteration_id] [iteration/@iteration_id],
+		[execution_time] [iteration/@execution_time],
+		[result] [iteration]
+	FROM 
+		@iterations 
+	ORDER BY 
+		[iteration_id] 
+	FOR XML PATH(''), ROOT('iterations'), TYPE);
 
 	IF @succeeded = 1
 		RETURN 0;
 
-	RETURN 1;
+	/* Otherwise: serialize/output error details: */
+	SET @ErrorMessage = N'';
+	
+	WITH core AS ( 
+		SELECT 
+			[i].[iteration_id],
+			x.result_row.value(N'(@result_id)', N'int') [row_id], 
+			x.result_row.value(N'(@is_error)', N'bit') [is_error], 
+			CAST(0 AS bit) [is_exception],
+			x.result_row.value(N'.', N'nvarchar(max)') [content]
+		FROM 
+			@iterations i  
+			CROSS APPLY i.result.nodes(N'/result_row') x(result_row)
+		WHERE 
+			[i].[exception] = 0
+
+		UNION SELECT 
+			[i].[iteration_id],
+			1 [row_id], 
+			0 [is_error], 
+			CAST(1 AS bit) [is_exception],
+			N'EXCEPTION::> ErrorNumber: ' + CAST(x.exception.value(N'(@error_number)', N'int') AS sysname) + N', LineNumber: ' + CAST(x.exception.value(N'(@error_line)', N'int') AS sysname) + N', Severity: ' + CAST(x.exception.value(N'(@severity)', N'int') AS sysname) + N', Message: ' + x.exception.value(N'.', N'nvarchar(max)') [content]
+			
+		FROM 
+			@iterations i 
+			CROSS APPLY i.result.nodes(N'/exception') x(exception)
+	) 
+
+	SELECT 
+		@ErrorMessage = @ErrorMessage + [content] + @crlf
+	FROM 
+		core 
+	WHERE 
+		[is_error] = 1 OR [is_exception] = 1
+	ORDER BY	
+		[iteration_id], [row_id];
+
+	RETURN -1;
 GO

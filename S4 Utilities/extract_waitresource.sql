@@ -27,7 +27,9 @@
 					FILE: 7:0										dbid:0 - as in, ALWAYS 0 - and... that's NOT a FILE_ID (obviously). BOL says: "Represents a database file. This file can be either a data or a log file.".
 
 				METADATA
-					METADATA:                                       database_id appears to be a constant - but this uses 'wild' formatting (see below) 
+					METADATA:                                       database_id is ... as expected... 
+
+						STATS:										METADATA: database_id = 21 STATS(object_id = 1476200309, stats_id = 19), lockPar
 
 				ALLOCATION_UNIT
 					ALLOCATION_UNIT: ???? 
@@ -187,6 +189,21 @@ AS
 		SET @WaitResource = REPLACE(@WaitResource, N'TABLE: ', N'TAB: '); -- standardize formatting... 
 	END;
 
+	IF @WaitResource LIKE N'METADATA%STATS(object_id%' BEGIN 
+		-- translate to following format: METADATA-STATS: dbid:objectid:indexid
+		SET @WaitResource = REPLACE(REPLACE(@WaitResource, N'METADATA: database_id = ', N''), N' STATS', N'');
+
+		DECLARE @dbid sysname = SUBSTRING(@WaitResource, 0, PATINDEX(N'%(%', @WaitResource)); 
+		SET @WaitResource = REPLACE(@WaitResource, @dbid + N'(', N'');
+
+		DECLARE @lock sysname = SUBSTRING(@WaitResource, PATINDEX(N'%),%', @WaitResource) + 3, LEN(@WaitResource));
+		SET @WaitResource = REPLACE(@WaitResource, N'), ' + @lock, N'');
+		SET @WaitResource = REPLACE(REPLACE(REPLACE(@WaitResource, N'object_id = ', N''), N',', N':'), N'_id = ', N'');
+
+		SET @WaitResource = N'METADATA-STATS: ' + @dbid + N':' + @WaitResource + N':' + @lock;
+
+	END;
+
 	CREATE TABLE #ExtractionMapping ( 
 		row_id int NOT NULL, 
 		[database_id] int NOT NULL,         -- source_id (i.e., from production)
@@ -254,7 +271,7 @@ AS
 
 		-- TODO: test/verify output AGAINST real 'capture' info.... 
 		IF @waittype = N'TAB' BEGIN 
-			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@part3 AS sysname) + N';';	
+			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@part3 AS sysname) + N';';	
 
 			EXEC [sys].[sp_executesql]
 				@stmt = @lookupSQL, 
@@ -266,7 +283,7 @@ AS
 		END;
 
 		IF @waittype = N'KEY' BEGIN 
-			SET @lookupSQL = N'SELECT @objectName = o.[name], @indexName = i.[name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.partitions p INNER JOIN [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects o ON p.[object_id] = o.[object_id] INNER JOIN [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.indexes i ON [o].[object_id] = [i].[object_id] AND p.[index_id] = [i].[index_id] WHERE p.hobt_id = ' + CAST(@part3 AS sysname) + N';';
+			SET @lookupSQL = N'SELECT @objectName = o.[name], @indexName = i.[name] FROM [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.partitions p INNER JOIN [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.objects o ON p.[object_id] = o.[object_id] INNER JOIN [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.indexes i ON [o].[object_id] = [i].[object_id] AND p.[index_id] = [i].[index_id] WHERE p.hobt_id = ' + CAST(@part3 AS sysname) + N';';
 
 			EXEC [sys].[sp_executesql]
 				@stmt = @lookupSQL, 
@@ -279,7 +296,7 @@ AS
 		END;
 
 		IF @waittype = N'OBJECT' OR @waittype = N'COMPILE' BEGIN 
-			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@part3 AS sysname) + N';';	
+			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@part3 AS sysname) + N';';	
 			EXEC [sys].[sp_executesql]
 				@stmt = @lookupSQL, 
 				@params = N'@objectName sysname OUTPUT', 
@@ -290,42 +307,76 @@ AS
 		END;
 
 		IF @waittype IN(N'PAGE', N'XPAGE', N'EXTENT', N'ROW') BEGIN 
+			
+			DECLARE @excludePageLookups bit = 0; -- if working with translated/mapped DB details, we either don't have actual data pages (i.e., clone) or they might be seriously out of date - so SKIP trying to figure out exact details via DBCC PAGE operations... 
+			IF @DatabaseMappings IS NOT NULL SET @excludePageLookups = 1;
 
-			CREATE TABLE #results (ParentObject varchar(255), [Object] varchar(255), Field varchar(255), [VALUE] varchar(255));
-			SET @lookupSQL = N'DBCC PAGE('''+ @metaDataDatabaseName + ''', ' + CAST(@part3 AS sysname) + ', ' + @part4 + ', 1) WITH TABLERESULTS;'
+			IF @excludePageLookups = 0 BEGIN
+				CREATE TABLE #results (ParentObject varchar(255), [Object] varchar(255), Field varchar(255), [VALUE] varchar(255));
+				SET @lookupSQL = N'DBCC PAGE('''+ @logicalDatabaseName + ''', ' + CAST(@part3 AS sysname) + ', ' + @part4 + ', 1) WITH TABLERESULTS;'
 
-			INSERT INTO #results ([ParentObject], [Object], [Field], [VALUE])
-			EXECUTE (@lookupSQL);
+				INSERT INTO #results ([ParentObject], [Object], [Field], [VALUE])
+				EXECUTE (@lookupSQL);
 		
-			SELECT @objectID = CAST([VALUE] AS int) FROM [#results] WHERE [ParentObject] = N'PAGE HEADER:' AND [Field] = N'Metadata: ObjectId';
-			SELECT @indexID = CAST([VALUE] AS int) FROM [#results] WHERE [ParentObject] = N'PAGE HEADER:' AND [Field] = N'Metadata: IndexId';
+				SELECT @objectID = CAST([VALUE] AS int) FROM [#results] WHERE [ParentObject] = N'PAGE HEADER:' AND [Field] = N'Metadata: ObjectId';
+				SELECT @indexID = CAST([VALUE] AS int) FROM [#results] WHERE [ParentObject] = N'PAGE HEADER:' AND [Field] = N'Metadata: IndexId';
 		
-			SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@objectID AS sysname) + N';';	
-			EXEC [sys].[sp_executesql]
-				@stmt = @lookupSQL, 
-				@params = N'@objectName sysname OUTPUT', 
-				@objectName = @objectName OUTPUT;
+				SET @lookupSQL = N'SELECT @objectName = [name] FROM [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.objects WHERE object_id = ' + CAST(@objectID AS sysname) + N';';	
+				EXEC [sys].[sp_executesql]
+					@stmt = @lookupSQL, 
+					@params = N'@objectName sysname OUTPUT', 
+					@objectName = @objectName OUTPUT;
 
-			SET @lookupSQL = N'SELECT @indexName = [name] FROM [' + ISNULL(@metaDataDatabaseName, N'master') + N'].sys.indexes WHERE object_id = ' + CAST(@objectID AS sysname) + N' AND index_id = ' + CAST(@indexID AS sysname) + N';';	
-			EXEC [sys].[sp_executesql]
-				@stmt = @lookupSQL, 
-				@params = N'@indexName sysname OUTPUT', 
-				@indexName = @indexName OUTPUT;
+				SET @lookupSQL = N'SELECT @indexName = [name] FROM [' + ISNULL(@logicalDatabaseName, N'master') + N'].sys.indexes WHERE object_id = ' + CAST(@objectID AS sysname) + N' AND index_id = ' + CAST(@indexID AS sysname) + N';';	
+				EXEC [sys].[sp_executesql]
+					@stmt = @lookupSQL, 
+					@params = N'@indexName sysname OUTPUT', 
+					@indexName = @indexName OUTPUT;
 
-			IF @waittype = N'ROW' 
-				SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: ' + CAST(@indexID AS sysname))) + N'.[PAGE_ID: ' + ISNULL(@part4, N'')  + N'].[SLOT: ' + ISNULL(@part5, N'') + N'] - ' + @waittype + N'_LOCK';
-			ELSE
-				SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: ' + CAST(@indexID AS sysname))) + N' - ' + @waittype + N'_LOCK';
+				IF @waittype = N'ROW' 
+					SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: ' + CAST(@indexID AS sysname))) + N'.[PAGE_ID: ' + ISNULL(@part4, N'')  + N'].[SLOT: ' + ISNULL(@part5, N'') + N'] - ' + @waittype + N'_LOCK';
+				ELSE
+					SET @Output = QUOTENAME(ISNULL(@logicalDatabaseName, N'DB_ID: ' + CAST(@part2 AS sysname))) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@indexName, 'INDEX_ID: ' + CAST(@indexID AS sysname))) + N' - ' + @waittype + N'_LOCK';
+				
+			  END;
+			ELSE BEGIN 
+				SET @Output = @WaitResource; 
+			END;
+
 			RETURN 0;
+		END;
+
+		IF @waittype = N'METADATA-STATS' BEGIN 
+			SET @lookupSQL = N'SELECT
+				@objectName = [o].[name],
+				@statsName = [s].[name]
+			FROM
+				[' + ISNULL(@logicalDatabaseName, N'master') + N'].[sys].[objects] [o]
+				INNER JOIN [' + ISNULL(@logicalDatabaseName, N'master') + N'].[sys].[stats] [s] ON [o].[object_id] = [s].[object_id]
+			WHERE
+				[o].[object_id] = ' + CAST(@part3 AS sysname) + N' AND [s].[stats_id] = ' + @part4 + N';'
+
+			DECLARE @statsName sysname;
+			EXEC sys.[sp_executesql]
+				@lookupSQL, 
+				N'@objectName sysname OUTPUT, @statsName sysname OUTPUT', 
+				@objectName = @objectName OUTPUT, 
+				@statsName = @statsName OUTPUT;
+
+			IF @part5 = N'lockPar' SET @part5 = N'PARTITION_LOCK';
+			SELECT @Output = QUOTENAME(@logicalDatabaseName) + N'.' + QUOTENAME(ISNULL(@objectName, N'TABLE_ID: ' + CAST(@part3 AS sysname))) + N'.' + QUOTENAME(ISNULL(@statsName, 'STATS_ID: -1')) + N'.' + QUOTENAME(@part5) + N' - STATS_LOCK';
+
+			RETURN 0;
+
 		END;
 	END TRY 
 	BEGIN CATCH 
-		PRINT 'PROCESSING_EXCEPTION: Line: ' + CAST(ERROR_LINE() AS sysname) + N' - Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' -> ' + ERROR_MESSAGE();
+		PRINT 'PROCESSING_EXCEPTION for Resource [' + @WaitResource + N']: Line: ' + CAST(ERROR_LINE() AS sysname) + N' - Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' -> ' + ERROR_MESSAGE();
 		SET @error = 1;
 	END CATCH
 
 	-- IF we're still here - then either there was an exception 'shredding' the resource identifier - or we're in an unknown resource-type. (Either outcome, though, is that we're dealing with an unknown/non-implemented type.)
-	SELECT @WaitResource [wait_resource], @waittype [wait_type], @part2 [part2], @part3 [part3], @part4 [part4], @part5 [part5];
+	--SELECT @WaitResource [wait_resource], @waittype [wait_type], @part2 [part2], @part3 [part3], @part4 [part4], @part5 [part5];
 
 	IF @error = 1 
 		SET @Output = QUOTENAME(@WaitResource) + N' - EXCEPTION_PROCESSING_WAIT_RESOURCE';

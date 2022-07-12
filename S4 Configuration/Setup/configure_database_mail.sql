@@ -70,6 +70,10 @@ AS
 
 	-- {copyright}
 
+
+	SET @SmptUserName = NULLIF(@SmptUserName, N'');
+	SET @SmtpPassword = NULLIF(@SmtpPassword, N'');
+
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	DECLARE @return int;
