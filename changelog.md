@@ -2,12 +2,38 @@
 
 # Change Log
 
+## [10.0] - 2022-07-12
+Improved Backups/Restores; New Utilities and Bug-Fixes.
+
+### Fixed 
+- MAJOR: Fix for 'Conversion failed when converting date and/or time from character string.' when attempting to execute `dbo.restore_databases` or run `dbo.apply_logs` against 'non-conventional' file-names (i.e., files with markers or with ad-hoc names).
+- Improved handling of error conditions within `dbo.view_largergrant_problems`.
+
+### Added
+- `dbo.list_top` - Light-weight "Top CPU Consumers (right this second)" sproc to address scenarios where `dbo.list_processes` encounters locking/blocking or is slow. 
+- `dbo.kill_blocking_processes` - Ugly 'hack' to enable periodic or automated cleanup (KILL) of applications that LEAK connections to prevent major concurrency problems against active workloads. 
+- New `@Directive` for `dbo.restore_databases` that enables `PRESERVE_FILENAMES` for side-by-side migrations (from one disk/server to another) easier when using `dbo.restore_databases`.
+- `dbo.view_querystore_consumers` - to enable easy extraction of 'worst' queries via Query Store (not much different than using the GUI - but provides scripted access AND is MUCH faster than Query Store extraction on OLDER versions of SQL Server).
+- `dbo.view_querystore_counts` - Aggregated counts/reports for performance analysis.
+- `dbo.list_collisions` now includes an `is_system` column.
+- Additional meta-data (stats/etc) extraction/handling for `dbo.extract_waitresource`.
+- Initial addition of `dbo.alter_jobstep_body` - 'helper' func to make mass/scripted modification of job-steps easier and/or to help facilitiate job-synchronization between servers. 
+- `dbo.dump_module_code` - helper func to script/dump all matches from `sys.sql_modules` across multiple/all databases. 
+
+### Changed
+- Major overhaul of 'internal' logic/processing via `dbo.execute_command` to allow for better error-handling and outcome-reporting of executed operations. 
+- Improved error handling/storage (output) of `dbo.check_database_consistency`.
+- Transient error-handling within `dbo.restore_databases` to address issues with 'hiccups' or file-in-use errors when attempting to restore backups. 
+- Improved error-handling within `dbo.backup_databases` to simplify troubleshooting of common backup errors/problems. 
+- Improved logging of errors/problems during backups via addition of backup_history_entry and backup_history_detail handling. 
+
 ## [9.1] - 2021-09-07
 Minor Bug Fixes. 
 
 ### Fixed
 - Minor Tweak to `dbo.create_server_certificate` to prevent error/exception when `@PrintOnly = 1` for testing/scoping.
 - Verified that `dbo.script_logins` can/does/will process WINDOWS GROUP Logins without issues. 
+
 
 ### Added
 - Initial addition of 3x new sprocs useful in creation/definition of dev/test databases and/or in QA environments: `dbo.prevent_user_access`, `dbo.script_security_mappings`, `dbo.import_security_mappgings`. NON-documented. 

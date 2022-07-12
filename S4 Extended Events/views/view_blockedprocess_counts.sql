@@ -211,7 +211,7 @@ AS
 
 	IF @minutes = 0 BEGIN 
 		RAISERROR('Invalid @Granularity value specified. Allowed values are { DAY | HOUR | MINUTE } - where MINUTE = 5 minute increments.', 16, 1);
-		return -20;
+		RETURN -20;
 	END;
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
@@ -226,8 +226,8 @@ AS
 
 	DECLARE @timesStart datetime, @timesEnd datetime;
 	SELECT 
-		@timesStart = DATEADD(MINUTE, DATEDIFF(MINUTE, 0,@traceStart) / @minutes * @minutes, 0), 
-		@timesEnd = DATEADD(MINUTE, @minutes, DATEADD(MINUTE, DATEDIFF(MINUTE, 0,@traceEnd) / @minutes * @minutes, 0));
+		@timesStart = DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @traceStart) / @minutes * @minutes, 0), 
+		@timesEnd = DATEADD(MINUTE, @minutes, DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @traceEnd) / @minutes * @minutes, 0));
 
 	WITH times AS ( 
 		SELECT @timesStart [time_block] 

@@ -90,6 +90,8 @@ AS
 		@totalRows = @totalRows OUTPUT;
 	
 	DECLARE @targetCoreCount int = @totalCoreCount - @CoreCountCalculationsRange;
+	IF @targetCoreCount < 4 SET @targetCoreCount = 4;
+
 	DECLARE @additionalCores int = 0;
 
 	WHILE @targetCoreCount <= @totalCoreCount + @CoreCountCalculationsRange BEGIN

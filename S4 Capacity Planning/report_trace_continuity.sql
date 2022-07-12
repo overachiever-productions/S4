@@ -51,6 +51,9 @@ WHERE
 	[timestamp] IS NOT NULL; ';
 
 
+
+
+
 	EXEC sp_executesql 
 		@sql, 
 		N'@startTime datetime OUTPUT, @endTime datetime OUTPUT', 

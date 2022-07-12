@@ -30,8 +30,8 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-
-    IF NULLIF(@TargetDirectory, N'') IS NULL BEGIN 
+    
+	IF NULLIF(@TargetDirectory, N'') IS NULL BEGIN 
         SET @Error = N'The @TargetDirectory parameter for dbo.establish_directory may NOT be NULL or empty.';
         RETURN -1;
     END; 
@@ -42,12 +42,8 @@ AS
 
     SET @Error = NULL;
 
-    DECLARE @exists bit; 
-    IF @PrintOnly = 1 BEGIN 
-        SET @exists = 1;
-         PRINT '-- Target Directory Check Requested for: [' + @TargetDirectory + N'].';
-      END; 
-    ELSE BEGIN 
+    DECLARE @exists bit = 0; 
+    IF @PrintOnly = 0 BEGIN 
         EXEC dbo.[check_paths] 
             @Path = @TargetDirectory, 
             @Exists = @exists OUTPUT;
@@ -59,21 +55,20 @@ AS
     -- assume that we can/should be able to BUILD the path if it doesn't already exist: 
     DECLARE @command nvarchar(1000) = N'if not exist "' + @TargetDirectory + N'" mkdir "' + @TargetDirectory + N'"'; -- windows
 
-    DECLARE @Results xml;
-    DECLARE @outcome int;
-    EXEC @outcome = dbo.[execute_command]
+    DECLARE @results xml;
+	DECLARE @errorMessage nvarchar(MAX);
+    EXEC dbo.[execute_command]
         @Command = @command, 
         @ExecutionType = N'SHELL',
         @ExecutionAttemptsCount = 1,
-        @IgnoredResults = N'',
         @PrintOnly = @PrintOnly,
-        @Results = @Results OUTPUT;
+        @Outcome = @results OUTPUT, 
+		@ErrorMessage = @errorMessage OUTPUT;
 
-    IF @outcome = 0 
-        RETURN 0;  -- success. either the path existed, or we created it (with no issues).
+	IF @errorMessage IS NULL 
+		RETURN 0; 
     
-    SELECT @Error = CAST(@Results.value(N'(/results/result)[1]', N'nvarchar(MAX)') AS nvarchar(MAX));
-    SET @Error = ISNULL(@Error, N'#S4_UNKNOWN_ERROR#');
+	SELECT @Error = @errorMessage;
 
     RETURN -1;
 GO

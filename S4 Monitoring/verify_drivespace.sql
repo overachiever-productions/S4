@@ -149,7 +149,7 @@ AS
 		IF @GBsOrPercentages = N'GBs' 
 			SET @message = N'The following disks on ' + QUOTENAME(@@SERVERNAME) + ' have dropped below target thresholds for free space: ' + @crlf + @crlf + @message;
 		ELSE 
-			SET @message = N'The following disks on ' + QUOTENAME(@@SERVERNAME) + ' have dropped exceeded the threshold of ' + CAST(@WarnWhenUsageExceedsPercentage AS sysname) + N'% of available space used: ' + @crlf + @crlf + @message;
+			SET @message = N'The following disks on ' + QUOTENAME(@@SERVERNAME) + ' have exceeded the threshold of ' + CAST(@WarnWhenUsageExceedsPercentage AS sysname) + N'% of available space used: ' + @crlf + @crlf + @message;
 
 		IF @PrintOnly = 1 BEGIN 
 			PRINT @subject;
