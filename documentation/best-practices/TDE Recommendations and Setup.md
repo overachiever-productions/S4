@@ -38,6 +38,11 @@
             
     TODO: review this documentation: 
         https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/enable-encrypted-connections-to-the-database-engine?view=sql-server-ver15
+        
+    TODO: keep an eye on this question and see what comes out as a response:
+        https://stackoverflow.com/questions/58416600/how-can-sql-server-client-get-information-on-tls-certificate-being-used
+        
+        i.e., could end up being some great tools/etc to help with VALIDATION that certs are working as expected for data-in-use/flight.
 </div>
 
 

@@ -1,8 +1,5 @@
 /*
 
-	DEPENDENCIES:
-		- PARTNER (linked server to Mirroring 'partner')
-		- admindb.dbo.is_primary_database()
 
 	NOTES:
 		- While 'Mirrored' Jobs should be any job where: 
@@ -95,10 +92,11 @@ IF OBJECT_ID('dbo.verify_job_synchronization','P') IS NOT NULL
 GO
 
 CREATE PROC [dbo].[verify_job_synchronization]
-	@IgnoredJobs			nvarchar(MAX)		= '',
-	@MailProfileName		sysname				= N'General',	
-	@OperatorName			sysname				= N'Alerts',	
-	@PrintOnly				bit						= 0					-- output only to console - don't email alerts (for debugging/manual execution, etc.)
+	@IgnoredJobs				nvarchar(MAX)		= '',
+	--@IgnoredJobCategories		nvarchar(MAX)		= 'IGNORED',			-- or maybe {IGNORED} as the actual name? 
+	@MailProfileName			sysname				= N'General',	
+	@OperatorName				sysname				= N'Alerts',	
+	@PrintOnly					bit						= 0					-- output only to console - don't email alerts (for debugging/manual execution, etc.)
 AS 
 	SET NOCOUNT ON;
 
