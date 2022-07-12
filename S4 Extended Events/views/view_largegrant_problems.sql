@@ -30,6 +30,7 @@ GO
 CREATE PROC dbo.[view_largegrant_problems]
 	@TranslatedLargeGrantsTable				sysname, 
 	@TopN									int				= 20,
+	@IncludeHeader							bit				= 0,
 	@OptionalStartTime						datetime		= NULL, 
 	@OptionalEndTime						datetime		= NULL, 
 	@ConvertTimesFromUtc					bit				= 1
@@ -40,6 +41,7 @@ AS
 	
 	SET @TranslatedLargeGrantsTable = NULLIF(@TranslatedLargeGrantsTable, N'');
 	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
+	SET @IncludeHeader = ISNULL(@IncludeHeader, 0);
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -133,14 +135,16 @@ AS
 	EXEC sp_executesql 
 		@sql;
 
-	DECLARE @header nvarchar(MAX) = N'';
-	SET @header = N'SELECT ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)) [start], ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table)) [end], DATEDIFF(MINUTE, ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)), ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table))) [minutes];';
+	IF @IncludeHeader = 1 BEGIN
+		DECLARE @header nvarchar(MAX) = N'';
+		SET @header = N'SELECT ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)) [start], ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table)) [end], DATEDIFF(MINUTE, ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)), ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table))) [minutes];';
 
-	EXEC sp_executesql 
-		@header, 
-		N'@OptionalStartTime datetime, @OptionalEndTime datetime', 
-		@OptionalStartTime = @OptionalStartTime, 
-		@OptionalEndTime = @OptionalEndTime;
+		EXEC sp_executesql 
+			@header, 
+			N'@OptionalStartTime datetime, @OptionalEndTime datetime', 
+			@OptionalStartTime = @OptionalStartTime, 
+			@OptionalEndTime = @OptionalEndTime;
+	END;
 
 	WITH aggregates AS ( 
 		SELECT 
