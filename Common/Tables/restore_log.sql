@@ -163,8 +163,8 @@ GO
 ---------------------------------------------------------------------------
 -- v4.7 Process UTC to local time change 
 ---------------------------------------------------------------------------
-DECLARE @currentVersion decimal(2,1); 
-SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(2,1))) FROM [dbo].[version_history];
+DECLARE @currentVersion decimal(3,1); 
+SELECT @currentVersion = MAX(CAST(LEFT(version_number, 3) AS decimal(3,1))) FROM [dbo].[version_history];
 
 IF @currentVersion IS NOT NULL AND @currentVersion < 4.7 BEGIN 
 
