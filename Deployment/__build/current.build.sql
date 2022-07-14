@@ -684,8 +684,10 @@ GO
 --##INCLUDE: S4 Utilities\dump_module_code.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+--##INCLUDE: S4 Utilities\extract_matches.sql
 
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_blocking_processes.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Idioms
