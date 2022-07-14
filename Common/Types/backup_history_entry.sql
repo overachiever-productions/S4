@@ -36,6 +36,3 @@ CREATE TYPE dbo.backup_history_entry AS TABLE (
 	[error_details] nvarchar(max) NULL
 );
 GO
-
-
-SELECT * FROM sys.objects WHERE name = 'log_backup_history_detail'
