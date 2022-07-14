@@ -2,8 +2,13 @@
 USE [admindb];
 GO
 
-IF TYPE_ID('dbo.backup_history_entry') IS NOT NULL 
+IF TYPE_ID('dbo.backup_history_entry') IS NOT NULL BEGIN
+	IF OBJECT_ID(N'dbo.log_backup_history_detail', N'P') IS NOT NULL BEGIN
+		DROP PROC dbo.log_backup_history_detail;
+	END;
+
 	DROP TYPE dbo.backup_history_entry;
+END; 
 GO
 
 CREATE TYPE dbo.backup_history_entry AS TABLE (
@@ -31,3 +36,6 @@ CREATE TYPE dbo.backup_history_entry AS TABLE (
 	[error_details] nvarchar(max) NULL
 );
 GO
+
+
+SELECT * FROM sys.objects WHERE name = 'log_backup_history_detail'
