@@ -2,7 +2,7 @@
 
 # Change Log
 
-## [10.0] - 2022-07-12
+## [10.1] - 2022-07-14
 Improved Backups/Restores; New Utilities and Bug-Fixes.
 
 ### Fixed 
@@ -19,6 +19,7 @@ Improved Backups/Restores; New Utilities and Bug-Fixes.
 - Additional meta-data (stats/etc) extraction/handling for `dbo.extract_waitresource`.
 - Initial addition of `dbo.alter_jobstep_body` - 'helper' func to make mass/scripted modification of job-steps easier and/or to help facilitiate job-synchronization between servers. 
 - `dbo.dump_module_code` - helper func to script/dump all matches from `sys.sql_modules` across multiple/all databases. 
+- `dbo.extract_matches` - helper func for identifying multiple matches (by position) of a search-term within a given string/block-of-text.
 
 ### Changed
 - Major overhaul of 'internal' logic/processing via `dbo.execute_command` to allow for better error-handling and outcome-reporting of executed operations. 

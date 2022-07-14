@@ -684,8 +684,10 @@ GO
 --##INCLUDE: S4 Utilities\dump_module_code.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+--##INCLUDE: S4 Utilities\extract_matches.sql
 
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_blocking_processes.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Idioms
@@ -873,7 +875,7 @@ DECLARE @CurrentVersion varchar(20) = N'##{{S4version}}';
 DECLARE @VersionDescription nvarchar(200) = N'##{{S4version_summary}}';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
-IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(2,1)) >= 4)
+IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(3,1)) >= 4)
 	SET @InstallType = N'Update. ';
 
 SET @VersionDescription = @InstallType + @VersionDescription;
