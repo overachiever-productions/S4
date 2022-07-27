@@ -13,6 +13,10 @@
             - https://simonmcauliffe.com/technology/tde/
             - https://matthewmcgiffen.com/2018/01/03/how-secure-is-transparent-data-encryption-tde-and-how-to-prevent-hacking/
             - https://dba.stackexchange.com/questions/225049/will-tde-encryption-protect-my-sql-database-from-hacker-in-this-scenario
+        - Integrate notion of "Data in Use" along with "Data at Rest" and "Data in Flight". 
+            - Fodder: 
+                - https://en.m.wikipedia.org/wiki/Crypto-shredding  (where I first ran into this term)
+                - https://en.m.wikipedia.org/wiki/Data_in_use
         - Create a TOC for this 'article'. 
         - Add in information about DB-SIZE increases
             - e.g., DB of 9728MB pre-TDE ended up being 9728MB POST-TDE (i.e., NO change in size AT ALL)
@@ -43,6 +47,10 @@
         https://stackoverflow.com/questions/58416600/how-can-sql-server-client-get-information-on-tls-certificate-being-used
         
         i.e., could end up being some great tools/etc to help with VALIDATION that certs are working as expected for data-in-use/flight.
+        
+        
+    TODO: add a link to this: 
+        https://techcommunity.microsoft.com/t5/sql-server-support-blog/tls-1-2-support-for-sql-server-2008-2008-r2-2012-and-2014/ba-p/318676
 </div>
 
 
