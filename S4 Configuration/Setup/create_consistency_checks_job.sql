@@ -172,7 +172,7 @@ AS
 
 	SET @dateAsInt = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
 	SET @startTimeAsInt = CAST((LEFT(REPLACE(CONVERT(sysname, CAST(@JobStartTime AS datetime), 108), N':', N''), 6)) AS int);
-	SET @scheduleName = @jobName + N' Schedule';
+	SET @scheduleName = @JobName + N' Schedule';
 
 	EXEC msdb.dbo.sp_add_jobschedule 
 		@job_id = @jobId,

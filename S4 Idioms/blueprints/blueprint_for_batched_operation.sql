@@ -655,7 +655,7 @@ AS
 
 
 	SET @body = REPLACE(@body, N'{Batch_Statement}', @BatchStatement);
-	SET @body = REPLACE(@body, N'{logging_table_name}', @LoggingTableName);
+	SET @body = REPLACE(@body, N'{logging_table_name}', @loggingTableName);
 	
 
 	---------------------------------------------------------------------------------------------------
@@ -718,7 +718,7 @@ GO';
 
 	IF PARSENAME(@LoggingHistoryTableName, 2) IS NULL SET @LoggingHistoryTableName = N'dbo.' + @LoggingHistoryTableName;
 	
-	SET @finalize = REPLACE(@finalize, N'{logging_table_name}', @LoggingTableName);
+	SET @finalize = REPLACE(@finalize, N'{logging_table_name}', @loggingTableName);
 	SET @finalize = REPLACE(@finalize, N'{History_Table_Name}', ISNULL(QUOTENAME(PARSENAME(@LoggingHistoryTableName, 2)) + N'.' + QUOTENAME(PARSENAME(@LoggingHistoryTableName, 1)), N''));
 
 	---------------------------------------------------------------------------------------------------
