@@ -1,5 +1,44 @@
 /*
 
+	FULL REWRITE? 
+		This thing's starting to become a pain to maintain. 
+		Here's a weird idea on a potential rewrite: 
+			'PIVOT' the data being compared. 
+			Specifically: 
+				- For comparisons of job details, schedules, ownership, etc. ... 
+					end up having a 'table' with something like a 'path' and the values
+						as in, the following columns:
+							> jobname
+							> path 
+							> key 
+							> local_value
+							> remote_value
+							> notes? 
+
+							such that some example rows would look something like: 
+								myJob, job.core, owner, sa, mikec 
+								myJob, job.core, enabled, true, false
+								myJob, job.core, job-category-name, TeamSupportNA1, Backups 
+
+								someOtherJob, job.schedule1, enabled, true, true
+								someOtherJob, job.steps, count, 18, 18 
+								someOtherJob, job.steps, body-hash-1, xxxxx, xxxyxxx
+
+								etc... 
+
+								where the idea is that there'd be a huge number of 'key value pairs' - 'linked' to given jobs... and such.... 
+									and I could simply run a 'simple' query to find any/all differences. 
+										though, i guess "job only exists on server X" kinds of difference might be a challenge? 
+
+				- And, something similar-ish for expected states if/when jobs are in the category/situation of being ... "Batch Jobs"
+					as in ... identify batch-jobs at the outset of checks (after checking for diffs across the board)... 
+							and ... they'd be simple cases where job.core, enabled, true (for primary) and NOT true (for secondary). 
+									that's 'it'. 
+						
+
+
+
+
 
 	NOTES:
 		- While 'Mirrored' Jobs should be any job where: 
@@ -92,7 +131,8 @@ IF OBJECT_ID('dbo.verify_job_synchronization','P') IS NOT NULL
 GO
 
 CREATE PROC [dbo].[verify_job_synchronization]
-	@IgnoredJobs				nvarchar(MAX)		= '',
+	@IgnoredJobs				nvarchar(MAX)		= N'',
+	@JobCategoryMapping			nvarchar(MAX)		= N'',
 	--@IgnoredJobCategories		nvarchar(MAX)		= 'IGNORED',			-- or maybe {IGNORED} as the actual name? 
 	@MailProfileName			sysname				= N'General',	
 	@OperatorName				sysname				= N'Alerts',	
@@ -101,6 +141,9 @@ AS
 	SET NOCOUNT ON;
 
 	-- {copyright}
+
+	SET @IgnoredJobs = NULLIF(@IgnoredJobs, N'');
+	SET @JobCategoryMapping = NULLIF(@JobCategoryMapping, N'');
 
 	----------------------------------------------
 	-- Determine which server to run checks on:
@@ -162,8 +205,7 @@ AS
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
-	EXEC master.sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
-
+	EXEC sys.sp_executesql N'SELECT @remoteName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE server_id = 0);', N'@remoteName sysname OUTPUT', @remoteName = @remoteServerName OUTPUT;
 
 	-- start by loading a 'list' of all dbs that might be Mirrored or AG'd:
 	DECLARE @synchronizingDatabases table ( 
@@ -214,6 +256,26 @@ AS
 
 	INSERT INTO #IgnoredJobs ([name])
 	SELECT [result] [name] FROM dbo.split_string(@IgnoredJobs, N',', 1);
+
+	CREATE TABLE #mappedCategories (
+		row_id int NOT NULL, 
+		column_01 sysname NOT NULL,		-- category_name
+		column_02 sysname NOT NULL		-- target_database
+	);
+
+	IF @JobCategoryMapping IS NOT NULL BEGIN 
+		INSERT INTO [#mappedCategories] (
+			[row_id],
+			[column_01],
+			[column_02]
+		)
+
+		EXEC [admindb].dbo.[shred_string] 
+			@Input = @JobCategoryMapping, 
+			@RowDelimiter = N',', 
+			@ColumnDelimiter = N':';
+
+	END;
 
 	----------------------------------------------
 	-- create a container for output/differences. 
@@ -384,8 +446,9 @@ FROM
 		INNER JOIN #RemoteJobs rj ON rj.[name] = lj.[name]
 	WHERE
 		lj.[name] NOT IN (SELECT [name] FROM [#DisableConfusedJobs])
-		AND lj.category_name NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @localServerName) 
-		AND rj.category_name NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @remoteServerName)
+		-- NOTE: both predicates below exclude #mappedCategories.column_01 as part of their filters (making matching jobs become "batch jobs").
+		AND lj.category_name NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @localServerName UNION SELECT [column_01] FROM [#mappedCategories]) 
+		AND rj.category_name NOT IN (SELECT [database_name] FROM @synchronizingDatabases WHERE server_name = @remoteServerName UNION SELECT [column_01] FROM [#mappedCategories])
 		AND 
 		(
 			lj.[enabled] <> rj.[enabled]
@@ -397,8 +460,6 @@ FROM
 			OR lj.job_step_count <> rj.job_step_count
 			OR lj.category_name <> rj.category_name
 		);
-
-
 
 	----------------------------------------------
 	-- now check the job steps/schedules/etc. 
@@ -573,10 +634,11 @@ FROM
 			LEFT OUTER JOIN msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 			LEFT OUTER JOIN msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
 		WHERE
-			UPPER(sc.[name]) = UPPER(@currentMirroredDB);
+			UPPER(sc.[name]) = UPPER(@currentMirroredDB)
+			OR ((SELECT UPPER(x.[column_02]) FROM #mappedCategories x WHERE UPPER(x.[column_01]) = UPPER(sc.[name]) ) = UPPER(@currentMirroredDB));
 
 		INSERT INTO #RemoteJobs (job_id, [name], [enabled], [description], start_step_id, owner_sid, notify_level_email, operator_name, category_name, job_step_count)
-		EXEC master.sys.sp_executesql N'SELECT 
+		EXEC sys.sp_executesql N'SELECT 
 			sj.job_id, 
 			sj.[name], 
 			sj.[enabled], 
@@ -592,7 +654,10 @@ FROM
 			LEFT OUTER JOIN PARTNER.msdb.dbo.syscategories sc ON sj.category_id = sc.category_id
 			LEFT OUTER JOIN PARTNER.msdb.dbo.sysoperators so ON sj.notify_email_operator_id = so.id
 		WHERE
-			UPPER(sc.[name]) = UPPER(@currentMirroredDB);', N'@currentMirroredDB sysname', @currentMirroredDB = @currentMirroredDB;
+			UPPER(sc.[name]) = UPPER(@currentMirroredDB)
+			OR ((SELECT UPPER(x.[column_02]) FROM #mappedCategories x WHERE UPPER(x.[column_01]) = UPPER(sc.[name]) ) = UPPER(@currentMirroredDB));', 
+			N'@currentMirroredDB sysname', 
+			@currentMirroredDB = @currentMirroredDB;
 
 		-- Remove Ignored Jobs: 
 		DELETE x 
