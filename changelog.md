@@ -2,6 +2,19 @@
 
 # Change Log
 
+## [10.2] - 2022-08-16
+Improved Backups/Restores; New Utilities and Bug-Fixes.
+
+### Fixed 
+- Bug-fix for missing file/function (`dbo.transient_error_occurred`) from 10.1 build. 
+- Bug-fix for `dbo.execute_command` - to address `-S` definition for named server instances.
+- Case-Sensitive Server Collation fixes. 
+
+### Added
+- Short-circuiting logic for `dbo.kill_blocking_processes` to avoid some bugs and optimize potential lookups/processing. 
+- Added small number of files to git that SHOULD have already been added.
+- Initial Addition of `@JobCategoryMapping` for job-category mappings/ignore-options for Synchronized Job Checks.
+
 ## [10.1] - 2022-07-14
 Improved Backups/Restores; New Utilities and Bug-Fixes.
 

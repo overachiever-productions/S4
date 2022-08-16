@@ -58,6 +58,8 @@ AS
 	SET @ExcludeSqlServerAgentJobs = ISNULL(@ExcludeSqlServerAgentJobs, 1);
 	SET @ExcludedApplicationNames = NULLIF(@ExcludedApplicationNames, N'');
 
+	DECLARE @message nvarchar(MAX);
+
 	CREATE TABLE #results (
 		[database] sysname NULL,
 		[blocking_chain] nvarchar(400) NULL,
@@ -96,77 +98,92 @@ AS
 		[context]
 	)
 	EXEC dbo.[list_collisions] 
-		@TargetDatabases = N'', 
+		@TargetDatabases = N'{ALL}', 
 		@IncludePlans = 0, 
 		@IncludeContext = 1, 
 		@UseInputBuffer = 1, 
 		@ExcludeFullTextCollisions = 0;
 
 	IF EXISTS (SELECT NULL FROM [#results]) BEGIN 
+
+		DELETE FROM [#results] WHERE [session_id] IS NULL; -- no idea why/how this one happens... but it occasionally does. 
+
 		IF @ExcludedDatabases IS NOT NULL BEGIN 
 			DELETE r
 			FROM 
 				[#results] r
 				INNER JOIN (SELECT [result] FROM dbo.[split_string](@ExcludedDatabases, N', ', 1)) x ON r.[database] LIKE x.[result];
 		END;
+
+		IF NOT EXISTS (SELECT NULL FROM [#results]) BEGIN
+			RETURN 0; -- short-circuit (i.e., nothing to do or report).
+		END;
+
+		-- Blocked processes happen all the time - at a transient level. Don't bother processing if nothing has been blocked for > @BlockingThresholdSeconds
+		DECLARE @maxWait int = (SELECT MAX(wait_time) FROM [#results] WHERE [wait_time] IS NOT NULL);
+		IF @maxWait < (@BlockingThresholdSeconds * 1000) BEGIN 
+			RETURN 0;
+		END;
 	END;
 
-	IF NOT EXISTS (SELECT NULL FROM [#results]) BEGIN
-		RETURN 0; -- short-circuit (i.e., nothing to do or report).
-	END;
+	BEGIN TRY 
+		WITH shredded AS ( 
+			SELECT 
+				[database]	,
+				CAST([session_id] AS int) [session_id], 
+				CAST(REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') AS int) [blocker],
+				[command],
+				[status],
+				[statement],
+				[wait_time],
+				[wait_type],
+				[wait_resource],
+				[duration],
+				[is_system],
+				[transaction_state],
+				[isolation_level],
+				[transaction_type],
+				[context].value(N'(/context/program_name)[1]', N'sysname') [program_name],
+				[context].value(N'(/context/host_name)[1]', N'sysname') [host_name], 
+				[context].value(N'(/context/login_name)[1]', N'sysname') [login_name]
+			FROM 
+				[#results]
+		) 
 
-	WITH shredded AS ( 
 		SELECT 
-			[database]	,
-			CAST([session_id] AS int) [session_id], 
-			CAST(REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') AS int) [blocker],
-			[command],
-			[status],
-			[statement],
-			[wait_time],
-			[wait_type],
-			[wait_resource],
-			[duration],
-			[is_system],
-			[transaction_state],
-			[isolation_level],
-			[transaction_type],
-			[context].value(N'(/context/program_name)[1]', N'sysname') [program_name],
-			[context].value(N'(/context/host_name)[1]', N'sysname') [host_name], 
-			[context].value(N'(/context/login_name)[1]', N'sysname') [login_name]
+			[x].[database],
+			[x].[session_id],
+			(SELECT COUNT(*) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) [blocked_count],
+			dbo.[format_timespan]((SELECT MAX(wait_time) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id])) [max_blocked_time],
+			ISNULL([x].[command], N'<orphaned>') [command],
+			[x].[status],
+			[x].[statement],
+			(SELECT TOP (1) x2.[wait_type] FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id] ORDER BY x2.[wait_time] DESC) [wait_type],
+			(SELECT TOP (1) x2.[wait_resource] FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id] ORDER BY [x2].[wait_time] DESC) [blocked_resource],
+			[x].[duration],
+			[x].[is_system],
+			CASE
+				WHEN [x].[transaction_state] = N'#Unknown#' THEN N'<orphaned>' 
+				ELSE [x].[transaction_state]
+			END [transaction_state],
+			[x].[isolation_level],
+			[x].[transaction_type],
+			[x].[program_name], 
+			[x].[host_name], 
+			[x].[login_name]
+		INTO 
+			#leadBlockers
 		FROM 
-			[#results]
-	) 
-
-	SELECT 
-		[x].[database],
-		[x].[session_id],
-		(SELECT COUNT(*) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) [blocked_count],
-		dbo.[format_timespan]((SELECT MAX(wait_time) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id])) [max_blocked_time],
-		ISNULL([x].[command], N'<orphaned>') [command],
-		[x].[status],
-		[x].[statement],
-		(SELECT TOP (1) x2.[wait_type] FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id] ORDER BY x2.[wait_time] DESC) [wait_type],
-		(SELECT TOP (1) x2.[wait_resource] FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id] ORDER BY [x2].[wait_time] DESC) [blocked_resource],
-		[x].[duration],
-		[x].[is_system],
-		CASE
-			WHEN [x].[transaction_state] = N'#Unknown#' THEN N'<orphaned>' 
-			ELSE [x].[transaction_state]
-		END [transaction_state],
-		--[x].[isolation_level],  -- not important for BLOCKERS .. 
-		[x].[transaction_type],
-		[x].[program_name], 
-		[x].[host_name], 
-		[x].[login_name]
-	INTO 
-		#leadBlockers
-	FROM 
-		[shredded] x
-	WHERE 
-		[x].[blocker] = 0
-		AND (SELECT MAX(wait_time) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) > (@BlockingThresholdSeconds * 1000);
-
+			[shredded] x
+		WHERE 
+			[x].[blocker] = 0
+			AND (SELECT MAX(wait_time) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) > (@BlockingThresholdSeconds * 1000);
+	
+	END TRY 
+	BEGIN CATCH 
+		SELECT @message = N'Exception Identifying Blockers: [' + ERROR_MESSAGE() + N'] on line [' + CAST(ERROR_LINE() AS sysname) + N'.';
+		GOTO SendMessage;
+	END CATCH
 
 	-- Now that we know who the root blockers are... check for exclusions:
 	DECLARE @excludedApps table (
@@ -257,6 +274,7 @@ AS
 			@crlf + @tab + N'Blocked Resource       : ' + [blocked_resource] +
 			@crlf + @tab + N'Run Time               : ' + [duration] + 
 			@crlf + @tab + N'Transaction State      : ' + [transaction_state] +
+			@crlf + @tab + N'ISolation Level        : ' + [isolation_level] +
 			@crlf + @tab + N'Program Name           : ' + [program_name] +
 			@crlf + @tab + N'Host                   : ' + [host_name] +
 			@crlf + @tab + N'Login                  : ' + [login_name] +
@@ -270,12 +288,12 @@ AS
 		[blocked_count] DESC, [max_blocked_time] DESC;
 
 	DECLARE @subject sysname; 
-	DECLARE @message nvarchar(MAX);
 
 	SET @subject = ISNULL(@EmailSubjectPrefix, N'') + N' - Blocking Processes were KILLED';
 	SET @message = N'The following blocking processes were detected and _KILLED_ on ' + @@SERVERNAME + N' because they exceeded blocking thresholds of ' + CAST(@BlockingThresholdSeconds AS sysname) + N' seconds: ' + @crlf + @crlf;
 	SET @message = @message + @body; 
 
+SendMessage:
 	IF @PrintOnly = 1 BEGIN 
 		PRINT N'SUBJECT: ' + @subject; 
 		PRINT N'BODY: ' + @message;

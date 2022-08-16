@@ -333,15 +333,11 @@ AS
 	
 		CASE WHEN c.[total_elapsed_time] IS NOT NULL THEN dbo.format_timespan([c].[total_elapsed_time]) ELSE CASE WHEN c.[last_request_start_time] IS NOT NULL AND DATEDIFF(DAY, c.[last_request_start_time], GETDATE()) < 20 THEN dbo.format_timespan(DATEDIFF(MILLISECOND, c.[last_request_start_time], GETDATE())) ELSE ''> 20 days'' END END [duration],
 		
-		
-		--dbo.format_timespan([c].[duration]) [duration],		
-        
 		CASE WHEN [c].[is_user_process] = 1 THEN 0 ELSE 1 END [is_system],
         ISNULL([c].[transaction_scope], '') [transaction_scope],
         ISNULL([c].[transaction_state], N'') [transaction_state],
         [c].[isolation_level],
-        [c].[transaction_type]--,
---        [c].[open_transaction_count]
+        [c].[transaction_type]
 		{context}
 		{query_plan}
 	FROM 
