@@ -173,5 +173,3 @@ AS
 
 	RETURN 0;
 GO
-
-

@@ -192,6 +192,9 @@ AS
 		SET @excludeSimple = 1;
 
 	IF ((SELECT dbo.[count_matches](@DatabasesToProcess, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
+		
+		SET @excludeSimple = 0; /* DBs that might now/currently be SIMPLE might have T-LOGs that need to be cleaned up.... */
+
 		DECLARE @databases xml = NULL;
 		DECLARE @serialized nvarchar(MAX) = '';
 
