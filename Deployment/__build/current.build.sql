@@ -383,7 +383,7 @@ GO
 --##INCLUDE: Common\execute_uncatchable_command.sql
 
 -----------------------------------
---##INCLUDE: Common\transient_error_occurred.sql
+--##INCLUDE: Common\Internal\transient_error_occurred.sql
 
 -----------------------------------
 --##INCLUDE: Common\execute_command.sql
