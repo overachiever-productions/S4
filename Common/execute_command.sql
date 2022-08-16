@@ -319,7 +319,7 @@ AS
 
         IF UPPER(@ExecutionType) = N'SQLCMD' BEGIN 
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
-			    SET @serverName = N' -S .\' + @@SERVICENAME;
+			    SET @serverName = N' .\' + @@SERVICENAME;
 	    END; 
 
 	    IF UPPER(@ExecutionType) = N'PARTNER' BEGIN 
