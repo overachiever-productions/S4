@@ -6,7 +6,10 @@
             D:\Dropbox\Repositories\S4\Documentation\best-practices\Content-Images folder from old git.oa.net site.zip
             
             i.e., I 'extracted' the images specified in the paths below... and pushed them here. 
-
+    TODO:
+        - https://todoist.com/showTask?id=6022505179
+        - and: https://www.notion.so/overachiever/TDE-2f25cb1103c04f56806015e7369fd398
+        
 
     TODO: 
         - Integrate the following 3x links into the mix relative to TDE 'strength'. 

@@ -1,5 +1,10 @@
 /*
 
+	vNEXT:
+		https://overachieverllc.atlassian.net/browse/S4-496
+
+
+
 	NOTES:
 		- Rationale:
 			While SERVERPROPERTY() will provide minor/major/full version details... they're strings. (because soemthing like 13.0.442.0 can't be a numeric)... 
