@@ -235,37 +235,41 @@ ORDER BY
 	)
 	EXEC sp_executesql @sql;
 
+-- MKC: inclusion of these static counters ... has to be a question of copy/paste/tweak failure... i.e., these are throwing errors
+--	and they're JUST NOT relevant or needed.
 	-- static SQL counters:
-	INSERT INTO @sqlMetricsColumns (
-		[raw_name], 
-		[translation],
-		[aliased_name]
-	)
-	VALUES
-	(N'\SQLServer:Buffer Manager\Lazy writes/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lazy_writes/sec'),
-	(N'\SQLServer:Buffer Manager\Page lookups/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'page_lookups/sec'),
-	(N'\SQLServer:Buffer Manager\Page reads/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'page_reads/sec'),
-	(N'\SQLServer:Buffer Manager\Page writes/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'pages_writes/sec'),
-	(N'\SQLServer:Buffer Manager\Readahead pages/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'readahead_pages/sec'),
-	(N'\SQLServer:Latches\Average Latch Wait Time (ms)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'avg_latch_time(ms)'),
-	(N'\SQLServer:Latches\Latch Waits/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'latch_waits\sec'),
-	(N'\SQLServer:Latches\Total Latch Wait Time (ms)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'total_latch_wait(ms)'),
-	(N'\SQLServer:Locks(_Total)\Lock Requests/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_requests\sec'),
+	--INSERT INTO @sqlMetricsColumns (
+	--	[raw_name], 
+	--	[translation],
+	--	[aliased_name]
+	--)
+	--VALUES
+
+-- MKC: 2022-08-30 ... uh... why are these included in CPU counters? 
+	--(N'\SQLServer:Buffer Manager\Lazy writes/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lazy_writes/sec'),
+	--(N'\SQLServer:Buffer Manager\Page lookups/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'page_lookups/sec'),
+	--(N'\SQLServer:Buffer Manager\Page reads/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'page_reads/sec'),
+	--(N'\SQLServer:Buffer Manager\Page writes/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'pages_writes/sec'),
+	--(N'\SQLServer:Buffer Manager\Readahead pages/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'readahead_pages/sec'),
+	--(N'\SQLServer:Latches\Average Latch Wait Time (ms)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'avg_latch_time(ms)'),
+	--(N'\SQLServer:Latches\Latch Waits/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'latch_waits\sec'),
+	--(N'\SQLServer:Latches\Total Latch Wait Time (ms)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'total_latch_wait(ms)'),
+	--(N'\SQLServer:Locks(_Total)\Lock Requests/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_requests\sec'),
 --MKC: temporary removal... 	
 	--(N'\SQLServer:Locks(_Total)\Lock Timeouts (timeout > 0)/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_timeouts\sec'),
-	(N'\SQLServer:Locks(_Total)\Lock Wait Time (ms)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_wait(ms)'),
-	(N'\SQLServer:Locks(_Total)\Lock Waits/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_waits\sec'),
-	(N'\SQLServer:Locks(_Total)\Number of Deadlocks/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'deadlocks\sec'),
-	(N'\SQLServer:Memory Manager\Connection Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'connection_mem'),
-	(N'\SQLServer:Memory Manager\Granted Workspace Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'granted_workspace'),
-	(N'\SQLServer:Memory Manager\Memory Grants Outstanding', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'active_grants'),
-	(N'\SQLServer:Memory Manager\Memory Grants Pending', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'pending_grants'),
-	(N'\SQLServer:Memory Manager\Target Server Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'target_mem'),
-	(N'\SQLServer:Memory Manager\Total Server Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'total_mem'),
-	(N'\SQLServer:SQL Statistics\Batch Requests/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'batch_requests\sec'),
-	(N'\SQLServer:SQL Statistics\SQL Attention rate', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'attention_rate'),
-	(N'\SQLServer:SQL Statistics\SQL Compilations/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'compilations\sec'),
-	(N'\SQLServer:SQL Statistics\SQL Re-Compilations/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'recompilations\sec');
+	--(N'\SQLServer:Locks(_Total)\Lock Wait Time (ms)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_wait(ms)'),
+	--(N'\SQLServer:Locks(_Total)\Lock Waits/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'lock_waits\sec'),
+	--(N'\SQLServer:Locks(_Total)\Number of Deadlocks/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'deadlocks\sec'),
+	--(N'\SQLServer:Memory Manager\Connection Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'connection_mem'),
+	--(N'\SQLServer:Memory Manager\Granted Workspace Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'granted_workspace'),
+	--(N'\SQLServer:Memory Manager\Memory Grants Outstanding', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'active_grants'),
+	--(N'\SQLServer:Memory Manager\Memory Grants Pending', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'pending_grants'),
+	--(N'\SQLServer:Memory Manager\Target Server Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'target_mem'),
+	--(N'\SQLServer:Memory Manager\Total Server Memory (KB)', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'total_mem'),
+	--(N'\SQLServer:SQL Statistics\Batch Requests/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'batch_requests\sec'),
+	--(N'\SQLServer:SQL Statistics\SQL Attention rate', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'attention_rate'),
+	--(N'\SQLServer:SQL Statistics\SQL Compilations/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'compilations\sec'),
+	--(N'\SQLServer:SQL Statistics\SQL Re-Compilations/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'recompilations\sec');
 
 	DECLARE @sqlMetrics nvarchar(MAX) = N''; 
 
