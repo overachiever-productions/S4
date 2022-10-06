@@ -77,9 +77,9 @@ AS
 		[recovery_model] sysname NOT NULL,
 		[database_size_gb] decimal(20,2) NOT NULL, 
 		[log_size_gb] decimal(20,2) NOT NULL, 
-		[log_percent_used] decimal(5,2) NOT NULL,
+		[log_percent_used] decimal(20,2) NOT NULL,
 		[vlf_count] int NOT NULL,
-		[log_as_percent_of_db_size] decimal(5,2) NULL, 
+		[log_as_percent_of_db_size] decimal(20,2) NULL, 
 		[mimimum_allowable_log_size_gb] decimal(20,2) NOT NULL 
 	);
 	
@@ -150,7 +150,7 @@ AS
 			CASE 
 				WHEN logsize.log_size = 0 THEN 0.0
 				WHEN logused.log_used = 0 THEN 0.0
-				ELSE CAST(((logused.log_used / logsize.log_size) * 100.0) AS decimal(5,2))
+				ELSE CAST(((logused.log_used / logsize.log_size) * 100.0) AS decimal(12,2))
 			END log_percent_used, 
 			x.[vlf_count], 
 			x.[mimimum_allowable_log_size_gb]
@@ -181,7 +181,7 @@ AS
         [log_size_gb],
         [log_percent_used], 
 		[vlf_count],
-		CAST(((([log_size_gb] / CASE WHEN [database_size_gb] = 0 THEN 0.01 ELSE [core].[database_size_gb] END) * 100.0)) AS decimal(20,2)) [log_as_percent_of_db_size],		-- goofy issue with divide by zero is reason for CASE... 
+		CAST(((([log_size_gb] / (CASE WHEN [database_size_gb] = 0 THEN CAST(0.01 AS decimal(20,2)) ELSE CAST([core].[database_size_gb] AS decimal(20,2)) END)) * 100.0)) AS decimal(20,2)) [log_as_percent_of_db_size],		-- goofy issue with divide by zero is reason for CASE... 
 		[mimimum_allowable_log_size_gb]
 	FROM 
 		[core]
