@@ -158,8 +158,7 @@ AS
 	DECLARE @statement nvarchar(MAX) = N'WITH [translated] AS ( 
 	SELECT
 		TRY_CAST([{timeZone}] AS datetime) [timestamp],
-{translatedCPUs}		ISNULL(TRY_CAST([\\{serverName}\Processor(_Total)\% Processor Time]  AS decimal(22,2)), 0) [total],
-{sqlStats}
+{translatedCPUs}		ISNULL(TRY_CAST([\\{serverName}\Processor(_Total)\% Processor Time]  AS decimal(22,2)), 0) [total]
 	FROM 
 		{normalizedName}
 ),
@@ -170,8 +169,7 @@ AS
 		[total] [percentage_used], 
 {aggregatedCPUs} 		(
 		SELECT SUM(x.v) FROM (VALUES {cteConstructedAggregateCPUs}) x(v)
-		) [total_cpu_used],
-{sqlStatsAliases}
+		) [total_cpu_used]
 	FROM 
 		[translated]
 )
@@ -271,38 +269,40 @@ ORDER BY
 	--(N'\SQLServer:SQL Statistics\SQL Compilations/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'compilations\sec'),
 	--(N'\SQLServer:SQL Statistics\SQL Re-Compilations/sec', N'ISNULL(TRY_CAST([{c}] as decimal(24,3)), 0.0)', N'recompilations\sec');
 
-	DECLARE @sqlMetrics nvarchar(MAX) = N''; 
+	--DECLARE @sqlMetrics nvarchar(MAX) = N''; 
 
-	SELECT 
-		@sqlMetrics = @sqlMetrics + @tab + @tab +
-		CASE 
-			WHEN [translation] IS NULL THEN N'[\\' + @serverName + [raw_name] + N'] [' + [aliased_name] + N'], ' 
-			ELSE REPLACE([translation], N'{c}', (N'\\' + @serverName + [raw_name])) + N' [' + [aliased_name] + N'], ' 
-		END + @crlf
-	FROM 
-		@sqlMetricsColumns
-	ORDER BY 
-		[column_id];
+	--SELECT 
+	--	@sqlMetrics = @sqlMetrics + @tab + @tab +
+	--	CASE 
+	--		WHEN [translation] IS NULL THEN N'[\\' + @serverName + [raw_name] + N'] [' + [aliased_name] + N'], ' 
+	--		ELSE REPLACE([translation], N'{c}', (N'\\' + @serverName + [raw_name])) + N' [' + [aliased_name] + N'], ' 
+	--	END + @crlf
+	--FROM 
+	--	@sqlMetricsColumns
+	--ORDER BY 
+	--	[column_id];
 
-	SET @sqlMetrics = LEFT(@sqlMetrics, LEN(@sqlMetrics) - 4);
+	--IF NULLIF(@sqlMetrics, N'') IS NOT NULL
+	--	SET @sqlMetrics = LEFT(@sqlMetrics, LEN(@sqlMetrics) - 4);
 
-	DECLARE @sqlMetricAliases nvarchar(MAX) = N'';
-	SELECT 
-		@sqlMetricAliases = @sqlMetricAliases + @tab + @tab + QUOTENAME([aliased_name]) + N', ' + @crlf
-	FROM 
-		@sqlMetricsColumns 
-	ORDER BY 
-		[column_id];
+	--DECLARE @sqlMetricAliases nvarchar(MAX) = N'';
+	--SELECT 
+	--	@sqlMetricAliases = @sqlMetricAliases + @tab + @tab + QUOTENAME([aliased_name]) + N', ' + @crlf
+	--FROM 
+	--	@sqlMetricsColumns 
+	--ORDER BY 
+	--	[column_id];
 
-	SET @sqlMetricAliases = LEFT(@sqlMetricAliases, LEN(@sqlMetricAliases) -4);	
+	--IF NULLIF(@sqlMetricAliases, N'') IS NOT NULL
+	--	SET @sqlMetricAliases = LEFT(@sqlMetricAliases, LEN(@sqlMetricAliases) -4);	
 
 	SET @statement = REPLACE(@statement, N'{normalizedName}', @normalizedName); 
 	SET @statement = REPLACE(@statement, N'{timeZone}', @timeZone);
 	SET @statement = REPLACE(@statement, N'{translatedCPUs}', @translatedCPUs);
 	SET @statement = REPLACE(@statement, N'{aggregatedCPUs}', @aggregatedCPUs);
 	SET @statement = REPLACE(@statement, N'{cteConstructedAggregateCPUs}', @cteConstructedAggregateCPUs);
-	SET @statement = REPLACE(@statement, N'{sqlStats}', @sqlMetrics);
-	SET @statement = REPLACE(@statement, N'{sqlStatsAliases}', @sqlMetricAliases);
+	--SET @statement = REPLACE(@statement, N'{sqlStats}', @sqlMetrics);
+	--SET @statement = REPLACE(@statement, N'{sqlStatsAliases}', @sqlMetricAliases);
 
 	SET @statement = REPLACE(@statement, N'{serverName}', @serverName);
 	SET @statement = REPLACE(@statement, N'{TargetTable}', @TargetTable);
