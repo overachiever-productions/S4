@@ -174,10 +174,64 @@ AS
 	WHERE 
 		[output] IS NOT NULL;
 
+	IF EXISTS (SELECT NULL FROM @results WHERE [timestamp] IS NULL) BEGIN 
+		DECLARE @fileName sysname;
+		DECLARE @headerFullPath sysname;
+		DECLARE @headerBackupTime datetime;
+		DECLARE @rowId int;
+
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			[id],
+			[output]
+		FROM 
+			@results 
+		WHERE 
+			[timestamp] IS NULL
+		ORDER BY 
+			[id];
+
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @rowId, @fileName;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+			SET @headerFullPath = @SourcePath + N'\' + @fileName;
+
+			BEGIN TRY 
+				EXEC dbo.[load_header_details]
+					@BackupPath = @headerFullPath,
+					@BackupDate = @headerBackupTime OUTPUT, 
+					@BackupSize = NULL,
+					@Compressed = NULL,
+					@Encrypted = NULL,
+					@FirstLSN = NULL,
+					@LastLSN = NULL; 
+
+				IF @headerBackupTime IS NOT NULL BEGIN 
+					UPDATE @results 
+					SET 
+						[timestamp] = @headerBackupTime
+					WHERE 
+						[id] = @rowId;
+				END;
+			END TRY 
+			BEGIN CATCH
+				-- Strangely enough: DO NOTHING here. The file in question is NOT a backup file. But, we'll ASSUME it was put in here by someone who WANTED it here - for whatever reason.
+			END CATCH
+		
+			FETCH NEXT FROM [walker] INTO @rowId, @fileName;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		DELETE FROM @results WHERE [timestamp] IS NULL;  -- again, assume that any .bak/.trn files that don't adhere to conventions and/or which aren't legit backups are in place explicitly.
+	END;
+
 	DECLARE @orderedResults table ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
 		[output] varchar(500) NOT NULL, 
-		[timestamp] datetime NOT NULL
+		[timestamp] datetime NULL
 	);
 
 	INSERT INTO @orderedResults (
