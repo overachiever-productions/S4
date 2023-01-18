@@ -116,6 +116,8 @@ CREATE PROC dbo.load_backup_files
 	@SourcePath					nvarchar(400), 
 	@Mode						sysname,				-- FULL | DIFF | LOG | LIST			-- where LIST = 'raw'/translated results.
 	@LastAppliedFile			nvarchar(400)			= NULL,	
+-- TODO: 
+-- REFACTOR: call this @BackupFinishTimeOfLastAppliedBackup ... er, well, that's what this IS... it's NOT the FINISH time of the last APPLY operation. 
 	@LastAppliedFinishTime		datetime				= NULL, 
 	@Output						xml						= N'<default/>'	    OUTPUT
 AS
@@ -149,7 +151,7 @@ AS
 				@FirstLSN = @firstLSN OUTPUT, 
 				@LastLSN = @lastLSN OUTPUT;
 		END;
-
+		
 		IF @LastAppliedFinishTime IS NULL BEGIN 
 			RAISERROR(N'Execution in ''DIFF'' or ''LOG'' Mode requires either a valid @LastAppliedFile or @LastAppliedFinishTime for filtering.', 16, 1);
 			RETURN -20;
@@ -296,10 +298,9 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
-
 --SELECT @firstLSN [firstLSN], @lastLSN [lastLSN];
 
-		DELETE FROM @orderedResults WHERE [timestamp] < @LastAppliedFinishTime;
+		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
 		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
 
