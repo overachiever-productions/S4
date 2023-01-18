@@ -118,7 +118,7 @@ AS
 		[m].[plan_id],
 		FORMAT(CAST([m].[size_in_bytes] AS decimal(24,2)) / 1024.0, N'N0') [plan_size_kb],
 		FORMAT([m].[usecounts], N'N0') [use_counts],
-		[m].[cacheobjtype] [cacheobj_type],
+		[m].[cacheobjtype] [cacheobject_type],
 		[m].[objtype] [obj_type],
 		[n].[node_count],
 		[m].[query_plan]

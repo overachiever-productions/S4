@@ -15,6 +15,15 @@
 					<SeekPredicates> 
 
 			AND, yeah..the above isn't perfect. Actually, not really even close... 
+				in fact... totally busted. 
+
+
+				LOOKS like what I need to focus on is: 
+					<SeekPredicate><SeekPredicateNew><SeekKeys><Prefix><RangeColumns> - for one...  whereas, in cases with combos like this ... the <Predicate> nodes are ... not what I'm shooting for. 
+				
+
+
+
 
 
 
