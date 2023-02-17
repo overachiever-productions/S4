@@ -104,32 +104,33 @@ LoadAndKill:
 		@TargetResourcePools = @TargetResourcePools;
 
 	IF @ListOnly = 1 BEGIN 
-		SELECT 
-			[session_id],
-			[login_name],
-			[host_name],
-			CASE 
-				WHEN [status] = 'sleeping' THEN 
-					CASE 
-						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 2880 THEN 'sleeping - DAYS (2+)'
-						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 1440 THEN 'sleeping - DAY'
-						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 120 THEN 'sleeping - HOURS+'
-						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 60 THEN 'sleeping - HOUR+'
-						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 10 THEN 'sleeping - MINUTES (10+)'
-						WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 2 THEN 'sleeping - MINUTES'
-						ELSE 'sleeping - SECONDS'
-					END
-				ELSE [status]
-			END [state], 
-			[program_name],
-			[workgroup],
-			[pool]
-		FROM 
-			[#targets]
-		ORDER BY 
-			[state],
-			[session_id];
-
+		IF EXISTS (SELECT NULL FROM [#targets]) BEGIN
+			SELECT 
+				[session_id],
+				[login_name],
+				[host_name],
+				CASE 
+					WHEN [status] = 'sleeping' THEN 
+						CASE 
+							WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 2880 THEN 'sleeping - DAYS (2+)'
+							WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 1440 THEN 'sleeping - DAY'
+							WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 120 THEN 'sleeping - HOURS+'
+							WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 60 THEN 'sleeping - HOUR+'
+							WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 10 THEN 'sleeping - MINUTES (10+)'
+							WHEN DATEDIFF(MINUTE, [last_request_end_time], GETDATE()) > 2 THEN 'sleeping - MINUTES'
+							ELSE 'sleeping - SECONDS'
+						END
+					ELSE [status]
+				END [state], 
+				[program_name],
+				[workgroup],
+				[pool]
+			FROM 
+				[#targets]
+			ORDER BY 
+				[state],
+				[session_id];
+		END;
 		RETURN 0;
 	END;
 
@@ -202,8 +203,10 @@ LoadAndKill:
 	END;
 
 	IF @KillSelf = 1 BEGIN 
-		/* we can't KILL our own spid... but we CAN terminate it:   */
-		RAISERROR(N'Terminating current session_id due to @KillSelf Directive set to value of 1.', 22, 16) WITH LOG;
+		IF EXISTS (SELECT NULL FROM [#targets] WHERE [session_id] = @@SPID) BEGIN
+			/* we can't KILL our own spid... but we CAN terminate it:   */
+			RAISERROR(N'Terminating current session_id due to @KillSelf Directive set to value of 1.', 22, 16) WITH LOG;
+		END;
 	END;
 
 	RETURN 0;
