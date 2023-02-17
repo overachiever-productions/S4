@@ -59,7 +59,6 @@ AS
 	WHERE 
 		sp.[type] NOT IN ('R');
 
-
 	IF EXISTS (SELECT NULL FROM @ingnoredLogins) BEGIN 
 		DELETE l 
 		FROM 
@@ -67,8 +66,6 @@ AS
 			INNER JOIN @ingnoredLogins x ON l.[name] LIKE x.[login_name];
 	END;
 
-
-	---- Output LOGINS:
 	SET @output = N'';
 
 	SELECT 
@@ -96,7 +93,7 @@ AS
 					[default_language_name]
 				)
 			ELSE 
-				N'-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)'  -- i..e, C (cert), K (symmetric key) or R (role)
+				N'-- CERTIFICATE and SYMMETRIC KEY login types are NOT currently supported. (Nor are Roles)' 
 		END 
 			+ @crlf + N'GO' + @crlf
 	FROM 
