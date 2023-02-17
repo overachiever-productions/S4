@@ -2,6 +2,31 @@
 
 # Change Log
 
+## [10.3] - 2023-02-17
+Bug-fixes for backup/restore operations + introduction of some new diagnostics/reports.
+
+### Fixed 
+- Bug-Fix to address removal of T-LOGs when `READ_FROM_FILESYSTEM` specified in cleanup via `dbo.load_backup_database_names`.
+- Corrected typo with # of GBs free in `dbo.verify_drivespace`.
+- Bug-Fix for errors with backup file-names 'outside' of S4 conventions. No longer 'breaks' file cleanup.
+- Bug-Fix to address erroneous REPORTING of applied logs via `dbo.apply_logs`. Now correctly outputs/reports the actual files applied. 
+- Bug-Fix for `dbo.kill_blocking_processes` - to remove NULL + @otherText that wiped out summary of KILL'd process(es).
+- Logic to prevent `dbo.kill_resource_governor_connections` from executing KILL SELF when 'self' not in a targetted pool/workloadgroup. 
+
+
+### Added 
+- Option to update to INDIRECT CHECKPOINTs via migration template scripts.
+- Early release of 2x plan_cache extraction diagnostics. 
+- RESTORE HEADER ONLY support for SQL Server 2022. 
+- Initial introduction of (PowerShell) logic to extract kernel % usage times within `dbo.verify_cpu_thresholds`.
+- Initial release of 2x HEAP diagnostics. 
+- Initial release of 2x Resource Governor metrics/reports. 
+
+### Changed 
+- Streamlining CPU + IO + memory counter-extraction for Capacity Planning. 
+- Full rewrite of `dbo.verify_job_synchronization`.
+- Full rewrite of `dbo.script_logins` - to VASTLY simplify functionality (i.e., no longer cares about logins by DB, orphans, etc. - just scripts logins).
+
 ## [10.2] - 2022-08-16
 Improved Backups/Restores; New Utilities and Bug-Fixes.
 
