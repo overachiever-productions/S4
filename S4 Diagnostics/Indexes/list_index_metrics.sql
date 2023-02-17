@@ -528,9 +528,6 @@ AS
 		ISNULL(us.reads, 0) reads, 
 		ISNULL(us.writes, 0) writes, 
 		us.[read_write_ratio] [ratio], 
-		ISNULL(os.avg_row_lock_wait, 0) avg_row_lock_ms, 
-		ISNULL(os.avg_page_lock_wait, 0) avg_page_lock_ms,
-		ISNULL(os.avg_page_io_latch_wait, 0) avg_page_io_latch_ms,
 		{fragmentation_details}
 		ss.allocated_mb, 
 		ss.used_mb, 
@@ -540,7 +537,15 @@ AS
 		ISNULL(us.user_seeks, 0) seeks, 
 		ISNULL(us.user_scans, 0) scans, 
 		ISNULL(us.user_lookups, 0) lookups,
-		us.seek_ratio
+		us.seek_ratio, 
+		(SELECT 
+			[name] ''@name'', [metric] ''@value''  FROM ( 
+				VALUES
+					(ISNULL(os.avg_row_lock_wait, 0), N''avg_row_lock_ms''),
+					(ISNULL(os.avg_page_lock_wait, 0), N''avg_page_lock_ms''), 
+					(ISNULL(os.avg_page_io_latch_wait, 0), N''avg_page_io_latch_ms'')
+			) AS x([metric], [name])
+		FOR XML PATH(''metric''), ROOT(''operational_metrics''), type) [operational_metrics]
 	FROM 
 		#sys_indexes i
 		{IncludedTables}
