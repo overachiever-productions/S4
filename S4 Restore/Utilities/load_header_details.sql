@@ -109,7 +109,17 @@ AS
 			ADD 
 				KeyAlgorithm nvarchar(32) NULL, 
 				EncryptorThumbprint varbinary(20) NULL, 
-				EncryptorType nvarchar(32) NULL
+				EncryptorType nvarchar(32) NULL;
+	END;
+
+	IF @SourceVersion >= 16.0 BEGIN -- columns added to SQL Server 2022 and above: 
+		ALTER TABLE [#header]
+			ADD 
+				LastValidRestoreTime datetime NULL, -- NOT documented as of 2023-01-18 
+				TimeZone int NULL,		-- ditto, not documented ... 
+				CompressionAlgorithm nvarchar(32) NULL;
+				
+
 	END;
 
 	DECLARE @command nvarchar(MAX); 

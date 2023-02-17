@@ -111,7 +111,7 @@ AS
 		@sampleRow = @sampleRow OUTPUT;	
 		
 	SET @instanceNamePrefix = LEFT(@sampleRow, CHARINDEX(N':SQL Statistics', @sampleRow));
-	
+
 	DECLARE @timeZone sysname; 
 	SET @sql = N'SELECT 
 		@timeZone = [name]
@@ -132,17 +132,11 @@ AS
 	SELECT 
 		TRY_CAST([{timeZone}] AS datetime) [timestamp],
 		N''' + @serverName + N''' [server_name],
-		/* not too uncommon to find 0.NNNe-005 for disk metrics - which ... is 0 in ms... so... try_cast + ISNULL is fine here... */
-		TRY_CAST([\\'+ @serverName + N'\PhysicalDisk(_Total)\Avg. Disk sec/Read] as decimal(24,20)) [avg_total_disk_sec/read],   
-		TRY_CAST([\\'+ @serverName + N'\PhysicalDisk(_Total)\Avg. Disk sec/Write] as decimal(24,20)) [avg_total_disk_sec/write],		
-		CAST([\\'+ @serverName + N'\SQLServer:Buffer Manager\Buffer cache hit ratio] as decimal(24,16)) [buffer_cache_hit_ratio],		
-		CAST([\\'+ @serverName + N'\SQLServer:Buffer Manager\Page life expectancy] as int) [ple],
-		CAST(NULLIF([\\'+ @serverName + N'\SQLServer:Databases(_Total)\Transactions/sec], N'''') as decimal(22,16)) [database_total_transactions/sec],
-		CAST([\\'+ @serverName + N'\SQLServer:General Statistics\Transactions] as int) [general_transactions_current],
-		CAST(([\\'+ @serverName + N'\SQLServer:Memory Manager\Granted Workspace Memory (KB)] / (1024.0 * 1024.0)) as decimal(22,2)) [granted_workspace_memory_GBs],
-		CAST([\\'+ @serverName + N'\SQLServer:Memory Manager\Memory Grants Outstanding] as int) [grants_outstanding],
-		CAST([\\'+ @serverName + N'\SQLServer:Memory Manager\Memory Grants Pending] as int) [grants_pending],
-		[\\'+ @serverName + N'\SQLServer:SQL Statistics\Batch Requests/sec] [batch_requests/second]
+		CAST(['+ @instanceNamePrefix + N'Buffer Manager\Page life expectancy] as int) [ple],
+		CAST((['+ @instanceNamePrefix + N'Memory Manager\Granted Workspace Memory (KB)] / (1024.0 * 1024.0)) as decimal(22,2)) [granted_workspace_memory_GBs],
+		CAST(['+ @instanceNamePrefix + N'Memory Manager\Memory Grants Outstanding] as int) [grants_outstanding],
+		CAST(['+ @instanceNamePrefix + N'Memory Manager\Memory Grants Pending] as int) [grants_pending],
+		['+ @instanceNamePrefix + N'SQL Statistics\Batch Requests/sec] [batch_requests/second]
 	FROM 
 		{normalizedName}
 )
@@ -150,12 +144,7 @@ AS
 SELECT 
 	[timestamp],
 	[server_name],
-	[avg_total_disk_sec/read],
-	[avg_total_disk_sec/write],
-	[buffer_cache_hit_ratio],
 	[ple],
-	[database_total_transactions/sec],
-	[general_transactions_current],
 	[granted_workspace_memory_GBs],
 	[grants_outstanding],
 	[grants_pending],

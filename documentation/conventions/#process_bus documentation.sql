@@ -307,7 +307,8 @@ The following synchronization issues were detected:
 
         [SERVER SETTINGS]  --MKC: I can accomplish these via QOUTENAME(UPPER(channel)) ... and just standardizing the channel names... + using 'ranking' for any that should go first... 
             - Setting [blocked process threshold (s)] is different between servers.
-		        Value on SQL30 = 2. Value on SQL31 = 0.
+		        Value on SQL30 = 2. 
+				Value on SQL31 = 0.
 
 	    [TRACE FLAGS]
             - Trace Flag 1118 exists only on SQL31.

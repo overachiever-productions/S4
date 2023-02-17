@@ -113,7 +113,7 @@ AS
 	-- Start with the C:\ drive if it's present (i.e., has dbs on it - which is a 'worst practice'):
 	IF @GBsOrPercentages = N'GBs' BEGIN
 		SELECT 
-			@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS sysname) +  N' GB free out of ' + CAST([available_gbs] AS sysname) + N'GB total (vs. threshold of ' + CAST((CASE WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 ELSE @WarnWhenFreeGBsGoBelow END) AS nvarchar(20)) + N' GB) '  + @crlf
+			@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS sysname) +  N' GB free out of ' + CAST([total_gbs] AS sysname) + N'GB total (vs. threshold of ' + CAST((CASE WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 ELSE @WarnWhenFreeGBsGoBelow END) AS nvarchar(20)) + N' GB) '  + @crlf
 		FROM 
 			@core
 		WHERE 
@@ -125,7 +125,7 @@ AS
 
 		-- Now process all other drives: 
 		SELECT 
-			@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS sysname) +  N' GB free out of ' + CAST([available_gbs] AS sysname) + N'GB total (vs. threshold of ' + CAST(@WarnWhenFreeGBsGoBelow AS sysname) + N' GB) '  + @crlf
+			@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS sysname) +  N' GB free out of ' + CAST([total_gbs] AS sysname) + N'GB total (vs. threshold of ' + CAST(@WarnWhenFreeGBsGoBelow AS sysname) + N' GB) '  + @crlf
 		FROM 
 			@core
 		WHERE 

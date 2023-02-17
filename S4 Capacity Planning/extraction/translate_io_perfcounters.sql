@@ -146,14 +146,13 @@ AS
 	SET 
 		[simplified] = REPLACE(REPLACE(drive, LEFT(drive,  CHARINDEX(N' ', drive)), N''), N':', N'');
 
-
 	DECLARE @statement nvarchar(MAX) = N'
 	WITH translated AS (
 		SELECT 
 			TRY_CAST([{timeZone}] as datetime) [timestamp],
 			TRY_CAST([\\{HostName}\Processor(_Total)\% Processor Time]  as decimal(10,2)) [% CPU],
-			TRY_CAST([{InstanceName}Buffer Manager\Page life expectancy] as int) [PLE],
-			TRY_CAST([{InstanceName}SQL Statistics\Batch Requests/sec] as decimal(22,2)) [batches/second],
+			--TRY_CAST([{InstanceName}Buffer Manager\Page life expectancy] as int) [PLE],
+			--TRY_CAST([{InstanceName}SQL Statistics\Batch Requests/sec] as decimal(22,2)) [batches/second],
         
 			{ReadBytes}
 			{WriteBytes}
@@ -168,8 +167,8 @@ AS
 		SELECT 
 			[timestamp],
 			[% CPU],
-			[PLE],
-			[batches/second],   
+			--[PLE],
+			--[batches/second],   
 
 			{AggregatedThroughput}
 			{AggregatedIOPS}
@@ -184,8 +183,8 @@ AS
 		N''{HostName}'' [server_name],
 		[timestamp],
 		[% CPU],
-		[PLE],
-		[batches/second],
+		--[PLE],
+		--[batches/second],
 
 		{Throughput}
 		{IOPS}
@@ -355,7 +354,7 @@ AS
 
 	SET @statement = REPLACE(@statement, N'{timeZone}', @timeZone);
 	SET @statement = REPLACE(@statement, N'{HostName}', REPLACE(@hostNamePrefix, N'\', N''));
-	SET @statement = REPLACE(@statement, N'{InstanceName}', @instanceNamePrefix);
+	SET @statement = REPLACE(@statement, N'{InstanceName}', ISNULL(@instanceNamePrefix, N''));
 	SET @statement = REPLACE(@statement, N'{TableName}', @normalizedName);
 	SET @statement = REPLACE(@statement, N'{TargetTable}', @TargetTable);
 

@@ -297,7 +297,7 @@ AS
 					@ExecutionType = N'SQLCMD',
 					@ExecutionAttemptsCount = 1, 
 					@DelayBetweenAttempts = N'5s',
-					@Results = @executionResults OUTPUT 
+					@Outcome = @executionResults OUTPUT 
 			
 				IF @returnValue = 0	BEGIN
 					SET @outcome = N'SUCCESS';
@@ -408,7 +408,7 @@ ShrinkLogFile:
 					    @Command = @command, 
 					    @ExecutionType = N'SQLCMD', 
 					    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS]', 
-					    @Results = @executionResults OUTPUT;
+					    @Outcome = @executionResults OUTPUT;
 					
 					IF @returnValue = 0
 						SET @outcome = N'SUCCESS';	

@@ -315,7 +315,7 @@ AS
 
 		INSERT INTO @logFilesToRestore ([log_file])
 		SELECT [file_name] FROM [shredded] ORDER BY [id];
-
+		
 		SET @logsWereApplied = 0;
 
 		IF EXISTS(SELECT NULL FROM @logFilesToRestore) BEGIN
@@ -360,7 +360,7 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 
 			-- re-update the counter: 
 			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
-
+			
 			WHILE EXISTS (SELECT NULL FROM @logFilesToRestore WHERE [id] = @currentLogFileID) BEGIN
 
 				SELECT @backupName = log_file FROM @logFilesToRestore WHERE id = @currentLogFileID;
