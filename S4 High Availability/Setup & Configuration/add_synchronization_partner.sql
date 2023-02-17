@@ -82,7 +82,7 @@ AS
         EXEC master.dbo.sp_addlinkedserver 
 	        @server = N'PARTNER', 
 	        @srvproduct = N'', 
-	        @provider = N'SQLNCLI', 
+	        @provider = N'MSOLEDBSQL', 
 	        @datasrc = @remoteHostName, 
 	        @catalog = N'master';
 
