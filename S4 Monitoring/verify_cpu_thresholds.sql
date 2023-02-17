@@ -82,6 +82,7 @@ GO
 
 CREATE PROC dbo.[verify_cpu_thresholds]
 	@CpuAlertThreshold					int					= 80, 
+	@KernelPercentThreshold				decimal(5,2)		= 5.10,		-- WHEN > 0 will cause 10x kernel-time checks over 10 seconds and if AVERAGE of kernel time % > @Threshold, will send alerts.
 	@JobsToIgnoreCpuFrom				nvarchar(MAX)		= NULL, 
 	@OperatorName						sysname				= N'Alerts',
 	@MailProfileName					sysname				= N'General',
@@ -95,6 +96,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	SET @CpuAlertThreshold = ISNULL(@CpuAlertThreshold, 80);
+	SET @KernelPercentThreshold = ISNULL(@KernelPercentThreshold, 0);
 	SET @JobsToIgnoreCpuFrom = NULLIF(@JobsToIgnoreCpuFrom, N'');
 	SET @EmailSubjectPrefix = ISNULL(NULLIF(@EmailSubjectPrefix, N''), N'[CPU Checks] ');
 
@@ -108,7 +110,7 @@ AS
 	DECLARE @return int, @returnMessage nvarchar(MAX);
     IF @PrintOnly = 0 BEGIN 
 
-	    EXEC @return = dbo.verify_advanced_capabilities;
+	    EXEC @return = dbo.verify_advanced_capabilities;  /* Required for @KernelPercent checks (i.e., we're using powershell) */
         IF @return <> 0
             RETURN @return;
 
@@ -245,10 +247,15 @@ AS
 		FROM 
 			[#cpu_history];
 		
-		-- vNEXT: there are 5x cases to address via set theory: a) jobs that don't run at all during our window (shouldn't exist but... whatever) b) jobs that start + end within a single 1-minute interval.
-		--			c) jobs spanning multiple 1 minute intervals. d) jobs running when our first interval starts and running 1 or more intervals. e) jobs running 1 or more intervals before our total window ends (i.e., jobs running 'now')
+		-- vNEXT: there are 5x cases to address via set theory: 
+		--			a) jobs that don't run at all during our window (shouldn't exist but... whatever) 
+		--			b) jobs that start + end within a single 1-minute interval.
+		--			c) jobs spanning multiple 1 minute intervals. 
+		--			d) jobs running when our first interval starts and running 1 or more intervals. 
+		--			e) jobs running 1 or more intervals before our total window ends (i.e., jobs running 'now')
 		--	I could NOT seem to even address a, b, c via set-based operations... so I went with a cursor instead. sigh. 
-		--	that said, after, cough, over an HOUR of trial/error and then giving up and creating a 'matrix' I could view/proof-against, the 'formula' is: (@jobEndTime > boundar.[start_time] AND @jobStaTime < boundar.[end_time])
+		--	that said, after, cough, over an HOUR of trial/error and then giving up and creating a 'matrix' I could view/proof-against, 
+		--			the 'formula' is: (@jobEndTime > boundary.[start_time] AND @jobStaTime < boundary.[end_time])
 		DECLARE @jobName sysname, @jobStart datetime, @jobEnd datetime;
 		SELECT 
 			@minStart = MIN(start_time), 
@@ -276,6 +283,38 @@ AS
 		CLOSE [walker];
 		DEALLOCATE [walker];
 
+	END;
+
+	IF @KernelPercentThreshold > 0 BEGIN 
+		DECLARE @output xml, @errorMessage nvarchar(MAX);
+		EXEC [admindb].dbo.[execute_command]
+			@Command = N'(Get-Counter -Counter ''\Processor(_Total)\% Privileged Time'' -MaxSamples 10).CounterSamples.CookedValue;',
+			@ExecutionType = N'POSH',
+			@IgnoredResults = N'',
+			@SafeResults = N'{ALL}',	/* treat all results as safe... */
+			@ErrorResults = N'',
+			@PrintOnly = 0,
+			@Outcome = @output OUTPUT,
+			@ErrorMessage = @errorMessage OUTPUT;	
+			
+		DECLARE @kernelAverage decimal(5,2);
+		WITH shredded AS ( 
+			SELECT 
+				--[data].[row].value(N'@result_id[1]', N'int') [result_id], 
+				[data].[row].value(N'.[1]', N'decimal(16,12)') [value]
+			FROM 
+				@output.nodes(N'//result_row') [data]([row])
+		)
+
+		SELECT 
+			@kernelAverage = AVG([value])
+		FROM 
+			[shredded];
+
+
+		IF @kernelAverage > @KernelPercentThreshold BEGIN
+			PRINT 'TODO: figure out how to create an alert about kernel-time > @threshold... '
+		END;
 	END;
 
 	-- Report on CPU usage exceptions/problems: 
