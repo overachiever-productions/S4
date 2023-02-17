@@ -5,6 +5,12 @@
 				@TargetDatabase = N'Billing', 
 				@TargetTable = N'Entries';
 
+	vNEXT:
+		this accidentally gets tables with different schemas 'right' 
+			as in ... if there's a table of txnproc.batch_status vs dbo.batch_status
+				it'll accidentally get that right. 
+			however, if there were dbo.batch_status and myschema.batch_status, it'd NEVER 
+				be able to differentiate and ... probably crash/burn. 
 
 */
 
@@ -64,6 +70,12 @@ AS
 
 	SET @TargetTable = QUOTENAME(@TargetTable);
 
+	/* 
+		DRY VIOLATION: The code below is 98% duplicated between plancache_columns_by_index and plancache_columns_by_table. 
+				The ONLY differences are the WHERE clauses (2x in the core CTE + projection) for .exist()... 
+			TODO: https://overachieverllc.atlassian.net/browse/S4-516
+	*/
+
 	/* Find all plans with REFERENCES to the table in question: */
 	WITH XMLNAMESPACES (DEFAULT N'http://schemas.microsoft.com/sqlserver/2004/07/showplan'),
 	core AS (
@@ -112,6 +124,8 @@ AS
 	SELECT 
 		[p].[plan_number],
 		[p].[node_id],
+		[n].[node].value(N'local-name(./..)', N'sysname') [great_grandparent_name],
+		[n].[node].query(N'./..') [great_grandparent_node],
 		[n].[node].value(N'local-name(.)', N'sysname') [grandparent_name],
 		[n].[node].query(N'.') [grandparent_node], 
 		[n].[node].value(N'local-name(*[1])', N'sysname') [parent_name],
@@ -123,7 +137,7 @@ AS
 		[#planRelOps] [p] 
 		CROSS APPLY [p].rel_op.nodes(N'//*[ColumnReference]/..') [n]([node]) -- MKC: //*[ColumnReference] grabs ALL elements with name of 'ColumnReference]. And /.. then grabs the PARENT of said node. 
 	WHERE 
-		[n].[node].value(N'local-name(*[1])', N'sysname') NOT IN(N'OutputList', N'DefinedValue', N'Identifier')
+		[n].[node].value(N'local-name(*[1])', N'sysname') NOT IN (N'OutputList', N'DefinedValue') --, N'Identifier')
 	ORDER BY 
 		[p].[plan_number], [p].[node_id], [parent_name];
 
@@ -132,7 +146,9 @@ AS
 		[r].[plan_number],
 		[r].[node_id],
 		[r].[grandparent_name],
-		CASE 
+		CASE
+			WHEN [r].[great_grandparent_name] = N'Intrinsic' THEN [r].[great_grandparent_node].value(N'(/Intrinsic/@FunctionName)[1]', N'sysname')
+			WHEN [r].[great_grandparent_name] = N'Compare' THEN [r].[great_grandparent_node].value(N'(/Compare/@CompareOp)[1]', N'sysname')
 			WHEN [r].[grandparent_name] = N'Prefix' THEN [r].[grandparent_node].value(N'(/Prefix/@ScanType)[1]', N'sysname') 
 			WHEN [r].[grandparent_name] = N'EndRange' THEN [r].[grandparent_node].value(N'(/EndRange/@ScanType)[1]', N'sysname') 
 			WHEN [r].[grandparent_name] = N'StartRange' THEN [r].[grandparent_node].value(N'(/StartRange/@ScanType)[1]', N'sysname')
@@ -154,11 +170,10 @@ AS
 
 	WITH XMLNAMESPACES (DEFAULT N'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
 	SELECT 
-		[p].[usecounts],
-		[p].[cacheobjtype],
-		[p].[query_plan],
 		[p].[plan_number],
 		[p].[node_id] [operation_id],
+		[p].[cacheobjtype],
+		[p].[usecounts],
 		[p].[physical_op] [operation],
 		N' ' [ ], 
 		[p].[rel_op].value(N'(//Object/@Index)[1]', N'sysname') [index],
@@ -174,7 +189,7 @@ AS
 			), 1, 2, N'') [equality_columns],
 		STUFF((
 			SELECT DISTINCT
-				N', ' + [e].[column_name] + N' (' + [e].[scan_type] + N')'
+				N', ' + [e].[column_name] + N' (' + UPPER([e].[scan_type]) + N')'
 			FROM 
 				[#expandedColumns] [e]
 			WHERE 
@@ -185,7 +200,8 @@ AS
 
 		[p].[output_cols] [output_columns],
 		N' ' [_], 
-		[p].[rel_op] [operation_xml]
+		[p].[query_plan]
+		--[p].[rel_op] [operation_xml]
 	FROM 
 		[#planRelOps] [p]
 	ORDER BY 

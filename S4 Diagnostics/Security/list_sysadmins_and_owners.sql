@@ -56,11 +56,6 @@ AS
 	END;
 
 	IF UPPER(@ListType) LIKE '%OWNER%' BEGIN
-		----------------------------------------------------------------------------------------------------------------------------------
-		-- TODO: 
-		--		this is a PURE ugly implementation at this point - it's using sp_msForEachDB... 
-		--		instead, need to spin up a cursor for each db in @targets or whatever... 
-		--		and grab non-dbo usrs per each db and spit them out as members of the db_owner role. 
 		DECLARE @targetDBs table ( 
 			row_id int IDENTITY(1,1) NOT NULL,
 			[database_name] sysname NOT NULL
