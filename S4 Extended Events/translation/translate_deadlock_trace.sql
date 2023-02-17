@@ -30,7 +30,6 @@ CREATE PROC dbo.[translate_deadlock_trace]
 	@OptionalUTCStartTime					datetime		= NULL, 
 	@OptionalUTCEndTime						datetime		= NULL, 
 	@OptionalDbTranslationMappings			nvarchar(MAX)	= NULL
-
 AS
     SET NOCOUNT ON; 
 
@@ -110,15 +109,43 @@ AS
 		timestamp_utc datetime NOT NULL 
 	);
 	
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
+	--DECLARE @sql nvarchar(MAX) = N'SELECT 
+	--	[object_name],
+	--	CAST([event_data] as xml) [event_data],
+	--	CAST([timestamp_utc] as datetime) [datetime_utc]
+	--FROM 
+	--	sys.[fn_xe_file_target_read_file](@extractionPath, NULL, NULL, NULL)
+	--WHERE 
+	--	object_name = N''xml_deadlock_report''
+	--	{DateLimits};';
+
+	DECLARE @sql nvarchar(MAX) = N'WITH core AS (
+	SELECT 
 		[object_name],
-		CAST([event_data] as xml) [event_data],
-		CAST([timestamp_utc] as datetime) [datetime_utc]
+		CAST([event_data] as xml) [event_data]
 	FROM 
 		sys.[fn_xe_file_target_read_file](@extractionPath, NULL, NULL, NULL)
 	WHERE 
 		object_name = N''xml_deadlock_report''
-		{DateLimits};';
+	), 
+	stamped AS (
+		SELECT 
+			[object_name], 
+			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [datetime_utc],
+			[event_data]
+		FROM 
+			core
+	)
+	
+	SELECT 
+		[object_name], 
+		CAST([event_data] as xml) [event_data],
+		[datetime_utc]
+	FROM 
+		stamped
+	WHERE
+		object_name = N''xml_deadlock_report''
+		{DateLimits}; ';
 
 	DECLARE @dateLimits nvarchar(MAX) = N'';
 	IF @OptionalUTCStartTime IS NOT NULL BEGIN 

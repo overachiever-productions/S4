@@ -69,7 +69,6 @@ AS
     IF @syncCheckSpanMinutes <= 1 
         RETURN 0; -- no sense checking on history if it's just been a minute... 
 
-
 	----------------------------------------------
 	-- Get current PLE values:
 	DECLARE @currentPLEs bigint; 

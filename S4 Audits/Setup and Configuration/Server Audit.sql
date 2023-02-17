@@ -1,6 +1,3 @@
-
-
-
 /*
 
 	FODDER:
@@ -252,48 +249,3 @@ ORDER BY
 SELECT * FROM sys.[dm_audit_actions] WHERE [action_id] = 'SL'; -- for example, this is a 'select'....  (if you don't need SELECT across ALL databases and/or only need it for one or two tables, or one or two databases, then set up db-level specifications as 'narrowly' as possible/logical. (when in doubt, record more data).
 
 -- docs on this DMV are here: https://docs.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-audit-actions-transact-sql
-
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- B. Analysis/Review:
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
--- Sample 'review' query...
-SELECT
-	aa.[name],
-	x.[succeeded],
-	x.[event_time],
-	x.[database_name],
-	x.[server_principal_name],
-	x.[statement], 
-	x.[client_ip],
-	x.[duration_milliseconds],
-	CAST(x.[additional_information] AS xml) [additional_information]
-FROM
-	[fn_get_audit_file](N'<audit_path, sysname, D:\Audits\>*', DEFAULT, DEFAULT) x 
-	INNER JOIN sys.dm_audit_actions aa ON x.action_id = aa.action_id
-ORDER BY
-	[event_time] DESC,
-	[transaction_id] DESC,
-	[sequence_number] DESC;
-
-
--- or, a filtered version: 
-SELECT
-	aa.[name],
-	x.[succeeded],
-	x.[event_time],
-	x.[database_name],
-	x.[server_principal_name],
-	x.[statement], 
-	x.[client_ip],
-	x.[duration_milliseconds],
-	CAST(x.[additional_information] AS xml) [additional_information]
-FROM
-	[fn_get_audit_file](N'<audit_path, sysname, D:\Audits\>*', DEFAULT, DEFAULT) x 
-	INNER JOIN sys.dm_audit_actions aa ON x.action_id = aa.action_id
-WHERE 
-	x.[action_id] = N'CR'  -- create, for example...
-ORDER BY
-	[event_time] DESC,
-	[transaction_id] DESC,
-	[sequence_number] DESC;

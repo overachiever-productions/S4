@@ -600,6 +600,21 @@ GO
 --##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\list_heaps.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\list_problem_heaps.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\plancache_columns_by_index.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\plancache_columns_by_table.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\plancache_metrics_for_index.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
 
 -----------------------------------
@@ -730,6 +745,13 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Resource Governor\kill_resource_governor_connections.sql
+
+-----------------------------------
+--##INCLUDE: S4 Resource Governor\resource_governor_compute_metrics.sql
+
+-----------------------------------
+--##INCLUDE: S4 Resource Governor\resource_governor_io_metrics.sql
+
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Capacity Planning

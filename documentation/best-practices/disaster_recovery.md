@@ -1,4 +1,4 @@
-﻿![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
+![](https://assets.overachiever.net/s4/images/s4_main_logo.png)
 
 [S4 Docs Home](/readme.md) > [S4 Best Practices](/documentation/best-practices/) > Leveraging S4 for Disaster Recovery
 

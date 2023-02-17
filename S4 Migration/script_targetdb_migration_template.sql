@@ -3,6 +3,9 @@
 	vNEXT: 
 		address CDC, TRUSTWORTHY, REPL, BROKER, and other directives. 
 
+	vNEXT:
+		checkfor + add/configure INDIRECT CHECKPOINTs
+
 */
 
 USE [admindb];
@@ -63,6 +66,11 @@ ALTER DATABASE [' + @TargetDatabase + N'] SET MULTI_USER;
 GO
 
 ALTER AUTHORIZATION ON DATABASE::[' + @TargetDatabase + N'] TO sa;
+GO
+
+IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = N''' + @TargetDatabase + ''' AND [target_recovery_time_in_seconds] = 0) BEGIN 
+	ALTER DATABASE [' + @TargetDatabase + N'] SET TARGET_RECOVERY_TIME = 60 SECONDS;
+END;
 GO
 
 ALTER DATABASE [' + @TargetDatabase + N'] SET PAGE_VERIFY CHECKSUM;

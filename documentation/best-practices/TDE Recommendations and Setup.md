@@ -1,6 +1,12 @@
 # TDE Recommendations and Setup
 
 <div class="stub">
+    NOTE: this might be 'documented' in my notes/TODOs below but, want to make sure I'm including the following: 
+        - TDE + AG works just fine - EXCEPT, you can't AUTO-SEED ... has to be manual (or ... remove TDE, auto seed, + re-TDE)
+        - There's a great TF that MASSIVELY speeds up auto-sync by enabling compression. compression is OFF by default. 
+            I used it with ... TeamSupport or CallEmAll and got some NICE perf/throughput wins. 
+
+
     NOTE: 
         Images for 'missing' images below have been saved to the following location: 
             D:\Dropbox\Repositories\S4\Documentation\best-practices\Content-Images folder from old git.oa.net site.zip

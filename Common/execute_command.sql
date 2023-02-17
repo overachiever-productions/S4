@@ -36,6 +36,9 @@ PICKUP/NEXT:
         - allow {DEFAULT} tokens/valus to be passed into @DelayBetweenAttempts and @IgnoredResults
             i.e., if those values are set to {DEFAULT}... then load in the defaults (2 and 5s - respectively)
 		- allow the OPTION for PARTNER:serverNameHere ... or, maybe LINKED:serverNameHere... 
+		- potentially allow for DAC connections... i.e., -A via SQLCMD... 
+			obviously, this wouldn't really be for things like ... troubleshooting via the DAC but it MIGHT (might) make sense for things like decrypting sprocs, 
+				or taking a peek at some DAC-only-ish data from the master/resource db(s).
 
 	SAMPLE SIGNATURES (these are pretty ugly/raw): 
 
