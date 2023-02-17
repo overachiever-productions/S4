@@ -10,17 +10,7 @@
 			> Otherwise, anything that's been blocking any other process for a MAX([duration]) > @BlockingThresholdSeconds should be killed. 
 
 	vNEXT:
-		- It MAY make sense to run KILL against target spids, wait ~5 seconds and check to see what happened
-			e.g., if spid 63 is orphaned, causing lots of blocking, and gets killed... what's it doing 5 seconds later? 
-				is it 'gone', rolling-back, or ... still causing problems? (it's insanely rare that KILL won't 'work')
-				the rub here is ... 
-					in that 5 seconds, spid 63 could have been instantly killed, and is NOW being re-used for a totally 
-					new or different process... so I'd have to get that info 'correct'... i.e., maybe check to see if
-					it's doing the same command and/or has the same host and 'stuff' from before? 
-					Honestly? seems pretty ... tedious and error prone... 
-
 		- Can't kill system spids - so ... should, potentially? add in logic that doesn't TRY and reports "DOH!!! this is a system spid!!!"
-
 
 		- add in some logic that will IGNORE lead-blockers that come from the DAC... 
 
@@ -126,12 +116,26 @@ AS
 		END;
 	END;
 
+	/* 
+
+		MKC: ALTER + UPDATE below are a HACK to get around OCCASIONAL error like: "Conversion failed when converting the nvarchar value ' » 206 ' to data type int."
+				i.e., vs attempt to REPLACE » + cast as int in 'single' operation (below).
+	*/
+	
+	ALTER TABLE [#results] ADD [blocker] sysname; 
+	UPDATE [#results] 
+	SET 
+		[blocker] = REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') 
+	WHERE 
+		[blocking_chain] IS NOT NULL;
+
 	BEGIN TRY 
 		WITH shredded AS ( 
 			SELECT 
 				[database]	,
 				CAST([session_id] AS int) [session_id], 
-				CAST(REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') AS int) [blocker],
+				--CAST(REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') AS int) [blocker],
+				CAST([blocker] AS int) [blocker],
 				[command],
 				[status],
 				[statement],
@@ -184,7 +188,7 @@ AS
 		SELECT @message = N'Exception Identifying Blockers: [' + ERROR_MESSAGE() + N'] on line [' + CAST(ERROR_LINE() AS sysname) + N'.';
 		GOTO SendMessage;
 	END CATCH
-
+	
 	-- Now that we know who the root blockers are... check for exclusions:
 	DECLARE @excludedApps table (
 		row_id int IDENTITY(1,1) NOT NULL, 
@@ -265,21 +269,21 @@ AS
 
 	SELECT 
 		@body = @body + CASE WHEN [is_system] = 1 THEN N'!COULD_NOT_KILL! (SYSTEM PROCESS) -> ' ELSE N'KILLED -> ' END + 
-			@crlf + @tab + N'SESSION ID             : ' + CAST([session_id] AS sysname) +
-			@crlf + @tab + N'Blocked Operations     : ' + CAST([blocked_count] AS sysname) + 
-			@crlf + @tab + N'Max Blocked Duration   : ' + [max_blocked_time] + 
+			@crlf + @tab + N'SESSION ID             : ' + CAST(ISNULL([session_id], -1) AS sysname) +
+			@crlf + @tab + N'Blocked Operations     : ' + CAST(ISNULL([blocked_count], -1) AS sysname) + 
+			@crlf + @tab + N'Max Blocked Duration   : ' + ISNULL([max_blocked_time], N'#ERROR#') + 
 			@crlf + @tab + N'Status                 : ' + [status] +
-			@crlf + @tab + N'Command                : ' + [command] +
-			@crlf + @tab + N'Wait Type              : ' + [wait_type] +
-			@crlf + @tab + N'Blocked Resource       : ' + [blocked_resource] +
-			@crlf + @tab + N'Run Time               : ' + [duration] + 
-			@crlf + @tab + N'Transaction State      : ' + [transaction_state] +
-			@crlf + @tab + N'ISolation Level        : ' + [isolation_level] +
-			@crlf + @tab + N'Program Name           : ' + [program_name] +
-			@crlf + @tab + N'Host                   : ' + [host_name] +
-			@crlf + @tab + N'Login                  : ' + [login_name] +
+			@crlf + @tab + N'Command                : ' + ISNULL([command], N'') +
+			@crlf + @tab + N'Wait Type              : ' + ISNULL([wait_type], N'') +
+			@crlf + @tab + N'Blocked Resource       : ' + ISNULL([blocked_resource], N'') +
+			@crlf + @tab + N'Run Time               : ' + ISNULL([duration], N'') + 
+			@crlf + @tab + N'Transaction State      : ' + ISNULL([transaction_state], N'') +
+			@crlf + @tab + N'Isolation Level        : ' + ISNULL([isolation_level], N'#UNKNOWN#') +
+			@crlf + @tab + N'Program Name           : ' + ISNULL([program_name], N'') +
+			@crlf + @tab + N'Host                   : ' + ISNULL([host_name], N'') +
+			@crlf + @tab + N'Login                  : ' + ISNULL([login_name], N'') +
 			@crlf + @tab + N'Statement: [' + 
-			@crlf + @tab + @tab + REPLACE(RTRIM([statement]), @crlf, @crlf + @tab + @tab) +
+			@crlf + @tab + @tab + REPLACE(RTRIM(ISNULL([statement], N'')), @crlf, @crlf + @tab + @tab) +
 			@crlf + @crlf + @tab + N']' +
 			@crlf + @crlf
 	FROM 
