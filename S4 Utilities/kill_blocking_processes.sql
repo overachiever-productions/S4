@@ -30,9 +30,12 @@ GO
 
 CREATE PROC dbo.[kill_blocking_processes]
 	@BlockingThresholdSeconds				int					= 60,
-	@ExcludeBackupsAndRestores				bit					= 1,			-- applies to root blocker only
-	@ExcludeSqlServerAgentJobs				bit					= 1,			-- applies to root blocker only
-	@ExcludedApplicationNames				nvarchar(MAX)		= NULL,			-- applies to root blocker only	
+	@ExcludeBackupsAndRestores				bit					= 1,			-- ALL exclude/allow directives apply to ROOT blocker only.
+	@ExcludeSqlServerAgentJobs				bit					= 1,			
+	@AllowedApplicationNames				nvarchar(MAX)		= NULL,			-- All @Allows** params will limit to ONLY lead-blockers via OR on @Allowed values
+	@AllowedHostNames						nvarchar(MAX)		= NULL,			--			 and will, further, be EXCLUDED by @Excluded*** 
+	@AllowedLogins							nvarchar(MAX)		= NULL,
+	@ExcludedApplicationNames				nvarchar(MAX)		= NULL,			
 	@ExcludedDatabases						nvarchar(MAX)		= NULL,
 	@OperatorName							sysname				= N'Alerts',
 	@MailProfileName						sysname				= N'General',
@@ -47,6 +50,10 @@ AS
 	SET @BlockingThresholdSeconds = ISNULL(@BlockingThresholdSeconds, 30);
 	SET @ExcludeSqlServerAgentJobs = ISNULL(@ExcludeSqlServerAgentJobs, 1);
 	SET @ExcludedApplicationNames = NULLIF(@ExcludedApplicationNames, N'');
+
+	SET @AllowedApplicationNames = NULLIF(@AllowedApplicationNames, N'');
+	SET @AllowedHostNames = NULLIF(@AllowedHostNames, N'');
+	SET @AllowedLogins = NULLIF(@AllowedLogins, N'');
 
 	DECLARE @message nvarchar(MAX);
 
@@ -116,6 +123,10 @@ AS
 		END;
 	END;
 
+	IF NOT EXISTS (SELECT NULL FROM [#results]) BEGIN
+		RETURN 0; -- short-circuit (i.e., nothing to do or report).
+	END;
+	
 	/* 
 
 		MKC: ALTER + UPDATE below are a HACK to get around OCCASIONAL error like: "Conversion failed when converting the nvarchar value ' » 206 ' to data type int."
@@ -189,6 +200,58 @@ AS
 		GOTO SendMessage;
 	END CATCH
 	
+	/* Additional short-circuit (no sense allowing/excluding if there are NO blocked processes */
+	IF NOT EXISTS (SELECT NULL FROM [#leadBlockers]) BEGIN
+		RETURN 0; -- short-circuit (i.e., nothing to do or report).
+	END;
+	
+	/* Now that we know who the lead-blockers are, check for @Allowed/Inclusions - and then EXCLUDE by any @ExludeXXXX params. */
+	DECLARE @allowedApps table (
+		[row_id] int IDENTITY(1,1) NOT NULL, 
+		[app_name] sysname NOT NULL
+	); 
+
+	IF @AllowedApplicationNames IS NOT NULL BEGIN 
+		INSERT INTO @allowedApps ([app_name])
+		SELECT [result] FROM dbo.[split_string](@AllowedApplicationNames, N', ', 1);
+		
+		DELETE x 
+		FROM 
+			[#leadBlockers] x  
+			INNER JOIN @allowedApps t ON x.[program_name] NOT LIKE t.[app_name];
+	END;
+
+	DECLARE @allowedHosts table (
+		[row_id] int IDENTITY(1,1) NOT NULL, 
+		[host_name] sysname NOT NULL
+	); 
+
+	IF @AllowedHostNames IS NOT NULL BEGIN 
+		INSERT INTO @allowedHosts ([host_name])
+		SELECT [result] FROM dbo.[split_string](@AllowedHostNames, N', ', 1);
+
+		DELETE x 
+		FROM 
+			[#leadBlockers] x 
+			INNER JOIN @allowedHosts t ON [x].[host_name] NOT LIKE [t].[host_name];
+	END;
+
+	DECLARE @targetLogins table (
+		[row_id] int IDENTITY(1,1) NOT NULL, 
+		[login_name] sysname NOT NULL
+	); 
+
+	IF @AllowedLogins IS NOT NULL BEGIN 
+		INSERT INTO @targetLogins ([login_name])
+		SELECT [result] FROM dbo.[split_string](@AllowedLogins, N', ', 1);
+
+		DELETE x 
+		FROM 
+			[#leadBlockers] x 
+			INNER JOIN @targetLogins t ON [x].[login_name] NOT LIKE [t].[login_name];
+
+	END;
+
 	-- Now that we know who the root blockers are... check for exclusions:
 	DECLARE @excludedApps table (
 		row_id int IDENTITY(1,1) NOT NULL, 
