@@ -252,6 +252,9 @@ AS
 
 	END;
 
+	DECLARE @leadBlockers int;
+	SELECT @leadBlockers = COUNT(*) FROM [#leadBlockers]; -- used down below... 
+
 	-- Now that we know who the root blockers are... check for exclusions:
 	DECLARE @excludedApps table (
 		row_id int IDENTITY(1,1) NOT NULL, 
@@ -291,6 +294,57 @@ AS
 	IF NOT EXISTS (SELECT NULL FROM [#leadBlockers]) BEGIN 
 		RETURN 0; -- nothing tripped expected thresholds... 
 	END;
+
+	/*	IF we're still here, there are spids to kill (though they might be system) 
+		So, serialize a snapshot of the issues we're seeing.
+	*/
+	DECLARE @collisionSnapshot xml = (
+		SELECT 
+			[r].[database],
+			CASE WHEN [x].[session_id] IS NULL THEN 0 ELSE 1 END [should_kill],
+			[r].[blocking_chain],
+			[r].[session_id],
+			[r].[command],
+			[r].[status],
+			[r].[statement],
+			[r].[wait_time],
+			[r].[wait_type],
+			[r].[wait_resource],
+			[r].[is_system],
+			[r].[duration],
+			[r].[transaction_state],
+			[r].[isolation_level],
+			[r].[transaction_type],
+			[r].[context]
+		FROM 
+			[#results] [r]
+			LEFT OUTER JOIN [#leadBlockers] [x] ON [r].[session_id] = [x].[session_id]
+		FOR XML PATH('row'), ROOT('blockers'), TYPE
+	);
+
+	DECLARE @blockedProcesses int, @blockersToKill int;
+	SELECT @blockedProcesses = COUNT(*) FROM [#results];
+	SELECT @blockersToKill = COUNT(*) FROM [#leadBlockers];  -- we gathered ALL before, now we're left with just those to kill.
+	DECLARE @snapshotId int;
+
+	INSERT INTO dbo.[kill_blocking_process_snapshots] (
+		[timestamp],
+		[print_only],
+		[blocked_processes],
+		[lead_blockers],
+		[blockers_to_kill],
+		[snapshot]
+	)
+	VALUES	(
+		GETDATE(),
+		@PrintOnly,
+		@blockedProcesses, 
+		@leadBlockers,
+		@blockersToKill, 
+		@collisionSnapshot
+	);
+
+	SELECT @snapshotId = SCOPE_IDENTITY();  -- vNEXT ... use this to do updates (against new columns to add) for ... POST kill metrics (count etc.)
 
 	DECLARE @sessionId int, @isSystem bit;
 	DECLARE @command sysname;
