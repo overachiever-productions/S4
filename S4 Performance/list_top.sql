@@ -11,11 +11,13 @@ IF OBJECT_ID('dbo.list_top','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[list_top]
-
+	@TopRequests			int			= 20
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+	SET @TopRequests = ISNULL(@TopRequests, 20);
+
 	
 	SELECT
 		r.session_id, 
@@ -50,7 +52,7 @@ AS
 	FROM 
 		sys.dm_exec_requests r
 		INNER JOIN (
-			SELECT TOP (20) session_id FROM sys.dm_exec_requests 
+			SELECT TOP (@TopRequests) session_id FROM sys.dm_exec_requests 
 			WHERE session_id > 50
 				AND last_wait_type NOT IN (
 					'BROKER_TO_FLUSH','HADR_FILESTREAM_IOMGR_IOCOMPLETION', 
