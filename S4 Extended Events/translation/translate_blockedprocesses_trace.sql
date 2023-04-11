@@ -764,5 +764,18 @@ AS
 
 	EXEC sp_executesql @command; 
 
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Indexes:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	SET @command = N'USE [{targetDatabase}];
+	
+	CREATE CLUSTERED INDEX [CLIX_{targetTableName}_ByRowID] ON {targetTableName} ([row_id]);
+	CREATE NONCLUSTERED INDEX [COVIX_{targetTableName}_details_ByTxIds] ON {targetTableName} ([blocking_xactid],[blocked_xactid]) INCLUDE ([timestamp],[seconds_blocked]); '
+
+	SET @command = REPLACE(@command, N'{targetDatabase}', @targetDatabase);
+	SET @command = REPLACE(@command, N'{targetTableName}', @TargetTable);
+	
+	EXEC sp_executesql @command; 
+
 	RETURN 0; 
 GO
