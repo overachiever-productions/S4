@@ -181,7 +181,7 @@ AS
 	IF @isValid = 0 BEGIN;
 		RAISERROR('Invalid @TargetDirectory specified - either the path does not exist, or SQL Server''s Service Account does not have permissions to access the specified directory.', 16, 1);
 		RETURN -10;
-	END
+	END;
 
 	-----------------------------------------------------------------------------
 	SET @Output = NULL;
