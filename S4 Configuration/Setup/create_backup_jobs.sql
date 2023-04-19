@@ -3,6 +3,9 @@
 	vNEXT:
 		- Refactor @FullAndLog* ... no longer makes sense it's @UserDB*... 
 		- OffSite Path + retentions
+
+
+		
 	
 */
 
@@ -26,14 +29,14 @@ CREATE PROC dbo.[create_backup_jobs]
 	@CopyToUserFullBackupRetention				sysname					= N'3 days',
 	@LogBackupRetention							sysname					= N'73 hours', 
 	@CopyToLogBackupRetention					sysname					= N'73 hours',
-	@AllowForSecondaryServers					bit						= 0,				-- Set to 1 for Mirrored/AG'd databases. 
-	@FullSystemBackupsStartTime					sysname					= N'18:50:00',		-- if '', then system backups won't be created... 
-	@FullUserBackupsStartTime					sysname					= N'02:00:00',		
+	@AllowForSecondaryServers					bit						= 0,							-- Set to 1 for Mirrored/AG'd databases. 
+	@FullSystemBackupsStartTime					sysname					= N'18:50:00',					-- if '', then system backups won't be created... 
+	@FullUserBackupsStartTime					sysname					= N'02:00:00',					
 	@DiffBackupsStartTime						sysname					= NULL, 
-	@DiffBackupsRunEvery						sysname					= NULL,				-- minutes or hours ... e.g., N'4 hours' or '180 minutes', etc. 
-	@LogBackupsStartTime						sysname					= N'00:02:00',		-- ditto ish
-	@LogBackupsRunEvery							sysname					= N'10 minutes',	-- vector, but only allows minutes (i think).
-	@TimeZoneForUtcOffset						sysname					= NULL,				-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
+	@DiffBackupsRunEvery						sysname					= NULL,							-- minutes or hours ... e.g., N'4 hours' or '180 minutes', etc. 
+	@LogBackupsStartTime						sysname					= N'00:02:00',					-- ditto ish
+	@LogBackupsRunEvery							sysname					= N'10 minutes',				-- vector, but only allows minutes (i think).
+	@TimeZoneForUtcOffset									sysname					= NULL,							-- IF the server is running on UTC time, this is the time-zone you want to adjust backups to (i.e., 2AM UTC would be 4PM pacific - not a great time for full backups. Values ...   e.g., 'Central Standard Time', 'Pacific Standard Time', 'Eastern Daylight Time' 
 	@JobsNamePrefix								sysname					= N'Database Backups - ',		-- e.g., "Database Backups - USER - FULL" or "Database Backups - USER - LOG" or "Database Backups - SYSTEM - FULL"
 	@JobsCategoryName							sysname					= N'Backups',							
 	@JobOperatorToAlertOnErrors					sysname					= N'Alerts',	
@@ -72,6 +75,10 @@ AS
 	-- translate 'local' timezone to UTC-zoned servers:
 	IF @TimeZoneForUtcOffset IS NOT NULL BEGIN 
 		IF (SELECT [dbo].[get_engine_version]()) >= 13.0 BEGIN 
+			IF NOT EXISTS (SELECT NULL FROM sys.[time_zone_info] WHERE [name] = @TimeZoneForUtcOffset) BEGIN
+				RAISERROR(N'Invalid Time-Zone Specified: %s.', 16, 1, @TimeZoneForUtcOffset);
+				RETURN -10;
+			END;
 
 			DECLARE @utc datetime = GETUTCDATE();
 			DECLARE @atTimeZone datetime;
@@ -85,16 +92,18 @@ AS
 				@utc = @utc, 
 				@TimeZoneForUtcOffset = @TimeZoneForUtcOffset;
 
-			SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
-			SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
-			SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
-			SET @DiffBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DiffBackupsStartTime);
-
 		  END;
 		ELSE BEGIN 
+			-- TODO: I might be able to pull this info out of the registry? https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-time-zone-info-transact-sql?view=sql-server-ver16  
+
 			RAISERROR('@TimeZoneForUtcOffset is NOT supported on SQL Server versions prior to SQL Server 2016. Set value to NULL.', 16, 1); 
 			RETURN -100;
 		END;
+
+		SET @FullSystemBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullSystemBackupsStartTime);
+		SET @FullUserBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @FullUserBackupsStartTime);
+		SET @LogBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @LogBackupsStartTime);
+		SET @DiffBackupsStartTime = DATEADD(MINUTE, 0 - (DATEDIFF(MINUTE, @utc, @atTimeZone)), @DiffBackupsStartTime);
 	END;
 
 	DECLARE @systemStart time, @userStart time, @logStart time, @diffStart time;
