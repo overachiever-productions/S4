@@ -10,11 +10,7 @@
 			> Otherwise, anything that's been blocking any other process for a MAX([duration]) > @BlockingThresholdSeconds should be killed. 
 
 	vNEXT:
-		- Can't kill system spids - so ... should, potentially? add in logic that doesn't TRY and reports "DOH!!! this is a system spid!!!"
-
 		- add in some logic that will IGNORE lead-blockers that come from the DAC... 
-
-		- could also add in logic that INGOREs lead blockers from specific/wild-cardable logins - i.e., 'sa' in 'good'/secure environments, etc. 
 
 		- add in an option to REPORT on blockings by any excluded spids ... and... a threshold, i.e., something like @reportExcludedBlockersAfter '70 seconds' or whatever... 
 
