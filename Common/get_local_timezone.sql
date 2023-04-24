@@ -2,6 +2,21 @@
 		
 	SELECT [admindb].dbo.[get_local_timezone]();
 
+
+SELECT GETDATE() [now], GETUTCDATE() [utc];
+
+
+SELECT 
+	[row_id],
+	[timestamp], 
+	DATEADD(HOUR, -8, [timestamp]) [manual], 
+	[timestamp] AT TIME ZONE 'Pacific Standard Time' [at time zone], 
+	CAST([timestamp] AT TIME ZONE 'Pacific Standard Time' AS datetime) [pacific_cast], 
+	CONVERT(datetime, [timestamp] AT TIME ZONE 'Pacific Standard Time', 1) [pacific_convert]
+FROM 
+	[dbo].[all_blocking_feb15]
+
+
 */
 
 USE [admindb];

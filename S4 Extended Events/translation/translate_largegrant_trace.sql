@@ -14,8 +14,9 @@ CREATE PROC dbo.[translate_largegrant_trace]
 	@SourceXelFilesDirectory				sysname			= N'D:\Traces', 
 	@TargetTable							sysname, 
 	@OverwriteTarget						bit				= 0,
-	@OptionalUTCStartTime					datetime		= NULL, 
-	@OptionalUTCEndTime						datetime		= NULL
+	@OptionalStartTime						datetime		= NULL, 
+	@OptionalEndTime						datetime		= NULL, 
+	@TimeZone								sysname			= N'{SERVER_LOCAL}'
 AS
     SET NOCOUNT ON; 
 
@@ -23,6 +24,7 @@ AS
 	
 	SET @SourceXelFilesDirectory = ISNULL(@SourceXelFilesDirectory, N'');
 	SET @TargetTable = ISNULL(@TargetTable, N'');
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	IF @SourceXelFilesDirectory IS NULL BEGIN 
 		RAISERROR(N'Please specify a valid directory name for where large_memory_grant*.xel files can be loaded from.', 16, 1);
@@ -94,27 +96,35 @@ AS
 		timestamp_utc datetime NOT NULL 
 	);
 	
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
+	DECLARE @sql nvarchar(MAX) = N'	SELECT 
 		[object_name],
 		CAST([event_data] as xml) [event_data],
 		CAST([timestamp_utc] as datetime) [datetime_utc]
 	FROM 
 		sys.[fn_xe_file_target_read_file](@extractionPath, NULL, NULL, NULL)
 	WHERE 
-		object_name = N''degree_of_parallelism''
-		{DateLimits};';
+		object_name = N''degree_of_parallelism'' {DateLimits};';
 
 	DECLARE @dateLimits nvarchar(MAX) = N'';
-	IF @OptionalUTCStartTime IS NOT NULL BEGIN 
-		SET @dateLimits = N'AND CAST([timestamp_utc] as datetime) >= ''' + CONVERT(sysname, @OptionalUTCStartTime, 121) + N'''';
+	DECLARE @nextLine nchar(4) = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9);
+	
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
+
+	IF @OptionalStartTime IS NOT NULL BEGIN 
+		SET @dateLimits = @nextLine + N'AND [timestamp_utc] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) +  N'''';
 	END;
 
-	IF @OptionalUTCEndTime IS NOT NULL BEGIN 
+	IF @OptionalEndTime IS NOT NULL BEGIN 
 		IF NULLIF(@dateLimits, N'') IS NOT NULL BEGIN
-			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N' AND CAST([timestamp_utc] as datetime) <= ''' + CONVERT(sysname, @OptionalUTCEndTime, 121) + N''')'
+			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N')' + @nextLine + N'AND ([timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N''')';
 		  END;
 		ELSE BEGIN 
-			SET @dateLimits = N'AND CAST([timestamp_utc] as datetime) <= ''' + CONVERT(sysname, @OptionalUTCEndTime, 121) + N'''';
+			SET @dateLimits = @nextLine + N'AND [timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		END;
 	END;
 
@@ -215,6 +225,7 @@ AS
 
 	EXEC sp_executesql @command;
 
+	-- output a summary: 
 	SET @command = N'SELECT COUNT(*) [rows], (SELECT MIN([timestamp]) FROM {targetTableName} WHERE NULLIF([timestamp], N'''') IS NOT NULL) [start], MAX([timestamp]) [end] FROM {targetTableName}; ';
 	SET @command = REPLACE(@command, N'{targetTableName}', @TargetTable);
 
@@ -222,4 +233,3 @@ AS
 
 	RETURN 0;
 GO
-
