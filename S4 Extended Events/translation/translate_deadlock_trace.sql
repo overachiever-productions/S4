@@ -29,7 +29,7 @@ CREATE PROC dbo.[translate_deadlock_trace]
 	@OverwriteTarget						bit				= 0,
 	@OptionalStartTime						datetime		= NULL, 
 	@OptionalEndTime						datetime		= NULL, 
-	@TimeZone								sysname			= N'{SERVER_LOCAL}',
+	@TimeZone								sysname			= NULL,
 	@OptionalDbTranslationMappings			nvarchar(MAX)	= NULL
 AS
     SET NOCOUNT ON; 
@@ -122,7 +122,7 @@ AS
 	stamped AS (
 		SELECT 
 			[object_name], 
-			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [datetime_utc],
+			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [timestamp_utc],
 			[event_data]
 		FROM 
 			core
@@ -131,7 +131,7 @@ AS
 	SELECT 
 		[object_name], 
 		CAST([event_data] as xml) [event_data],
-		[datetime_utc]
+		[timestamp_utc]
 	FROM 
 		stamped
 	WHERE
@@ -153,7 +153,7 @@ AS
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
 		IF NULLIF(@dateLimits, N'') IS NOT NULL BEGIN
-			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N' AND [timestamp_utc] ) <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N''')';
+			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N' AND [timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N''')';
 		  END;
 		ELSE BEGIN 
 			SET @dateLimits = @nextLine + N'AND [timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
@@ -229,8 +229,8 @@ AS
 
 	SELECT 
 		IDENTITY(int, 1, 1) [row_id],
-		CASE WHEN [a].[line_id] = 1 THEN CAST(a.[deadlock_id] AS sysname) ELSE N'    ' END [deadlock_id],  
-		CASE WHEN [a].[line_id] = 1 THEN CONVERT(sysname, p.[timestamp], 121) ELSE N'' END [timestamp],
+		CASE WHEN [a].[line_id] = 1 THEN CAST(a.[deadlock_id] AS sysname) ELSE N'    ' END [deadlock_id], 
+		p.[timestamp],  /* S4-536 - i.e., pre-projection here breaks ability to filter later on. */
 		CASE WHEN [a].[line_id] = 1 THEN CAST([p].[process_count] AS sysname) ELSE N'' END [process_count],
 		CASE WHEN p.[ecid] = 0 THEN CAST(a.[session_id] AS sysname) ELSE CAST(a.[session_id] AS sysname) + N' (' + CAST([p].[ecid] AS sysname) + N')' END [session_id],
 		[a].[client_application],
@@ -253,7 +253,6 @@ AS
 		INNER JOIN [processes] p ON [a].[deadlock_id] = [p].[deadlock_id] AND [a].[process_id] = [p].[process_id]
 	ORDER BY 
 		a.[deadlock_id], a.[line_id];
-
 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Statement Normalization: 

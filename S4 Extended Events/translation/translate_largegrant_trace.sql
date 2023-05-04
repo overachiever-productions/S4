@@ -16,7 +16,7 @@ CREATE PROC dbo.[translate_largegrant_trace]
 	@OverwriteTarget						bit				= 0,
 	@OptionalStartTime						datetime		= NULL, 
 	@OptionalEndTime						datetime		= NULL, 
-	@TimeZone								sysname			= N'{SERVER_LOCAL}'
+	@TimeZone								sysname			= NULL
 AS
     SET NOCOUNT ON; 
 
@@ -116,15 +116,16 @@ AS
 		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @dateLimits = @nextLine + N'AND [timestamp_utc] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) +  N'''';
+		/* BUG with timestamp_utc - HAS to be cast to datetime or ... won't evaluate to true...  */
+		SET @dateLimits = @nextLine + N'AND CAST([timestamp_utc] as datetime) >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) +  N'''';
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
 		IF NULLIF(@dateLimits, N'') IS NOT NULL BEGIN
-			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N')' + @nextLine + N'AND ([timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N''')';
+			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N')' + @nextLine + N'AND (CAST([timestamp_utc] as datetime) <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N''')';
 		  END;
 		ELSE BEGIN 
-			SET @dateLimits = @nextLine + N'AND [timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
+			SET @dateLimits = @nextLine + N'AND CAST([timestamp_utc] as datetime) <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		END;
 	END;
 
@@ -144,7 +145,7 @@ AS
 	WITH core AS ( 
 		SELECT 
 			ROW_NUMBER() OVER (ORDER BY [timestamp_utc]) [report_id], 
-			DATEADD(HOUR, DATEDIFF(HOUR, GETUTCDATE(), CURRENT_TIMESTAMP), [event_data].value('(event/@timestamp)[1]', 'datetime')) AS [timestamp],
+			[event_data].value('(event/@timestamp)[1]', 'datetime') [timestamp],
 			[event_data]
 		FROM 
 			[#raw]

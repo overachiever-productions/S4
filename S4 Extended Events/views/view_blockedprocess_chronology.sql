@@ -34,14 +34,14 @@ CREATE PROC dbo.[view_blockedprocess_chronology]
 	@TranslatedBlockedProcessesTable					sysname, 
 	@OptionalStartTime									datetime	= NULL, 
 	@OptionalEndTime									datetime	= NULL, 
-	@ConvertTimesFromUtc								bit			= 1
+	@TimeZone											sysname		= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
 	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
-	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -56,10 +56,12 @@ AS
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised... 
 
-	DECLARE @timeOffset int = 0;
-	IF @ConvertTimesFromUtc = 1 BEGIN 
-		SET @timeOffset = (SELECT DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()));
-	END;
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
 	
 	CREATE TABLE #work (
 		[row_id] int NOT NULL,
@@ -89,8 +91,8 @@ AS
 		[blocked_spid] int NULL,
 		[blocked_ecid] int NULL,
 		[blocked_xactid] bigint NULL,
-		[blocked_request] nvarchar(max) NULL,
-		[blocked_sproc_statement] nvarchar(max) NULL,
+		[blocked_request] nvarchar(MAX) NULL,
+		[blocked_sproc_statement] nvarchar(MAX) NULL,
 		[blocked_weight] sysname NULL,
 		[blocked_resource_id] nvarchar(80) NULL,
 		[blocked_resource] varchar(400) NULL,
@@ -110,23 +112,24 @@ AS
 
 	CREATE CLUSTERED INDEX [____CLIX_#work_byReportId] ON [#work] (report_id);
 
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
+	DECLARE @sql nvarchar(MAX) = N'	SELECT 
 		*
 	FROM {SourceTable}{WHERE}
 	ORDER BY 
 		[row_id]; ';
 
 	DECLARE @dateTimePredicate nvarchar(MAX) = N'';
+	DECLARE @nextLine nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @dateTimePredicate = N'WHERE [timestamp] >= ''' + CONVERT(sysname, @OptionalStartTime, 121) + N'''';
+		SET @dateTimePredicate = @nextLine + N'WHERE [timestamp] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
 	END; 
-
+	
 	IF @OptionalEndTime IS NOT NULL BEGIN 
 		IF NULLIF(@dateTimePredicate, N'') IS NOT NULL BEGIN 
-			SET @dateTimePredicate = @dateTimePredicate + N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+			SET @dateTimePredicate = @dateTimePredicate + @nextLine + N' AND [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		  END; 
 		ELSE BEGIN 
-			SET @dateTimePredicate = N'WHERE [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+			SET @dateTimePredicate = @nextLine + N'WHERE [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		END;
 	END;
 
@@ -251,7 +254,7 @@ AS
 			--[w].[report_id],
 			[w].[report_id] [original_report_id],
 			[w].[database_name],
-			DATEADD(MINUTE, 0 - @timeOffset, [w].[timestamp]) [timestamp],
+			DATEADD(MINUTE, @offsetMinutes, [w].[timestamp]) [timestamp],
 			--[w].[timestamp],
 			[a].[process_count],
 
@@ -286,30 +289,6 @@ AS
 			[w].[blocked_host_name],
 			[w].[blocked_login_name],
 			[w].[blocked_client_app],
-
-			----------
-		
-			--[w].[blocking_sproc_statement],
-			--[w].[blocking_resource_id],
-		
-			--[w].[blocking_wait_time],
-			--[w].[blocking_start_offset],
-			--[w].[blocking_end_offset],
-			--[w].[blocking_host_name],
-			--[w].[blocking_login_name],
-			--[w].[blocking_client_app],
-
-			--[w].[blocked_spid],
-			--[w].[blocked_ecid],
-		
-			--[w].[blocked_sproc_statement],
-		
-			--[w].[blocked_resource_id],
-			--[w].[blocked_wait_time],
-			--[w].[blocked_lock_mode],
-			--[w].[blocked_start_offset],
-			--[w].[blocked_end_offset],
-
 			[w].[report]
 		FROM 
 			[#work] w

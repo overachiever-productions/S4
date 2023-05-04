@@ -17,14 +17,16 @@ GO
 CREATE PROC dbo.[view_deadlock_chronology]
 	@TranslatedDeadlocksTable					sysname, 
 	@OptionalStartTime							datetime	= NULL, 
-	@OptionalEndTime							datetime	= NULL
+	@OptionalEndTime							datetime	= NULL, 
+	@TimeZone									sysname		= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
 	SET @TranslatedDeadlocksTable = NULLIF(@TranslatedDeadlocksTable, N'');
-	
+	SET @TimeZone = NULLIF(@TimeZone, N'');
+
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
 	DECLARE @outcome int = 0;
@@ -41,7 +43,7 @@ AS
 	CREATE TABLE #work (
 		[row_id] int NOT NULL,
 		[deadlock_id] sysname NULL,
-		[timestamp] sysname NULL,
+		[timestamp] datetime NULL,
 		[process_count] sysname NULL,
 		[session_id] nvarchar(259) NULL,
 		[client_application] nvarchar(104) NULL,
@@ -59,29 +61,37 @@ AS
 		[deadlock_graph] xml NULL
 	);
 
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
+	DECLARE @sql nvarchar(MAX) = N'	SELECT 
 		*
 	FROM {SourceTable}{WHERE}
 	ORDER BY 
 		[row_id]; ';
 
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
+
 	DECLARE @dateTimePredicate nvarchar(MAX) = N'';
+	DECLARE @nextLine nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @dateTimePredicate = N'WHERE [timestamp] >= ''' + CONVERT(sysname, @OptionalStartTime, 121) + N'''';
+		SET @dateTimePredicate = @nextLine + N'WHERE [timestamp] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
 	END; 
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
 		IF NULLIF(@dateTimePredicate, N'') IS NOT NULL BEGIN 
-			SET @dateTimePredicate = @dateTimePredicate + N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+			SET @dateTimePredicate = @dateTimePredicate + @nextLine + N'AND [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		  END; 
 		ELSE BEGIN 
-			SET @dateTimePredicate = N'WHERE [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+			SET @dateTimePredicate = @nextLine + N'WHERE [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		END;
 	END;
 
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @normalizedName);
 	SET @sql = REPLACE(@sql, N'{WHERE}', @dateTimePredicate);
-
+	
 	INSERT INTO [#work] (
 		[row_id],
 		[deadlock_id],
@@ -108,7 +118,7 @@ AS
 	-- Projection/Output:
 	SELECT 
 		[deadlock_id],
-		[timestamp],
+		CASE WHEN [deadlock_id] = N'' THEN N'' ELSE CONVERT(sysname, DATEADD(MINUTE, @offsetMinutes, [timestamp]), 121) END [timestamp],
 		[deadlock_graph],
 		[process_count],
 		[session_id],

@@ -33,15 +33,15 @@ CREATE PROC dbo.[view_largegrant_problems]
 	@IncludeHeader							bit				= 0,
 	@OptionalStartTime						datetime		= NULL, 
 	@OptionalEndTime						datetime		= NULL, 
-	@ConvertTimesFromUtc					bit				= 1
+	@TimeZone								sysname			= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
 	SET @TranslatedLargeGrantsTable = NULLIF(@TranslatedLargeGrantsTable, N'');
-	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
 	SET @IncludeHeader = ISNULL(@IncludeHeader, 0);
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -56,20 +56,21 @@ AS
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised...
 
-	DECLARE @timeOffset int = 0;
-	IF @ConvertTimesFromUtc = 1 BEGIN 
-		SET @timeOffset = (SELECT DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()));
-	END;
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
 
 	DECLARE @timePredicates nvarchar(MAX) = N'';
 
-
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @timePredicates = N' AND [timestamp] >= ''' + CONVERT(sysname, @OptionalStartTime, 121) + N'''';
+		SET @timePredicates = N' AND [timestamp] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 	END;	
 
 	CREATE TABLE #work_table (
@@ -110,7 +111,7 @@ AS
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @normalizedName);
 	
 	IF @timePredicates <> N'' BEGIN 
-		SET @sql = REPLACE(@sql, N'{WHERE}', NCHAR(13) + NCHAR(10) + N'WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9)  + N'report_id IS NOT NULL' + @timePredicates);
+		SET @sql = REPLACE(@sql, N'{WHERE}', NCHAR(13) + NCHAR(10) + N'WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9)  + N'[report_id] IS NOT NULL' + @timePredicates);
 	  END;
 	ELSE BEGIN 
 		SET @sql = REPLACE(@sql, N'{WHERE}', N'');
@@ -134,10 +135,10 @@ AS
 	)
 	EXEC sp_executesql 
 		@sql;
-
+	
 	IF @IncludeHeader = 1 BEGIN
 		DECLARE @header nvarchar(MAX) = N'';
-		SET @header = N'SELECT ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)) [start], ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table)) [end], DATEDIFF(MINUTE, ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)), ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table))) [minutes];';
+		SET @header = N'SELECT ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)) [start_utc], ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table)) [end_utc], DATEDIFF(MINUTE, ISNULL(@OptionalStartTime, (SELECT MIN([timestamp]) FROM #work_table)), ISNULL(@OptionalEndTime, (SELECT MAX([timestamp]) FROM #work_table))) [minutes];';
 
 		EXEC sp_executesql 
 			@header, 
@@ -170,7 +171,6 @@ AS
 		[aggregates] [a]
 	ORDER BY 
 		[a].[query_grant_gb] DESC;
-
 
 	RETURN 0;
 GO

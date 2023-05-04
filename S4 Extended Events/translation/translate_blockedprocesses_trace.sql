@@ -158,7 +158,7 @@ AS
 	stamped AS ( 
 		SELECT 
 			[object_name], 
-			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [datetime_utc],
+			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [timestamp_utc],
 			[event_data]
 		FROM 
 			core 
@@ -167,7 +167,7 @@ AS
 	SELECT 
 		[object_name],
 		CAST([event_data] as xml) [event_data],
-		[datetime_utc]
+		[timestamp_utc]
 	FROM 
 		stamped
 	WHERE 
@@ -195,7 +195,7 @@ AS
 	END;
 
 	SET @sql = REPLACE(@sql, N'{DateLimits}', @dateLimits);
-
+	
 	INSERT INTO [#raw] (
 		[object_name],
 		[event_data],
@@ -528,7 +528,6 @@ AS
 	CLOSE [extracted];
 	DEALLOCATE [extracted];
 
-
 	UPDATE s 
 	SET 
 		s.[blocking_sproc_statement] = x.[definition]
@@ -544,7 +543,6 @@ AS
 		[#shredded] s 
 		INNER JOIN [#statement_blocked] x ON ISNULL(s.[normalized_blocked_request], s.[blocked_request]) = x.[request]
 			AND s.[blocked_start_offset] = x.[blocked_start_offset] AND s.[blocked_end_offset] = x.[blocked_end_offset];
-
 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Statement Weighting:
@@ -661,7 +659,6 @@ AS
 	DEALLOCATE [resourcing];
 
 	--------------------------------------------------------------------------------------------------------------------------------------------
-	
 	DECLARE resourced CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT row_id, blocked_resource_id FROM [#resourced];
 
@@ -700,7 +697,6 @@ AS
 	FROM 
 		[#shredded] s 
 		INNER JOIN [#resourced] x ON s.[blocked_resource_id] = x.[blocked_resource_id];
-
 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Final Projection/Storage:
@@ -763,7 +759,7 @@ AS
 
 	SET @command = REPLACE(@command, N'{targetDatabase}', @targetDatabase);
 	SET @command = REPLACE(@command, N'{targetTableName}', @TargetTable);
-
+	
 	EXEC sp_executesql @command;
 
 	SET @command = N'	SELECT COUNT(*) [rows], MIN(timestamp) [start], MAX(timestamp) [end] FROM {targetTableName}; ';
@@ -776,11 +772,11 @@ AS
 	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @command = N'USE [{targetDatabase}];
 	
-	CREATE CLUSTERED INDEX [CLIX_{targetTableName}_ByRowID] ON {targetTableName} ([row_id]);
-	CREATE NONCLUSTERED INDEX [COVIX_{targetTableName}_details_ByTxIds] ON {targetTableName} ([blocking_xactid],[blocked_xactid]) INCLUDE ([timestamp],[seconds_blocked]); '
+	CREATE CLUSTERED INDEX [CLIX_{targetTableName}_ByRowID] ON [{targetTableName}] ([row_id]);
+	CREATE NONCLUSTERED INDEX [COVIX_{targetTableName}_details_ByTxIds] ON [{targetTableName}] ([blocking_xactid],[blocked_xactid]) INCLUDE ([timestamp],[seconds_blocked]); ';
 
 	SET @command = REPLACE(@command, N'{targetDatabase}', @targetDatabase);
-	SET @command = REPLACE(@command, N'{targetTableName}', @TargetTable);
+	SET @command = REPLACE(@command, N'{targetTableName}', @targetObjectName);
 	
 	EXEC sp_executesql @command; 
 
