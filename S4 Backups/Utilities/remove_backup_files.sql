@@ -466,7 +466,6 @@ AS
 				SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting Backup File with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 			END CATCH
 
-
 			IF @errorMessage IS NOT NULL BEGIN;
 				SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';
 
