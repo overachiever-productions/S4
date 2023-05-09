@@ -13,8 +13,6 @@ GO
 CREATE PROC dbo.[list_problem_heaps]
 	@TargetDatabase							sysname, 
 	@PageUsagePercentBelowThreshold			decimal(5,2)	= 20.0
-
-
 AS
     SET NOCOUNT ON; 
 
@@ -72,6 +70,12 @@ AS
 		INNER JOIN [{targetDatabase}].sys.schemas [s] ON [t].[schema_id] = [s].[schema_id]; ';
 		
 	SET @sql = REPLACE(@sql, N'{targetDatabase}', @TargetDatabase);
+
+	IF (SELECT dbo.[get_engine_version]()) <= 11.00 BEGIN 
+		SET @sql = REPLACE(@sql, N'
+			WHERE
+				[ps].[object_id] NOT IN (SELECT [object_id] FROM [sys].[tables] WHERE [is_memory_optimized] = 1)', N'');
+	END;
 
 	INSERT INTO [#sizes] (
 		[object_id],
