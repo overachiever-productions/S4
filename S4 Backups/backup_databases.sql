@@ -101,7 +101,7 @@ CREATE PROC dbo.backup_databases
 	@LogSuccessfulOutcomes				bit										= 0,							-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
 	@OperatorName						sysname									= N'Alerts',
 	@MailProfileName					sysname									= N'General',
-	@EmailSubjectPrefix					nvarchar(50)							= N'[Database Backups ] ',
+	@EmailSubjectPrefix					nvarchar(50)							= N'[Database Backups] ',
 	@PrintOnly							bit										= 0								-- Instead of EXECUTING commands, they're printed to the console only. 	
 AS
 	SET NOCOUNT ON;
@@ -904,7 +904,8 @@ NextDatabase:
 	DECLARE @emailSubject nvarchar(2000);
 	IF @emailErrorMessage IS NOT NULL BEGIN;
 		
-		SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
+		IF RIGHT(@EmailSubjectPrefix, 1) <> N' ' SET @EmailSubjectPrefix = @EmailSubjectPrefix + N' ';
+		SET @emailSubject = @EmailSubjectPrefix + N'- ' + @BackupType + N' - ERROR';
 		SET @emailErrorMessage = @emailErrorMessage + @crlf + @crlf + N'Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
 
 		IF @PrintOnly = 1 BEGIN 
@@ -913,7 +914,7 @@ NextDatabase:
 		  END;
 		ELSE BEGIN 
 
-			IF @Edition <> 'EXPRESS' BEGIN;
+			IF UPPER(@Edition) <> N'EXPRESS' BEGIN;
 				EXEC msdb..sp_notify_operator
 					@profile_name = @MailProfileName,
 					@name = @OperatorName,
