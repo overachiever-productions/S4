@@ -39,11 +39,12 @@ CREATE PROC [dbo].[remove_backup_files]
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000) = N'{DEFAULT}',				-- { path_to_backups }
 	@Retention							nvarchar(10),								-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
+	@ForceSecondaryCleanup				sysname = NULL,								-- { NULL | N'FORCE' }  - allows backups on a secondary (i.e., where DBs exist - but are in read-only/secondary mode) to be removed.
 	@ServerNameInSystemBackupPath		bit = 0,									-- for mirrored servers/etc.
 	@SendNotifications					bit	= 0,									-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
 	@MailProfileName					sysname = N'General',
-	@EmailSubjectPrefix					nvarchar(50) = N'[Backups Cleanup ] ',
+	@EmailSubjectPrefix					nvarchar(50) = N'[Backups Cleanup] ',
     @Output								nvarchar(MAX) = N'default' OUTPUT,			-- When explicitly set to NULL, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@PrintOnly							bit = 0 									-- { 0 | 1 }
 AS
@@ -113,6 +114,10 @@ AS
 
 		RETURN -7;
 	END;
+
+	DECLARE @excludeSecondaries bit = 1;
+	IF UPPER(@ForceSecondaryCleanup) = N'FORCE'
+		SET @excludeSecondaries = 0;
 
 	SET @Retention = LTRIM(RTRIM(REPLACE(@Retention, N' ', N'')));
 
@@ -238,6 +243,7 @@ AS
 	EXEC dbo.list_databases
 	    @Targets = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
+		@ExcludeSecondaries = @excludeSecondaries,
 		@ExcludeSimpleRecovery = @excludeSimple;
 
 	UPDATE @targetDirectories SET [directory_name] = [database_name] WHERE [directory_name] IS NULL;

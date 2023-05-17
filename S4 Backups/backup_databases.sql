@@ -97,6 +97,7 @@ CREATE PROC dbo.backup_databases
 	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
 	@AddServerNameToSystemBackupPath	bit										= 0,							-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
 	@AllowNonAccessibleSecondaries		bit										= 0,							-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
+	@AlwaysProcessRetention				bit										= 0,							-- IF @AllowNonAccessibleSecondaries = 1, then if @AlwaysProcessRetention = 1, if/when we find NO databases to backup, we'll pass in the @TargetDatabases to a CLEANUP process vs simply short-circuiting execution.
 	@Directives							nvarchar(400)							= NULL,							-- { COPY_ONLY | FILE:logical_file_name | FILEGROUP:file_group_name | MARKER:file-name-tail-marker }  - NOTE: NOT mutually exclusive. Also, MULTIPLE FILE | FILEGROUP directives can be specified - just separate with commas. e.g., FILE:secondary, FILE:tertiarty. 
 	@LogSuccessfulOutcomes				bit										= 0,							-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
 	@OperatorName						sysname									= N'Alerts',
@@ -298,6 +299,13 @@ AS
 		END;
 	END;
 
+	IF @AlwaysProcessRetention = 1 BEGIN 
+		IF @AllowNonAccessibleSecondaries = 0 BEGIN 
+			RAISERROR(N'@AlwaysProcessRetention can ONLY be set when @AllowNonAccessibleSecondaries = 1.', 16, 1);
+			RETURN -19;
+		END;
+	END;
+
 	-----------------------------------------------------------------------------
 	DECLARE @excludeSimple bit = 0;
 
@@ -321,10 +329,30 @@ AS
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
 		IF @AllowNonAccessibleSecondaries = 1 BEGIN
-			-- Because we're dealing with Mirrored DBs, we won't fail or throw an error here. Instead, we'll just report success (with no DBs to backup).
-			PRINT 'No ONLINE databases available for backup. BACKUP terminating with success.';
-			RETURN 0;
 
+			IF @AlwaysProcessRetention = 1 BEGIN 
+				/* S4-529: In this case, we've got synchronized servers where we're NOT pushing backups to {PARTNER}... and want to force cleanup on secondary. */
+				EXEC @return = [admindb].dbo.[remove_backup_files]
+					@BackupType = @BackupType,
+					@DatabasesToProcess = @DatabasesToBackup,
+					@DatabasesToExclude = @DatabasesToExclude,
+					@TargetDirectory = @BackupDirectory,
+					@Retention = @BackupRetention,
+					@ForceSecondaryCleanup = N'FORCE',
+					@ServerNameInSystemBackupPath = NULL,
+					@SendNotifications = 1,
+					@OperatorName = @OperatorName,
+					@MailProfileName = @MailProfileName,
+					@EmailSubjectPrefix = @EmailSubjectPrefix,
+					@PrintOnly = @PrintOnly;				
+				
+				RETURN @return;
+			  END;
+			ELSE BEGIN
+				-- Because we're dealing with Synchronized DBs, we won't fail or throw an error here. Instead, we'll just report success (with no DBs to backup).
+				PRINT 'No ONLINE databases available for backup. BACKUP terminating with success.';
+				RETURN 0;
+			END;
 		   END; 
 		ELSE BEGIN
 			PRINT 'Usage: @DatabasesToBackup = {SYSTEM}|{USER}|dbname1,dbname2,dbname3,etc';
@@ -766,7 +794,7 @@ RemoveOlderFiles:
 			END TRY 
 			BEGIN CATCH 
 				SET @errorMessage = ISNULL(@errorMessage, '') + 'Exception removing backups. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
-			END CATCH
+			END CATCH;
 
 			IF @errorMessage IS NOT NULL BEGIN
 				UPDATE @executionDetails SET [error_details] = ISNULL([error_details], N'') + @errorMessage + N' ' WHERE [execution_id] = @executionID;
