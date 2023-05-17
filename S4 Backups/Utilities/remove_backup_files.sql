@@ -39,11 +39,12 @@ CREATE PROC [dbo].[remove_backup_files]
 	@DatabasesToExclude					nvarchar(600) = NULL,						-- { NULL | name1,name2 }  
 	@TargetDirectory					nvarchar(2000) = N'{DEFAULT}',				-- { path_to_backups }
 	@Retention							nvarchar(10),								-- #n  - where # is an integer for the threshold, and n is either m, h, d, w, or b - for Minutes, Hours, Days, Weeks, or B - for # of backups to retain.
+	@ForceSecondaryCleanup				sysname = NULL,								-- { NULL | N'FORCE' }  - allows backups on a secondary (i.e., where DBs exist - but are in read-only/secondary mode) to be removed.
 	@ServerNameInSystemBackupPath		bit = 0,									-- for mirrored servers/etc.
 	@SendNotifications					bit	= 0,									-- { 0 | 1 } Email only sent if set to 1 (true).
 	@OperatorName						sysname = N'Alerts',		
 	@MailProfileName					sysname = N'General',
-	@EmailSubjectPrefix					nvarchar(50) = N'[Backups Cleanup ] ',
+	@EmailSubjectPrefix					nvarchar(50) = N'[Backups Cleanup] ',
     @Output								nvarchar(MAX) = N'default' OUTPUT,			-- When explicitly set to NULL, summary/errors/output will be 'routed' into this variable instead of emailed/raised/etc.
 	@PrintOnly							bit = 0 									-- { 0 | 1 }
 AS
@@ -114,6 +115,10 @@ AS
 		RETURN -7;
 	END;
 
+	DECLARE @excludeSecondaries bit = 1;
+	IF UPPER(@ForceSecondaryCleanup) = N'FORCE'
+		SET @excludeSecondaries = 0;
+
 	SET @Retention = LTRIM(RTRIM(REPLACE(@Retention, N' ', N'')));
 
 	DECLARE @retentionType char(1);
@@ -181,7 +186,7 @@ AS
 	IF @isValid = 0 BEGIN;
 		RAISERROR('Invalid @TargetDirectory specified - either the path does not exist, or SQL Server''s Service Account does not have permissions to access the specified directory.', 16, 1);
 		RETURN -10;
-	END
+	END;
 
 	-----------------------------------------------------------------------------
 	SET @Output = NULL;
@@ -238,6 +243,7 @@ AS
 	EXEC dbo.list_databases
 	    @Targets = @DatabasesToProcess,
 	    @Exclusions = @DatabasesToExclude,
+		@ExcludeSecondaries = @excludeSecondaries,
 		@ExcludeSimpleRecovery = @excludeSimple;
 
 	UPDATE @targetDirectories SET [directory_name] = [database_name] WHERE [directory_name] IS NULL;
@@ -465,7 +471,6 @@ AS
 			BEGIN CATCH
 				SET @errorMessage = ISNULL(@errorMessage, '') +  N'Error deleting Backup File with command: [' + ISNULL(@command, '##NOT SET YET##') + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE() + N' ';
 			END CATCH
-
 
 			IF @errorMessage IS NOT NULL BEGIN;
 				SET @errorMessage = ISNULL(@errorMessage, '') + '. Command: [' + ISNULL(@command, '#EMPTY#') + N']. ';

@@ -6,6 +6,36 @@
 			Mirrored databases aren't, always, 100% mirrored. (They might be down, between mirroring sessions, or whatever.)
 				As such, a Mirrored 'Job' (for the purposes of this script) is any Job where Job.CategoryName = [Name of a User Database]; 
 
+	WARN:
+		- On 2023-04-10, I added a minor 'hack' to address 'start automatically when SQL Server Agent starts' job schedules (which can/WILL otherwise get tripped up on start date/time details)... 
+			and... I just need to make sure I don't 'regress' this logic during pending rewrite: 
+				<link to ... jira? or wherever I documented??? idea about a full rewrite of this sproc> 
+					basic idea was: instead of using CHECKSUM of values... 
+						use JSON/XML or whatever to 'flip' key-name/value entries ... where key-name is a 'path' 
+							e.g.,
+								<jobname>.schedules.count => 2 
+								<jobname>.schedule_0.name => "name of schedule here"
+								<jobname>.schedule_0.enabled => 1 
+								<jobname>.schedule_0.frequency => etc. 
+
+								<jobname>.steps.count => 2 
+								<jobname>.step_0.name => "start thingy" 
+								etc... 
+
+						So that I can do ___ MUCH __ simpler comparison and reporting of things that are NOT matches. 
+							the above would also lend itself VERY well towards hacks/fixes/tweaks for things where I need to override based on certain conditions. 
+								e.g., if/when ss_frequency = 64 (start with agent) then ... i could set some of the other 'child' values for said schedule to NULL/"N/A" or ... hard-coded whatever
+									so that these comparisons/checks would be TONS easier. 
+				MAN. can NOT find where I documented the high-level details/ideas for how to repave this whole damned thing... 
+				BUT... another thing to consider for the above:
+					implement "compare_jobs" as the FIRST step in the rewrite above. 
+						it's 'flat' now (3 tiers). 
+						convert it to this new 'vertical' approach... 
+							and then, once it's done, it's the new BASIS for checking for sync differences - i.e., can query 'job diffs' per job or whatever ... 
+								and... then simply REPORT on what's different (via email). 
+			- Finally,  make sure to review this as well when rewriting:
+				https://overachieverllc.atlassian.net/browse/S4-229 
+
 	vNEXT:
 		- Look at integrating the following script/logic/notes:
 		-------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -575,8 +605,12 @@ AS
 		INSERT INTO #LocalJobSchedules (schedule_name, [checksum])
 		SELECT 
 			ss.name,
-			CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
-				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [checksum]
+			/* Bit of a hack to address start date/times for 'start automatically when sql agent starts' start option: */
+			CASE 
+				WHEN ss.freq_type = 64 THEN CHECKSUM(ss.[enabled], ss.freq_type)
+				ELSE CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
+				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time)
+			END [checksum]
 		FROM 
 			msdb.dbo.sysjobschedules sjs
 			INNER JOIN msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id
@@ -586,8 +620,12 @@ AS
 		INSERT INTO #RemoteJobSchedules (schedule_name, [checksum])
 		EXEC sys.sp_executesql N'SELECT 
 			ss.name,
-			CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
-				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time) [checksum]
+			/* ditto ... hack for ''start automatically when sql agent starts'' job schedules: */
+			CASE 
+				WHEN ss.freq_type = 64 THEN CHECKSUM(ss.[enabled], ss.freq_type)
+				ELSE CHECKSUM(ss.[enabled], ss.freq_type, ss.freq_interval, ss.freq_subday_type, ss.freq_subday_interval, ss.freq_relative_interval, 
+				ss.freq_recurrence_factor, ss.active_start_date, ss.active_end_date, ss.active_start_time, ss.active_end_time)
+			END [checksum]
 		FROM 
 			PARTNER.msdb.dbo.sysjobschedules sjs
 			INNER JOIN PARTNER.msdb.dbo.sysschedules ss ON ss.schedule_id = sjs.schedule_id

@@ -15,14 +15,14 @@ CREATE PROC dbo.[view_largegrant_counts]
 	@Granularity							sysname			= N'HOUR',		-- { DAY | HOUR | MINUTE } 
 	@OptionalStartTime						datetime		= NULL, 
 	@OptionalEndTime						datetime		= NULL, 
-	@ConvertTimesFromUtc					bit				= 1
+	@TimeZone								sysname			= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
 	SET @TranslatedLargeGrantsTable = NULLIF(@TranslatedLargeGrantsTable, N'');
-	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	IF UPPER(@Granularity) LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
 
@@ -39,19 +39,21 @@ AS
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised...
 
-	DECLARE @timeOffset int = 0;
-	IF @ConvertTimesFromUtc = 1 BEGIN 
-		SET @timeOffset = (SELECT DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()));
-	END;
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
 
 	DECLARE @timePredicates nvarchar(MAX) = N'';
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @timePredicates = N' AND [timestamp] >= ''' + CONVERT(sysname, @OptionalStartTime, 121) + N'''';
+		SET @timePredicates = N' AND [timestamp] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 	END;		
 
 	CREATE TABLE #simplified (
@@ -90,7 +92,6 @@ FROM
 	EXEC sp_executesql 
 		@sql;
 	
-
 	------------------------------------------------------------------------------------------------------
 	-- Time-Blocking Logic: 
 	DECLARE @traceStart datetime, @traceEnd datetime; 
@@ -134,19 +135,17 @@ FROM
 	END;
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		IF @OptionalStartTime > @traceStart 
-			SET @traceStart = @OptionalStartTime;
+		SET @traceStart = @OptionalStartTime;
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		IF @OptionalEndTime < @traceEnd
-			SET @traceEnd = @OptionalEndTime
+		SET @traceEnd = @OptionalEndTime
 	END;
 
 	DECLARE @timesStart datetime, @timesEnd datetime;
 	SELECT 
 		@timesStart = DATEADD(MINUTE, DATEDIFF(MINUTE, 0,@traceStart) / @minutes * @minutes, 0), 
-		@timesEnd = DATEADD(MINUTE, @minutes, DATEADD(MINUTE, DATEDIFF(MINUTE, 0,@traceEnd) / @minutes * @minutes, 0));
+		@timesEnd = DATEADD(MINUTE, DATEDIFF(MINUTE, 0,@traceEnd) / @minutes * @minutes, 0);
 
 	WITH times AS ( 
 		SELECT @timesStart [time_block] 
@@ -165,11 +164,17 @@ FROM
 	FROM times
 	OPTION (MAXRECURSION 0);
 
+	DECLARE @excludedTime datetime = NULL;
+	IF DATEDIFF(MINUTE, @timesStart, @timesEnd) >= @minutes BEGIN 
+		/* Minor hack/tweak to cleanup situations where the Optional Start/End are a single-'time-block' of time... */
+		SELECT @excludedTime = [time_block] FROM [#times] WHERE [row_id] = (SELECT MAX([row_id]) FROM [#times]);
+	END;
+
 	WITH times AS ( 
 		SELECT 
 			row_id,
 			t.[time_block] [end],
-			LAG(t.[time_block], 1, DATEADD(MINUTE, (0 - @minutes), @timesStart)) OVER (ORDER BY row_id) [start]
+			LAG(t.[time_block], 1, DATEADD(MINUTE, (0 - @minutes), DATEADD(MINUTE, @offsetMinutes, @timesStart))) OVER (ORDER BY row_id) [start]
 		FROM 
 			[#times] t
 	), 
@@ -183,33 +188,36 @@ FROM
 			s.[query_hash_signed]
 		FROM 
 			times t 
-			LEFT OUTER JOIN [#simplified] s ON s.[timestamp] < t.[end] AND s.[timestamp] > t.[start] 
+			LEFT OUTER JOIN [#simplified] s ON DATEADD(MINUTE, @offsetMinutes, [s].[timestamp]) < t.[end] AND DATEADD(MINUTE, @offsetMinutes, [s].[timestamp]) > t.[start] 
 		WHERE 
 			s.[report_id] IS NOT NULL
 	),
 	aggregated AS ( 
 		SELECT 
-			[time_period],
-			COUNT([report_id]) [total_events], 
-			CAST(SUM([memory_grant_gb]) as decimal(18,2)) [total_gb_used], 
-			CAST(AVG([memory_grant_gb]) as decimal(18,2)) [avg_gb_used], 
-			CAST(MAX([memory_grant_gb]) as decimal(18,2)) [max_gb_used], 
-			COUNT(DISTINCT [query_hash_signed]) [distinct_queries]
+			DATEADD(MINUTE, 0 - @offsetMinutes, [t].[time_block]) [time_period], 
+			COUNT([c].[report_id]) [total_events], 
+			CAST(SUM([c].[memory_grant_gb]) AS decimal(18,2)) [total_gb_used], 
+			CAST(AVG([c].[memory_grant_gb]) AS decimal(18,2)) [avg_gb_used], 
+			CAST(MAX([c].[memory_grant_gb]) AS decimal(18,2)) [max_gb_used], 
+			COUNT(DISTINCT [c].[query_hash_signed]) [distinct_queries]
 		FROM 
-			[coordinated]
+			[#times] [t]
+			LEFT OUTER JOIN [coordinated] [c] ON [t].[time_block] = [c].[time_period]
 		GROUP BY 
-			[time_period]
+			[t].[time_block]
 	)
 
 	SELECT 
-		[time_period],
+		DATEADD(MINUTE, @offsetMinutes, [time_period]) [time_period],
 		[total_events],
-		[total_gb_used],
-		[avg_gb_used],
-		[max_gb_used],
-		[distinct_queries] 
+		ISNULL([total_gb_used], 0) [total_gb_used],
+		ISNULL([avg_gb_used], 0)[avg_gb_used],
+		ISNULL([max_gb_used], 0) [max_gb_used],
+		ISNULL([distinct_queries] , 0) [distinct_queries]
 	FROM 
 		[aggregated]
+	WHERE 
+		@excludedTime IS NULL OR (DATEADD(MINUTE, @offsetMinutes, [time_period]) <> @excludedTime)
 	ORDER BY 
 		[time_period];
 

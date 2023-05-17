@@ -9,6 +9,16 @@
 
 
 
+		BADGER v2:
+			- Change @batchStart to @loopStart - or something similar - so that I know it's the current 'loop' or iteration - vs ... potentially being when the JOB itself starts. 
+				as in, there's an implied @JobStart/@OperationStart that makes sense to set at the start of the sproc (for cases where I'm deleting records > x days old, the code is DATEADD(DAY, 0 - @DaysBack, @SprocStartTime_Or_ProcessingStartTime)
+				which is different than the @milliseconds used-up by each successive loop of processing. 
+
+			- Make sure that dynamic batch sizing is NOT including the WAITFOR as part of the TOTAL duration being 'counted' for how long a loop/batch ran. 
+
+			
+
+
 		EXEC admindb.dbo.[idiom_for_batched_operation]
 			@BatchSize = 2000,
 			--@WaitFor = NULL,
