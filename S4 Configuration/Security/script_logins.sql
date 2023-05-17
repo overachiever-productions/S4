@@ -13,6 +13,7 @@ GO
 CREATE PROC dbo.[script_logins]
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
 	@ExcludeMSAndServiceLogins				bit						= 1,
+	@ExcludeLocalPrincipalLogins			bit						= 1,
 	@BehaviorIfLoginExists                  sysname                 = N'DROP_AND_CREATE',            -- { NONE | ALTER | DROP_AND_CREATE }
     @DisablePolicyChecks					bit						= 1,
 	@DisableExpiryChecks					bit						= 1, 
@@ -35,6 +36,11 @@ AS
 	IF @ExcludeMSAndServiceLogins = 1 BEGIN
 		INSERT INTO @ingnoredLogins ([login_name])
 		SELECT [result] [login_name] FROM dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',', 1) ORDER BY row_id;		
+	END;
+
+	IF @ExcludeLocalPrincipalLogins = 1 BEGIN
+		INSERT INTO @ingnoredLogins ([login_name])
+		SELECT [name] FROM sys.[server_principals] WHERE [type] = 'U' AND [name] LIKE @@SERVERNAME + N'\%';
 	END;
 	
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
