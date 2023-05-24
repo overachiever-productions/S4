@@ -371,8 +371,8 @@ ExecutionAttempt:
 			r.[ignored_match] = x.[filter_type]
 		FROM 
 			[#Results] r
-			LEFT OUTER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]) 
-				OR (x.[filter_type] IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result] = r.[result]); 
+			LEFT OUTER JOIN @filters x ON (UPPER(r.[result]) LIKE UPPER(x.[filter_text])) OR (UPPER(r.[result]) = UPPER(x.[filter_text])) 
+				OR (UPPER(x.[filter_type]) IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result] = x.[filter_text]); 
 
 		IF EXISTS (SELECT NULL FROM @explicitErrors) BEGIN 
 			UPDATE r 
