@@ -249,9 +249,9 @@ AS
 
 		INSERT INTO @allDirectives ([row_id], [directive_type], [logical_name])
 		EXEC dbo.[shred_string]
-			@input = @Directives, 
-			@rowDelimiter = N',', 
-			@columnDelimiter = N':';
+			@Input = @Directives, 
+			@RowDelimiter = N',', 
+			@ColumnDelimiter = N':';
 
 		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) NOT IN (N'COPY_ONLY', N'FILE', N'FILEGROUP', N'MARKER')) BEGIN
 			RAISERROR(N'Invalid @Directives value specified. Permitted values are { COPY_ONLY | FILE:logical_name | FILEGROUP:group_name | MARKER:filename_tail_marker } only.', 16, 1);
