@@ -1021,6 +1021,7 @@ NextDatabase:
                     restore_id = @restoreLogId;
             END;
 
+			SET @statusDetail = NULL;
           END;
 		ELSE BEGIN 
 			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
@@ -1121,15 +1122,17 @@ NextDatabase:
                 BEGIN CATCH
                     SELECT @statusDetail = N'Unexpected Exception while attempting to DROP database [' + @restoredName + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 
+                    SET @failedDropCount = @failedDropCount +1;
+                END CATCH;
+
+				IF @statusDetail IS NOT NULL BEGIN 
                     UPDATE dbo.restore_log
                     SET 
                         dropped = 'ERROR', 
 						[error_details] = ISNULL(error_details, N'') + @statusDetail
                     WHERE 
                         restore_id = @restoreLogId;
-
-                    SET @failedDropCount = @failedDropCount +1;
-                END CATCH
+				END;
             END;
 
           END;

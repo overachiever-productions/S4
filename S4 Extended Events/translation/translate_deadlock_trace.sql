@@ -1,4 +1,4 @@
-/*
+/*@OptionalEndTime
 
 		vNEXT:
 			- dbo.extract_statement needs the ability to use/define @OptionalDbTranslationMappings 
@@ -11,7 +11,7 @@
 					@SourceXelFilesDirectory = N'D:\Traces\ts',
 					@TargetTable = N'Meddling.dbo.xxx_deadlocks',
 					@OverwriteTarget = 1,
-					@OptionalUTCEndTime = '2020-08-18 03:44:05.069',
+					@OptionalEndTime = '2020-08-18 03:44:05.069',
 					@OptionalDbTranslationMappings = N'';
 
 */
@@ -27,8 +27,9 @@ CREATE PROC dbo.[translate_deadlock_trace]
 	@SourceXelFilesDirectory				sysname			= N'D:\Traces', 
 	@TargetTable							sysname, 
 	@OverwriteTarget						bit				= 0,
-	@OptionalUTCStartTime					datetime		= NULL, 
-	@OptionalUTCEndTime						datetime		= NULL, 
+	@OptionalStartTime						datetime		= NULL, 
+	@OptionalEndTime						datetime		= NULL, 
+	@TimeZone								sysname			= NULL,
 	@OptionalDbTranslationMappings			nvarchar(MAX)	= NULL
 AS
     SET NOCOUNT ON; 
@@ -37,6 +38,7 @@ AS
 	
 	SET @SourceXelFilesDirectory = ISNULL(@SourceXelFilesDirectory, N'');
 	SET @TargetTable = ISNULL(@TargetTable, N'');
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	IF @SourceXelFilesDirectory IS NULL BEGIN 
 		RAISERROR(N'Please specify a valid directory name for where blocked_process_reports*.xel files can be loaded from.', 16, 1);
@@ -95,7 +97,6 @@ AS
 			RETURN -5;
 		END;
 	END;
-
 	
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- XEL Extraction: 
@@ -109,16 +110,6 @@ AS
 		timestamp_utc datetime NOT NULL 
 	);
 	
-	--DECLARE @sql nvarchar(MAX) = N'SELECT 
-	--	[object_name],
-	--	CAST([event_data] as xml) [event_data],
-	--	CAST([timestamp_utc] as datetime) [datetime_utc]
-	--FROM 
-	--	sys.[fn_xe_file_target_read_file](@extractionPath, NULL, NULL, NULL)
-	--WHERE 
-	--	object_name = N''xml_deadlock_report''
-	--	{DateLimits};';
-
 	DECLARE @sql nvarchar(MAX) = N'WITH core AS (
 	SELECT 
 		[object_name],
@@ -131,7 +122,7 @@ AS
 	stamped AS (
 		SELECT 
 			[object_name], 
-			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [datetime_utc],
+			[event_data].value(''(event/@timestamp)[1]'', ''datetime2'') [timestamp_utc],
 			[event_data]
 		FROM 
 			core
@@ -140,24 +131,32 @@ AS
 	SELECT 
 		[object_name], 
 		CAST([event_data] as xml) [event_data],
-		[datetime_utc]
+		[timestamp_utc]
 	FROM 
 		stamped
 	WHERE
-		object_name = N''xml_deadlock_report''
-		{DateLimits}; ';
+		object_name = N''xml_deadlock_report'' {DateLimits}; ';
 
 	DECLARE @dateLimits nvarchar(MAX) = N'';
-	IF @OptionalUTCStartTime IS NOT NULL BEGIN 
-		SET @dateLimits = N'AND CAST([timestamp_utc] as datetime) >= ''' + CONVERT(sysname, @OptionalUTCStartTime, 121) + N'''';
+	DECLARE @nextLine nchar(4) = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9);
+
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
+
+	IF @OptionalStartTime IS NOT NULL BEGIN 
+		SET @dateLimits = @nextLine + N'AND [timestamp_utc] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
 	END;
 
-	IF @OptionalUTCEndTime IS NOT NULL BEGIN 
+	IF @OptionalEndTime IS NOT NULL BEGIN 
 		IF NULLIF(@dateLimits, N'') IS NOT NULL BEGIN
-			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N' AND CAST([timestamp_utc] as datetime) <= ''' + CONVERT(sysname, @OptionalUTCEndTime, 121) + N''')'
+			SET @dateLimits = REPLACE(@dateLimits, N'AND ', N'AND (') + N' AND [timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N''')';
 		  END;
 		ELSE BEGIN 
-			SET @dateLimits = N'AND CAST([timestamp_utc] as datetime) <= ''' + CONVERT(sysname, @OptionalUTCEndTime, 121) + N'''';
+			SET @dateLimits = @nextLine + N'AND [timestamp_utc] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 		END;
 	END;
 
@@ -230,8 +229,8 @@ AS
 
 	SELECT 
 		IDENTITY(int, 1, 1) [row_id],
-		CASE WHEN [a].[line_id] = 1 THEN CAST(a.[deadlock_id] AS sysname) ELSE N'    ' END [deadlock_id],  
-		CASE WHEN [a].[line_id] = 1 THEN CONVERT(sysname, p.[timestamp], 121) ELSE N'' END [timestamp],
+		CASE WHEN [a].[line_id] = 1 THEN CAST(a.[deadlock_id] AS sysname) ELSE N'    ' END [deadlock_id], 
+		p.[timestamp],  /* S4-536 - i.e., pre-projection here breaks ability to filter later on. */
 		CASE WHEN [a].[line_id] = 1 THEN CAST([p].[process_count] AS sysname) ELSE N'' END [process_count],
 		CASE WHEN p.[ecid] = 0 THEN CAST(a.[session_id] AS sysname) ELSE CAST(a.[session_id] AS sysname) + N' (' + CAST([p].[ecid] AS sysname) + N')' END [session_id],
 		[a].[client_application],
@@ -254,7 +253,6 @@ AS
 		INNER JOIN [processes] p ON [a].[deadlock_id] = [p].[deadlock_id] AND [a].[process_id] = [p].[process_id]
 	ORDER BY 
 		a.[deadlock_id], a.[line_id];
-
 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Statement Normalization: 

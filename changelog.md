@@ -2,6 +2,25 @@
 
 # Change Log
 
+## [11.0] - 2023-05-17 
+New features, capabilities, and functionality + bug-fixes.
+
+### Fixed 
+- `dbo.verify_job_synchronization` can now address 'startup' schedules.
+
+### Added 
+- `dbo.kill_blocking_processes` adds white-listing functionality/filters - i.e., can ONLY kill lead-blockers if/when they're in a white-listed set of logins/apps/etc. (Exclusions still supercede inclusions.)
+- `dbo.kill_blocking_processes` adds LOGGING table/functionality - i.e., snapshot of blocking problems is logged to the `admindb` any/every time a blocked process is killed. 
+- Time-Zone related helpers/funcs. 
+- Initial functionality (attempts) for right-aligning numeric data in reports/etc. via `dbo.format_number`;
+- Advanced option to always force retention/cleanup on secondaries. 
+- Initial release of 'weaponized' functionality to fix/drop orphans via `dbo.fix_orphaned_logins` and `dbo.drop_orphaned_users`;
+
+### Changed
+- `dbo.list_top` now provides option to control 'inner' TOP(X) as a parameter.
+- Major overhaul of Time-Zone translation functionality for XE traces (extraction/transformation and options for setting @TimeZone when running views/reports).
+- Improved visibility for backup TYPES (full, diff, log) via failure alerts/emails.
+
 ## [10.3] - 2023-02-17
 Bug-fixes for backup/restore operations + introduction of some new diagnostics/reports.
 
@@ -12,6 +31,7 @@ Bug-fixes for backup/restore operations + introduction of some new diagnostics/r
 - Bug-Fix to address erroneous REPORTING of applied logs via `dbo.apply_logs`. Now correctly outputs/reports the actual files applied. 
 - Bug-Fix for `dbo.kill_blocking_processes` - to remove NULL + @otherText that wiped out summary of KILL'd process(es).
 - Logic to prevent `dbo.kill_resource_governor_connections` from executing KILL SELF when 'self' not in a targetted pool/workloadgroup. 
+- Bug-fix to logic preventing error alerts/emails from failure to DROP databases during restore-tests.
 
 
 ### Added 

@@ -142,7 +142,7 @@ AS
 			f.row_id, d.[name];
 	END;
 
-	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY initialized as NULL/empty... then REPLY... 
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- if @SerializedOutput has been EXPLICITLY provided as an argument... reply 
 
 		SELECT @SerializedOutput = (SELECT 
 			[row_id] [database/@id],

@@ -137,7 +137,7 @@ AS
 				OR (n.[start_time] < @StartTime AND n.[end_time] > @StartTime)
 
 				-- jobs that get started during our time window (and which may/may-not stop during our window - because, either way, they were running...)
-				OR (n.[start_time] > @StartTime AND @EndTime > @EndTime)
+				OR (n.[start_time] > @StartTime AND n.[end_time] > @EndTime)
 			)
 	END;
 

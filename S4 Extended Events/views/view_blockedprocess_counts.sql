@@ -37,14 +37,14 @@ CREATE PROC dbo.[view_blockedprocess_counts]
 	@Granularity								sysname			= N'HOUR',   -- { DAY | HOUR | MINUTE } WHERE MINUTE ends up being tackled in 5 minute increments (not 1 minute).
 	@OptionalStartTime							datetime		= NULL, 
 	@OptionalEndTime							datetime		= NULL, 
-	@ConvertTimesFromUtc						bit				= 1
+	@TimeZone									sysname			= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
 	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
-	SET @ConvertTimesFromUtc = ISNULL(@ConvertTimesFromUtc, 1);
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	IF UPPER(@Granularity) LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
 
@@ -61,19 +61,21 @@ AS
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised...
 
-	DECLARE @timeOffset int = 0;
-	IF @ConvertTimesFromUtc = 1 BEGIN 
-		SET @timeOffset = (SELECT DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()));
-	END;
+	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+		SET @TimeZone = dbo.[get_local_timezone]();
+
+	DECLARE @offsetMinutes int = 0;
+	IF @TimeZone IS NOT NULL
+		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
 
 	DECLARE @timePredicates nvarchar(MAX) = N'';
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @timePredicates = N' AND [timestamp] >= ''' + CONVERT(sysname, @OptionalStartTime, 121) + N'''';
+		SET @timePredicates = N' AND [timestamp] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, @OptionalEndTime, 121) + N'''';
+		SET @timePredicates = @timePredicates + N' AND [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
 	END;	
 	
 	CREATE TABLE #blocked ( 
@@ -215,19 +217,17 @@ AS
 	END;
 
 	IF @OptionalStartTime IS NOT NULL BEGIN 
-		IF @OptionalStartTime > @traceStart 
-			SET @traceStart = @OptionalStartTime;
+		SET @traceStart = @OptionalStartTime;
 	END;
 
 	IF @OptionalEndTime IS NOT NULL BEGIN 
-		IF @OptionalEndTime < @traceEnd
-			SET @traceEnd = @OptionalEndTime
+		SET @traceEnd = @OptionalEndTime
 	END;
 
 	DECLARE @timesStart datetime, @timesEnd datetime;
 	SELECT 
 		@timesStart = DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @traceStart) / @minutes * @minutes, 0), 
-		@timesEnd = DATEADD(MINUTE, @minutes, DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @traceEnd) / @minutes * @minutes, 0));
+		@timesEnd = DATEADD(MINUTE, DATEDIFF(MINUTE, 0, @traceEnd) / @minutes * @minutes, 0);
 
 	WITH times AS ( 
 		SELECT @timesStart [time_block] 
@@ -254,16 +254,15 @@ AS
 		SELECT 
 			row_id,
 			t.[time_block] [end],
-			LAG(t.[time_block], 1, DATEADD(MINUTE, (0 - @minutes), @timesStart)) OVER (ORDER BY row_id) [start]
+			LAG(t.[time_block], 1, DATEADD(MINUTE, (0 - @minutes), DATEADD(MINUTE, @offsetMinutes, @timesStart))) OVER (ORDER BY row_id) [start]
 		FROM 
 			[#times] t
 	), 
 	coordinated AS ( 
-		
 		SELECT 
 			t.row_id,
 			--t.[start] [time_period], 
-			DATEADD(MINUTE, 0 - @timeOffset, t.[start]) [time_period], 
+			DATEADD(MINUTE, @offsetMinutes, t.[start]) [time_period], 
 			--b.[start_time],
 			--b.[end_time], 
 			b.[transaction_id], 
@@ -276,25 +275,26 @@ AS
 	), 
 	aggregated AS ( 
 		SELECT 
-			[time_period], 
-			COUNT([transaction_id]) [total_events], 
-			ISNULL(SUM([total_seconds_blocked]), 0) [blocking_seconds],
-			SUM(CASE WHEN [type] = N'blocking-process' THEN 1 ELSE 0 END) [blocking_events_count],
-			SUM(CASE WHEN [type] = N'blocking-process' THEN [blocked_processes_count] ELSE 0 END) [blocked_spids],
-			SUM(CASE WHEN [type] = N'blocking-process' THEN [total_seconds_blocked] ELSE 0 END) [blocked_seconds],
+			[t].[time_block] [time_period], 
+			COUNT([c].[transaction_id]) [total_events], 
+			ISNULL(SUM([c].[total_seconds_blocked]), 0) [blocking_seconds],
+			SUM(CASE WHEN [c].[type] = N'blocking-process' THEN 1 ELSE 0 END) [blocking_events_count],
+			SUM(CASE WHEN [c].[type] = N'blocking-process' THEN [c].[blocked_processes_count] ELSE 0 END) [blocked_spids],
+			SUM(CASE WHEN [c].[type] = N'blocking-process' THEN [c].[total_seconds_blocked] ELSE 0 END) [blocked_seconds],
 
-			SUM(CASE WHEN [type] = N'self-blocker' THEN 1 ELSE 0 END) [self_blocking_events_count], 
-			SUM(CASE WHEN [type] = N'self-blocker' THEN [blocked_processes_count] ELSE 0 END) [self_blocked_spids],
-			SUM(CASE WHEN [type] = N'self-blocker' THEN [total_seconds_blocked] ELSE 0 END) [self_blocked_seconds]
+			SUM(CASE WHEN [c].[type] = N'self-blocker' THEN 1 ELSE 0 END) [self_blocking_events_count], 
+			SUM(CASE WHEN [c].[type] = N'self-blocker' THEN [c].[blocked_processes_count] ELSE 0 END) [self_blocked_spids],
+			SUM(CASE WHEN [c].[type] = N'self-blocker' THEN [c].[total_seconds_blocked] ELSE 0 END) [self_blocked_seconds]
 
 		FROM 
-			[coordinated] 
+			[#times] [t]
+			LEFT OUTER JOIN [coordinated] [c] ON [t].[time_block] = [c].[time_period]
 		GROUP BY 
-			[time_period]
+			[t].[time_block]
 	)
 
 	SELECT 
-		CASE WHEN UPPER(@Granularity) = N'DAY' THEN CAST([time_period] AS date) ELSE [time_period] END [time_period],
+		CASE WHEN UPPER(@Granularity) = N'DAY' THEN CAST(DATEADD(MINUTE, @offsetMinutes, [time_period]) AS date) ELSE DATEADD(MINUTE, @offsetMinutes, [time_period]) END [time_period],
 		[total_events],
 		[blocking_seconds] [total_seconds],
 		N'' [ ],

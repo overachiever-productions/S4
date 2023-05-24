@@ -91,6 +91,9 @@ GO
 -----------------------------------
 --##INCLUDE: Common\tables\alert_responses.sql
 
+-----------------------------------
+--##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects and other core 'helper' code)
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -374,6 +377,15 @@ GO
 --##INCLUDE: Common\format_timespan.sql
 
 -----------------------------------
+--##INCLUDE: Common\format_number.sql
+
+-----------------------------------
+--##INCLUDE: Common\get_local_timezone.sql
+
+-----------------------------------
+--##INCLUDE: Common\get_timezone_offset_minutes.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\count_matches.sql
 
 -----------------------------------
@@ -491,6 +503,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\Security\script_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\fix_orphaned_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Configuration\Security\drop_orphaned_users.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\Security\export_server_logins.sql
@@ -643,6 +661,15 @@ GO
 --##INCLUDE: S4 Extended Events\views\view_blockedprocess_counts.sql
 
 -----------------------------------
+--##INCLUDE: S4 Extended Events\utilities\aggregate_blocked_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_blockedprocesses_problems.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_blockedprocess_heatmap.sql
+
+-----------------------------------
 --##INCLUDE: S4 Extended Events\views\view_deadlock_chronology.sql
 
 -----------------------------------
@@ -650,6 +677,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\views\view_largegrant_problems.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\views\view_largegrant_heatmap.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance

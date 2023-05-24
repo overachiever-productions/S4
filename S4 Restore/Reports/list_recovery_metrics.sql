@@ -351,13 +351,18 @@ AS
 			f.[operation_date], 
 			f.[database] + N'' -> '' + f.[restored_as] [operation],
 			f.[restore_succeeded], 
-			f.[consistency_succeeded] [check_succeeded],
+			--f.[consistency_succeeded] [check_succeeded],
 			f.[restored_file_count],
 			f.[diff_restored], 
 			dbo.format_timespan(f.[restore_duration]) [restore_duration],
-			dbo.format_timespan(SUM(f.[restore_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_restore],
-			dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
-			dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
+			
+			
+			-- MKC: this is ... busted.
+			--dbo.format_timespan(SUM(f.[restore_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_restore],
+			
+			-- MKC: these ... don''t make ANY sense in a RECOVERY METRICS report:
+			--dbo.format_timespan(f.[consistency_check_duration]) [check_duration], 
+			--dbo.format_timespan(SUM(f.[consistency_check_duration]) OVER (PARTITION BY f.[execution_id] ORDER BY f.[restore_id])) [cummulative_check], 
 			CASE 
 				WHEN DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) > 20 THEN CAST(DATEDIFF(DAY, f.[latest_backup], f.[restore_end]) AS nvarchar(20)) + N'' days'' 
 				ELSE dbo.format_timespan(DATEDIFF(MILLISECOND, f.[latest_backup], f.[restore_end])) 
