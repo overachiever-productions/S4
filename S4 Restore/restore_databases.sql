@@ -100,7 +100,8 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(10)	= N'24 hours',		-- Only evaluated if non-NULL. 
+	@RpoWarningThreshold			nvarchar(20)	= NULL,				-- Only evaluated if non-NULL. CAN be specified as 'vector' or ... as 'vector, vector' - in which case apply as FULL + SIMPLE recovery RPOs.
+	@SkipSanityChecks				bit				= 0,				-- ONLY evaluated if @RpoChecks are NULL. Similar to RPO tests - if restore is > 26 hours old, sends alerts about possible config error. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
     @Directives						nvarchar(400)	= NULL,				-- { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
@@ -198,20 +199,55 @@ AS
         RETURN -22;
     END;
 
-	DECLARE @vector bigint;  -- 'global'
-	DECLARE @vectorError nvarchar(MAX);
+	DECLARE @vector bigint; 
+	DECLARE @vectorSimple bigint = NULL;
+	DECLARE @vError nvarchar(MAX) = NULL;
 	
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
-		EXEC [dbo].[translate_vector]
-		    @Vector = @RpoWarningThreshold, 
-		    @ValidationParameterName = N'@RpoWarningThreshold', 
-		    @TranslationDatePart = N'SECOND', 
-		    @Output = @vector OUTPUT, 
-		    @Error = @vectorError OUTPUT;
+		IF @RpoWarningThreshold LIKE N'%,%' BEGIN
+			DECLARE @threshold sysname;
 
-		IF @vectorError IS NOT NULL BEGIN 
-			RAISERROR(@vectorError, 16, 1);
-			RETURN -20;
+			SELECT @threshold = [result] FROM [dbo].[split_string](@RpoWarningThreshold, N',', 1) WHERE [row_id] = 1;
+
+			EXEC [dbo].[translate_vector]
+				@Vector = @threshold, 
+				@ValidationParameterName = N'@RpoWarningThreshold (FULL-RECOVERY Specifier)', 
+				@TranslationDatePart = N'SECOND', 
+				@Output = @vector OUTPUT, 
+				@Error = @vError OUTPUT;
+
+			IF @vError IS NOT NULL BEGIN 
+				RAISERROR(@vError, 16, 1);
+				RETURN -28;
+			END;
+
+			SELECT @threshold = [result] FROM [dbo].[split_string](@RpoWarningThreshold, N',', 1) WHERE [row_id] = 2;
+
+			EXEC [dbo].[translate_vector]
+				@Vector = @threshold, 
+				@ValidationParameterName = N'@RpoWarningThreshold (SIMPLE-RECOVERY Specifier)', 
+				@TranslationDatePart = N'SECOND', 
+				@Output = @vectorSimple OUTPUT, 
+				@Error = @vError OUTPUT;
+
+			IF @vError IS NOT NULL BEGIN 
+				RAISERROR(@vError, 16, 1);
+				RETURN -29;
+			END;			
+		  END;
+		ELSE BEGIN
+
+			EXEC [dbo].[translate_vector]
+				@Vector = @RpoWarningThreshold, 
+				@ValidationParameterName = N'@RpoWarningThreshold', 
+				@TranslationDatePart = N'SECOND', 
+				@Output = @vector OUTPUT, 
+				@Error = @vError OUTPUT;
+
+			IF @vError IS NOT NULL BEGIN 
+				RAISERROR(@vError, 16, 1);
+				RETURN -20;
+			END;
 		END;
 	END;
 
@@ -1045,7 +1081,7 @@ NextDatabase:
 				ID
 			FOR XML PATH('file'), ROOT('files')
 		);
-
+		
 		IF @PrintOnly = 1
 			PRINT N'-- ' + @fileListXml; 
 		ELSE BEGIN
@@ -1179,11 +1215,9 @@ FINALIZE:
 
 	-- Process RPO Warnings: 
 	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
-	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
-		
-		DECLARE @rpo sysname = (SELECT dbo.[format_timespan](@vector * 1000));
-		DECLARE @rpoMessage nvarchar(MAX) = N'';
+	DECLARE @rpoMessage nvarchar(MAX) = N'';
 
+	IF (NULLIF(@RpoWarningThreshold, N'') IS NOT NULL) OR @SkipSanityChecks = 0 BEGIN
 		SELECT 
 			[database], 
 			[restored_files],
@@ -1215,32 +1249,142 @@ FINALIZE:
 		INTO 
 			#stale 
 		FROM 
-			[core] c;
+			[core] c
+		WHERE 
+			[c].[restore_end] IS NOT NULL;
+	END;
 
-		SELECT 
-			@rpoMessage = @rpoMessage 
-			+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
-			+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold --  @rpo
-			+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
-			+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
-			+  CASE WHEN [x].[vector] = -1 THEN 
-					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
-				ELSE 
-					+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
-					+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan](([x].vector - (@vector * 1000)))
-				END + @crlf
-		FROM 
-			[#stale] x
-		WHERE  
-			(x.[vector] > (@vector * 1000)) OR [x].[days_old] > 20 
-		ORDER BY 
-			CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
-			[x].[vector];
+	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+		IF @RpoWarningThreshold LIKE N'%,%' BEGIN 
+			WITH full_recovery AS ( 
+				SELECT 
+					[s].[database]
+				FROM 
+					#stale s
+					INNER JOIN sys.databases d ON s.[database] = d.[name]
+				WHERE 
+					[d].[recovery_model_desc] <> N'SIMPLE'
+			) 
+
+			-- NOTE: using some borderline-cheesy logic to get the 'FULL' part of @RpoWarningThreshold for these warnings:
+			SELECT 
+				@rpoMessage = @rpoMessage 
+				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + @tab + N'- recovery_point_objective  : ' + REPLACE(REPLACE(@RpoWarningThreshold, @threshold, N''), N',', '')
+				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+				+  CASE WHEN [x].[vector] = -1 THEN 
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
+					ELSE 
+						+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan](([x].vector - (@vector * 1000)))
+					END + @crlf
+			FROM 
+				[#stale] x
+				INNER JOIN [full_recovery] [f] ON [x].[database] = [f].[database] 
+			WHERE  
+				(x.[vector] > (@vector * 1000)) OR [x].[days_old] > 20 
+			ORDER BY 
+				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
+				[x].[vector];
+
+			IF @rpoMessage <> N''
+				SET @rpoMessage = @rpoMessage + @crlf;
+
+			-- Now check vs @vectorSimple (i.e., SIMPLE recovery databases).
+			WITH simple_recovery AS ( 
+				SELECT 
+					[s].[database]
+				FROM 
+					#stale s
+					INNER JOIN sys.databases d ON s.[database] = d.[name]
+				WHERE 
+					[d].[recovery_model_desc] = N'SIMPLE'
+			) 
+
+			-- NOTE: SORTA ditto on cheesy logic for 'SIMPLE' recovery part ... (i.e., not as cheesy, but still kind of using 'stealthed' info).
+			SELECT 
+				@rpoMessage = @rpoMessage 
+				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + @tab + N'- recovery_point_objective  : ' + @threshold
+				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+				+  CASE WHEN [x].[vector] = -1 THEN 
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
+					ELSE 
+						+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan](([x].vector - (@vector * 1000)))
+					END + @crlf
+			FROM 
+				[#stale] x
+				INNER JOIN [simple_recovery] [s] ON [x].[database] = [s].[database] 
+			WHERE  
+				(x.[vector] > (@vectorSimple * 1000)) OR [x].[days_old] > 20 
+			ORDER BY 
+				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
+				[x].[vector];
+		  END;
+		ELSE BEGIN
+			SELECT 
+				@rpoMessage = @rpoMessage 
+				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold
+				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+				+  CASE WHEN [x].[vector] = -1 THEN 
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
+					ELSE 
+						+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan](([x].vector - (@vector * 1000)))
+					END + @crlf
+			FROM 
+				[#stale] x
+			WHERE  
+				(x.[vector] > (@vector * 1000)) OR [x].[days_old] > 20 
+			ORDER BY 
+				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
+				[x].[vector];
+		  END;
 
 		IF LEN(@rpoMessage) > 2
 			SET @rpoWarnings = N'WARNINGS: ' 
 				+ @crlf + @rpoMessage + @crlf + @crlf;
 
+	  END;
+	ELSE BEGIN 
+		-- If we didn't set EXPLICIT checks for RPOs, run sanity checks - unless they've been disabled. 
+		IF @SkipSanityChecks = 0 BEGIN
+			/* There's a NIGHTMARE scenario where we've got backups running + nightly restore tests. Then we change where backups are being pointed/sent, 
+				BUT we forget to change where the restore-tests pull from. At which point, we might go days, weeks, months with 'nightly restore tests'
+				that are restoring days/weeks/months STALE backups... we THINK we're covered/protected, but we're not. 
+				Sanity checks look for a gap of 26+ hours - and are enabled by DEFAULT.
+			*/
+			SET @vector = 26 * 60 * 60; -- 60 seconds * 60 minutes * 26 hours... 
+
+			SELECT 
+				@rpoMessage = @rpoMessage 
+				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' failed Configuration Sanity Checks: '
+				+ @crlf + @tab + N'- sanity_check_objective  : 26 hours'
+				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
+				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
+				+  CASE WHEN [x].[vector] = -1 THEN 
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + CAST([x].[days_old] AS sysname) + N' days'
+					ELSE 
+						+ @crlf + @tab + @tab + @tab + N'- actual recovery point     : ' + dbo.[format_timespan]([x].vector)
+						+ @crlf + @tab + @tab + @tab + N'- recovery point exceeded by: ' + dbo.[format_timespan](([x].vector - (@vector * 1000)))
+					END + @crlf
+			FROM 
+				[#stale] x
+			WHERE  
+				(x.[vector] > (@vector * 1000)) OR [x].[days_old] > 20 
+			ORDER BY 
+				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
+				[x].[vector];
+
+			IF LEN(@rpoMessage) > 2
+				SET @rpoWarnings = N'CONFIGURATION CHECK WARNING(s): ' 
+					+ @crlf + @rpoMessage + @crlf + @crlf;			
+		END;
 	END;
 
     -- Assemble details on errors - if there were any (i.e., logged errors OR any reason for early termination... 
