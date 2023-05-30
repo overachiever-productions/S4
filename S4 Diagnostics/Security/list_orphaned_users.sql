@@ -9,7 +9,8 @@
 		--------------------------------------- 
 		-- project: 
 			EXEC admindb.dbo.list_orphaned_users 
-				@ExcludedLogins = N'Exym.Ad%';
+				@ExcludedLogins = N'Exym.Ad%', 
+				@ExcludeMsAndServiceLogins = 1;
 
 
 		--------------------------------------- 
@@ -39,6 +40,7 @@ CREATE PROC dbo.[list_orphaned_users]
 	@ExcludedLogins							nvarchar(MAX)			= NULL, 
 	@ExcludedUsers							nvarchar(MAX)			= NULL, 
 	@ExcludeMSAndServiceLogins				bit						= 1, 
+	@ExcludeLocalPrincipalLogins			bit						= 1,
 	@Output									xml						= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
@@ -78,6 +80,11 @@ AS
 		SELECT [result] [login_name] FROM dbo.[split_string](N'##MS%, NT AUTHORITY\%, NT SERVICE\%', N',', 1) ORDER BY row_id;				
 	END;
 
+	IF @ExcludeLocalPrincipalLogins = 1 BEGIN
+		INSERT INTO @ingnoredLogins ([login_name])
+		SELECT [name] FROM sys.[server_principals] WHERE [type] = 'U' AND [name] LIKE @@SERVERNAME + N'\%';
+	END;
+
 	IF @ExcludedUsers IS NOT NULL BEGIN 
 		INSERT INTO @ignoredUsers ([user_name]) 
 		SELECT [result] [user_name] FROM dbo.[split_string](@ExcludedUsers, N',', 1) ORDER BY row_id;
@@ -112,12 +119,6 @@ AS
 		LEFT OUTER JOIN sys.[sql_logins] sl ON sp.[sid] = sl.[sid]
 	WHERE 
 		sp.[type] NOT IN ('R');
-
-
-	/* Remove any excluded logins: */
-	DELETE l 
-	FROM [#Logins] l 
-	INNER JOIN @ingnoredLogins x ON l.[name] LIKE x.[login_name];
 
 	DECLARE @currentDatabase sysname;
 	DECLARE @dbPrincipalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE [type] IN (''S'', ''U'') AND [name] NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
@@ -171,6 +172,12 @@ AS
 
 		INSERT INTO [#Users] ([name], [sid], [type])
 		EXEC master.sys.sp_executesql @sql;
+
+		/* Remove any explicitly ignored logins: */
+		DELETE u 
+		FROM 
+			[#Users] u 
+			INNER JOIN @ingnoredLogins x ON u.[name] LIKE x.[login_name];
 
 		/* Remove any explicitly ignored/excluded users: */
 		DELETE u 
