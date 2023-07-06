@@ -58,9 +58,14 @@ AS
 
 	-----------------------------------------------------------------------------
 	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
-	END;
+		IF @PrintOnly = 0 BEGIN
+			PRINT N'Server is Not Primary.';
+			RETURN 0;
+		  END; 
+		ELSE BEGIN 
+			PRINT 'NOTE: Synchronization Check is allowed to run from SECONDARY - because @PrintOnly = 1.';
+		END;
+	END;	
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -177,7 +182,7 @@ AS
 	FROM 
 		admindb.dbo.server_trace_flags 
 	WHERE 
-		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
+		trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
 
 	-- remote only:
     INSERT INTO [#bus] (
@@ -188,9 +193,10 @@ AS
         N'trace flag' [grouping_key],
         N'Trace Flag ' + CAST(trace_flag AS sysname) + N' exists only on ' + @remoteServerName + N'.' [heading]  
 	FROM 
-		admindb.dbo.server_trace_flags 
+		@remoteFlags
 	WHERE 
-		trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
+		--trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
+		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
 
 	-- different values: 
     INSERT INTO [#bus] (
