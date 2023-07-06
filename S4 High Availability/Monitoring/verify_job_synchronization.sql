@@ -122,10 +122,14 @@ AS
 	SET @JobCategoryMapping = NULLIF(@JobCategoryMapping, N'');
 
 	----------------------------------------------
-	/* -- Determine which server to run checks on: */
 	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
+		IF @PrintOnly = 0 BEGIN
+			PRINT N'Server is Not Primary.';
+			RETURN 0;
+		  END; 
+		ELSE BEGIN 
+			PRINT 'NOTE: Synchronization Check is allowed to run from SECONDARY - because @PrintOnly = 1.';
+		END;
 	END;	
 
 	---------------------------------------------
