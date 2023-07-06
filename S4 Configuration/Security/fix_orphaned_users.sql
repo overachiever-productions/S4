@@ -95,14 +95,14 @@ AS
 		INSERT INTO #orphans (UserName, UserSID)
 		EXEC [sys].[sp_executesql]
 			@sql;
-
+		
 		IF EXISTS (SELECT NULL FROM @ignored) BEGIN 
 			DELETE x 
 			FROM 
 				[#orphans] x 
 				INNER JOIN @ignored i ON [x].[UserName] LIKE i.[name];
 		END;
-
+		
 		IF EXISTS (SELECT NULL FROM [#orphans]) BEGIN
 			DECLARE @target sysname; 
 

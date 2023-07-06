@@ -121,7 +121,13 @@ AS
 		sp.[type] NOT IN ('R');
 
 	DECLARE @currentDatabase sysname;
-	DECLARE @dbPrincipalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] FROM [{0}].sys.database_principals WHERE [type] IN (''S'', ''U'') AND [name] NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')';
+	DECLARE @dbPrincipalsTemplate nvarchar(MAX) = N'SELECT [name], [sid], [type] 
+FROM 
+	[{0}].sys.database_principals 
+WHERE 
+	[type] IN (''S'', ''U'') 
+	AND [name] NOT IN (''dbo'',''guest'',''INFORMATION_SCHEMA'',''sys'')
+	AND [authentication_type] <> 0; ';
 	DECLARE @sql nvarchar(MAX);
 	DECLARE @text nvarchar(MAX);
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -192,7 +198,7 @@ AS
 			[#Users] u 
 		WHERE 
 			u.[sid] NOT IN (SELECT [sid] FROM [#Logins]);
-
+		
 		IF EXISTS (SELECT NULL FROM [#Orphans]) BEGIN
 			IF @projectInsteadOfSendXmlAsOutput = 1 BEGIN 
 				

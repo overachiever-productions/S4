@@ -47,11 +47,11 @@ GO
 CREATE PROC dbo.[translate_blockedprocesses_trace]
 	@SourceXelFilesDirectory				sysname			= N'D:\Traces', 
 	@TargetTable							sysname, 
-	@OverwriteTarget						bit				= 0,
+	@OverwriteTarget						bit				= 0,		-- change this to @TargetExistsBehavior ... sysname... with options of { THROW | REPLACE | APPEND } ... using THROW? or APPEND as the defaults... 
 	@OptionalStartTime						datetime		= NULL, 
 	@OptionalEndTime						datetime		= NULL, 
 	@TimeZone								sysname			= N'{SERVER_LOCAL}',
-	@OptionalDbTranslationMappings			nvarchar(MAX)	= NULL
+	@OptionalDbTranslationMappings			nvarchar(MAX)	= NULL		-- i think it's probably time to get rid of this stuff... or, maybe... create a new sproc with these options vs the normal/more-commonly-used-sproc? 
 AS
     SET NOCOUNT ON; 
 
@@ -195,7 +195,10 @@ AS
 	END;
 
 	SET @sql = REPLACE(@sql, N'{DateLimits}', @dateLimits);
-	
+PRINT @extractionPath;
+
+PRINT @sql;
+RETURN 0;
 	INSERT INTO [#raw] (
 		[object_name],
 		[event_data],
