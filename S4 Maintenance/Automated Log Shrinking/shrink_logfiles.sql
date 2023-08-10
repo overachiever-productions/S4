@@ -247,6 +247,7 @@ AS
 	DECLARE @targetSize int;
 	DECLARE @command nvarchar(2000); 
 	DECLARE @executionResults xml;
+	DECLARE @commandResultsErrorMessage nvarchar(MAX) = NULL;
 
 	DECLARE @checkpointComplete datetime; 
 	DECLARE @waitStarted datetime;
@@ -297,13 +298,14 @@ AS
 					@ExecutionType = N'SQLCMD',
 					@ExecutionAttemptsCount = 1, 
 					@DelayBetweenAttempts = N'5s',
-					@Outcome = @executionResults OUTPUT 
+					@Outcome = @executionResults OUTPUT, 
+					@ErrorMessage = @commandResultsErrorMessage OUTPUT;
 			
 				IF @returnValue = 0	BEGIN
 					SET @outcome = N'SUCCESS';
 				  END;
 				ELSE BEGIN
-					SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+					SET @outcome = N'ERROR: ' + @commandResultsErrorMessage;
 				END;
 
 				SET @checkpointComplete = GETDATE();
@@ -404,16 +406,18 @@ ShrinkLogFile:
 				  END;
 				ELSE BEGIN
 					
+					SET @commandResultsErrorMessage = NULL;
 					EXEC @returnValue = dbo.[execute_command]
 					    @Command = @command, 
 					    @ExecutionType = N'SQLCMD', 
 					    @IgnoredResults = N'[COMMAND_SUCCESS],[USE_DB_SUCCESS]', 
-					    @Outcome = @executionResults OUTPUT;
+					    @Outcome = @executionResults OUTPUT, 
+						@ErrorMessage = @commandResultsErrorMessage OUTPUT;
 					
 					IF @returnValue = 0
 						SET @outcome = N'SUCCESS';	
 					ELSE 
-						SET @outcome = N'ERROR: ' + CAST(@executionResults AS nvarchar(MAX));
+						SET @outcome = N'ERROR: ' + @commandResultsErrorMessage;
 				END;
 				
 			END TRY 
