@@ -11,7 +11,7 @@ IF OBJECT_ID('dbo.list_heaps','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[list_heaps]
-		@TargetDatabase					sysname
+	@TargetDatabase					sysname
 AS
     SET NOCOUNT ON; 
 
