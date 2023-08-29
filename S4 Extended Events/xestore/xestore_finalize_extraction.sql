@@ -13,7 +13,7 @@ GO
 CREATE PROC dbo.[xestore_finalize_extraction]
 	@SessionName			sysname,
 	@ExtractionId			int, 
-	@Attributes				sysname		= NULL
+	@Attributes				nvarchar(300)		= NULL
 AS
     SET NOCOUNT ON; 
 

@@ -11,18 +11,21 @@ IF OBJECT_ID('dbo.xestore_initialize_extraction','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[xestore_initialize_extraction]
-	@SessionName			sysname
+	@SessionName					sysname, 
+	@ExtractionID					int					OUTPUT, 
+	@CET							datetime2			OUTPUT, 
+	@LSET							datetime2			OUTPUT, 
+	@Attributes						nvarchar(300)		OUTPUT, 
+	@InitializationDaysBack			int =				10
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
-	DECLARE @CET datetime2 = DATEADD(MILLISECOND, -2, GETUTCDATE());
-	DECLARE @LSET datetime2; 
-	DECLARE @attributes sysname;
+	SELECT @CET = DATEADD(MILLISECOND, -2, GETUTCDATE());
 
 	-- grab LSET and attributes: 
-	DECLARE @intializationLSET datetime2 = DATEADD(DAY, -3, GETDATE());
+	DECLARE @intializationLSET datetime2 = DATEADD(DAY, 0 - @InitializationDaysBack, GETDATE());
 	DECLARE @maxID int; 
 
 	SELECT 
@@ -34,26 +37,20 @@ AS
 		AND [lset] IS NOT NULL;
 
 	SELECT 
-		@LSET = ISNULL([lset], @intializationLSET), 
-		@attributes = [attributes]
+		--@LSET = ISNULL([lset], @intializationLSET),	-- MKC: can't set ISNULL here... cuz, there won't ALWAYS be a row/result... 
+		@Attributes = [attributes]
 	FROM 
 		dbo.xestore_extractions 
 	WHERE 
 		[extraction_id] = @maxID;
 
+	SELECT @LSET = ISNULL(@LSET, @intializationLSET);
+
 	-- start CET:
-	DECLARE @extractionID int; 
 	INSERT INTO dbo.xestore_extractions ([session_name], [cet]) 
 	VALUES (@SessionName, @CET);
 
-	SELECT @extractionID = SCOPE_IDENTITY();
-
-	SELECT 
-		@extractionID [execution_id], 
-		@SessionName [session_name], 
-		@CET [cet], 
-		@LSET [lset], 
-		@attributes [attributes];
+	SELECT @ExtractionID = SCOPE_IDENTITY();
 
 	RETURN 0;
 GO

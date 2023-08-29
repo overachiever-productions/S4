@@ -1,5 +1,4 @@
 /*
-
 	
 
 */
@@ -13,7 +12,7 @@ IF OBJECT_ID(N'dbo.xestore_extractions', N'U') IS NULL BEGIN
 		session_name sysname NOT NULL, 
 		cet datetime2 NOT NULL, 
 		lset datetime2 NULL, 
-		attributes sysname NULL, 
+		attributes nvarchar(300) NULL, 
 		CONSTRAINT PK_xestore_extractions PRIMARY KEY NONCLUSTERED (extraction_id)
 	);
 
