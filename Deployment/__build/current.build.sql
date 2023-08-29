@@ -195,6 +195,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="server_trace_flags" type="U" comment="v6.6 - Direct Query for Trace Flags vs delayed/table-checks." />
 
 	<entry schema="dbo" name="script_configuration" type="P" comment="v8.0 - Renamed to dbo.script_server_configuration - better alignment with scope." />
+
+	<entry schema="dbo" name="fix_orphaned_logins" type="P" comment="v11.1 - Renamed from dbo.fix_orphaned_logins - which doesn''t make sense - we''re fixing USERs." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -505,7 +507,7 @@ GO
 --##INCLUDE: S4 Configuration\Security\script_logins.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\Security\fix_orphaned_logins.sql
+--##INCLUDE: S4 Configuration\Security\fix_orphaned_users.sql
 
 -----------------------------------
 --##INCLUDE: S4 Configuration\Security\drop_orphaned_users.sql

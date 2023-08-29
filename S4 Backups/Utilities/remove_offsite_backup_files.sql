@@ -41,12 +41,11 @@ AS
 
 	-- {copyright}
 	
-	IF UPPER(@OffSiteRetention) = N'INFINITE' BEGIN 
-		PRINT N'-- INFINITE retention detected. Terminating off-site cleanup process.';
+	IF UPPER(@OffSiteRetention) = N'{INFINITE}' BEGIN 
+		PRINT N'-- {INFINITE} retention detected. Terminating off-site cleanup process.';
 		RETURN 0; -- success
 	END;
 
-	PRINT N'NON-INFINITE Retention-cleanup off OffSite Backup Copies is not yet implemented.';
-	
-	RETURN 0;
+	RAISERROR(N'NON-INFINITE Retention-cleanup off OffSite Backup Copies is not yet implemented.', 16, 1);
+	RETURN -100;
 GO

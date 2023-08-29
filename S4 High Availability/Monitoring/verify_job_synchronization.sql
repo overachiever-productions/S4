@@ -7,6 +7,7 @@
 				As such, a Mirrored 'Job' (for the purposes of this script) is any Job where Job.CategoryName = [Name of a User Database]; 
 
 	WARN:
+		- UPDATE: 2023-07-05. I've started a bit of a rewrite for this here; D:\Dropbox\Repositories\S4\S4 High Availability\Monitoring\~~verify_job_sync - shredding and flattening rewrite - spelunking.sql
 		- On 2023-04-10, I added a minor 'hack' to address 'start automatically when SQL Server Agent starts' job schedules (which can/WILL otherwise get tripped up on start date/time details)... 
 			and... I just need to make sure I don't 'regress' this logic during pending rewrite: 
 				<link to ... jira? or wherever I documented??? idea about a full rewrite of this sproc> 
@@ -122,10 +123,14 @@ AS
 	SET @JobCategoryMapping = NULLIF(@JobCategoryMapping, N'');
 
 	----------------------------------------------
-	/* -- Determine which server to run checks on: */
 	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
+		IF @PrintOnly = 0 BEGIN
+			PRINT N'Server is Not Primary.';
+			RETURN 0;
+		  END; 
+		ELSE BEGIN 
+			PRINT 'NOTE: Synchronization Check is allowed to run from SECONDARY - because @PrintOnly = 1.';
+		END;
 	END;	
 
 	---------------------------------------------

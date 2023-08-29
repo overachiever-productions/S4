@@ -126,8 +126,8 @@ AS
 	DECLARE @retentionError nvarchar(MAX);
 	DECLARE @retentionCutoffTime datetime; 
 
-	IF UPPER(@Retention) = N'INFINITE' BEGIN 
-		PRINT N'-- INFINITE retention detected. Terminating cleanup process.';
+	IF UPPER(@Retention) = N'{INFINITE}' BEGIN 
+		PRINT N'-- {INFINITE} retention detected. Terminating cleanup process.';
 		RETURN 0;
 	END;
 
