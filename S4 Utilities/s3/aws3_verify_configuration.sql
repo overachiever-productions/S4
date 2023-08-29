@@ -39,7 +39,7 @@ AS
 		row_id int IDENTITY(1,1) NOT NULL, 
 		test sysname NOT NULL, 
 		passed bit NOT NULL,
-		details sysname NOT NULL 
+		details nvarchar(MAX) NOT NULL 
 	);
 
 	IF @VerifyNuget = 1 BEGIN 
@@ -203,16 +203,30 @@ AS
 			);
 		  END; 
 		ELSE BEGIN 
-			INSERT INTO [#results] (
-				[test],
-				[passed],
-				[details]
-			)
-			VALUES (
-				N'ModuleInstalled', 
-				0, 
-				N'Unexpected Output from Install-Module -Name "AWS.Tools.S3": Output: ' + @stringResults
-			);
+			IF @stringResults LIKE N'%The specified module ''%'' was not loaded because no valid module file was found in any%' BEGIN 
+					INSERT INTO [#results] (
+						[test],
+						[passed],
+						[details]
+					)
+					VALUES (
+						N'ModuleInstalled', 
+						0, 
+						N'AWS.Tools.S3 Module is NOT installed.'
+					);
+				  END;
+			ELSE BEGIN
+				INSERT INTO [#results] (
+					[test],
+					[passed],
+					[details]
+				)
+				VALUES (
+					N'ModuleInstalled', 
+					0, 
+					N'Unexpected Output from Install-Module -Name "AWS.Tools.S3": Output: ' + @stringResults
+				);
+			END;
 		END;
 	END;
 
@@ -361,7 +375,6 @@ EndProfiles:
 EndBuckets:
 
 	IF (SELECT dbo.is_xml_empty(@Results)) = 1 BEGIN -- RETURN instead of project.. 
-
 		SELECT @Results = (SELECT 
 			[test],
 			[passed],
