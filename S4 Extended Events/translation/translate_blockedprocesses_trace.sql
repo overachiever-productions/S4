@@ -137,7 +137,7 @@ AS
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- XEL Extraction: 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
-	DECLARE @extractionPath nvarchar(200) =  @SourceXelFilesDirectory + '\blocked_process_reports*.xel';
+	DECLARE @extractionPath nvarchar(200) =  @SourceXelFilesDirectory + '\blocked_process*.xel';  -- this is sometimes "blocked_process_reports.xel" and sometimes "blocked_processES_reports.xel" - splitting the diff.
 
 	CREATE TABLE #raw (
 		row_id int IDENTITY(1,1) NOT NULL, 
@@ -195,10 +195,7 @@ AS
 	END;
 
 	SET @sql = REPLACE(@sql, N'{DateLimits}', @dateLimits);
-PRINT @extractionPath;
 
-PRINT @sql;
-RETURN 0;
 	INSERT INTO [#raw] (
 		[object_name],
 		[event_data],
