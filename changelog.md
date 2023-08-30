@@ -2,6 +2,35 @@
 
 # Change Log
 
+## [11.1] - 2023-08-29 
+New Utilities + Functionality & Bug Fixes. 
+
+### Fixed 
+- Case-Sensitive collation fixes for off-box copies of backups. 
+- Bug fix for `dbo.translate_blockedprocesses_trace`. (Fixed issues of looking for either blocked_process.xel or blocked_processes.xel - with a simple wildcard.)
+- Bug-fix for `dbo.list_orphaned_users` - to improve filter/exclusion logic. 
+
+### Added 
+- Distinction between RPO tests and 'sanity checks' for restore-tests. 
+- Ability to allow sync-checks from SECONDARY servers (if @PrintOnly = 1).
+- Initial logic and underlying funcs/utilities for XESTORE capabilities. 
+- Initila logic / utilities for configuration of S3 backup capabilities (not ready for prime-time yet).
+- Logic to extract SQL Server Agent job step BODY (command) by job-name and step-name. 
+- Utility to list plans FORCE'd by Query Store. 
+- Full-blown support for server-level roles during server-synchronization checks + utility to script/dump server-level role (permissions and members).
+- New diagnostic utility - `dbo.list_login_permissions` to show HIGH-LEVEL role-membership by login PER database. 
+- Updated/Improved Migration Utilities - to script (dump) and disable/re-enabled logins and jobs. 
+- New utility for KILL-ing runaway queries: 'dbo.kill_connections_by_statement'. 
+
+### Changed 
+- Renamed `dbo.fix_orphaned_logins` to `dbo.fix_orphaned_users` (logins don't get orphaned, users do).
+- Coalesed `dbo.list_index_metrics` and `dbo.help_index` down into SINGLE set of shared logic to avoid DRY violations. 
+- OFFSITE retention switched from `'infinite'` to `'{INFINITE}'` - i.e., to make 'infinite retention' a token. 
+
+### Known Issues 
+- There are some odd perf issues (in some environments) with `dbo.help_index` - where it can take a while to return results. 
+- S3 Backup 'helpers' need more work. 
+
 ## [11.0] - 2023-05-17 
 New features, capabilities, and functionality + bug-fixes.
 
