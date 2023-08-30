@@ -1,4 +1,9 @@
 /*
+    NOTE: 
+        - This sproc adheres to the PROJECT/RETURN usage convention.	
+
+	
+	
 	vNEXT:
 		- Possibly: 
 			change 'ratio' to 'benefit' - and/or make it more apparent what's going on relative to this 'benefit' (or lack thereof).
@@ -20,13 +25,15 @@ CREATE PROC dbo.[list_index_metrics]
 	@TargetTables								nvarchar(MAX)		= N'{ALL}',   
 	@ExcludedTables								nvarchar(MAX)		= NULL, 
 	@ExcludeSystemTables						bit					= 1,
-	@IncludeFragmentationMetrics				bit					= 0,		-- really don't care about this - 99% of the time... 
-	@MinRequiredTableRowCount					int					= 0,		-- ignore tables with < rows than this value... (but, note: this is per TABLE, not per IX cuz filtered indexes might only have a few rows on a much larger table).
-	@OrderBy									sysname				= N'ROW_COUNT'					-- { ROW_COUNT | FRAGMENTATION | SIZE | BUFFER_SIZE | READS | WRITES }
+	@IncludeFragmentationMetrics				bit					= 0,						-- really don't care about this - 99% of the time... 
+	@MinRequiredTableRowCount					int					= 0,						-- ignore tables with < rows than this value... (but, note: this is per TABLE, not per IX cuz filtered indexes might only have a few rows on a much larger table).
+	@OrderBy									sysname				= N'ROW_COUNT',				-- { ROW_COUNT | FRAGMENTATION | SIZE | BUFFER_SIZE | READS | WRITES }
 
 	--	vNEXT:
 	--		NOTE: the following will be implemented by a sproc: dbo.script_index (which required dbname, table-name, and IX name or [int]ID).
 	--@IncludeScriptDefinition					bit					= 1   -- include/generate the exact definition needed for the IX... 
+
+	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -159,7 +166,7 @@ AS
 				WHEN user_seeks > user_scans THEN CAST(user_seeks AS decimal(24,2)) / (CAST(user_seeks AS decimal(24,2)) + CAST(user_scans AS decimal(24,2))) * 100.0 
 				ELSE 0
 			END
-		AS decimal(24,2)) [seek_ratio]
+		AS decimal(5,2)) [seek_ratio]
 	FROM
 		usage_stats
 	ORDER BY
@@ -183,7 +190,7 @@ AS
 		[reads] bigint NULL,
 		[writes] bigint NOT NULL,
 		[read_write_ratio] decimal(24,2) NULL,
-		[seek_ratio] decimal(24,2) NULL
+		[seek_ratio] decimal(5,2) NULL
 	);
 
 	INSERT INTO [#usage_stats] (
@@ -518,7 +525,7 @@ AS
 			index_id
 	)
 
-	SELECT 
+	{projectOrReturn}SELECT 
 		--i.[object_id],
 		i.[table_name],
 		i.[index_id],
@@ -561,7 +568,7 @@ AS
 		{IncludeSystemTables}
 		{MinRequiredTableRowCount}
 	ORDER BY 
-		{ORDERBY} DESC; ';
+		{ORDERBY} DESC{forxml}; ';
 
 	-- predicates:
 	IF @ExcludeSystemTables = 1 
@@ -621,6 +628,27 @@ AS
 
 	SET @sql = REPLACE(@sql, N'{ORDERBY}', @sort);
 
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
+		DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
+
+		-- NOTE: the following line INCLUDES the ) for nesting the select @output = (nested_goes_here):
+		SET @sql = REPLACE(@sql, N'{forxml}', @crlftab + N'FOR XML PATH(N''index''), ROOT (N''indexes''))');
+		SET @sql = REPLACE(@sql, N'{projectOrReturn}', N'SELECT @output = (');
+
+		PRINT @sql;
+		DECLARE @output xml;
+		EXEC [sys].[sp_executesql]
+			@sql, 
+			N'@output xml OUTPUT', 
+			@output = @output OUTPUT;
+
+		SET @SerializedOutput = @output;
+
+		RETURN 0;
+	END;
+
+	SET @sql = REPLACE(@sql, N'{forxml}', N'');
+	SET @sql = REPLACE(@sql, N'{projectOrReturn}', N'');
 	EXEC sp_executesql 
 		@sql;
 

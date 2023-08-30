@@ -88,10 +88,10 @@ CREATE PROC dbo.backup_databases
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
 	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } NOTE {PARTNER} allowed as a token (if a PARTNER is defined).
-	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., N'S3:\\bucket-name\path\'
+	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., S3::bucket-name:path\sub-path'
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
-	@OffSiteRetention					nvarchar(10)							= NULL,							-- { vector | n backups | infinite }
+	@OffSiteRetention					nvarchar(10)							= NULL,							-- { vector | n backups | {INFINITE} }   - where {INFINITE} is a token meaning: S4 won't tackle cleanups, instead this is handled by retention policies.
 	@RemoveFilesBeforeBackup			bit										= 0,							-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
 	@EncryptionCertName					sysname									= NULL,							-- Ignored if not specified. 
 	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
@@ -249,9 +249,9 @@ AS
 
 		INSERT INTO @allDirectives ([row_id], [directive_type], [logical_name])
 		EXEC dbo.[shred_string]
-			@input = @Directives, 
-			@rowDelimiter = N',', 
-			@columnDelimiter = N':';
+			@Input = @Directives, 
+			@RowDelimiter = N',', 
+			@ColumnDelimiter = N':';
 
 		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) NOT IN (N'COPY_ONLY', N'FILE', N'FILEGROUP', N'MARKER')) BEGIN
 			RAISERROR(N'Invalid @Directives value specified. Permitted values are { COPY_ONLY | FILE:logical_name | FILEGROUP:group_name | MARKER:filename_tail_marker } only.', 16, 1);

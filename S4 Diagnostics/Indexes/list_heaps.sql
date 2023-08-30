@@ -11,7 +11,7 @@ IF OBJECT_ID('dbo.list_heaps','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[list_heaps]
-		@TargetDatabase							sysname
+	@TargetDatabase					sysname
 AS
     SET NOCOUNT ON; 
 
@@ -27,6 +27,10 @@ AS
 		[unused_gb] decimal(10,1) NOT NULL
 	);
 
+	DECLARE @isMemOptimizedChecks nvarchar(MAX) = N'
+			WHERE
+				[ps].[object_id] NOT IN (SELECT [object_id] FROM [sys].[tables] WHERE [is_memory_optimized] = 1)'; 
+
 	DECLARE @sql nvarchar(MAX) = N'WITH metrics AS ( 
 			SELECT
 				[ps].[object_id],
@@ -35,9 +39,7 @@ AS
 				SUM(CASE WHEN ([ps].[index_id] < 2) THEN ([ps].[in_row_data_page_count] + [ps].[lob_used_page_count] + [ps].[row_overflow_used_page_count]) ELSE ([ps].[lob_used_page_count] + [ps].[row_overflow_used_page_count])	END) AS [data],
 				SUM([ps].[used_page_count]) AS [used]
 			FROM
-				[{targetDatabase}].[sys].[dm_db_partition_stats] [ps]
-			WHERE
-				[ps].[object_id] NOT IN (SELECT [object_id] FROM [sys].[tables] WHERE [is_memory_optimized] = 1)
+				[{targetDatabase}].[sys].[dm_db_partition_stats] [ps]{MemoryOptimizedChecks}
 			GROUP BY
 				[ps].[object_id]	
 	), 
@@ -68,6 +70,11 @@ AS
 		
 	SET @sql = REPLACE(@sql, N'{targetDatabase}', @TargetDatabase);
 
+	IF dbo.[get_engine_version]() >= 12.0 
+		SET @sql = REPLACE(@sql, N'{MemoryOptimizedChecks}', @isMemOptimizedChecks);
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{MemoryOptimizedChecks}', N'');
+	
 	INSERT INTO [#sizes] (
 		[object_id],
 		[heap_name],

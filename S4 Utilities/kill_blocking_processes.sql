@@ -123,26 +123,12 @@ AS
 		RETURN 0; -- short-circuit (i.e., nothing to do or report).
 	END;
 	
-	/* 
-
-		MKC: ALTER + UPDATE below are a HACK to get around OCCASIONAL error like: "Conversion failed when converting the nvarchar value ' » 206 ' to data type int."
-				i.e., vs attempt to REPLACE » + cast as int in 'single' operation (below).
-	*/
-	
-	ALTER TABLE [#results] ADD [blocker] sysname; 
-	UPDATE [#results] 
-	SET 
-		[blocker] = REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') 
-	WHERE 
-		[blocking_chain] IS NOT NULL;
-
 	BEGIN TRY 
 		WITH shredded AS ( 
 			SELECT 
 				[database]	,
 				CAST([session_id] AS int) [session_id], 
-				--CAST(REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' » ', N'') AS int) [blocker],
-				CAST([blocker] AS int) [blocker],
+				CAST((REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' ' + CHAR(187) + N' ', N'')) AS int) [blocker],
 				[command],
 				[status],
 				[statement],
@@ -192,7 +178,7 @@ AS
 	
 	END TRY 
 	BEGIN CATCH 
-		SELECT @message = N'Exception Identifying Blockers: [' + ERROR_MESSAGE() + N'] on line [' + CAST(ERROR_LINE() AS sysname) + N'.';
+		SELECT @message = N'Exception Identifying Blockers: [' + ERROR_MESSAGE() + N'] on line [' + CAST(ERROR_LINE() AS sysname) + N'].';
 		GOTO SendMessage;
 	END CATCH
 	

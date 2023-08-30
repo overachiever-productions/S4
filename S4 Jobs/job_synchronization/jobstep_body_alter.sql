@@ -1,16 +1,18 @@
 /*
 
+	REFACTOR: 
+		dbo.jobstep_body_alter 
 
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.alter_jobstep_body','P') IS NOT NULL
-	DROP PROC dbo.[alter_jobstep_body];
+IF OBJECT_ID('dbo.jobstep_body_alter','P') IS NOT NULL
+	DROP PROC dbo.[jobstep_body_alter];
 GO
 
-CREATE PROC dbo.[alter_jobstep_body]
+CREATE PROC dbo.[jobstep_body_alter]
 	@JobName			sysname, 
 	@StepName			sysname, 
 	@NewBody			nvarchar(MAX)

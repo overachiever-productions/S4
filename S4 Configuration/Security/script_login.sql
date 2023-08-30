@@ -44,7 +44,7 @@ CREATE PROC dbo.[script_login]
     @DisablePolicyChecks					bit						= 0,
 	@ForceMasterAsDefaultDB					bit						= 0, 
 	@IncludeDefaultLanguage					bit						= 0,
-    @Output                                 nvarchar(MAX)           = ''        OUTPUT
+    @Output                                 nvarchar(MAX)           = N''        OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -58,13 +58,20 @@ AS
 	FROM 
 		sys.[server_principals]
 	WHERE
-		[name] = @LoginName;
+		[name] = @LoginName
+		AND [type] NOT IN ('R');
 
     IF @name IS NULL BEGIN 
+		DECLARE @message nvarchar(MAX) = N'-- No Login matching the name: [' + QUOTENAME(@LoginName) + N'] exists on the current server.';
+
+		IF EXISTS (SELECT NULL FROM sys.[server_principals] WHERE [is_fixed_role] = 0 AND [type] = 'R' AND [name] = @LoginName) BEGIN
+			SET @message = N'-- Server Principal: [' + @LoginName + N'] is a Server Role. Use dbo.script_server_role instead of script_login.';
+		END;
+
         IF @Output IS NULL 
-            SET @Output = '-- No Login matching the name ' + QUOTENAME(@LoginName) + N' exists on the current server.';
+            SET @Output = @message;
         ELSE 
-            PRINT '-- No Login matching the name ' + QUOTENAME(@LoginName) + N' exists on the current server.';
+            PRINT @message;
 
         RETURN -2;
     END;
@@ -105,7 +112,7 @@ AS
 	END; 
 
 	-- If we're still here, we tried to script/print a login type that's not yet supported. 
-	RAISERROR('Sorry, S4 does not yet support scripting ''%s'' logins.', 16, 1);
+	RAISERROR('Sorry, S4 does not yet support scripting ''%s'' logins.', 16, 1, @loginType);
 	RETURN -20;
 
 ScriptCreated: 

@@ -6,9 +6,13 @@
 			i.e., it pseudo-behaves like an sp_sproc... 
 
 
+	vNEXT:
+		- Currently assumes dbo as Schema name and ... doesn't allow for different schemas. 
+			so... make it do that... 
+
 
 	TODO: 
-		- REFACTOR: probably want to refactor this pig... the name ain't so great at this point... 
+		MOVE all of the follwing into list_index_metrics... (and maybe change list_index_metrics to ... list_index_details? or somethign?)
 
 		- xml ... for advanced options? like.... is PK, is unique, is_disabled... is_hypot... (that should be in a 'WARNING')
 		
@@ -54,7 +58,6 @@ GO
 
 CREATE PROC dbo.[help_index]
 	@Target					sysname				= NULL
-
 AS
     SET NOCOUNT ON; 
 
@@ -72,143 +75,89 @@ AS
 
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised... 
-
+	
 	DECLARE @targetDatabase sysname, @targetSchema sysname, @targetTable sysname;
 	SELECT 
 		@targetDatabase = PARSENAME(@normalizedName, 3),
 		@targetSchema = PARSENAME(@normalizedName, 2), 
 		@targetTable = PARSENAME(@normalizedName, 1);
 
-	DECLARE @sql nvarchar(MAX);
-	SET @sql = N'SELECT index_id, ISNULL([name], N''-HEAP-'') FROM [' + @targetDatabase + N'].sys.[indexes] WHERE [object_id] = @targetObjectID; ';
+	-- See vNEXT about ... not supporting schema names currently.
+	--DECLARE @targetTableName sysname = QUOTENAME(@targetSchema) + N'.' + QUOTENAME(@targetTable);
 
-	CREATE TABLE #sys_indexes (
-		index_id int NOT NULL, 
-		index_name sysname NULL -- frickin' heaps
-	);
+	DECLARE @indexData xml; 
+	EXEC dbo.[list_index_metrics]
+		@TargetDatabase = @targetDatabase,
+		@TargetTables = @targetTable,
+		@ExcludeSystemTables = 1,
+		@IncludeFragmentationMetrics = 0,
+		@MinRequiredTableRowCount = 0,
+		@SerializedOutput = @indexData OUTPUT; 
 
-	INSERT INTO [#sys_indexes] (
-		[index_id],
-		[index_name]
-	)
-	EXEC [sys].[sp_executesql]
-		@sql, 
-		N'@targetObjectID int', 
-		@targetObjectID = @targetObjectID;
 
-	SET @sql = N'
-	SELECT 
-		ic.index_id, 
-		c.[name] column_name, 
-		ic.key_ordinal,
-		ic.is_included_column, 
-		ic.is_descending_key 
-	FROM 
-		[' + @targetDatabase + N'].sys.index_columns ic 
-		INNER JOIN [' + @targetDatabase + N'].sys.columns c ON ic.[object_id] = c.[object_id] AND ic.column_id = c.column_id 
-	WHERE 
-		ic.[object_id] = @targetObjectID;
-	';
-
-	CREATE TABLE #index_columns (
-		index_id int NOT NULL, 
-		column_name sysname NOT NULL, 
-		key_ordinal int NOT NULL,
-		is_included_column bit NOT NULL, 
-		is_descending_key bit NOT NULL
-	);
-
-	INSERT INTO [#index_columns] (
-		[index_id],
-		[column_name],
-		[key_ordinal],
-		[is_included_column],
-		[is_descending_key]
-	)
-	EXEC [sys].[sp_executesql] 
-		@sql, 
-		N'@targetObjectID int', 
-		@targetObjectID = @targetObjectID;
-
-	CREATE TABLE #output (
-		index_id int NOT NULL, 
-		index_name sysname NOT NULL, 
-		[definition] nvarchar(MAX) NOT NULL 
-	);
-
-	DECLARE @serialized nvarchar(MAX);
-	DECLARE @currentIndexID int, @currentIndexName sysname;
-	DECLARE [serializer] CURSOR LOCAL FAST_FORWARD FOR 
-	SELECT 
-		index_id, 
-		index_name 
-	FROM 
-		[#sys_indexes] 
-	ORDER BY 
-		[index_id];
-	
-	OPEN [serializer];
-	FETCH NEXT FROM [serializer] INTO @currentIndexID, @currentIndexName;
-	
-	WHILE @@FETCH_STATUS = 0 BEGIN
-	
-		SET @serialized = N'';
-
-		WITH core AS ( 
-			SELECT 
-				ic.column_name, 
-				CASE 
-					WHEN ic.is_included_column = 1 THEN 999 
-					ELSE ic.key_ordinal 
-				END [ordinal], 
-				ic.is_descending_key
-			FROM 
-				[#sys_indexes] i
-				INNER JOIN [#index_columns] ic ON i.[index_id] = ic.[index_id]
-			WHERE 
-				i.[index_id] = @currentIndexID
-		) 	
-
+	-- PICKUP/NEXT:
+	--	shred xml... 
+	WITH shredded AS ( 
 		SELECT 
-			@serialized = @serialized 
-				+ CASE WHEN ordinal = 999 THEN N'[' ELSE N'' END 
-				+ column_name 
-				+ CASE WHEN is_descending_key = 1 THEN N' DESC' ELSE N'' END 
-				+ CASE WHEN ordinal = 999 THEN N']' ELSE N'' END
-				+ N','				   
+			[data].[row].value(N'(table_name)[1]', N'sysname') [table_name], 
+			[data].[row].value(N'(index_id)[1]', N'int') [index_id], 
+			[data].[row].value(N'(index_name)[1]', N'sysname') [index_name], 
+			[data].[row].value(N'(definition)[1]', N'nvarchar(MAX)') [columns], 
+			[data].[row].value(N'(row_count)[1]', N'bigint') [row_count], 
+			[data].[row].value(N'(reads)[1]', N'bigint') [reads], 
+			[data].[row].value(N'(writes)[1]', N'bigint') [writes], 
+			[data].[row].value(N'(allocated_mb)[1]', N'decimal(24,2)') [allocated_mb], 
+			[data].[row].value(N'(used_mb)[1]', N'decimal(24,2)') [used_mb], 
+			[data].[row].value(N'(cached_mb)[1]', N'decimal(24,2)') [cached_mb], 
+			[data].[row].value(N'(seeks)[1]', N'bigint') [seeks], 
+			[data].[row].value(N'(scans)[1]', N'bigint') [scans], 
+			[data].[row].value(N'(lookups)[1]', N'bigint') [lookups], 
+			[data].[row].value(N'(seek_ratio)[1]', N'decimal(5,2)') [seek_ratio],
+			[data].[row].query(N'(//operational_metrics/operational_metrics)[1]') [operational_metrics]
 		FROM 
-			[core] 
-		ORDER BY 
-			[ordinal];
+			@indexData.nodes(N'//index') [data]([row])
 
-		SET @serialized = SUBSTRING(@serialized, 0, LEN(@serialized));
+	) 
 
-		INSERT INTO [#output] (
-			[index_id],
-			[index_name],
-			[definition]
-		)
-		VALUES	(
-			@currentIndexID, 
-			@currentIndexName, 
-			@serialized
-		)
-
-		FETCH NEXT FROM [serializer] INTO @currentIndexID, @currentIndexName;
-	END;
-	
-	CLOSE [serializer];
-	DEALLOCATE [serializer];
-
-	-- Projection: 
 	SELECT 
-		[index_id],
-		CASE WHEN [index_id] = 0 THEN N'-HEAP-' ELSE [index_name] END [index_name],
-		CASE WHEN [index_id] = 0 THEN N'-HEAP-' ELSE [definition] END [definition]
+		* 
+	INTO 
+		#hydrated 
 	FROM 
-		[#output]
+		[shredded];
+
+
+	SELECT
+	--	[table_name],
+		[index_id],
+		[index_name],
+		[columns],
+		N' ' [ ],
+		[row_count],
+		[reads],
+		[writes],
+		[allocated_mb],
+		[used_mb],
+		[cached_mb],
+		[seeks],
+		[scans],
+		[lookups],
+		[seek_ratio],
+		[operational_metrics] 
+	FROM 
+		#hydrated
 	ORDER BY 
 		[index_id];
+
+	
+	SELECT 
+		SUM(CASE WHEN [index_id] IN (0,1) THEN [allocated_mb] ELSE 0 END) [data], 
+		SUM(CASE WHEN [index_id] NOT IN (0,1) THEN [allocated_mb] ELSE 0 END) [index]
+	FROM 
+		[#hydrated] 
+
+
+
 
 	RETURN 0;
 GO

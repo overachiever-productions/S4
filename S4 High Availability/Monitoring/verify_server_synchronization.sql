@@ -58,9 +58,14 @@ AS
 
 	-----------------------------------------------------------------------------
 	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
-		PRINT 'Server is Not Primary.';
-		RETURN 0;
-	END;
+		IF @PrintOnly = 0 BEGIN
+			PRINT N'Server is Not Primary.';
+			RETURN 0;
+		  END; 
+		ELSE BEGIN 
+			PRINT 'NOTE: Synchronization Check is allowed to run from SECONDARY - because @PrintOnly = 1.';
+		END;
+	END;	
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -177,7 +182,7 @@ AS
 	FROM 
 		admindb.dbo.server_trace_flags 
 	WHERE 
-		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
+		trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
 
 	-- remote only:
     INSERT INTO [#bus] (
@@ -188,9 +193,10 @@ AS
         N'trace flag' [grouping_key],
         N'Trace Flag ' + CAST(trace_flag AS sysname) + N' exists only on ' + @remoteServerName + N'.' [heading]  
 	FROM 
-		admindb.dbo.server_trace_flags 
+		@remoteFlags
 	WHERE 
-		trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
+		--trace_flag NOT IN (SELECT trace_flag FROM @remoteFlags);
+		trace_flag NOT IN (SELECT trace_flag FROM admindb.dbo.server_trace_flags);
 
 	-- different values: 
     INSERT INTO [#bus] (
@@ -485,7 +491,8 @@ AS
         LEFT OUTER JOIN [PARTNER].[master].sys.sql_logins l ON p.[principal_id] = l.[principal_id]
     WHERE 
         p.[principal_id] > 10 
-        AND p.[name] NOT LIKE ''##%##'' AND p.[name] NOT LIKE ''NT %\%'';';
+        AND p.[name] NOT LIKE ''##%##'' AND p.[name] NOT LIKE ''NT %\%''
+		AND p.[type] <> ''R'';';
 
 	DECLARE @localPrincipals table ( 
 		[principal_id] int NOT NULL,
@@ -510,7 +517,8 @@ AS
         LEFT OUTER JOIN [master].sys.sql_logins l ON p.[principal_id] = l.[principal_id]
     WHERE 
         p.[principal_id] > 10 
-        AND p.[name] NOT LIKE '##%##' AND p.[name] NOT LIKE 'NT %\%';
+        AND p.[name] NOT LIKE '##%##' AND p.[name] NOT LIKE 'NT %\%'
+		AND p.[type] <> 'R';
 
     IF @IgnorePrincipalNames = 1 BEGIN 
         UPDATE @localPrincipals
@@ -598,6 +606,208 @@ AS
 			OR [local].is_disabled <> [remote].is_disabled
 		);
 
+	---------------------------------------
+	-- (Custom) Server Roles:
+	DECLARE @localNonFixedRoles table ( 
+		[role_name] sysname NOT NULL, 
+		[owner_name] sysname NOT NULL
+	);
+
+	INSERT INTO @localNonFixedRoles ([role_name], [owner_name])
+	SELECT 
+		[name], 
+		(SELECT x.[name] FROM sys.[server_principals] x WHERE sp.[owning_principal_id] = x.[principal_id]) [owner_id]
+	FROM 
+		sys.[server_principals] sp
+	WHERE 
+		[sp].[type] = 'R'
+		AND sp.[is_fixed_role] = 0
+		AND sp.[sid] <> 0x02; 
+
+	DECLARE @remoteNonFixedRoles table (
+		[role_name] sysname NOT NULL, 
+		[owner_name] sysname NOT NULL
+	);
+
+	INSERT INTO @remoteNonFixedRoles ([role_name], [owner_name])
+	EXEC sys.sp_executesql N'
+	SELECT 
+		[name], 
+		(SELECT x.[name] FROM [PARTNER].[master].sys.[server_principals] x WHERE sp.[owning_principal_id] = x.[principal_id]) [owner_id]
+	FROM 
+		[PARTNER].[master].sys.[server_principals] sp
+	WHERE 
+		[sp].[type] = ''R''
+		AND sp.[is_fixed_role] = 0
+		AND sp.[sid] <> 0x02; ';
+
+	-- local only:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'roles' [grouping_key], 
+		N'Custom Server Role ' + QUOTENAME([local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' exists on ' + QUOTENAME(@localServerName) + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
+	FROM 
+		@localNonFixedRoles [local]
+	WHERE 
+		[local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [role_name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @remoteNonFixedRoles)
+		AND [local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+			SELECT 
+				x.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@localPrincipals x 
+				INNER JOIN @ignoredLoginName i ON x.[name] LIKE i.[name]
+		);
+
+	-- remote only:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'roles' [grouping_key], 
+		N'Custom Server Role ' + QUOTENAME([remote].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' exists on ' + QUOTENAME(@remoteServerName) + N' only.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
+	FROM 
+		@remoteNonFixedRoles [remote]
+	WHERE 
+		[remote].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (SELECT [role_name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @localNonFixedRoles)
+		AND [remote].[role_name] NOT IN (
+			SELECT 
+				x.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@remotePrincipals x 
+				INNER JOIN @ignoredLoginName i ON x.[name] LIKE i.[name]
+		);	
+
+	-- owner differences:
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'roles' [grouping_key], 
+		N'Owner of Custom Server Role ' + QUOTENAME([local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' is different between servers.' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
+	FROM 
+        @localNonFixedRoles [local]
+        INNER JOIN @remoteNonFixedRoles [remote] ON [local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS = [remote].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS
+	WHERE
+		[local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS NOT IN (
+			SELECT 
+				x.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+			FROM 
+				@localPrincipals x 
+				INNER JOIN @ignoredLoginName i ON x.[name] LIKE i.[name]			
+		)
+		AND (
+			[local].[owner_name] <> [remote].[owner_name]
+		);
+
+	-- permissions differences:
+	DECLARE @localRoleDefinitions table ( 
+		[role_name] sysname NOT NULL, 
+		[definition] nvarchar(MAX) NULL
+	); 
+	DECLARE @remoteRoleDefinitions table (
+		[role_name] sysname NOT NULL, 
+		[definition] nvarchar(MAX) NULL
+	); 
+
+	INSERT INTO @localRoleDefinitions ([role_name])
+	SELECT [role_name] FROM @localNonFixedRoles;
+
+	INSERT INTO @remoteRoleDefinitions ([role_name])
+	SELECT [role_name] FROM @remoteNonFixedRoles;
+
+	IF EXISTS (SELECT NULL FROM @localRoleDefinitions) BEGIN 
+		DECLARE @roleName sysname, @definitionHash varchar(2000); 
+
+		DECLARE [cursorName] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			role_name 
+		FROM 
+			@localRoleDefinitions;
+		
+		OPEN [cursorName];
+		FETCH NEXT FROM [cursorName] INTO @roleName;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+			SET @definitionHash = NULL;
+
+			EXEC dbo.script_server_role 
+				@RoleName = @roleName, 
+				@IncludeMembers = 0,  -- already done above... 
+				@TokenizePrincipalNames = @IgnorePrincipalNames, -- don't allow a permissiong like VIEW DEFINITION ON LOGIN::[SERVER-B\Admin] to conflict with ::[SERVER-A\Admin], etc.
+				@OutputHash = @definitionHash OUTPUT;
+
+			UPDATE @localRoleDefinitions
+			SET 
+				[definition] = @definitionHash 
+			WHERE 
+				[role_name] = @roleName;
+		
+			FETCH NEXT FROM [cursorName] INTO @roleName;
+		END;
+		
+		CLOSE [cursorName];
+		DEALLOCATE [cursorName];
+
+	END;
+
+	IF EXISTS (SELECT NULL FROM @remoteRoleDefinitions) BEGIN 
+		DECLARE @remoteSQL nvarchar(MAX);
+
+		DECLARE [cursorName] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			role_name 
+		FROM 
+			@remoteRoleDefinitions;
+		
+		OPEN [cursorName];
+		FETCH NEXT FROM [cursorName] INTO @roleName;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+			-- this HAS to be dynamic to avoid validation errors during CODE deployment... 
+			SET @remoteSQL = N'EXEC [PARTNER].admindb.dbo.script_server_role @RoleName = @roleName, @IncludeMembers = 0, @TokenizePrincipalNames = 1, @OutputHash = @definitionHash OUTPUT;'	
+			
+			SET @definitionHash = NULL;
+			EXEC sp_executesql 
+				@remoteSQL, 
+				N'@roleName sysname, @definitionHash varchar(2000) OUTPUT', 
+				@roleName = @roleName, 
+				@definitionHash = @definitionHash OUTPUT;
+
+			UPDATE @remoteRoleDefinitions 
+			SET 
+				[definition] = @definitionHash 
+			WHERE 
+				[role_name] = @roleName;
+		
+			FETCH NEXT FROM [cursorName] INTO @roleName;
+		END;
+		
+		CLOSE [cursorName];
+		DEALLOCATE [cursorName];
+	END;
+
+    INSERT INTO [#bus] (
+        [grouping_key],
+        [heading]
+    )    
+    SELECT 
+        N'roles' [grouping_key], 
+		N'Permissions for Custom Server Role ' + QUOTENAME([local].[role_name] COLLATE SQL_Latin1_General_CP1_CI_AS) + N' are different between servers. (Use dbo.script_server_role on both servers to view differences.)' [heading]
+        -- TODO: instructions on how to fix and/or CONTROL directives TO fix... 
+	FROM 
+		@localRoleDefinitions [local]
+		INNER JOIN @remoteRoleDefinitions [remote] ON [local].[role_name] = [remote].[role_name]
+	WHERE 
+		[local].[definition] <> [remote].[definition];
+	
     -- (server) role memberships: 
     DECLARE @localMemberRoles table ( 
         [login_name] sysname NOT NULL, 
