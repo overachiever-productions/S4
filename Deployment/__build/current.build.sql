@@ -92,6 +92,9 @@ GO
 --##INCLUDE: Common\tables\alert_responses.sql
 
 -----------------------------------
+--##INCLUDE: Common\tables\xestore_extractions.sql
+
+-----------------------------------
 --##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -197,6 +200,7 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="script_configuration" type="P" comment="v8.0 - Renamed to dbo.script_server_configuration - better alignment with scope." />
 
 	<entry schema="dbo" name="fix_orphaned_logins" type="P" comment="v11.1 - Renamed from dbo.fix_orphaned_logins - which doesn''t make sense - we''re fixing USERs." />
+	<entry schema="dbo" name="alter_jobstep_body" type="P" comment="v11.1 - Renamed from dbo.alter_jobstep_body - to toy with test of <object>-<verb> naming conventions for some thigns?" />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -382,6 +386,9 @@ GO
 --##INCLUDE: Common\format_number.sql
 
 -----------------------------------
+--##INCLUDE: Common\xml_decode.sql
+
+-----------------------------------
 --##INCLUDE: Common\get_local_timezone.sql
 
 -----------------------------------
@@ -401,6 +408,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\execute_command.sql
+
+-----------------------------------
+--##INCLUDE: Common\execute_powershell.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\establish_directory.sql
@@ -504,6 +514,9 @@ GO
 --##INCLUDE: S4 Configuration\Security\script_login.sql
 
 -----------------------------------
+--##INCLUDE: S4 Configuration\Security\script_server_role.sql
+
+-----------------------------------
 --##INCLUDE: S4 Configuration\Security\script_logins.sql
 
 -----------------------------------
@@ -581,6 +594,12 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Migration\script_targetdb_migration_template.sql
 
+-----------------------------------
+--##INCLUDE: S4 Migration\disable_and_script_job_states.sql
+
+-----------------------------------
+--##INCLUDE: S4 Migration\disable_and_script_logins.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Monitoring
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -638,10 +657,19 @@ GO
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Security\list_orphaned_users.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Security\list_login_permissions.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\view_querystore_consumers.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\view_querystore_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_list_forced_plans.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Extended Events
@@ -682,6 +710,18 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\views\view_largegrant_heatmap.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\utilities\list_xe_sessions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\xestore\xestore_initialize_extraction.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\xestore\xestore_extract_session_xml.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\xestore\xestore_finalize_extraction.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
@@ -739,6 +779,21 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Utilities\kill_blocking_processes.sql
 
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_connections_by_statement.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_install_modules.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_initialize_profile.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_list_buckets.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Idioms
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -769,7 +824,10 @@ GO
 --##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
 
 -----------------------------------
---##INCLUDE: S4 Jobs\job_synchronization\alter_jobstep_body.sql
+--##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_alter.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_get.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Resource Governor
