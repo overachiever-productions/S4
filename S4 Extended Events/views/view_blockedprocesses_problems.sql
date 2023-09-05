@@ -139,7 +139,7 @@ AS
 		[blocking_tran_count] int NOT NULL,
 		[blocking_status] sysname NULL,
 		[blocker] xml NOT NULL,
-		[blocking_client_app] sysname NOT NULL,
+		[blocking_client_app] sysname NULL,
 		[report] xml NOT NULL
 	) 
 
