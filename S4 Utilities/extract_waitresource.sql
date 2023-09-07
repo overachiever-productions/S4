@@ -158,9 +158,11 @@ AS
 	END;
 		
 	IF @WaitResource = N'0:0:0' BEGIN 
-		SET @Output = N'[0:0:0] - UNIDENTIFIED_RESOURCE';  -- Paul Randal Identified this on twitter on 2019-08-06: https://twitter.com/PaulRandal/status/1158810119670358016
-                                                           -- specifically: when the last wait type is PAGELATCH, the last resource isn't preserved - so we get 0:0:0 - been that way since 2005. 
-                                                           --      and, I honestly wonder if that could/would be the case with OTHER scenarios? 
+		/*
+			-- As per Paul Randal, 0:0:0: "When the last_wait_type is PAGELATCH the actual last resource isn't preserved, so it says 0:0:0. Been that way since 2005." 
+			https://twitter.com/PaulRandal/status/1158810119670358016
+		*/
+		SET @Output = N'[0:0:0] - PAGELATCH'; 
 		RETURN 0;
 	END;
 
