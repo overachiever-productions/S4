@@ -15,6 +15,10 @@
 		- dynamic details on ... failures or not @includeFailures ... 
 		- dynamic @includeObjectDetails. 
 
+
+	vNEXT:
+		- rather than object_id for statements from a sproc/udf/etc. that are forced, why not pull back the actual object name and/or object_id (name_here) or whatever.
+
 */
 
 USE [admindb];

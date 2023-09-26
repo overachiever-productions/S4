@@ -171,7 +171,7 @@ ORDER BY
 
 	SET @sql = REPLACE(@sql, N'{sourceTable}', @normalizedName);
 
-	IF @Mode = N'TIME_OF_DAY' BEGIN 
+	IF UPPER(@Mode) = N'TIME_OF_DAY' BEGIN 
 		SET @sql = REPLACE(@sql, N'{dayJoin}', N'');
 	  END;
 	ELSE BEGIN
@@ -288,6 +288,8 @@ FROM
 			@sql, 
 			N'@offsetMinutes int', 
 			@offsetMinutes = @offsetMinutes;
+		
+		RETURN 0;
 	END;
 	
 	IF UPPER(@Mode) = N'WEEK_TIME' BEGIN 

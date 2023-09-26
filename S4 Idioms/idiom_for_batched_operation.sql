@@ -6,7 +6,8 @@
 							the loop will stop, 
 									but, rather than 'failing silently', would be way better to throw some sort of ugly exception "i.e., woah, come look at this".
 
-
+			- BUG: 
+				@MaxExecutionSeconds ends up being HARD-CODED into the code (vs being a @variable ... i put, in, say 800 (or the variable's value).
 
 
 		BADGER v2:
