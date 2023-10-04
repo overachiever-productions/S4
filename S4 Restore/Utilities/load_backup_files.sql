@@ -1,5 +1,13 @@
 /*
 
+	ADMINDB: 
+		- This needs a full-ish rewrite - something where the primary focus is more on LSNs than timestamps. 
+		- And, needs to account for equivalent of @StopAt logic as well - right out of the gate. 
+		- I think it probably also makes more sense to get a full list of all files to restore based on the FULL ... 
+		-		i.e., if RESTORE-type = FULL, don't just get the last FULL, get FULL + DIFF + LOG - based on whether or not LOGs are to be applied or not. 
+		-			YES, there will be additional 'checks' for more T-LOGs after everything above is restored, but that's a lot easier to process than the current
+		--				implementation below which kind of treats the difference between FULL | DIFF and LOG as 'stateless' and tries to rebuild correct-ish LSNs/sequences on the fly. 
+
     NOTES: 
         - This sproc adheres to the PROJECT/REPLY usage convention.
 
@@ -343,10 +351,93 @@ AS
 			WHERE 
 				[modified_timestamp] IS NOT NULL;
 		END;
-SELECT * FROM @orderedResults;
+		
 	END;
 
-	-- Mode Processing: 
+	/*
+		Need to account for a scenario where FULL/DIFF backup EXTENDS to or past the end of a T-LOG Backup running concurrently
+		What follows below is a BIT of a hack... because it only looks for LSNs when we're dealing with FULL/DIFF and a LOG backup. 
+			i.e., the non-HACK way would be to effectively ONLY(ish) look at LSNs. 	
+	*/
+	IF UPPER(@Mode) IN (N'LOG', N'LIST') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
+		/* This is a fairly nasty hack... */
+		SELECT @LastAppliedFile = output FROM @orderedResults WHERE id = (SELECT MAX(id) FROM @orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] < @LastAppliedFinishTime)
+	END;
+
+	IF @LastAppliedFile LIKE N'FULL%' OR @LastAppliedFile LIKE N'DIFF%' BEGIN
+		DECLARE @currentFileName varchar(500);
+		DECLARE @lowerId int = ISNULL((SELECT id FROM @orderedResults WHERE [output] = @LastAppliedFile), 2) - 1; 
+		IF @lowerId < 1 SET @lowerId = 1;
+
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			[output]
+		FROM 
+			@orderedResults
+		WHERE 
+			id >= @lowerID
+			-- TODO / vNEXT: if/when there's an @StopTime feature added, put an upper bound on any rows > @StopTime - i.e., AND timestamp < @StopAt.
+		ORDER BY 
+			[id];
+
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @currentFileName;
+	
+		WHILE @@FETCH_STATUS = 0 BEGIN
+	
+				SET @headerFullPath = @SourcePath + N'\' + @currentFileName;
+				SET @firstLSN = NULL;
+				SET @lastLSN = NULL;			
+		
+				EXEC dbo.[load_header_details]
+					@BackupPath = @headerFullPath,
+					@BackupDate = NULL,
+					@BackupSize = NULL,
+					@Compressed = NULL,
+					@Encrypted = NULL,
+					@FirstLSN = @firstLSN OUTPUT,
+					@LastLSN = @lastLSN OUTPUT; 
+
+				UPDATE @orderedResults 
+				SET 
+					[first_lsn] = @firstLSN, 
+					[last_lsn] = @lastLSN
+				WHERE 
+					[output] = @currentFileName;
+	
+			FETCH NEXT FROM [walker] INTO @currentFileName;
+		END;
+	
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		SELECT @fullOrDiffLastLSN = last_lsn FROM @orderedResults WHERE [output] = @LastAppliedFile;
+
+		WITH tweaker AS ( 
+			SELECT 
+				r.[output], 
+				CASE WHEN [r].[first_lsn] <= @fullOrDiffLastLSN AND r.[last_lsn] >= @fullOrDiffLastLSN THEN 1 ELSE 0 END [should_include]
+			FROM 
+				@orderedResults r
+		)
+
+		UPDATE x 
+		SET 
+			[x].[modified_timestamp] = DATEADD(MILLISECOND, 500, @LastAppliedFinishTime)
+		FROM 
+			@orderedResults x
+			INNER JOIN [tweaker] t ON [x].[output] = [t].[output]
+		WHERE 
+			t.[should_include] = 1
+			AND x.[output] LIKE N'LOG%';
+
+		UPDATE @orderedResults
+		SET 
+			[timestamp] = [modified_timestamp] 
+		WHERE 
+			[modified_timestamp] IS NOT NULL;
+	END;
+
 	IF UPPER(@Mode) = N'LIST' BEGIN 
 
 		IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 
@@ -393,6 +484,7 @@ SELECT * FROM @orderedResults;
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
+
 		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
 		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
