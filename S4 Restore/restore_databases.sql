@@ -6,7 +6,6 @@
                 Typically, because these are 2x explicit operations - it'll be HARD to 'hose yourself'. 
                 HOWEVER, if you copy/paste + tweak a set of previously defined parameters to create a new set of parameters
                     you COULD accidentally leave BOTH of the above conditions true AND specify the name of a DB that you do NOT want to overwrite. 
-
         - NOT supported (i.e., won't even work) on Express editions (due to alerting options).
 
 

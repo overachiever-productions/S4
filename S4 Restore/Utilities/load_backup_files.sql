@@ -21,33 +21,6 @@
 							This could/would/did lead to the dreaded "This LSN is too recent to apply... " errors... for which S4 code USED to try and 'loop' through the next N T-LOGs as a work-around).
 
 
-	PROBLEM/ISSUE: 
-		It's ENTIRELY possible to have FULL (or DIFF) backups that execute CONCURRENTLY with T-LOG backups. In this kind of scenario, it's ENTIRELY possible for either of the following outcomes to occur: 
-				a. FULL supersedes current T-LOG meaning that if we have a FULL and T-LOG both created at 21:00... we'd do FULL_2100 + LOG_2110 (i..e, entirely next T-LOG - 10 mins later). 
-				or 
-				b. FULL and current/concurrent T-LOG overlap meaning we'd need FULL_2100 + LOG_2100 - or the 2 backups created at the SAME TIME (no 10 minute gap as above). 
-
-				The ONLY way to know - for sure - which scenario we're in is to look at the First/Last LSNs for the backups involved. 
-
-					In cases like this... 
-						I'd have to do the following in terms of business logic: 
-							a. watch for scenarios where T-LOGs 'overlapped' the previous FULL/DIFF
-							b. grab 'both' the overlapping and 'next' T-LOGs. 
-							c. when I have a scenario like this
-								i. read the header details for both 'concurrent' and 'next' T-LOGs 
-								ii. determine which one to use 'next' (i.e., LOG_2100 or LOG_2110?)
-								iii. keep the OUTPUT/DIRECTIVES 'clean' by skipping any T-LOGS not needed (or, hell, maybe just putting in a comment "-- overlaps, but too early so skipped" 
-										or whatever... 
-
-							otherwise, the LOGIC for how to detect which T-LOG is correct is to look at the 
-									???? 
-
-
-				It's also possible to 'cheat' and simply watch for Error 4326 "which is too early to apply to the database" and ... simply 'skip' to the next backup.
-					Or, in other words, if we always grab FULL_2100 + LOG_2100 + LOG_2110 ... we'd get 4326 on LOG_2100 in scenario B (but not in scenario A above - i.e., in scenario A, LOG_2100 would work)
-							and then simply, 'skip' to LOG_2110... 
-
-
 
 	SIGNATURES / EXAMPLES: 
 
@@ -122,6 +95,7 @@ CREATE PROC dbo.load_backup_files
 	@Output						xml						= N'<default/>'	    OUTPUT
 AS
 	SET NOCOUNT ON; 
+	SET ANSI_WARNINGS OFF;  -- for NULL/aggregates
 
 	-- {copyright}
 
@@ -233,7 +207,11 @@ AS
 	DECLARE @orderedResults table ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
 		[output] varchar(500) NOT NULL, 
-		[timestamp] datetime NULL
+		[timestamp] datetime NULL, 
+		[duplicate_id] int NULL, 
+		[first_lsn] decimal(25,0) NULL,
+		[last_lsn] decimal(25,0) NULL, 
+		[modified_timestamp] datetime NULL
 	);
 
 	INSERT INTO @orderedResults (
@@ -248,7 +226,125 @@ AS
 	WHERE 
 		[output] IS NOT NULL
 	ORDER BY 
-		[timestamp];
+		[timestamp], [output];  /* [output] is FILENAME, and needs to be included as an ORDER BY (ASC) to ensure that ties between FULL & LOG push LOG to the end, and that ties between DIFF & LOG push LOG to the end... */
+
+	/* 
+		Account for special/edge-case where FULL or DIFF + 'next' LOG backup both have the SAME timestamp (down to the second) 
+		And, the way this is done is: 
+			a) identify duplicate timestamps (to the second). 
+			b) check start/end LSNs for LOG, 
+			c) compare vs DIFF/FULL and see if overlaps 
+			d) if, so, 'bump' timestamp of LOG forward by .5 seconds - so it's now 'after' the FULL/DIFF.
+	*/
+	IF EXISTS (SELECT NULL FROM @orderedResults GROUP BY [timestamp] HAVING COUNT(*) > 1) BEGIN 
+
+		WITH duplicates AS ( 		
+			SELECT  
+				[timestamp], 
+				COUNT(*) [x], 
+				ROW_NUMBER() OVER (ORDER BY [timestamp]) [duplicate_id]
+			FROM 
+				@orderedResults 
+			GROUP BY	
+				[timestamp]
+			HAVING 
+				COUNT(*) > 1
+		) 
+
+		UPDATE x 
+		SET 
+			x.[duplicate_id] = d.[duplicate_id]
+		FROM 
+			@orderedResults x 
+			INNER JOIN [duplicates] d ON [x].[timestamp] = [d].[timestamp];
+		
+		DECLARE @duplicateTimestampFile varchar(500);
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			[output]
+		FROM 
+			@orderedResults 
+		WHERE  
+			[duplicate_id] IS NOT NULL 
+		ORDER BY 
+			[duplicate_id];
+		
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @duplicateTimestampFile;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			SET @headerFullPath = @SourcePath + N'\' + @duplicateTimestampFile;
+			SET @firstLSN = NULL;
+			SET @lastLSN = NULL;			
+		
+			EXEC dbo.[load_header_details]
+				@BackupPath = @headerFullPath,
+				@BackupDate = NULL,
+				@BackupSize = NULL,
+				@Compressed = NULL,
+				@Encrypted = NULL,
+				@FirstLSN = @firstLSN OUTPUT,
+				@LastLSN = @lastLSN OUTPUT; 
+
+			UPDATE @orderedResults 
+			SET 
+				[first_lsn] = @firstLSN, 
+				[last_lsn] = @lastLSN
+			WHERE 
+				[output] = @duplicateTimestampFile;
+
+			FETCH NEXT FROM [walker] INTO @duplicateTimestampFile;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		DECLARE @duplicateID int = 1; 
+		DECLARE @maxDuplicateID int = (SELECT MAX(duplicate_id) FROM @orderedResults); 
+
+		DECLARE @logFirstLSN decimal(25,0), @logLastLSN decimal(25,0), @fullOrDiffLastLSN decimal(25,2);
+
+		WHILE @duplicateID <= @maxDuplicateID BEGIN 
+
+			SELECT
+				@logFirstLSN = first_lsn, 
+				@logLastLSN = last_lsn
+			FROM 
+				@orderedResults 
+			WHERE 
+				[duplicate_id] = @duplicateID 
+				AND [output] LIKE 'LOG%'
+
+			SELECT 
+				@fullOrDiffLastLSN = last_lsn 
+			FROM 
+				@orderedResults 
+			WHERE 
+				[duplicate_id] = @duplicateID 
+				AND [output] NOT LIKE 'LOG%'
+
+			IF @logFirstLSN <= @fullOrDiffLastLSN AND @logLastLSN >= @fullOrDiffLastLSN BEGIN 
+				UPDATE @orderedResults 
+				SET 
+					[modified_timestamp] = DATEADD(MILLISECOND, 500, [timestamp])
+				WHERE 
+					[duplicate_id] = @duplicateID 
+					AND [output] LIKE 'LOG%'
+			END;
+
+			SET @duplicateID = @duplicateID +1; 
+		END;
+
+		IF EXISTS (SELECT NULL FROM @orderedResults WHERE [modified_timestamp] IS NOT NULL) BEGIN 
+			UPDATE @orderedResults 
+			SET 
+				[timestamp] = [modified_timestamp]
+			WHERE 
+				[modified_timestamp] IS NOT NULL;
+		END;
+SELECT * FROM @orderedResults;
+	END;
 
 	-- Mode Processing: 
 	IF UPPER(@Mode) = N'LIST' BEGIN 
@@ -287,7 +383,6 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'DIFF' BEGIN 
-		-- start by deleting since the most recent file processed: 
 		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
 
 		-- now dump everything but the most recent DIFF - if there is one: 
@@ -298,8 +393,6 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
---SELECT @firstLSN [firstLSN], @lastLSN [lastLSN];
-
 		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
 		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
 	END;
