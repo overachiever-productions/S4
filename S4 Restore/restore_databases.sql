@@ -1059,7 +1059,9 @@ NextDatabase:
 			SET @statusDetail = NULL;
           END;
 		ELSE BEGIN 
-			PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+			IF (SELECT COUNT(*) FROM @dbsToRestore) < 8 BEGIN /* If there are LOTS of DBs, then this'll 'fill up' the SQL Server Agent job-history 'buffer' so'z we don't get any error details if/when they happen. */
+				PRINT N'-- Operations for database [' + @restoredName + N'] completed successfully.' + @crlf + @crlf;
+			END;
 		END; 
 
 		-- serialize restored file details and push into dbo.restore_log
