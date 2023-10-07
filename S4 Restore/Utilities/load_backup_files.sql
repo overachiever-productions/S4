@@ -97,7 +97,7 @@ CREATE PROC dbo.load_backup_files
 	@DatabaseToRestore			sysname,
 	@SourcePath					nvarchar(400), 
 	@Mode						sysname,				-- FULL | DIFF | LOG | LIST			-- where LIST = 'raw'/translated results.
-	@LastAppliedFile			nvarchar(400)			= NULL,	
+	@LastAppliedFile			nvarchar(400)			= NULL,	  -- Hmmm. 260 chars is max prior to Windows Server 2016 - and need a REGISTRY tweak to support 1024: https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
 -- TODO: 
 -- REFACTOR: call this @BackupFinishTimeOfLastAppliedBackup ... er, well, that's what this IS... it's NOT the FINISH time of the last APPLY operation. 
 	@LastAppliedFinishTime		datetime				= NULL, 
@@ -160,8 +160,8 @@ AS
 		[output] IS NOT NULL;
 
 	IF EXISTS (SELECT NULL FROM @results WHERE [timestamp] IS NULL) BEGIN 
-		DECLARE @fileName sysname;
-		DECLARE @headerFullPath sysname;
+		DECLARE @fileName varchar(500);
+		DECLARE @headerFullPath nvarchar(1024);  -- using optimal LONG value... even though it might not be configured. https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
 		DECLARE @headerBackupTime datetime;
 		DECLARE @rowId int;
 
