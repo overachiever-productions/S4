@@ -7,6 +7,7 @@
 		-		i.e., if RESTORE-type = FULL, don't just get the last FULL, get FULL + DIFF + LOG - based on whether or not LOGs are to be applied or not. 
 		-			YES, there will be additional 'checks' for more T-LOGs after everything above is restored, but that's a lot easier to process than the current
 		--				implementation below which kind of treats the difference between FULL | DIFF and LOG as 'stateless' and tries to rebuild correct-ish LSNs/sequences on the fly. 
+		-- See https://overachieverllc.atlassian.net/browse/S4-510 for more info/insights.
 
     NOTES: 
         - This sproc adheres to the PROJECT/REPLY usage convention.
@@ -219,7 +220,8 @@ AS
 		[duplicate_id] int NULL, 
 		[first_lsn] decimal(25,0) NULL,
 		[last_lsn] decimal(25,0) NULL, 
-		[modified_timestamp] datetime NULL
+		[modified_timestamp] datetime NULL, 
+		[should_include] bit DEFAULT(0) NOT NULL
 	);
 
 	INSERT INTO @orderedResults (
@@ -385,25 +387,25 @@ AS
 	
 		WHILE @@FETCH_STATUS = 0 BEGIN
 	
-				SET @headerFullPath = @SourcePath + N'\' + @currentFileName;
-				SET @firstLSN = NULL;
-				SET @lastLSN = NULL;			
+			SET @headerFullPath = @SourcePath + N'\' + @currentFileName;
+			SET @firstLSN = NULL;
+			SET @lastLSN = NULL;			
 		
-				EXEC dbo.[load_header_details]
-					@BackupPath = @headerFullPath,
-					@BackupDate = NULL,
-					@BackupSize = NULL,
-					@Compressed = NULL,
-					@Encrypted = NULL,
-					@FirstLSN = @firstLSN OUTPUT,
-					@LastLSN = @lastLSN OUTPUT; 
+			EXEC dbo.[load_header_details]
+				@BackupPath = @headerFullPath,
+				@BackupDate = NULL,
+				@BackupSize = NULL,
+				@Compressed = NULL,
+				@Encrypted = NULL,
+				@FirstLSN = @firstLSN OUTPUT,
+				@LastLSN = @lastLSN OUTPUT; 
 
-				UPDATE @orderedResults 
-				SET 
-					[first_lsn] = @firstLSN, 
-					[last_lsn] = @lastLSN
-				WHERE 
-					[output] = @currentFileName;
+			UPDATE @orderedResults 
+			SET 
+				[first_lsn] = @firstLSN, 
+				[last_lsn] = @lastLSN
+			WHERE 
+				[output] = @currentFileName;
 	
 			FETCH NEXT FROM [walker] INTO @currentFileName;
 		END;
@@ -423,7 +425,7 @@ AS
 
 		UPDATE x 
 		SET 
-			[x].[modified_timestamp] = DATEADD(MILLISECOND, 500, @LastAppliedFinishTime)
+			[x].[should_include] = t.should_include
 		FROM 
 			@orderedResults x
 			INNER JOIN [tweaker] t ON [x].[output] = [t].[output]
@@ -431,11 +433,22 @@ AS
 			t.[should_include] = 1
 			AND x.[output] LIKE N'LOG%';
 
-		UPDATE @orderedResults
+
+		/* Additional 'special use case' for scenarios where MULTIPLE T-LOGs have been executing while a DIFF or FULL was being created */
+		UPDATE @orderedResults 
 		SET 
-			[timestamp] = [modified_timestamp] 
+			should_include = 1 
 		WHERE 
-			[modified_timestamp] IS NOT NULL;
+			[output] LIKE N'%LOG%' 
+			AND [timestamp] <= @LastAppliedFinishTime 
+			AND [id] > (SELECT MAX(id) FROM @orderedResults WHERE should_include = 1);
+
+		/* This is a bit of an odd/weird hack - i.e., I could also exclude [should_include] = 1 from DELETE operations down below) */
+		UPDATE @orderedResults 
+		SET 
+			[timestamp] = DATEADD(MILLISECOND, 500, @LastAppliedFinishTime) 
+		WHERE 
+			should_include = 1; 
 	END;
 
 	IF UPPER(@Mode) = N'LIST' BEGIN 
