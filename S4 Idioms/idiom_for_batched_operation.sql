@@ -6,10 +6,6 @@
 							the loop will stop, 
 									but, rather than 'failing silently', would be way better to throw some sort of ugly exception "i.e., woah, come look at this".
 
-			- BUG: 
-				@MaxExecutionSeconds ends up being HARD-CODED into the code (vs being a @variable ... i put, in, say 800 (or the variable's value).
-
-
 		BADGER v2:
 			- Change @batchStart to @loopStart - or something similar - so that I know it's the current 'loop' or iteration - vs ... potentially being when the JOB itself starts. 
 				as in, there's an implied @JobStart/@OperationStart that makes sense to set at the start of the sproc (for cases where I'm deleting records > x days old, the code is DATEADD(DAY, 0 - @DaysBack, @SprocStartTime_Or_ProcessingStartTime)
@@ -176,7 +172,7 @@ CREATE TABLE [{logging_table_name}] (
 ); 
 
 DECLARE @WaitForDelay sysname = N''{wait_for}''; 
-DECLARE @BatchSize int = {batch_size};{Max_Allowed_Errors}{Dynamic_Batching_Params}
+DECLARE @BatchSize int = {batch_size};{Max_Allowed_Errors}{Dynamic_Batching_Params}{Max_Execution_Seconds}
 
 -- Processing (variables/etc.)
 DECLARE @continue bit = 1;
@@ -220,6 +216,13 @@ DECLARE @initialBatchSize int = @BatchSize;
 	ELSE BEGIN 
 		SET @initialization = REPLACE(@initialization, N'{Dynamic_Batching_Params}', N'');
 		SET @initialization = REPLACE(@initialization, N'{dynamic_batching_declarations}', N'{}');
+	END;
+
+	IF @MaxExecutionSeconds > 0 BEGIN 
+		SET @initialization = REPLACE(@initialization, N'{Max_Execution_Seconds}', @crlf + N'DECLARE @MaxExecutionSeconds int = ' + CAST(@MaxExecutionSeconds AS sysname) + N';');
+	  END; 
+	ELSE BEGIN 
+		SET @initialization = REPLACE(@initialization, N'{Max_Execution_Seconds}', N'');
 	END;
 
 	---------------------------------------------------------------------------------------------------
@@ -417,7 +420,7 @@ END;
 	END;
 
 	IF @MaxExecutionSeconds > 0 BEGIN 
-		SET @maxSeconds = REPLACE(@maxSeconds, N'{Max_Allowed_Execution_Seconds}', @MaxExecutionSeconds);
+		SET @maxSeconds = REPLACE(@maxSeconds, N'{Max_Allowed_Execution_Seconds}', N'@MaxExecutionSeconds');
 		SET @body = REPLACE(@body, N'{MaxSeconds}', @crlf + @crlf + @tab + @tab + @maxSeconds);
 
 	  END; 
