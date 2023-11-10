@@ -40,7 +40,8 @@ CREATE PROC dbo.[idiom_for_batched_operation]
 	@BatchSize							int, 
 	@WaitFor							sysname				= N'00:00:01.500',
 	@BatchStatement						nvarchar(MAX)		= NULL,
-	@BatchModeStatementType				sysname				= N'DELETE',   -- { DELETE | MOVE | NONE } 
+	@BatchModeStatementType				sysname				= N'DELETE',	-- { DELETE | MOVE | NONE } 
+	@StrictRowCountMode					sysname				= N'THROW',		-- { NONE | WARN | THROW }  -- where THROW = ROLLBACK & throw. @StrictRowCountMode = a safety mechanism. Assume we're working against some 'child' table, and expect to delete 1000 rows, but manage to DELET, say, 80,890 rows instead - because an FK/JOIN is muffed in our @BatchStatement? At that point, it'd be NICE to have a ROLLBACK and THROW ... vs just keeping on going.
 	@LoggingTableName					sysname				= N'{DEFAULT}',
 	@MaxExecutionSeconds				int					= NULL, 
 	@AllowDynamicBatchSizing			bit					= 1, 
@@ -163,16 +164,17 @@ AS
 ---------------------------------------------------------------------------------------------------------------
 SET NOCOUNT ON; 
 
--- DROP TABLE IF EXISTS [{logging_table_name}];
+DROP TABLE IF EXISTS [{logging_table_name}];
 CREATE TABLE [{logging_table_name}] (
 	[detail_id] int IDENTITY(1,1) NOT NULL, 
 	[timestamp] datetime NOT NULL DEFAULT GETDATE(), 
 	[is_error] bit NOT NULL DEFAULT (0), 
+	[rolled_back] bit NOT NULL DEFAULT (0),
 	[detail] nvarchar(MAX) NOT NULL
 ); 
 
 DECLARE @WaitForDelay sysname = N''{wait_for}''; 
-DECLARE @BatchSize int = {batch_size};{Max_Allowed_Errors}{Dynamic_Batching_Params}{Max_Execution_Seconds}
+DECLARE @BatchSize int = {batch_size};{Max_Allowed_Errors}{Dynamic_Batching_Params}{Max_Execution_Seconds}{strict_rowcount_mode}
 
 -- Processing (variables/etc.)
 DECLARE @continue bit = 1;
@@ -183,7 +185,6 @@ DECLARE @errorsOccured bit = 0;
 DECLARE @currentErrorCount int = 0;{deadlock_declaration}
 DECLARE @startTime datetime = GETDATE();
 DECLARE @batchStart datetime;{dynamic_batching_declarations}
-
 ';
 	
 	SET @initialization = REPLACE(@initialization, N'{logging_table_name}', @LoggingTableName);
@@ -225,6 +226,13 @@ DECLARE @initialBatchSize int = @BatchSize;
 		SET @initialization = REPLACE(@initialization, N'{Max_Execution_Seconds}', N'');
 	END;
 
+	IF @StrictRowCountMode = N'NONE' BEGIN 
+		SET @initialization = REPLACE(@initialization, N'{strict_rowcount_mode}', N'');
+	  END;
+	ELSE BEGIN 
+		SET @initialization = REPLACE(@initialization, N'{strict_rowcount_mode}', @crlf + N'DECLARE @StrictRowCountMode sysname = ''' + @StrictRowCountMode + N''';');
+	END;
+
 	---------------------------------------------------------------------------------------------------
 	-- Body:
 	---------------------------------------------------------------------------------------------------
@@ -254,7 +262,7 @@ WHILE @continue = 1 BEGIN
 
 		COMMIT; 
 
-		IF @currentRowsProcessed <> @BatchSize SET @continue = 0;
+		IF @currentRowsProcessed <> @BatchSize SET @continue = 0;{StrictRowCountHandling}
 
 		INSERT INTO [{logging_table_name}] (
 			[timestamp],
@@ -279,8 +287,11 @@ WHILE @continue = 1 BEGIN
 			
 		{TreatDeadlocksAsErrors}SELECT @errorDetails = N''Error Number: '' + CAST(ERROR_NUMBER() AS sysname) + N''. Message: '' + ERROR_MESSAGE();
 
-		IF @@TRANCOUNT > 0
+		IF @@TRANCOUNT > 0 BEGIN
 			ROLLBACK; 
+			PRINT ''rolled back'';
+			--SET @rolledBack = 1;
+		END;
 
 		INSERT INTO [{logging_table_name}] (
 			[timestamp],
@@ -411,6 +422,16 @@ END;
 
 			GOTO Finalize;
 		END;';
+	DECLARE @strictRowCountHandling nvarchar(MAX) = N'IF @currentRowsProcessed > @BatchSize BEGIN 
+			
+			IF UPPER(@StrictRowCountMode) = N''WARN'' BEGIN 
+				PRINT ''hmmm.. treat this as an error, print it? or ... what?''; -- can''t be an error, that''d cause a rollback... so, need a decent way to warn... MAYBE add a WARNING column to the #logging_table?
+			  END; 
+			ELSE BEGIN 
+				-- NOTE: no need to EXPLICITLY execute a ROLLBACK, because a ROLLBACK will be tackled in the CATCH. 
+				RAISERROR(N''Fatal Exception. @StrictRowCountMode is enabled and # of rows (%i) processed in current ''''loop'''' was greater than @BatchSize (%i)'', 16, 1, @currentRowsProcessed, @BatchSize);
+			END; 
+		END;';
 
 	IF @MaxAllowedErrors > 1 BEGIN 
 		SET @body = REPLACE(@body, N'{MaxErrors}', @maxErrors);
@@ -448,6 +469,13 @@ END;
 	  END;
 	ELSE BEGIN
 		SET @body = REPLACE(@body, N'{TreatDeadlocksAsErrors}', N'');
+	END;
+
+	IF UPPER(@StrictRowCountMode) = N'NONE' BEGIN 
+		SET @body = REPLACE(@body, N'{StrictRowCountHandling}', N'');
+	  END; 
+	ELSE BEGIN 
+		SET @body = REPLACE(@body, N'{StrictRowCountHandling}', @crlf + @crlf + @tab + @tab + @strictRowCountHandling);
 	END;
 
 	SET @body = REPLACE(@body, N'{Batch_Statement}', @tab + @tab + @tab + @BatchStatement);
