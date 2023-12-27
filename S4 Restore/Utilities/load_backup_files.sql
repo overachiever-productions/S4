@@ -141,25 +141,25 @@ AS
 		END;
 	END;
 
-	DECLARE @results table ([id] int IDENTITY(1,1) NOT NULL, [output] varchar(500), [timestamp] datetime NULL);
+	CREATE TABLE #results ([id] int IDENTITY(1,1) NOT NULL, [output] varchar(500), [timestamp] datetime NULL);
 
 	DECLARE @command varchar(2000);
 	SET @command = 'dir "' + @SourcePath + '\" /B /A-D /OD';
 
-	INSERT INTO @results ([output])
+	INSERT INTO #results ([output])
 	EXEC xp_cmdshell 
 		@stmt = @command;
 
 	-- High-level Cleanup: 
-	DELETE FROM @results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
+	DELETE FROM #results WHERE [output] IS NULL OR [output] NOT LIKE '%' + @DatabaseToRestore + '%';
 
-	UPDATE @results
+	UPDATE #results
 	SET 
 		[timestamp] = dbo.[parse_backup_filename_timestamp]([output])
 	WHERE 
 		[output] IS NOT NULL;
 
-	IF EXISTS (SELECT NULL FROM @results WHERE [timestamp] IS NULL) BEGIN 
+	IF EXISTS (SELECT NULL FROM #results WHERE [timestamp] IS NULL) BEGIN 
 		DECLARE @fileName varchar(500);
 		DECLARE @headerFullPath nvarchar(1024);  -- using optimal LONG value... even though it might not be configured. https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
 		DECLARE @headerBackupTime datetime;
@@ -170,7 +170,7 @@ AS
 			[id],
 			[output]
 		FROM 
-			@results 
+			#results 
 		WHERE 
 			[timestamp] IS NULL
 		ORDER BY 
@@ -193,7 +193,7 @@ AS
 					@LastLSN = NULL; 
 
 				IF @headerBackupTime IS NOT NULL BEGIN 
-					UPDATE @results 
+					UPDATE #results 
 					SET 
 						[timestamp] = @headerBackupTime
 					WHERE 
@@ -210,7 +210,7 @@ AS
 		CLOSE [walker];
 		DEALLOCATE [walker];
 
-		DELETE FROM @results WHERE [timestamp] IS NULL;  -- again, assume that any .bak/.trn files that don't adhere to conventions and/or which aren't legit backups are in place explicitly.
+		DELETE FROM #results WHERE [timestamp] IS NULL;  -- again, assume that any .bak/.trn files that don't adhere to conventions and/or which aren't legit backups are in place explicitly.
 	END;
 
 	DECLARE @orderedResults table ( 
@@ -232,7 +232,7 @@ AS
 		[output], 
 		[timestamp]
 	FROM 
-		@results 
+		#results 
 	WHERE 
 		[output] IS NOT NULL
 	ORDER BY 
