@@ -101,6 +101,7 @@ CREATE PROC dbo.load_backup_files
 -- TODO: 
 -- REFACTOR: call this @BackupFinishTimeOfLastAppliedBackup ... er, well, that's what this IS... it's NOT the FINISH time of the last APPLY operation. 
 	@LastAppliedFinishTime		datetime				= NULL, 
+	@StopAt						datetime				= NULL,
 	@Output						xml						= N'<default/>'	    OUTPUT
 AS
 	SET NOCOUNT ON; 
@@ -213,7 +214,7 @@ AS
 		DELETE FROM #results WHERE [timestamp] IS NULL;  -- again, assume that any .bak/.trn files that don't adhere to conventions and/or which aren't legit backups are in place explicitly.
 	END;
 
-	DECLARE @orderedResults table ( 
+	CREATE TABLE #orderedResults ( 
 		[id] int IDENTITY(1,1) NOT NULL, 
 		[output] varchar(500) NOT NULL, 
 		[timestamp] datetime NULL, 
@@ -224,7 +225,7 @@ AS
 		[should_include] bit DEFAULT(0) NOT NULL
 	);
 
-	INSERT INTO @orderedResults (
+	INSERT INTO #orderedResults (
 		[output],
 		[timestamp]
 	)
@@ -246,7 +247,7 @@ AS
 			c) compare vs DIFF/FULL and see if overlaps 
 			d) if, so, 'bump' timestamp of LOG forward by .5 seconds - so it's now 'after' the FULL/DIFF.
 	*/
-	IF EXISTS (SELECT NULL FROM @orderedResults GROUP BY [timestamp] HAVING COUNT(*) > 1) BEGIN 
+	IF EXISTS (SELECT NULL FROM #orderedResults GROUP BY [timestamp] HAVING COUNT(*) > 1) BEGIN 
 
 		WITH duplicates AS ( 		
 			SELECT  
@@ -254,7 +255,7 @@ AS
 				COUNT(*) [x], 
 				ROW_NUMBER() OVER (ORDER BY [timestamp]) [duplicate_id]
 			FROM 
-				@orderedResults 
+				#orderedResults 
 			GROUP BY	
 				[timestamp]
 			HAVING 
@@ -265,7 +266,7 @@ AS
 		SET 
 			x.[duplicate_id] = d.[duplicate_id]
 		FROM 
-			@orderedResults x 
+			#orderedResults x 
 			INNER JOIN [duplicates] d ON [x].[timestamp] = [d].[timestamp];
 		
 		DECLARE @duplicateTimestampFile varchar(500);
@@ -273,7 +274,7 @@ AS
 		SELECT 
 			[output]
 		FROM 
-			@orderedResults 
+			#orderedResults 
 		WHERE  
 			[duplicate_id] IS NOT NULL 
 		ORDER BY 
@@ -297,7 +298,7 @@ AS
 				@FirstLSN = @firstLSN OUTPUT,
 				@LastLSN = @lastLSN OUTPUT; 
 
-			UPDATE @orderedResults 
+			UPDATE #orderedResults 
 			SET 
 				[first_lsn] = @firstLSN, 
 				[last_lsn] = @lastLSN
@@ -311,7 +312,7 @@ AS
 		DEALLOCATE [walker];
 
 		DECLARE @duplicateID int = 1; 
-		DECLARE @maxDuplicateID int = (SELECT MAX(duplicate_id) FROM @orderedResults); 
+		DECLARE @maxDuplicateID int = (SELECT MAX(duplicate_id) FROM #orderedResults); 
 
 		DECLARE @logFirstLSN decimal(25,0), @logLastLSN decimal(25,0), @fullOrDiffLastLSN decimal(25,2);
 
@@ -321,7 +322,7 @@ AS
 				@logFirstLSN = first_lsn, 
 				@logLastLSN = last_lsn
 			FROM 
-				@orderedResults 
+				#orderedResults 
 			WHERE 
 				[duplicate_id] = @duplicateID 
 				AND [output] LIKE 'LOG%'
@@ -329,13 +330,13 @@ AS
 			SELECT 
 				@fullOrDiffLastLSN = last_lsn 
 			FROM 
-				@orderedResults 
+				#orderedResults 
 			WHERE 
 				[duplicate_id] = @duplicateID 
 				AND [output] NOT LIKE 'LOG%'
 
 			IF @logFirstLSN <= @fullOrDiffLastLSN AND @logLastLSN >= @fullOrDiffLastLSN BEGIN 
-				UPDATE @orderedResults 
+				UPDATE #orderedResults 
 				SET 
 					[modified_timestamp] = DATEADD(MILLISECOND, 500, [timestamp])
 				WHERE 
@@ -346,8 +347,8 @@ AS
 			SET @duplicateID = @duplicateID +1; 
 		END;
 
-		IF EXISTS (SELECT NULL FROM @orderedResults WHERE [modified_timestamp] IS NOT NULL) BEGIN 
-			UPDATE @orderedResults 
+		IF EXISTS (SELECT NULL FROM #orderedResults WHERE [modified_timestamp] IS NOT NULL) BEGIN 
+			UPDATE #orderedResults 
 			SET 
 				[timestamp] = [modified_timestamp]
 			WHERE 
@@ -363,19 +364,19 @@ AS
 	*/
 	IF UPPER(@Mode) IN (N'LOG', N'LIST') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
 		/* This is a fairly nasty hack... */
-		SELECT @LastAppliedFile = output FROM @orderedResults WHERE id = (SELECT MAX(id) FROM @orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] < @LastAppliedFinishTime)
+		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] < @LastAppliedFinishTime)
 	END;
 
 	IF @LastAppliedFile LIKE N'FULL%' OR @LastAppliedFile LIKE N'DIFF%' BEGIN
 		DECLARE @currentFileName varchar(500);
-		DECLARE @lowerId int = ISNULL((SELECT id FROM @orderedResults WHERE [output] = @LastAppliedFile), 2) - 1; 
+		DECLARE @lowerId int = ISNULL((SELECT id FROM #orderedResults WHERE [output] = @LastAppliedFile), 2) - 1; 
 		IF @lowerId < 1 SET @lowerId = 1;
 
 		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
 			[output]
 		FROM 
-			@orderedResults
+			#orderedResults
 		WHERE 
 			id >= @lowerID
 			-- TODO / vNEXT: if/when there's an @StopTime feature added, put an upper bound on any rows > @StopTime - i.e., AND timestamp < @StopAt.
@@ -400,7 +401,7 @@ AS
 				@FirstLSN = @firstLSN OUTPUT,
 				@LastLSN = @lastLSN OUTPUT; 
 
-			UPDATE @orderedResults 
+			UPDATE #orderedResults 
 			SET 
 				[first_lsn] = @firstLSN, 
 				[last_lsn] = @lastLSN
@@ -413,21 +414,21 @@ AS
 		CLOSE [walker];
 		DEALLOCATE [walker];
 
-		SELECT @fullOrDiffLastLSN = last_lsn FROM @orderedResults WHERE [output] = @LastAppliedFile;
+		SELECT @fullOrDiffLastLSN = last_lsn FROM #orderedResults WHERE [output] = @LastAppliedFile;
 
 		WITH tweaker AS ( 
 			SELECT 
 				r.[output], 
 				CASE WHEN [r].[first_lsn] <= @fullOrDiffLastLSN AND r.[last_lsn] >= @fullOrDiffLastLSN THEN 1 ELSE 0 END [should_include]
 			FROM 
-				@orderedResults r
+				#orderedResults r
 		)
 
 		UPDATE x 
 		SET 
 			[x].[should_include] = t.should_include
 		FROM 
-			@orderedResults x
+			#orderedResults x
 			INNER JOIN [tweaker] t ON [x].[output] = [t].[output]
 		WHERE 
 			t.[should_include] = 1
@@ -435,16 +436,16 @@ AS
 
 
 		/* Additional 'special use case' for scenarios where MULTIPLE T-LOGs have been executing while a DIFF or FULL was being created */
-		UPDATE @orderedResults 
+		UPDATE #orderedResults 
 		SET 
 			should_include = 1 
 		WHERE 
 			[output] LIKE N'%LOG%' 
 			AND [timestamp] <= @LastAppliedFinishTime 
-			AND [id] > (SELECT MAX(id) FROM @orderedResults WHERE should_include = 1);
+			AND [id] > (SELECT MAX(id) FROM #orderedResults WHERE should_include = 1);
 
 		/* This is a bit of an odd/weird hack - i.e., I could also exclude [should_include] = 1 from DELETE operations down below) */
-		UPDATE @orderedResults 
+		UPDATE #orderedResults 
 		SET 
 			[timestamp] = DATEADD(MILLISECOND, 500, @LastAppliedFinishTime) 
 		WHERE 
@@ -460,7 +461,7 @@ AS
 				[output] [file/@file_name],
 				[timestamp] [file/@timestamp]
 			FROM 
-				@orderedResults 
+				#orderedResults 
 			ORDER BY 
 				id 
 			FOR XML PATH(''), ROOT('files'));
@@ -474,7 +475,7 @@ AS
 			[output] [file_name],
 			[timestamp] 
 		FROM 
-			@orderedResults 
+			#orderedResults 
 		ORDER BY 
 			[id];
 
@@ -482,33 +483,47 @@ AS
     END;
 
 	IF UPPER(@Mode) = N'FULL' BEGIN
-		-- most recent full only: 
-		DELETE FROM @orderedResults WHERE id <> ISNULL((SELECT MAX(id) FROM @orderedResults WHERE [output] LIKE 'FULL%'), -1);
+		IF @StopAt IS NOT NULL BEGIN 
+			-- grab the most recent full before the STOP AT directive (vs the last/most-recent of all time):
+			DELETE FROM [#orderedResults] WHERE id <> ISNULL((SELECT MAX(id) FROM [#orderedResults] WHERE [output] LIKE 'FULL%' AND [timestamp] < @StopAt), -1);
+		  END;
+		ELSE BEGIN
+			-- most recent full only: 
+			DELETE FROM #orderedResults WHERE id <> ISNULL((SELECT MAX(id) FROM #orderedResults WHERE [output] LIKE 'FULL%'), -1);
+		END;
 	END;
 
 	IF UPPER(@Mode) = N'DIFF' BEGIN 
-		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
+		DELETE FROM #orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
 
 		-- now dump everything but the most recent DIFF - if there is one: 
-		IF EXISTS(SELECT NULL FROM @orderedResults WHERE [output] LIKE 'DIFF%')
-			DELETE FROM @orderedResults WHERE id <> (SELECT MAX(id) FROM @orderedResults WHERE [output] LIKE 'DIFF%'); 
+		IF EXISTS(SELECT NULL FROM #orderedResults WHERE [output] LIKE 'DIFF%') BEGIN
+			IF @StopAt IS NULL BEGIN
+				DELETE FROM #orderedResults WHERE id <> (SELECT MAX(id) FROM #orderedResults WHERE [output] LIKE 'DIFF%'); 
+			  END
+			ELSE BEGIN
+				DELETE FROM [#orderedResults] WHERE id <> ISNULL((SELECT MAX(id) FROM [#orderedResults] WHERE [output] LIKE 'DIFF%' AND [timestamp] < @StopAt), -1);	
+			END;
+		  END;
 		ELSE
-			DELETE FROM @orderedResults;
+			DELETE FROM #orderedResults;
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
+		DELETE FROM #orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
+		DELETE FROM #orderedResults WHERE [output] NOT LIKE 'LOG%';
 
-		DELETE FROM @orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
-		DELETE FROM @orderedResults WHERE [output] NOT LIKE 'LOG%';
+		IF @StopAt IS NOT NULL 
+			DELETE FROM [#orderedResults] WHERE id > (SELECT MIN(id) FROM [#orderedResults] WHERE [output] LIKE 'LOG%' AND [timestamp] > @StopAt);
 	END;
 
-    IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 
+    IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN 
         
 		SELECT @Output = (SELECT
 			[id] [file/@id],
 			[output] [file/@file_name]
 		FROM 
-			@orderedResults 
+			#orderedResults 
 		ORDER BY 
 			id 
 		FOR XML PATH(''), ROOT('files'));
@@ -516,11 +531,10 @@ AS
         RETURN 0;
     END;
 
-    -- otherwise, project:
     SELECT 
         [output]
     FROM 
-        @orderedResults
+        #orderedResults
     ORDER BY 
         [id];
 

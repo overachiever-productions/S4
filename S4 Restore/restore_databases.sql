@@ -103,7 +103,7 @@ CREATE PROC dbo.restore_databases
 	@SkipSanityChecks				bit				= 0,				-- ONLY evaluated if @RpoChecks are NULL. Similar to RPO tests - if restore is > 26 hours old, sends alerts about possible config error. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
-    @Directives						nvarchar(400)	= NULL,				-- { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
+    @Directives						nvarchar(400)	= NULL,				-- { PRESERVE_FILENAMES | RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
 	@OperatorName					sysname			= N'Alerts',
     @MailProfileName				sysname			= N'General',
     @EmailSubjectPrefix				nvarchar(50)	= N'[RESTORE TEST] ',
@@ -250,21 +250,34 @@ AS
 		END;
 	END;
 
+	DECLARE @stopAt datetime = NULL;
 	DECLARE @directivesText nvarchar(200) = N'';
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
-		SET @Directives = LTRIM(RTRIM(@Directives));
+		SET @Directives = UPPER(LTRIM(RTRIM(@Directives)));
 		
 		DECLARE @allDirectives table ( 
 			row_id int NOT NULL, 
-			directive sysname NOT NULL
+			directive sysname NOT NULL, 
+			detail sysname NULL
 		);
 
 		INSERT INTO @allDirectives ([row_id], [directive])
 		SELECT * FROM dbo.[split_string](@Directives, N',', 1);
 
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] LIKE 'STOPAT:%') BEGIN 
+			UPDATE @allDirectives 
+			SET 
+				[directive] = N'STOPAT',
+				[detail] = SUBSTRING([directive], CHARINDEX(N':', [directive]) + 1, LEN([directive]))
+			WHERE 
+				[directive] LIKE 'STOPAT:%'
+
+			SELECT @stopAt = CAST([detail] AS datetime) FROM @allDirectives WHERE [directive] = N'STOPAT';
+		END;
+
 		-- verify that only supported directives are defined: 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER', N'PRESERVE_FILENAMES')) BEGIN
-			RAISERROR(N'Invalid @Directives value specified. Permitted values are { RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }.', 16, 1);
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'STOPAT', N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER', N'PRESERVE_FILENAMES')) BEGIN
+			RAISERROR(N'Invalid @Directives value specified. Permitted values are { STOPAT:<datetime> | RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | PRESERVE_FILENAMES | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }.', 16, 1);
 			RETURN -20;
 		END;
 
@@ -274,7 +287,11 @@ AS
 			RETURN -21;
 		END;
 
-		SELECT @directivesText = @directivesText + [directive] + N', ' FROM @allDirectives ORDER BY [row_id];
+		SELECT @directivesText = @directivesText + [directive] + N', ' 
+		FROM @allDirectives 
+		WHERE 
+			[directive] <> N'STOPAT'
+		ORDER BY [row_id];
 	END;
 
 	-----------------------------------------------------------------------------
@@ -384,6 +401,7 @@ AS
 	DECLARE @serializedFileList xml = NULL; 
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
+	DECLARE @stopAtLog int = NULL;
 
 	DECLARE @restoredFileName nvarchar(MAX);
 	DECLARE @ndfCount int = 0;
@@ -394,7 +412,7 @@ AS
 
 	DECLARE @ignoredLogFiles int = 0;
 
-	DECLARE @logFilesToRestore table ( 
+	CREATE TABLE #logFilesToRestore ( 
 		id int IDENTITY(1,1) NOT NULL, 
 		log_file sysname NOT NULL
 	);
@@ -603,10 +621,16 @@ AS
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
             @Mode = N'FULL', 
+			@StopAt = @stopAt,
             @Output = @serializedFileList OUTPUT;
 		
 		IF(SELECT dbo.[is_xml_empty](@serializedFileList)) = 1 BEGIN
-			SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
+			IF @stopAt IS NOT NULL BEGIN 
+				SET @statusDetail = N'No FULL backup found for database [' + @databaseToRestore + N'] with STOPAT of ''' + CONVERT(sysname, @stopAt, 121) + N''' in "' + @sourcePath + N'".';
+			  END; 
+			ELSE 
+				SET @statusDetail = N'No FULL backups found for database [' + @databaseToRestore + N'] in "' + @sourcePath + N'".';
+
 			GOTO NextDatabase;	
 		END;
 
@@ -766,6 +790,7 @@ AS
             @DatabaseToRestore = @databaseToRestore, 
             @SourcePath = @sourcePath, 
             @Mode = N'DIFF', 
+			@StopAt = @stopAt,
 			@LastAppliedFinishTime = @backupDate, 
             @Output = @serializedFileList OUTPUT;
 		
@@ -828,13 +853,14 @@ AS
         IF @SkipLogBackups = 0 BEGIN
 			
 			-- reset values per every 'loop' of main processing body:
-			DELETE FROM @logFilesToRestore;
+			DELETE FROM #logFilesToRestore;
 
             SET @serializedFileList = NULL;
 			EXEC dbo.load_backup_files 
                 @DatabaseToRestore = @databaseToRestore, 
                 @SourcePath = @sourcePath, 
                 @Mode = N'LOG', 
+				@StopAt = @stopAt,
 				@LastAppliedFinishTime = @backupDate,
                 @Output = @serializedFileList OUTPUT;
 
@@ -846,22 +872,30 @@ AS
 					@serializedFileList.nodes('//file') [data]([row])
 			) 
 
-			INSERT INTO @logFilesToRestore ([log_file])
+			INSERT INTO #logFilesToRestore ([log_file])
 			SELECT [file_name] FROM [shredded] ORDER BY [id];
-			
+
 			-- re-update the counter: 
-			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM @logFilesToRestore), @currentLogFileID + 1);
+			SET @currentLogFileID = ISNULL((SELECT MIN(id) FROM #logFilesToRestore), @currentLogFileID + 1);
+
+			IF @stopAt IS NOT NULL BEGIN 
+				SELECT @stopAtLog = MAX(id) FROM [#logFilesToRestore];
+			END;
 
 			-- start a loop to process files while they're still available: 
-			WHILE EXISTS (SELECT NULL FROM @logFilesToRestore WHERE [id] = @currentLogFileID) BEGIN
+			WHILE EXISTS (SELECT NULL FROM #logFilesToRestore WHERE [id] = @currentLogFileID) BEGIN
 
-				SELECT @backupName = log_file FROM @logFilesToRestore WHERE id = @currentLogFileID;
+				SELECT @backupName = log_file FROM #logFilesToRestore WHERE id = @currentLogFileID;
 				SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName;
 
 				INSERT INTO @restoredFiles ([FileName], [Detected])
 				SELECT @backupName, GETDATE();
 
-                SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+				IF @stopAt IS NOT NULL AND @currentLogFileID = @stopAtLog BEGIN 
+					SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY, STOPAT = ''' + CONVERT(sysname, @stopAt, 121) + ''';';
+				  END;
+				ELSE 
+					SET @command = N'RESTORE LOG ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
                 
                 BEGIN TRY 
                     IF @PrintOnly = 1 BEGIN
@@ -906,30 +940,37 @@ AS
                 IF @statusDetail IS NOT NULL BEGIN
                     GOTO NextDatabase;
                 END;
+				
+				IF @stopAt IS NULL BEGIN
+					-- Check for any new files if we're now 'out' of files to process: 
+					--		 TODO: I think there's a bug NOT in the logic below, but in even GETTING to a point where this logic could be called. 
+					--				e.g., assume @SkipLogFiles = 0 ... and that there are NO log files available after getting a FULL or DIFF (because we've just barely had a FULL/DIFF created and no T-LOG backups have happened). 
+					--					then, assume that the FULL|DIFF takes ... 8-15 minutes to restore - and that there have been 1-N T-LOG backups in that time? Do we even GET to the logic below?
+					--				i don't THINK so... cuz we only got into this branch of logic BECAUSE there WERE extant T-LOGs when we initially checked... 
+					--			And, of course, the STOPAT checks above only complicate this bit of logic (not much ... cuz ... they're different logical paths... but, still.)
+					IF @currentLogFileID = (SELECT MAX(id) FROM #logFilesToRestore) BEGIN
 
-				-- Check for any new files if we're now 'out' of files to process: 
-				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
+						-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
+						SET @serializedFileList = NULL;
+						EXEC dbo.load_backup_files 
+							@DatabaseToRestore = @databaseToRestore, 
+							@SourcePath = @sourcePath, 
+							@Mode = N'LOG', 
+							@LastAppliedFinishTime = @backupDate,
+							@Output = @serializedFileList OUTPUT;
 
-					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
-                    SET @serializedFileList = NULL;
-					EXEC dbo.load_backup_files 
-                        @DatabaseToRestore = @databaseToRestore, 
-                        @SourcePath = @sourcePath, 
-                        @Mode = N'LOG', 
-						@LastAppliedFinishTime = @backupDate,
-                        @Output = @serializedFileList OUTPUT;
+						WITH shredded AS ( 
+							SELECT 
+								[data].[row].value('@id[1]', 'int') [id], 
+								[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+							FROM 
+								@serializedFileList.nodes('//file') [data]([row])
+						) 
 
-					WITH shredded AS ( 
-						SELECT 
-							[data].[row].value('@id[1]', 'int') [id], 
-							[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
-						FROM 
-							@serializedFileList.nodes('//file') [data]([row])
-					) 
-
-					INSERT INTO @logFilesToRestore ([log_file])
-					SELECT [file_name] FROM [shredded] WHERE [file_name] NOT IN (SELECT [log_file] FROM @logFilesToRestore)
-					ORDER BY [id];
+						INSERT INTO #logFilesToRestore ([log_file])
+						SELECT [file_name] FROM [shredded] WHERE [file_name] NOT IN (SELECT [log_file] FROM #logFilesToRestore)
+						ORDER BY [id];
+					END;
 				END;
 
 				-- increment: 
