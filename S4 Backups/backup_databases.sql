@@ -520,7 +520,7 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @now = GETDATE();
 		SET @timestamp = REPLACE(REPLACE(REPLACE(CONVERT(sysname, @now, 120), '-','_'), ':',''), ' ', '_');
-		SET @offset = RIGHT(CAST(CAST(RAND() AS decimal(12,11)) AS varchar(20)),7);
+		SET @offset = RIGHT(N'0000' + DATENAME(MILLISECOND, @now), 4) + RIGHT(CAST(CAST(RAND() AS decimal(12,11)) AS varchar(20)),3);
 		IF NULLIF(@markerOverride, N'') IS NOT NULL
 			SET @offset = @markerOverride;
 
