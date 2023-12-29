@@ -250,6 +250,7 @@ AS
 	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
+			('SINGLE_USER', 'Changed database context to %'),
 			('SINGLE_USER', 'Nonqualified transactions are being rolled back. Estimated rollback completion%');
 					
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'');
@@ -267,6 +268,14 @@ AS
 		-- PlaceHolder: there isn't, currently, any 'noise' output from Write-S3Object...
 
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{S3COPYFILE}', N'');
+	END;
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{OFFLINE}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('OFFLINE', 'Failed to restart the current database. The current database is switched to master%');
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{OFFLINE}', N'');
 	END;
 
 	-- TODO: {SHRINKLOG}
