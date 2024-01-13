@@ -94,9 +94,6 @@ AS
 		@MinRequiredTableRowCount = 0,
 		@SerializedOutput = @indexData OUTPUT; 
 
-
-	-- PICKUP/NEXT:
-	--	shred xml... 
 	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value(N'(table_name)[1]', N'sysname') [table_name], 
@@ -126,9 +123,7 @@ AS
 	FROM 
 		[shredded];
 
-
 	SELECT
-	--	[table_name],
 		[index_id],
 		[index_name],
 		[columns],
@@ -148,16 +143,12 @@ AS
 		#hydrated
 	ORDER BY 
 		[index_id];
-
 	
 	SELECT 
 		SUM(CASE WHEN [index_id] IN (0,1) THEN [allocated_mb] ELSE 0 END) [data], 
 		SUM(CASE WHEN [index_id] NOT IN (0,1) THEN [allocated_mb] ELSE 0 END) [index]
 	FROM 
 		[#hydrated] 
-
-
-
 
 	RETURN 0;
 GO
