@@ -1,7 +1,5 @@
 /*
 
-
-
 	pseudo-code for a consumer would be something like: 
 
 		xestore_extract_blocked_processes 
@@ -21,11 +19,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.xestore_extract_session_xml','P') IS NOT NULL
-	DROP PROC dbo.[xestore_extract_session_xml];
+IF OBJECT_ID('dbo.[eventstore_extract_session_xml]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_extract_session_xml];
 GO
 
-CREATE PROC dbo.[xestore_extract_session_xml]
+CREATE PROC dbo.[eventstore_extract_session_xml]
 	@SessionName				sysname, 
 	@Output						xml					OUTPUT, 
 	@ExtractionID				int					OUTPUT, 

@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.xestore_finalize_extraction','P') IS NOT NULL
-	DROP PROC dbo.[xestore_finalize_extraction];
+IF OBJECT_ID('dbo.[eventstore_finalize_extraction]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_finalize_extraction];
 GO
 
-CREATE PROC dbo.[xestore_finalize_extraction]
+CREATE PROC dbo.[eventstore_finalize_extraction]
 	@SessionName			sysname,
 	@ExtractionId			int, 
 	@Attributes				nvarchar(300)		= NULL

@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.xestore_initialize_extraction','P') IS NOT NULL
-	DROP PROC dbo.[xestore_initialize_extraction];
+IF OBJECT_ID('dbo.[eventstore_initialize_extraction]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_initialize_extraction];
 GO
 
-CREATE PROC dbo.[xestore_initialize_extraction]
+CREATE PROC dbo.[eventstore_initialize_extraction]
 	@SessionName					sysname, 
 	@ExtractionID					int					OUTPUT, 
 	@CET							datetime2			OUTPUT, 
