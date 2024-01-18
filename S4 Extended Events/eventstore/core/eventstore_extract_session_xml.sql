@@ -55,7 +55,7 @@ AS
 	DECLARE @lset datetime2;
 	DECLARE @attributes nvarchar(300);
 
-	EXEC dbo.[xestore_initialize_extraction]
+	EXEC dbo.[eventstore_initialize_extraction]
 		@SessionName = @SessionName,
 		@ExtractionID = @ExtractionID OUTPUT,
 		@CET = @cet OUTPUT,

@@ -31,7 +31,7 @@ AS
 	SELECT 
 		@maxID = MAX(extraction_id)
 	FROM 
-		[dbo].[xestore_extractions] 
+		[dbo].[eventstore_extractions] 
 	WHERE 
 		[session_name] = @SessionName 
 		AND [lset] IS NOT NULL;
@@ -40,14 +40,14 @@ AS
 		--@LSET = ISNULL([lset], @intializationLSET),	-- MKC: can't set ISNULL here... cuz, there won't ALWAYS be a row/result... 
 		@Attributes = [attributes]
 	FROM 
-		dbo.xestore_extractions 
+		dbo.[eventstore_extractions] 
 	WHERE 
 		[extraction_id] = @maxID;
 
 	SELECT @LSET = ISNULL(@LSET, @intializationLSET);
 
 	-- start CET:
-	INSERT INTO dbo.xestore_extractions ([session_name], [cet]) 
+	INSERT INTO dbo.[eventstore_extractions] ([session_name], [cet]) 
 	VALUES (@SessionName, @CET);
 
 	SELECT @ExtractionID = SCOPE_IDENTITY();
