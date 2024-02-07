@@ -97,15 +97,12 @@ AS
 	-- TODO: if it's multi-statement, then 'split' on the terminator, parameterize the first statement, then the next, and so on... then 'chain' those together... as the output. 
 	--		well, make this an option/switch... (i.e., an input parameter).
 
-
 	-- again, looking for BASIC (non edge-case) confirmations here: 
 	IF @InputStatement NOT LIKE N'%WHERE%' 
 		SET @noParams = 1; 
-
 	
 	IF (@InputStatement LIKE N'Proc [Database%') OR (@InputStatement LIKE 'EXEC%') 
 		SET @isExec = 1; 
-
 
 	-- damn... this (exclusion logic) might be one of the smartest things i've done in a while... (here's hoping that it WORKS)... 
 	IF COALESCE(@multiStatement, @noParams, @isExec, 0) = 0 BEGIN 

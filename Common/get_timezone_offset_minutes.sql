@@ -3,6 +3,17 @@
 
 		SELECT admindb.dbo.[get_timezone_offset_minutes]('{SERVER_LOCAL}');
 
+
+	TODO: need a downlevel version that returns ... 0 
+
+CREATE FUNCTION dbo.[get_timezone_offset_minutes] (@TimeZone sysname)
+RETURNS int
+AS
+	BEGIN 
+		RETURN 0;
+	END;
+GO
+
 */
 
 USE [admindb];
