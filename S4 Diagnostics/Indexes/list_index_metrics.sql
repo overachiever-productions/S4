@@ -33,11 +33,7 @@ CREATE PROC dbo.[list_index_metrics]
 	@IncludeFragmentationMetrics				bit					= 0,						-- really don't care about this - 99% of the time... 
 	@MinRequiredTableRowCount					int					= 0,						-- ignore tables with < rows than this value... (but, note: this is per TABLE, not per IX cuz filtered indexes might only have a few rows on a much larger table).
 	@OrderBy									sysname				= N'ROW_COUNT',				-- { ROW_COUNT | FRAGMENTATION | SIZE | BUFFER_SIZE | READS | WRITES }
-
-	--	vNEXT:
-	--		NOTE: the following will be implemented by a sproc: dbo.script_index (which required dbname, table-name, and IX name or [int]ID).
-	--@IncludeScriptDefinition					bit					= 1   -- include/generate the exact definition needed for the IX... 
-
+	@IncludeDefinition							bit					= 1,						 -- include/generate the exact definition needed for the IX... 
 	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
@@ -87,8 +83,9 @@ AS
 		END;
 	END;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- load core meta-data:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Load Core Meta Data:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @sql = N'	SELECT 
 		[i].[object_id],
 		[i].[index_id],
@@ -168,8 +165,9 @@ AS
 		N'@TargetDatabase sysname', 
 		@TargetDatabase = @TargetDatabase;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- usage stats:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Usage Stats:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @sql = N'WITH usage_stats AS (
 	SELECT
 		obj.[object_id],
@@ -256,8 +254,9 @@ AS
 		N'@TargetDatabase sysname', 
 		@TargetDatabase = @TargetDatabase;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- operational stats:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Operational Stats
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @sql = N'WITH operational_stats AS ( 
 		SELECT 
 			object_id,
@@ -337,9 +336,9 @@ AS
 		N'@TargetDatabase sysname', 
 		@TargetDatabase = @TargetDatabase;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- physical stats: 
-
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Physical Stats:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	CREATE TABLE #physical_stats (
 		[object_id] int NULL,
 		[index_id] int NULL,
@@ -379,8 +378,9 @@ AS
 
 	END;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- sizing stats:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Sizing Stats
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @sql = N'SELECT
 			[t].[object_id],
 			[i].[index_id],
@@ -428,8 +428,9 @@ AS
 		N'@TargetDatabase sysname', 
 		@TargetDatabase = @TargetDatabase;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- buffering stats: 
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Buffering Stats
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @sql = N'SELECT
 		allocation_unit_id,
 		COUNT(*) cached_page_count
@@ -488,87 +489,55 @@ AS
 		N'@TargetDatabase sysname', 
 		@TargetDatabase = @TargetDatabase;
 
-	---------------------------------------------------------------------------------------------------------------------------------------
-	-- index definition:
-	DECLARE serializer CURSOR FAST_FORWARD FOR
-	SELECT 
-		[object_id], 
-		[index_id]
-	FROM 
-		#sys_indexes
-	ORDER BY 
-		[object_id], 
-		[index_id];
-
-	DECLARE @object_id int;
-	DECLARE @index_id int;
-	DECLARE @serialized nvarchar(MAX);
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Index Definition:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	DECLARE @ixDefinitions xml; 
+	EXEC dbo.[script_indexes]
+		@TargetDatabase = @TargetDatabase,
+		@ExcludeHeaps = 1,
+		@IncludeSystemTables = 0,
+		@IncludeViews = 0,
+		@SerializedOutput = @ixDefinitions OUTPUT; 
 
 	CREATE TABLE #definitions (
-		[object_id] int, 
-		index_id int, 
-		[definition] nvarchar(MAX)
+		[object_id] int NOT NULL, 
+		[index_id] int NOT NULL,
+		[key_columns] nvarchar(MAX) NOT NULL, 
+		[included_columns] nvarchar(MAX) NULL, 
+		[definition] nvarchar(MAX) NOT NULL 
 	);
 
-	SET @sql = N'WITH core AS ( 
+	WITH shredded AS ( 
 		SELECT 
-			CASE 
-				WHEN ic.is_descending_key = 1 AND ic.is_included_column = 1 THEN N''['' + c.[name] + N'' DESC]''
-				WHEN ic.is_descending_key = 0 AND ic.is_included_column = 1 THEN N''['' + c.[name] + N'']''
-				ELSE c.[name]
-			END [name], 
-			index_column_id [ordinal]
+			[data].[row].value(N'(object_id)[1]', N'int') [object_id],
+			[data].[row].value(N'(index_id)[1]', N'int') [index_id],
+			[data].[row].value(N'(key_columns)[1]', N'nvarchar(MAX)') [key_columns],
+			[data].[row].value(N'(included_columns)[1]', N'nvarchar(MAX)') [included_columns],
+			[data].[row].value(N'(definition)[1]', N'nvarchar(MAX)') [definition]
 		FROM 
-			[{0}].sys.index_columns ic
-			INNER JOIN [{0}].sys.columns c ON ic.[object_id] = c.[object_id] AND ic.column_id = c.column_id
-		WHERE 
-			ic.[object_id] = @object_id
-			AND ic.[index_id] = @index_id
-	) 
+			@ixDefinitions.nodes(N'//object') [data]([row])
+	)	
 
-	SELECT @serialized = @serialized + [name] + N'','' FROM core ORDER BY ordinal; ';
-
-	SET @sql = REPLACE(@sql, N'{0}', @TargetDatabase);
-
-	OPEN serializer;
-	FETCH NEXT FROM serializer INTO @object_id, @index_id;
-
-	WHILE @@FETCH_STATUS = 0 BEGIN
-
-		SET @serialized = '';
-
-		IF @index_id <> 0 BEGIN
-			EXEC sp_executesql 
-				@sql,
-				N'@object_id int, @index_id int, @serialized nvarchar(MAX) OUTPUT', 
-				@object_id = @object_id, 
-				@index_id = @index_id,
-				@serialized = @serialized OUTPUT;
-
-			SET @serialized = SUBSTRING(@serialized, 0, LEN(@serialized));
-		END;
-	
-		INSERT INTO #definitions VALUES (@object_id, @index_id, @serialized);
-	
-		FETCH NEXT FROM serializer INTO @object_id, @index_id;
-	END;
-
-	CLOSE serializer;
-	DEALLOCATE serializer;
-
+	INSERT INTO [#definitions] (
+		[object_id],
+		[index_id],
+		[key_columns],
+		[included_columns],
+		[definition]
+	)
 	SELECT 
-		d.[object_id],
-		d.[index_id],
-		CASE WHEN d.index_id = 0 THEN '<HEAP>' ELSE d.[definition] END [definition]
-	INTO 
-		#column_definitions
+		[object_id],
+		[index_id],
+		[key_columns],
+		[included_columns],
+		[definition] 
 	FROM 
-		#definitions d;
+		[shredded];
 
-	---------------------------------------------------------------------------------------------------------------------------------------
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Final Projection:
-	---------------------------------------------------------------------------------------------------------------------------------------
-	
+	----------------------------------------------------------------------------------------------------------------------------------------------------------
 	SET @sql = N'WITH collapsed_physical_stats AS (
 		SELECT 
 			[object_id], 
@@ -598,7 +567,9 @@ AS
 		i.[table_name],
 		i.[index_id],
 		ISNULL(i.[index_name], N'''') [index_name],
-		cd.[definition],
+		--cd.[definition],
+		[d].[key_columns], 
+		[d].[included_columns],
 		ss.[row_count],
 		ISNULL(us.reads, 0) reads, 
 		ISNULL(us.writes, 0) writes, 
@@ -620,7 +591,7 @@ AS
 					(ISNULL(os.avg_page_lock_wait, 0), N''avg_page_lock_ms''), 
 					(ISNULL(os.avg_page_io_latch_wait, 0), N''avg_page_io_latch_ms'')
 			) AS x([metric], [name])
-		FOR XML PATH(''metric''), ROOT(''operational_metrics''), type) [operational_metrics]
+		FOR XML PATH(''metric''), ROOT(''operational_metrics''), type) [operational_metrics]{definitions}
 	FROM 
 		#sys_indexes i
 		--{IncludedTables}
@@ -630,7 +601,8 @@ AS
 		{physical_stats}
 		LEFT OUTER JOIN #sizing_stats ss ON i.[object_id] = ss.[object_id] AND i.index_id = ss.index_id
 		LEFT OUTER JOIN [collapsed_buffer_stats] bs ON i.[object_id] = bs.[object_id] AND i.index_id = bs.index_id
-		LEFT OUTER JOIN #column_definitions cd ON i.[object_id] = cd.[object_id] AND i.index_id = cd.index_id
+		--LEFT OUTER JOIN #column_definitions cd ON i.[object_id] = cd.[object_id] AND i.index_id = cd.index_id
+		LEFT OUTER JOIN #definitions [d] ON [i].[object_id] = [d].[object_id] AND [i].[index_id] = [d].[index_id]
 	WHERE
 		1 = 1
 		{IncludeSystemTables}
@@ -659,28 +631,33 @@ AS
 	END;
 
 	IF @TargetTables <> N'{ALL}' BEGIN 
-		
-		SELECT [result] [table_name] 
-		INTO #target_tables
-		FROM dbo.[split_string](@TargetTables, N',', 1);
-
 		SET @sql = REPLACE(@sql, N'{IncludedTables}', N'INNER JOIN #target_tables targets ON i.table_name LIKE targets.table_name ');
-		END;
+	  END;
 	ELSE BEGIN 
 		SET @sql = REPLACE(@sql, N'{IncludedTables}', N'');
 	END;
 
-	IF @ExcludedTables IS NOT NULL BEGIN 
-		
-		SELECT [result] [table_name] 
-		INTO #excluded_tables
-		FROM dbo.[split_string](@ExcludedTables, N',', 1);		
-
-		SET @sql = REPLACE(@sql, N'{ExcludedTables}', N'INNER JOIN #excluded_tables excluded ON i.table_name NOT LIKE excluded.table_name');
-	  END; 
+	-- etc... 
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @tab nchar(1) = NCHAR(9);
+	IF @IncludeDefinition = 1 BEGIN 
+		SET @sql = REPLACE(@sql, N'{definitions}', N',' + @crlf + @tab + N'[d].[definition] [index_definition]');
+	  END;
 	ELSE BEGIN 
-		SET @sql = REPLACE(@sql, N'{ExcludedTables}', N'');
+		SET @sql = REPLACE(@sql, N'{definitions}', N'');
 	END;
+
+	--IF @ExcludedTables IS NOT NULL BEGIN 
+		
+	--	SELECT [result] [table_name] 
+	--	INTO #excluded_tables
+	--	FROM dbo.[split_string](@ExcludedTables, N',', 1);		
+
+	--	SET @sql = REPLACE(@sql, N'{ExcludedTables}', N'INNER JOIN #excluded_tables excluded ON i.table_name NOT LIKE excluded.table_name');
+	--  END; 
+	--ELSE BEGIN 
+	--	SET @sql = REPLACE(@sql, N'{ExcludedTables}', N'');
+	--END;
 
 	-- sort order:
 	DECLARE @sort sysname; 

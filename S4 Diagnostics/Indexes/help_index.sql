@@ -99,7 +99,9 @@ AS
 			[data].[row].value(N'(table_name)[1]', N'sysname') [table_name], 
 			[data].[row].value(N'(index_id)[1]', N'int') [index_id], 
 			[data].[row].value(N'(index_name)[1]', N'sysname') [index_name], 
-			[data].[row].value(N'(definition)[1]', N'nvarchar(MAX)') [columns], 
+			[data].[row].value(N'(index_definition)[1]', N'nvarchar(MAX)') [index_definition], 
+			[data].[row].value(N'(key_columns)[1]', N'nvarchar(MAX)') [key_columns], 
+			[data].[row].value(N'(included)[1]', N'nvarchar(MAX)') [included_columns], 
 			[data].[row].value(N'(row_count)[1]', N'bigint') [row_count], 
 			[data].[row].value(N'(reads)[1]', N'bigint') [reads], 
 			[data].[row].value(N'(writes)[1]', N'bigint') [writes], 
@@ -126,7 +128,8 @@ AS
 	SELECT
 		[index_id],
 		[index_name],
-		[columns],
+		[key_columns],
+		[included_columns],
 		N' ' [ ],
 		[row_count],
 		[reads],
@@ -138,7 +141,8 @@ AS
 		[scans],
 		[lookups],
 		[seek_ratio],
-		[operational_metrics] 
+		[operational_metrics], 
+		[index_definition]
 	FROM 
 		#hydrated
 	ORDER BY 
