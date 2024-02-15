@@ -1,45 +1,4 @@
 /*
-
-	REWRITE: 
-		I'm doing this entire report incorrectly. 
-		I'm doing the following: 
-			1. Getting a 'work' table full of blocking operations - usually (but not strictly) bounded by time-predicates (start/stop). 
-				and ... arguably, prior to this being eventstore code, time-bounding was an AFTERTHOUGHT... 
-			2. aggregating by TX ID to get MAX/COUNT, etc. of blocking details - needed cuz, otherwise, I'd be reporting on things occuring over and over every 2 seconds. 
-			3. coordinating outputs (start/stop of aggregated TXes) against time-blocks/time-bounds. 
-
-		That's bass-ackwards. 
-		And you can see how/why if: 
-			a. leave SELECT * FROM #work uncommented + the RETURN 0 on/around lines 190+ of this current sproc. (i.e., have things barf/stop after getting the FIRST time-filtered results). 
-			b. run these 2x iterations of the sproc (with it short-circuting/reporting - as per above): 
-					EXEC dbo.[eventstore_rpt_blocked_processes_counts]
-						@Start = '2023-11-26 11:00:00.000', 
-						@End = '2023-11-26 15:00:00.000';
-
-					EXEC dbo.[eventstore_rpt_blocked_processes_counts]
-						@Start = '2023-11-26 13:00:00.000', 
-						@End = '2023-11-26 14:00:00.000';
-
-			c. Note how there's full overlap in rows 1 of both result-sets above - and that these results 'span' from either 11AM or 1PM ... but... doesn't matter, they're overlapping. 
-			d. remove/comment-out those short-circuiting lines on 190-ish... 
-			e. re-run the executions above. 
-				EVERYTHING gets collapsed down into the 1PM time window. 
-					because, presumably, that's when a blocking process (that's been blocking for 30+ minutes) finally completes. 
-		
-		What I NEED to do is: 
-			1. Set start/end times - via sproc 'init'. 
-			2. create time 'blocks' for the times in question. 
-			3. for each time block? get any blocked-processes running during start/end? 
-			4.	and then aggregate counts/spids, total seconds blocked for the time-block in question. 
-				where aggregates are a 2-step process: 
-					a. MAX() and COUNT(), etc. by txid
-					b. SUM/COUNT for the time-block in question. 
-		That's a LOT more involved. a LOT more. 
-			But it'll be accurate. 
-
-
-
-
 	vNEXT: (this was, originally, in the non-eventstore version of the sproc):
 		- Look at creating ~2x new columns in the final projection: 
 			[blocking_transaction_ids]
@@ -60,9 +19,8 @@
 
 				point is, i can put a bit of meta-data into these pigs to make it easier to spot what's up... 
 					and, more importantly, identify which particular events I need to zero-in on for further review. 
-
-
-
+	Yeah... nah. 
+		I mean, i think there's a place for the logic above - but not in this report. 
 
 	TODO: 
 		- time-zone 'stuff' doesn't work before SQL Server 2016... so... just build a new version... 
@@ -277,6 +235,13 @@ AS
 	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Self-Blocking:
 	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	CREATE TABLE #self_blockers (
+		[transaction_id] bigint NULL, 
+		[blocked_id] int NOT NULL,
+		[event_time] datetime NOT NULL, 
+		[seconds_blocked] decimal(24,2) NOT NULL 
+	);
+
 	SET @sql = N'	WITH core AS ( 
 		SELECT 
 			blocking_xactid [transaction_id], 
@@ -304,6 +269,12 @@ AS
 
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @normalizedName);
 
+	INSERT INTO [#self_blockers] (
+		[transaction_id],
+		[blocked_id],
+		[event_time],
+		[seconds_blocked]
+	)
 	EXEC sys.sp_executesql 
 		@sql, 
 		N'@Start datetime, @End datetime', 
@@ -316,8 +287,79 @@ AS
 	-- TODO: add these in ... 
 	-- they'd be ... same as blocking/self-blocking - but WHERE [blocked_xactid] IS NULL ... 
 	
+
 	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Correlate by Time-Block:
+	-- Correlate Self-Blocking by Time-Block:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	WITH times AS ( 
+		SELECT 
+			[t].[block_id], 
+			LAG([t].[time_block], 1, DATEADD(MINUTE, (0 - @minutes), DATEADD(MINUTE, @offsetMinutes, @Start))) OVER (ORDER BY [t].[block_id]) [start_time],
+			[t].[time_block] [event_time]
+		FROM 
+			[#times] [t]
+
+	),
+	coordinated AS (
+		SELECT 
+			[t].[block_id], 
+			[t].[event_time] [t_end_time], 
+			[b].[transaction_id], 
+			[b].[blocked_id],
+			[b].[event_time], 
+			[b].[seconds_blocked] [running_seconds], 
+			CASE 
+				WHEN [b].[seconds_blocked] IS NULL THEN 0 
+				WHEN [b].[seconds_blocked] > @blockedProcessThresholdCadenceSeconds AND [b].[seconds_blocked] < (2 * @blockedProcessThresholdCadenceSeconds) THEN [b].[seconds_blocked] 
+				ELSE @blockedProcessThresholdCadenceSeconds 
+			END [accrued_seconds]
+		FROM 
+			[times] [t]
+			LEFT OUTER JOIN [#self_blockers] [b] ON [b].[event_time] < [t].[event_time] AND b.[event_time] > [t].[start_time] -- anchors 'up' - i.e., for an event that STARTS at 12:59:59.33 and ENDs 2 seconds later, the entry will 'show up' in hour 13:00... 
+	), 
+	maxed AS ( 
+		SELECT 
+			[block_id], 
+			[transaction_id], 
+			COUNT([blocked_id]) [total_events],  
+			COUNT(DISTINCT [blocked_id]) [total_blocked_spids],
+			MAX([running_seconds]) [running_seconds_blocked], 
+			SUM([accrued_seconds]) [accrued_seconds_blocked]
+		FROM 
+			[coordinated]
+		GROUP BY 
+			[block_id], [transaction_id]
+	), 
+	summed AS ( 
+		SELECT 
+			[block_id], 
+			SUM([maxed].[total_blocked_spids]) [total_blocked_spids],
+			SUM([total_events]) [total_events], 
+			SUM([running_seconds_blocked]) [running_seconds_blocked],
+			SUM([accrued_seconds_blocked]) [accrued_seconds_blocked]
+		FROM 
+			maxed 
+		GROUP BY 
+			[block_id]
+	)
+
+	SELECT 
+		[t].[block_id],
+		[t].[time_block] [end_time], 
+		[s].[total_events] [blocking_events],
+		[s].[total_blocked_spids] [blocked_spids],
+		ISNULL([s].[accrued_seconds_blocked], 0) [blocking_seconds],
+		ISNULL([s].[running_seconds_blocked], 0) [running_seconds] 
+	INTO 
+		#summedSelfBlockers
+	FROM 
+		[#times] [t]
+		LEFT OUTER JOIN [summed] [s] ON [t].[block_id] = [s].[block_id]
+	ORDER BY 
+		[t].[block_id];
+
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Correlate by Time-Block + Project:
 	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	WITH times AS ( 
 		SELECT 
@@ -349,7 +391,7 @@ AS
 		SELECT 
 			[block_id], 
 			[transaction_id], 
-			COUNT([transaction_id]) [total_events],
+			COUNT([blocked_id]) [total_events],
 			COUNT(DISTINCT [blocked_id]) [total_blocked_spids],
 			MAX([running_seconds]) [running_seconds_blocked], 
 			SUM([accrued_seconds]) [accrued_seconds_blocked]
@@ -374,14 +416,20 @@ AS
 	SELECT 
 		--[t].[block_id], 
 		--DATEADD(MILLISECOND, 3, DATEADD(MINUTE, 0 - @minutes, [t].[time_block])) [start_time],
-		[t].[time_block] [end_time], 
+		[t].[time_block] [event_time_end], 
 		[s].[total_events] [blocking_events],
 		[s].[total_blocked_spids] [blocked_spids],
 		ISNULL([s].[accrued_seconds_blocked], 0) [blocking_seconds],
-		ISNULL([s].[running_seconds_blocked], 0) [running_seconds] 
+		ISNULL([s].[running_seconds_blocked], 0) [running_seconds], 
+		N'' [ ], 
+		sb.[blocking_events] [self_events], 
+		sb.[blocked_spids] [self_spids],
+		sb.[blocking_seconds] [self_seconds], 
+		sb.[running_seconds] [self_running_seconds]
 	FROM 
 		[#times] [t]
 		LEFT OUTER JOIN [summed] [s] ON [t].[block_id] = [s].[block_id]
+		LEFT OUTER JOIN [#summedSelfBlockers] [sb] ON [s].[block_id] = [sb].[block_id]
 	ORDER BY 
 		[t].[block_id];
 
