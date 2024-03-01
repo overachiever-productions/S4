@@ -14,7 +14,6 @@ CREATE PROC dbo.[aws3_list_buckets]
 	@ExtractLocations				bit					= 1,			-- forces a lookup for each bucket to grab the location... 
 	@ExcludedBuckets				nvarchar(MAX)		= NULL, 
 	@OrderBy						sysname				= N'NAME'		-- { NAME | REGION | DATE }
-
 AS
     SET NOCOUNT ON; 
 

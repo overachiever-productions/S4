@@ -14,7 +14,7 @@ GO
 
 CREATE PROC dbo.[aws3_verify_configuration]
 	@VerifyNuget				bit				= 0,
-	@VerifyGalleryAccess		bit				= 0,
+	@VerifyGalleryAccess		bit				= 0,					-- where "Gallery" = powershell gallery - or internet connection
 	@VerifyS3Modules			bit				= 1, 
 	@VerifyProfile				bit				= 1, 
 	@VerifyBuckets				bit				= 0, 
@@ -127,6 +127,7 @@ AS
 		END;
 	END;
 
+	/* Can we access the PowerShell Gallery? (which is BOTH a question of whether there's an internet connection AND whether box might be locked down by policy/etc.) */
 	IF @VerifyGalleryAccess = 1 BEGIN 
 		SET @xmlResults = NULL;
 		EXEC @returnValue = dbo.[execute_powershell]
@@ -251,6 +252,7 @@ AS
 -- TODO: need to determine if the box in question is an EC2 instance, and, if so, if it has an EC2-InstanceProfile assigned. 
 		-- i THINK the process here will be: a) hit the AWS/EC2 meta-data repository on that one ... address, and put in a timeout on the request of something like 5 seconds. 
 		--									 b) if we get a result from the above, then check for a profile... otherwise, not an EC2 instance. 
+		-- this might also help: https://serverfault.com/questions/607223/how-do-i-know-if-i-run-on-amazon-ec2-windows-instance 
 
 		SET @xmlResults = NULL;
 		EXEC @returnValue = dbo.[execute_powershell]
@@ -261,39 +263,52 @@ AS
 		DECLARE @profiles table (profile_name sysname NOT NULL);
 
 		IF @returnValue = 0 BEGIN 
-			INSERT INTO @profiles ([profile_name])
-			SELECT 
-				r.d.value(N'(./Property[@Name="ProfileName"]/text())[1]', N'sysname')
-			FROM 
-				@xmlResults.nodes(N'Objects/Object') r(d);
 
-			DECLARE @profilesCount int = (SELECT COUNT(*) FROM @profiles);
-			IF EXISTS (SELECT NULL FROM @profiles WHERE [profile_name] = N'default') BEGIN 
-				INSERT INTO [#results] (
-					[test],
-					[passed],
-					[details]
-				)
-				VALUES (
-					N'ProfileConfigured', 
-					1, 
-					N'Detected ' + CAST(@profilesCount AS sysname) + N' profile(s) - including ''default'' profile.'
-				);					
-				END; 
+			DECLARE @profilesExist bit;
+			SELECT 
+				@profilesExist = [r].[d].exist(N'Object/Property')
+			FROM 
+				@xmlResults.nodes(N'/Objects') [r]([d]);
+
+			IF @profilesExist = 1 BEGIN 			
+				INSERT INTO @profiles ([profile_name])
+				SELECT 
+					r.d.value(N'(./Property[@Name="ProfileName"]/text())[1]', N'sysname')
+				FROM 
+					@xmlResults.nodes(N'Objects/Object') r(d);
+
+				DECLARE @profilesCount int = (SELECT COUNT(*) FROM @profiles);
+				IF EXISTS (SELECT NULL FROM @profiles WHERE [profile_name] = N'default') BEGIN 
+					INSERT INTO [#results] (
+						[test],
+						[passed],
+						[details]
+					)
+					VALUES (
+						N'ProfileConfigured', 
+						1, 
+						N'Detected ' + CAST(@profilesCount AS sysname) + N' profile(s) - including ''default'' profile.'
+					);					
+					END; 
+				ELSE BEGIN 
+					INSERT INTO [#results] (
+						[test],
+						[passed],
+						[details]
+					)
+					VALUES (
+						N'ProfileConfigured', 
+						0, 
+						N'Detected ' + CAST(@profilesCount AS sysname) + N' profile(s) - but the ''default'' profile was NOT found.'
+					);				
+				END;
+			  END; 
 			ELSE BEGIN 
-				INSERT INTO [#results] (
-					[test],
-					[passed],
-					[details]
-				)
-				VALUES (
-					N'ProfileConfigured', 
-					0, 
-					N'Detected ' + CAST(@profilesCount AS sysname) + N' profile(s) - but the ''default'' profile was NOT found.'
-				);				
+				GOTO NoProfilesFound;
 			END;
-			END;
+		  END;
 		ELSE BEGIN 
+NoProfilesFound:
 			INSERT INTO [#results] (
 				[test],
 				[passed],
