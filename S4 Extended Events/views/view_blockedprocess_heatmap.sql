@@ -8,26 +8,26 @@
 
 
 			EXEC [admindb].dbo.[view_blockedprocess_heatmap]
-				@TranslatedBlockedProcessesTable = N'blocking.dbo.all_blocking_feb15',
-				@Mode = N'WEEK_TIME', 
+				@TranslatedBlockedProcessesTable = (N'blocking.dbo.all_blocking_feb15'),
+				@Mode = (N'WEEK_TIME'), 
 				@Granularity = 'Minute';
 
 
 
 	TIME ZONE EXAMPLES (utc vs specific):
 			EXEC [admindb].dbo.[view_blockedprocess_heatmap]
-				@TranslatedBlockedProcessesTable = N'blocking.dbo.all_blocking_feb15',
-				@Mode = N'WEEK_TIME',
-				--@Granularity = N'MINUTE',
+				@TranslatedBlockedProcessesTable = (N'blocking.dbo.all_blocking_feb15'),
+				@Mode = (N'WEEK_TIME'),
+				--@Granularity = (N'MINUTE'),
 				@ExcludeSelfBlocking = 1;
 
 
 			EXEC [admindb].dbo.[view_blockedprocess_heatmap]
-				@TranslatedBlockedProcessesTable = N'blocking.dbo.all_blocking_feb15',
-				@Mode = N'WEEK_TIME',
-				--@Granularity = N'MINUTE',
+				@TranslatedBlockedProcessesTable = (N'blocking.dbo.all_blocking_feb15'),
+				@Mode = (N'WEEK_TIME'),
+				--@Granularity = (N'MINUTE'),
 				@ExcludeSelfBlocking = 1,
-				@TimeZone = N'Central Standard Time';
+				@TimeZone = (N'Central Standard Time';
 
 
 
@@ -36,14 +36,14 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.view_blockedprocess_heatmap','P') IS NOT NULL
+IF OBJECT_ID('dbo.view_blockedprocess_heatmap'),'P') IS NOT NULL
 	DROP PROC dbo.[view_blockedprocess_heatmap];
 GO
 
 CREATE PROC dbo.[view_blockedprocess_heatmap]
 	@TranslatedBlockedProcessesTable			sysname, 
-	@Mode										sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | WEEK_TIME } 
-	@Granularity								sysname			= N'HOUR',			-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
+	@Mode										sysname			= (N'TIME_OF_DAY'),		-- { TIME_OF_DAY | WEEK_TIME } 
+	@Granularity								sysname			= (N'HOUR'),			-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
 	@ExcludeSelfBlocking						bit				= 0,
 	@TimeZone									sysname			= NULL
 AS
@@ -51,13 +51,13 @@ AS
 
 	-- {copyright}
 
-	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
-	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'HOUR'));
+	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, (N''), (N'TIME_OF_DAY'));
+	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, (N''), (N'HOUR'));
 
-	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
-	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, (N'');
+	SET @TimeZone = NULLIF(@TimeZone, (N'');
 
-	IF @Mode LIKE N'%S' SET @Mode = LEFT(@Mode, LEN(@Mode) - 1);  -- normalize/remove S, e.g., week_times becomes week_time.
+	IF @Mode LIKE (N'%S' SET @Mode = LEFT(@Mode, LEN(@Mode) - 1);  -- normalize/remove S, e.g., week_times becomes week_time.
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -65,7 +65,7 @@ AS
 
 	EXEC @outcome = dbo.load_id_for_normalized_name 
 		@TargetName = @TranslatedBlockedProcessesTable, 
-		@ParameterNameForTarget = N'@TranslatedBlockedProcessesTable', 
+		@ParameterNameForTarget = (N'@TranslatedBlockedProcessesTable'), 
 		@NormalizedName = @normalizedName OUTPUT, 
 		@ObjectID = @sourceObjectID OUTPUT;	
 
@@ -82,7 +82,7 @@ AS
 
 	/* Insanely enough ... NEED this in like 2-3 different spots. */
 	INSERT INTO [#days] ([day_name])
-	VALUES (N'Sunday'), (N'Monday'), (N'Tuesday'), (N'Wednesday'), (N'Thursday'), (N'Friday'), (N'Saturday');
+	VALUES ((N'Sunday'), ((N'Monday'), ((N'Tuesday'), ((N'Wednesday'), ((N'Thursday'), ((N'Friday'), ((N'Saturday');
 
 	CREATE TABLE #times (
 		[row_id] int IDENTITY(1, 1) NOT NULL, 
@@ -94,16 +94,16 @@ AS
 	DECLARE @startTime datetime2 = '2017-01-01 00:00:00.000';
 	DECLARE @endTime datetime2 = '2017-01-01 23:59:59.999';
 
-	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+	IF UPPER(@TimeZone) = (N'{SERVER_LOCAL}'
 		SET @TimeZone = dbo.[get_local_timezone]();
 
 	DECLARE @offsetMinutes int = 0;
-	IF @TimeZone IS NOT NULL AND UPPER(@TimeZone) <> N'UTC' BEGIN
-		DECLARE @timeZoneName sysname = LOWER(REPLACE(@TimeZone, N' ', N'_'));
+	IF @TimeZone IS NOT NULL AND UPPER(@TimeZone) <> (N'UTC' BEGIN
+		DECLARE @timeZoneName sysname = LOWER(REPLACE(@TimeZone, (N' '), (N'_'));
 		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
 	END;
 
-	IF @Mode = N'WEEK_TIME' 
+	IF @Mode = (N'WEEK_TIME' 
 		SET @endTime = '2017-01-07 23:59:59.999';
 
 	WITH times AS ( 
@@ -129,7 +129,7 @@ AS
 		[times]
 	OPTION (MAXRECURSION 1000);
 
-	DECLARE @sql nvarchar(MAX) = N'WITH coordinated AS ( 
+	DECLARE @sql nvarchar(MAX) = (N'WITH coordinated AS ( 
 	SELECT 
 		[t].[week_day],
 		[t].[start],
@@ -169,13 +169,13 @@ FROM
 ORDER BY 
 	[a].[week_day], [a].[start]; ';
 
-	SET @sql = REPLACE(@sql, N'{sourceTable}', @normalizedName);
+	SET @sql = REPLACE(@sql, (N'{sourceTable}'), @normalizedName);
 
-	IF UPPER(@Mode) = N'TIME_OF_DAY' BEGIN 
-		SET @sql = REPLACE(@sql, N'{dayJoin}', N'');
+	IF UPPER(@Mode) = (N'TIME_OF_DAY' BEGIN 
+		SET @sql = REPLACE(@sql, (N'{dayJoin}'), (N'');
 	  END;
 	ELSE BEGIN
-		SET @sql = REPLACE(@sql, N'{dayJoin}', N'[t].[week_day] = DATEPART(WEEKDAY, [b].[timestamp]) AND ');
+		SET @sql = REPLACE(@sql, (N'{dayJoin}'), (N'[t].[week_day] = DATEPART(WEEKDAY, [b].[timestamp]) AND ');
 	END;
 
 	CREATE TABLE #coordinated (
@@ -199,7 +199,7 @@ ORDER BY
 
 	IF @ExcludeSelfBlocking = 0 BEGIN 
 
-		SET @sql = N'	WITH coordinated AS ( 
+		SET @sql = (N'	WITH coordinated AS ( 
 	SELECT 
 		[t].[week_day],
 		[t].[start],
@@ -213,7 +213,7 @@ ORDER BY
 		)
 	WHERE 
 		[b].[blocked_xactid] IS NOT NULL 
-		AND [b].[blocking_xactid] IS NULL  -- self blockers don''t have a ''listed'' blocker... cuz... they''re ... self-blocking
+		AND [b].[blocking_xactid] IS NULL  -- self blockers do(N''t have a ''listed'' blocker... cuz... they''re ... self-blocking
 ), 
 aggregated AS (
 	SELECT 
@@ -246,21 +246,21 @@ FROM
 	#coordinated [c]
 	INNER JOIN aligned [x] ON [c].[day] = [x].[day] AND [c].[start] = [x].[start]; ';
 
-		SET @sql = REPLACE(@sql, N'{sourceTable}', @normalizedName);
+		SET @sql = REPLACE(@sql, (N'{sourceTable}'), @normalizedName);
 
-		IF @Mode = N'TIME_OF_DAY' BEGIN 
-			SET @sql = REPLACE(@sql, N'{dayJoin}', N'');
+		IF @Mode = (N'TIME_OF_DAY' BEGIN 
+			SET @sql = REPLACE(@sql, (N'{dayJoin}'), (N'');
 		  END;
 		ELSE BEGIN
-			SET @sql = REPLACE(@sql, N'{dayJoin}', N'[t].[week_day] = DATEPART(WEEKDAY, [b].[timestamp]) AND ');
+			SET @sql = REPLACE(@sql, (N'{dayJoin}'), (N'[t].[week_day] = DATEPART(WEEKDAY, [b].[timestamp]) AND ');
 		END;
 		
 		EXEC sp_executesql @sql;
 	END;
 
-	IF UPPER(@Mode) = N'TIME_OF_DAY' BEGIN 
+	IF UPPER(@Mode) = (N'TIME_OF_DAY' BEGIN 
 
-		SET @sql = N'	SELECT 
+		SET @sql = (N'	SELECT 
 		{time}
 		[blocked_processes],
 		[seconds_blocked]{selfBlocking}
@@ -269,30 +269,30 @@ FROM
 	ORDER BY 
 		1; ';  -- bit ugly to sort by a column ordinal in production code... but ... it works. 
 			
-		IF @TimeZone IS NULL OR UPPER(@TimeZone) = N'UTC' BEGIN 
-			SET @sql = REPLACE(@sql, N'{time}', N'LEFT(CONVERT(sysname, [start], 14), 8) + N''.000 - '' + LEFT(CONVERT(sysname, [start], 14), 2) + N'':59:59.999'' [utc],');
+		IF @TimeZone IS NULL OR UPPER(@TimeZone) = (N'UTC' BEGIN 
+			SET @sql = REPLACE(@sql, (N'{time}'), (N'LEFT(CONVERT(sysname, [start], 14), 8) + (N''.000 - '' + LEFT(CONVERT(sysname, [start], 14), 2) + (N'':59:59.999'' [utc],');
 		  END;
 		ELSE BEGIN 
-			SET @sql = REPLACE(@sql, N'{time}', N'LEFT(CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, [start]), 14), 8) + N''.000 - '' + LEFT(CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, [start]), 14), 2) + N'':59:59.999'' [' + @timeZoneName + N'],');
+			SET @sql = REPLACE(@sql, (N'{time}'), (N'LEFT(CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, [start]), 14), 8) + (N''.000 - '' + LEFT(CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, [start]), 14), 2) + (N'':59:59.999'' [' + @timeZoneName + (N'],');
 		END;
 
 		IF @ExcludeSelfBlocking = 1 
-			SET @sql = REPLACE(@sql, N'{selfBlocking}', N'');
+			SET @sql = REPLACE(@sql, (N'{selfBlocking}'), (N'');
 		ELSE 
-			SET @sql = REPLACE(@sql, N'{selfBlocking}', N',
+			SET @sql = REPLACE(@sql, (N'{selfBlocking}'), (N'),
 	'''' [ ],
 	[self_blocked],
 	[self_seconds] ');
 	
 		EXEC sp_executesql 
 			@sql, 
-			N'@offsetMinutes int', 
+			(N'@offsetMinutes int'), 
 			@offsetMinutes = @offsetMinutes;
 		
 		RETURN 0;
 	END;
 	
-	IF UPPER(@Mode) = N'WEEK_TIME' BEGIN 
+	IF UPPER(@Mode) = (N'WEEK_TIME' BEGIN 
 
 		IF @offsetMinutes <> 0 BEGIN 
 			ALTER TABLE [#coordinated] ADD [utc_day_time] datetime NULL;
@@ -326,20 +326,20 @@ FROM
 		END;
 
 		DECLARE @currentDayID int = 1; 
-		DECLARE @currentDayName sysname = N'Sunday';
-		DECLARE @select nvarchar(MAX) = N'SELECT 
+		DECLARE @currentDayName sysname = (N'Sunday';
+		DECLARE @select nvarchar(MAX) = (N'SELECT 
 	[start], 
-	CASE WHEN [day] = @currentDayID THEN {contents} ELSE N'''' END [data] 
+	CASE WHEN [day] = @currentDayID THEN {contents} ELSE (N'''' END [data] 
 FROM 
 	[#coordinated] 
 WHERE 
 	[day] = @currentDayID'; 
 		
 		IF @ExcludeSelfBlocking = 1 BEGIN 
-			SET @select = REPLACE(@select, N'{contents}', N'CAST([blocked_processes] AS sysname) + N'' / '' + CAST([seconds_blocked] AS sysname)');
+			SET @select = REPLACE(@select, (N'{contents}'), (N'CAST([blocked_processes] AS sysname) + (N'' / '' + CAST([seconds_blocked] AS sysname)');
 		  END; 
 		ELSE BEGIN 
-			SET @select = REPLACE(@select, N'{contents}', N'CAST([blocked_processes] AS sysname) + N'' / '' + CAST([seconds_blocked] AS sysname) + '' ('' + CAST([self_blocked] AS sysname) + N'' / '' + CAST([self_seconds] AS sysname) + N'')''');
+			SET @select = REPLACE(@select, (N'{contents}'), (N'CAST([blocked_processes] AS sysname) + (N'' / '' + CAST([seconds_blocked] AS sysname) + '' ('' + CAST([self_blocked] AS sysname) + (N'' / '' + CAST([self_seconds] AS sysname) + (N'')''');
 		END;
 
 		CREATE TABLE #weekView (
@@ -354,7 +354,7 @@ WHERE
 			[Saturday] sysname NULL,
 		);
 
-		SET @sql = @select + N' ORDER BY [row_id]; ';
+		SET @sql = @select + (N' ORDER BY [row_id]; ';
 
 		INSERT INTO [#weekView] (
 			[start],
@@ -362,7 +362,7 @@ WHERE
 		)
 		EXEC sp_executesql 
 			@sql, 
-			N'@currentDayID int', 
+			(N'@currentDayID int'), 
 			@currentDayID = @currentDayID;
 
 		/* Yup ... ugly hack. But it's easy to maintain and PLENTY fast... */
@@ -382,7 +382,7 @@ WHERE
 		
 		WHILE @@FETCH_STATUS = 0 BEGIN
 		
-			SET @sql = N'WITH currentDay AS ( 
+			SET @sql = (N'WITH currentDay AS ( 
 		{select}
 )
 
@@ -393,13 +393,13 @@ FROM
 	#weekView [w] 
 	INNER JOIN currentDay [c] ON [w].[start] = [c].[start]; ';
 
-			SET @sql = REPLACE(@sql, N'{select}', @select);
-			SET @sql = REPLACE(@sql, N'{currentDay}', @currentDayID);
-			SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);
+			SET @sql = REPLACE(@sql, (N'{select}'), @select);
+			SET @sql = REPLACE(@sql, (N'{currentDay}'), @currentDayID);
+			SET @sql = REPLACE(@sql, (N'{currentDayName}'), @currentDayName);
 
 			EXEC sp_executesql 
 				@sql, 
-				N'@currentDayID int', 
+				(N'@currentDayID int'), 
 				@currentDayID = @currentDayID;
 
 			FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
@@ -408,8 +408,8 @@ FROM
 		CLOSE [walker];
 		DEALLOCATE [walker];
 
-		SET @sql = N'	SELECT
-	LEFT(CONVERT(sysname, [start], 14), 8) + N''.000 - '' + LEFT(CONVERT(sysname, [start], 14), 2) + N'':59:59.999'' [{time_zone}],
+		SET @sql = (N'	SELECT
+	LEFT(CONVERT(sysname, [start], 14), 8) + (N''.000 - '' + LEFT(CONVERT(sysname, [start], 14), 2) + (N'':59:59.999'' [{time_zone}],
 	'' '' [ ],
 	[Sunday],
 	[Monday],
@@ -423,11 +423,11 @@ FROM
 ORDER BY 
 	[row_id]; ';
 		
-		IF @TimeZone IS NULL OR UPPER(@TimeZone) = N'UTC' BEGIN 
-			SET @sql = REPLACE(@sql, N'{time_zone}', N'utc');
+		IF @TimeZone IS NULL OR UPPER(@TimeZone) = (N'UTC' BEGIN 
+			SET @sql = REPLACE(@sql, (N'{time_zone}'), (N'utc');
 		  END;
 		ELSE BEGIN 
-			SET @sql = REPLACE(@sql, N'{time_zone}', @timeZoneName);
+			SET @sql = REPLACE(@sql, (N'{time_zone}'), @timeZoneName);
 		END;
 		EXEC sp_executesql 
 			@sql;

@@ -2,18 +2,18 @@
 
 
 		EXEC [admindb].dbo.[view_blockedprocesses_problems]
-			@TranslatedBlockedProcessesTable = N'blocking.dbo.all_blocking_feb15',
+			@TranslatedBlockedProcessesTable = (N'blocking.dbo.all_blocking_feb15'),
 			--@Mode = NULL,
-			@OptionalStartTime = '2023-01-11 22:10:10.910',
-			@OptionalEndTime = '2023-01-11 22:15:27.793',
+			@OptionalStartTime = '2023-01-11 22:10:10.910'),
+			@OptionalEndTime = '2023-01-11 22:15:27.793'),
 			@ExcludeSelfBlocking = 0,
 			@ConvertTimesFromUtc = 1;
 
 		EXEC [admindb].dbo.[view_blockedprocesses_problems]
-			@TranslatedBlockedProcessesTable = N'blocking.dbo.all_blocking_feb15',
-			@Mode = N'BLOCKING_DURATION',
-			--@OptionalStartTime = '2023-02-01 10:00:00', 
-			--@OptionalEndTime = '2023-02-03 19:36:00',
+			@TranslatedBlockedProcessesTable = (N'blocking.dbo.all_blocking_feb15'),
+			@Mode = (N'BLOCKING_DURATIO(N'),
+			--@OptionalStartTime = '2023-02-01 10:00:00'), 
+			--@OptionalEndTime = '2023-02-03 19:36:00'),
 			@TopRows = 10,
 			@ConvertTimesFromUtc = 1;
 
@@ -25,7 +25,7 @@
 
 			and then provide options to SORT/ORDER-BY these values 
 				i.e., will want to roll these INTO some sort of additional option for sorting. 
-				as in, WITH ranker ... won't work. i'll need a new @finalProjection for @MODE = BLOCKED_RESOURCE | BLOCKED_STATEMENT 
+				as in, WITH ranker ... wo(N't work. i'll need a new @finalProjection for @MODE = BLOCKED_RESOURCE | BLOCKED_STATEMENT 
 					where I 'shred' these values ... and then rank by them. 
 
 				Or, more specifically: 
@@ -39,13 +39,13 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.view_blockedprocesses_problems','P') IS NOT NULL
+IF OBJECT_ID('dbo.view_blockedprocesses_problems'),'P') IS NOT NULL
 	DROP PROC dbo.[view_blockedprocesses_problems];
 GO
 
 CREATE PROC dbo.[view_blockedprocesses_problems]
 	@TranslatedBlockedProcessesTable			sysname, 
-	@Mode										sysname			= N'BLOCKING_DURATION',   -- { BLOCKING_STATEMENT | BLOCKING_APPLICATION | BLOCKING_RESOURCE | BLOCKING_COUNT | BLOCKING_SECONDS | BLOCKING_DURATION } 
+	@Mode										sysname			= (N'BLOCKING_DURATIO(N'),   -- { BLOCKING_STATEMENT | BLOCKING_APPLICATION | BLOCKING_RESOURCE | BLOCKING_COUNT | BLOCKING_SECONDS | BLOCKING_DURATION } 
 	@OptionalStartTime							datetime		= NULL, 
 	@OptionalEndTime							datetime		= NULL, 
 	@ExcludeSelfBlocking						bit				= 0,
@@ -57,13 +57,13 @@ AS
 
 	-- {copyright}
 
-	SET @Mode = ISNULL(NULLIF(@Mode, N''), N'BLOCKING_DURATION');
+	SET @Mode = ISNULL(NULLIF(@Mode, (N''), (N'BLOCKING_DURATIO(N');
 	SET @Mode = UPPER(@Mode);
 	
-	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
-	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, (N'');
+	SET @TimeZone = NULLIF(@TimeZone, (N'');
 
-	IF @Mode LIKE N'%S' SET @Mode = LEFT(@Mode, LEN(@Mode) - 1);  -- normalize/remove S, e.g., week_times becomes week_time.
+	IF @Mode LIKE (N'%S' SET @Mode = LEFT(@Mode, LEN(@Mode) - 1);  -- normalize/remove S, e.g., week_times becomes week_time.
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -71,14 +71,14 @@ AS
 
 	EXEC @outcome = dbo.load_id_for_normalized_name 
 		@TargetName = @TranslatedBlockedProcessesTable, 
-		@ParameterNameForTarget = N'@TranslatedBlockedProcessesTable', 
+		@ParameterNameForTarget = (N'@TranslatedBlockedProcessesTable'), 
 		@NormalizedName = @normalizedName OUTPUT, 
 		@ObjectID = @sourceObjectID OUTPUT;	
 
 	IF @outcome <> 0
 		RETURN @outcome;  -- error will have already been raised...
 
-	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+	IF UPPER(@TimeZone) = (N'{SERVER_LOCAL}'
 		SET @TimeZone = dbo.[get_local_timezone]();
 
 	DECLARE @offsetMinutes int = 0;
@@ -98,15 +98,15 @@ AS
 	
 	WITH shredded AS ( 
 		SELECT 
-			[instance].[row].value(N'(transaction_id)[1]', N'bigint') [transaction_id],
-			[instance].[row].value(N'(type)[1]', N'sysname') [type],
-			[instance].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[instance].[row].value(N'(end_time)[1]', N'datetime') [end_time],
-			[instance].[row].value(N'(duration)[1]', N'sysname') [duration],
-			[instance].[row].value(N'(blocked_processes_count)[1]', N'bigint') [blocked_processes_count],
-			[instance].[row].value(N'(total_seconds_blocked)[1]', N'bigint') [total_seconds_blocked]
+			[instance].[row].value((N'(transaction_id)[1]'), (N'bigint') [transaction_id],
+			[instance].[row].value((N'(type)[1]'), (N'sysname') [type],
+			[instance].[row].value((N'(start_time)[1]'), (N'datetime') [start_time],
+			[instance].[row].value((N'(end_time)[1]'), (N'datetime') [end_time],
+			[instance].[row].value((N'(duration)[1]'), (N'sysname') [duration],
+			[instance].[row].value((N'(blocked_processes_count)[1]'), (N'bigint') [blocked_processes_count],
+			[instance].[row].value((N'(total_seconds_blocked)[1]'), (N'bigint') [total_seconds_blocked]
 		FROM 
-			@traceSummary.nodes(N'//instance') [instance]([row])
+			@traceSummary.nodes((N'//instance') [instance]([row])
 	)
 
 	SELECT 
@@ -143,7 +143,7 @@ AS
 		[report] xml NOT NULL
 	) 
 
-	DECLARE @sql nvarchar(MAX) = N'WITH roots AS ( 
+	DECLARE @sql nvarchar(MAX) = (N'WITH roots AS ( 
 		SELECT 
 			[blocking_xactid] [transaction_id],
 			MIN([row_id]) [row_id]
@@ -164,9 +164,9 @@ AS
 			[p].[blocked_processes_count] [blocked_processes],
 			[p].[total_seconds_blocked] [blocking_seconds], 
 			[b].[database_name],
-			ISNULL(NULLIF([b].[blocking_sproc_statement], N''''), [b].[blocking_request]) [blocking_request],
-			CASE WHEN [b].[blocking_start_offset] + [b].[blocking_end_offset] < 0 THEN N'''' ELSE CAST(ISNULL(NULLIF([b].[blocking_start_offset], -1), 0) AS sysname) + N'' - '' + CAST([b].[blocking_end_offset] AS sysname) END [offset],
-			ISNULL(NULLIF([b].[blocking_resource], N''''), [b].[blocking_resource_id]) [blocking_resource],
+			ISNULL(NULLIF([b].[blocking_sproc_statement], (N''''), [b].[blocking_request]) [blocking_request],
+			CASE WHEN [b].[blocking_start_offset] + [b].[blocking_end_offset] < 0 THEN (N'''' ELSE CAST(ISNULL(NULLIF([b].[blocking_start_offset], -1), 0) AS sysname) + (N'' - '' + CAST([b].[blocking_end_offset] AS sysname) END [offset],
+			ISNULL(NULLIF([b].[blocking_resource], (N''''), [b].[blocking_resource_id]) [blocking_resource],
 			[b].[blocking_wait_time],
 			[b].[blocking_isolation_level],
 			[b].[blocking_tran_count],
@@ -193,7 +193,7 @@ AS
 
 	SELECT * FROM [expanded]; ';
 
-	SET @sql = REPLACE(@sql, N'{SourceTable}', @normalizedName);
+	SET @sql = REPLACE(@sql, (N'{SourceTable}'), @normalizedName);
 	
 	INSERT INTO [#expanded] (
 		[transaction_id],
@@ -217,10 +217,10 @@ AS
 	)
 	EXEC [sys].[sp_executesql]
 		@sql, 
-		N'@offsetMinutes int', 
+		(N'@offsetMinutes int'), 
 		@offsetMinutes = @offsetMinutes;
 
-	DECLARE @finalProjection nvarchar(MAX) = N'SELECT TOP (@TopRows) 
+	DECLARE @finalProjection nvarchar(MAX) = (N'SELECT TOP (@TopRows) 
 		--[transaction_id],
 		[type],
 		[start_time],
@@ -245,23 +245,23 @@ AS
 		[{columnName}] DESC; ';
 
 
-	IF @Mode IN (N'BLOCKING_COUNT', N'BLOCKING_SECONDS', N'BLOCKING_DURATION') BEGIN 
-		SET @finalProjection = REPLACE(@finalProjection, N'{columnName}', 
+	IF @Mode IN ((N'BLOCKING_COUNT'), (N'BLOCKING_SECONDS'), (N'BLOCKING_DURATIO(N') BEGIN 
+		SET @finalProjection = REPLACE(@finalProjection, (N'{columnName}'), 
 			CASE @Mode 
-				WHEN N'BLOCKING_COUNT' THEN N'blocked_processes'
-				WHEN N'BLOCKING_SECONDS' THEN N'blocking_seconds'
-				WHEN N'BLOCKING_DURATION' THEN N'duration'
+				WHEN (N'BLOCKING_COUNT' THEN (N'blocked_processes'
+				WHEN (N'BLOCKING_SECONDS' THEN (N'blocking_seconds'
+				WHEN (N'BLOCKING_DURATIO(N' THEN (N'duratio(N'
 			END);
 
 		EXEC [sys].[sp_executesql]
 			@finalProjection, 
-			N'@TopRows int', 
+			(N'@TopRows int'), 
 			@TopRows = @TopRows;
 
 		RETURN 0;
 	END;
 
-	SET @finalProjection = N'WITH ranker AS (
+	SET @finalProjection = (N'WITH ranker AS (
 		SELECT 
 			[{orderByCol}], 
 			COUNT(*) [hits]
@@ -293,36 +293,36 @@ AS
 		[x].[report]
 	FROM 
 		[#expanded] x 
-		INNER JOIN [ranker] r ON ISNULL([x].[{orderByCol}], N'''') = ISNULL([r].[{orderByCol}], '''')
+		INNER JOIN [ranker] r ON ISNULL([x].[{orderByCol}], (N'''') = ISNULL([r].[{orderByCol}], '''')
 	ORDER BY 
 		r.[hits] DESC; ';
 
 	--BLOCKING_STATEMENT | BLOCKING_APPLICATION | BLOCKING_RESOURCE
 	DECLARE @spacing nchar(5) = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9);
-	IF @Mode = N'BLOCKING_STATEMENT' BEGIN 
-		SET @finalProjection = REPLACE(@finalProjection, N'{orderByCol}', N'blocking_request');
-		SET @finalProjection = REPLACE(@finalProjection, N'{filter}', N'');
+	IF @Mode = (N'BLOCKING_STATEMENT' BEGIN 
+		SET @finalProjection = REPLACE(@finalProjection, (N'{orderByCol}'), (N'blocking_request');
+		SET @finalProjection = REPLACE(@finalProjection, (N'{filter}'), (N'');
 	END;
 	
-	IF @Mode = N'BLOCKING_APPLICATION' BEGIN 
-		SET @finalProjection = REPLACE(@finalProjection, N'{orderByCol}', N'blocking_client_app');
-		SET @finalProjection = REPLACE(@finalProjection, N'{filter}', N'');
+	IF @Mode = (N'BLOCKING_APPLICATIO(N' BEGIN 
+		SET @finalProjection = REPLACE(@finalProjection, (N'{orderByCol}'), (N'blocking_client_app');
+		SET @finalProjection = REPLACE(@finalProjection, (N'{filter}'), (N'');
 	END;
 
-	IF @Mode = N'BLOCKING_RESOURCE' BEGIN 
-		SET @finalProjection = REPLACE(@finalProjection, N'{orderByCol}', N'blocking_resource');
+	IF @Mode = (N'BLOCKING_RESOURCE' BEGIN 
+		SET @finalProjection = REPLACE(@finalProjection, (N'{orderByCol}'), (N'blocking_resource');
 
 		IF @ExcludeNullsForOrdering = 1
-			SET @finalProjection = REPLACE(@finalProjection, N'{filter}', @spacing + N'AND [blocking_resource] IS NOT NULL');
+			SET @finalProjection = REPLACE(@finalProjection, (N'{filter}'), @spacing + (N'AND [blocking_resource] IS NOT NULL');
 		ELSE 
-			SET @finalProjection = REPLACE(@finalProjection, N'{filter}', N'');
+			SET @finalProjection = REPLACE(@finalProjection, (N'{filter}'), (N'');
 	END;
 
 --PRINT @finalProjection;
 
 	EXEC sp_executesql 
 		@finalProjection,
-		N'@TopRows int', 
+		(N'@TopRows int'), 
 		@TopRows = @TopRows;
 
 	RETURN 0;
