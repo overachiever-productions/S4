@@ -38,6 +38,17 @@ There's a bug in here:
 			@TargetLine = 163
 
 
+
+
+PICKUP/NEXT: 
+-- didn't work until i specified -AllowClobber
+EXEC admindb.dbo.execute_powershell N'Install-Module -Name "AWS.Tools.S3" -Scope CurrentUser -Force -AllowClobber;';
+
+-- this didn't 'work' until I do Import-Module THEN do Get-Module... 
+EXEC admindb.dbo.execute_powershell N'Import-Module -Name "AWS.Tools.S3"; Get-Module -Name "AWS.Tools.S3";';
+
+
+
 */
 
 USE [admindb];
@@ -132,6 +143,7 @@ Validation:
 	END;
 
 	-- If we're still here, time to try and install the module: 
+-- TODO: might need to provide a switch that enables the -AllowClobber switch within the following powershell command... 
 	SET @commandResults = NULL;
 	EXEC @returnValue = dbo.[execute_powershell]
 		@Command = N'Install-Module AWS.Tools.S3 -Force -Scope CurrentUser | ConvertTo-Xml -As Stream;',
