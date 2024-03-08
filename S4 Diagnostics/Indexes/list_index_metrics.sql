@@ -505,7 +505,8 @@ AS
 		[index_id] int NOT NULL,
 		[key_columns] nvarchar(MAX) NOT NULL, 
 		[included_columns] nvarchar(MAX) NULL, 
-		[definition] nvarchar(MAX) NOT NULL 
+		[definition] nvarchar(MAX) NOT NULL,
+		PRIMARY KEY CLUSTERED ([object_id], [index_id])
 	);
 
 	WITH shredded AS ( 
@@ -680,7 +681,7 @@ AS
 		SET @sql = REPLACE(@sql, N'{forxml}', @crlftab + N'FOR XML PATH(N''index''), ROOT (N''indexes''))');
 		SET @sql = REPLACE(@sql, N'{projectOrReturn}', N'SELECT @output = (');
 
-		PRINT @sql;
+		--PRINT @sql;
 		DECLARE @output xml;
 		EXEC [sys].[sp_executesql]
 			@sql, 

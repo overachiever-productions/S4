@@ -1,5 +1,13 @@
 /*
 
+	TODO:
+		- currently using STUFF + FOR XML PATH ... vs STRING_AGG for SQL Server 16 and lower. 
+				need to set up some DYNAMIC code that replaces those operations depending upon which version of SQL SErver we're dealing with.
+		- Likewise, need to do something similar for the 3x columns found in SQL SErver 2022 (within sys.indexes) that aren't found in down-level versions. 
+			AND ... i've started this (in terms of logical addition of columns for #indexes_to_script ... but... 'gave up' when I then had to change the INSERT + SELECT clauses... 
+						i.e., just need to make the INSERT/SELECT statements fully dynamic.
+				that said... no need to bother including these 3x columns ([is_ignored_in_optimization], [suppress_dup_key_messages], [optimize_for_sequential_key]) if they're NOT needed for scripting definitions.
+
 	vNEXT: 
 		- Implement the @Directives and @Overrides. 
 				- @Directives would be anything that can be set for execution at runtime - i.e., IX creation SYNTAX that doesn't become PART of the persisted IX definition. 
@@ -215,14 +223,23 @@ AS
 		[fill_factor] tinyint NOT NULL,
 		[is_padded] bit NULL,
 		[is_disabled] bit NULL,
-		[is_ignored_in_optimization] bit NULL,
+		--[is_ignored_in_optimization] bit NULL,
 		[allow_row_locks] bit NULL,
 		[allow_page_locks] bit NULL,
 		[filter_definition] nvarchar(max) NULL,
 		[compression_delay] int NULL,
-		[suppress_dup_key_messages] bit NULL,
-		[optimize_for_sequential_key] bit NULL
+		--[suppress_dup_key_messages] bit NULL,  -- 2017+
+		--[optimize_for_sequential_key] bit NULL  -- 2019+ 
 	);
+
+	-- TODO: figure out a) IF [is_ignored_in_optimization] is something that needs to be part of IX definitions/scripts and b) when it was added 
+	IF (SELECT dbo.[get_engine_version]()) >= 14.00 BEGIN 
+		ALTER TABLE [#indexes_to_script] ADD [suppress_dup_key_messages] bit NULL;
+	END;
+
+	IF (SELECT dbo.[get_engine_version]()) >= 15.00 BEGIN 
+		ALTER TABLE [#indexes_to_script] ADD [optimize_for_sequential_key] bit NULL;
+	END;
 
 	SET @sql = N'	SELECT 
 		[s].[name] [schema_name],
@@ -232,8 +249,10 @@ AS
 		[x].[index_id],
 		[x].[index_name],
 		[i].[type_desc],
-		(SELECT STRING_AGG((QUOTENAME([c].[name]) + CASE WHEN [ic].[is_descending_key] = 1 THEN N'' DESC'' ELSE N'''' END), N'', '') WITHIN GROUP(ORDER BY [ic].[key_ordinal]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[key_ordinal] > 0 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id]) [key_columns], 
-		(SELECT STRING_AGG(QUOTENAME([c].[name]), N'', '') WITHIN GROUP(ORDER BY [ic].[key_ordinal]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[is_included_column] = 1 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id]) [included_columns],
+		--(SELECT STRING_AGG((QUOTENAME([c].[name]) + CASE WHEN [ic].[is_descending_key] = 1 THEN N'' DESC'' ELSE N'''' END), N'', '') WITHIN GROUP(ORDER BY [ic].[key_ordinal]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[key_ordinal] > 0 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id]) [key_columns], 
+		--(SELECT STRING_AGG(QUOTENAME([c].[name]), N'', '') WITHIN GROUP(ORDER BY [ic].[key_ordinal]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[is_included_column] = 1 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id]) [included_columns],
+		(SELECT STUFF((SELECT N'','' + QUOTENAME([c].[name]) + CASE WHEN [ic].[is_descending_key] = 1 THEN N'' DESC'' ELSE N'''' END FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[key_ordinal] > 0 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id] ORDER BY [ic].[key_ordinal] FOR XML PATH(N''''), TYPE).value(N''.'', N''nvarchar(MAX)''), 1,2, N'''')) [key_columns],
+		(SELECT STUFF((SELECT N'','' + QUOTENAME([c].[name]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[is_included_column] = 1 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id] ORDER BY [ic].[key_ordinal] FOR XML PATH(N''''), TYPE).value(N''.'', N''nvarchar(MAX)''), 1,2, N'''')) [included_columns],
 		[i].[is_unique],
 		[i].[data_space_id], 
 		[d].[name] [dataspace_name],
@@ -244,16 +263,14 @@ AS
 		[i].[fill_factor],
 		[i].[is_padded],
 		[i].[is_disabled],
-	--	[i].[is_hypothetical],
-		[i].[is_ignored_in_optimization],
+		--[i].[is_ignored_in_optimization], -- no idea when this was added ... 
 		[i].[allow_row_locks],
 		[i].[allow_page_locks],
 		--[i].[has_filter],
 		[i].[filter_definition],
-		[i].[compression_delay],
-		[i].[suppress_dup_key_messages],
-	--	[i].[auto_created],
-		[i].[optimize_for_sequential_key] 
+		[i].[compression_delay]
+		--[i].[suppress_dup_key_messages],
+		--[i].[optimize_for_sequential_key] 
 	FROM 
 		[{0}].sys.indexes [i]
 		INNER JOIN [#target_indexes] [x] ON [i].[object_id] = [x].[object_id] AND [i].[index_id] = [x].[index_id]
@@ -285,13 +302,13 @@ AS
 		[fill_factor],
 		[is_padded],
 		[is_disabled],
-		[is_ignored_in_optimization],
+		--[is_ignored_in_optimization],
 		[allow_row_locks],
 		[allow_page_locks],
 		[filter_definition],
-		[compression_delay],
-		[suppress_dup_key_messages],
-		[optimize_for_sequential_key]
+		[compression_delay]--,
+		--[suppress_dup_key_messages],
+		--[optimize_for_sequential_key]
 	)
 	EXEC sys.[sp_executesql]
 		@sql;
