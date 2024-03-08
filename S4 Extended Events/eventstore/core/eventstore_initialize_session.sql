@@ -30,7 +30,7 @@ AS
 
 	-- {copyright}
 
-	SET @PrintOnly = ISNULL(@PrintOnly, 1);
+	SET @PrintOnly = ISNULL(@PrintOnly, 0);
 	SET @MaxFiles = ISNULL(NULLIF(@MaxFiles, 0), 10);
 	SET @FileSizeMB = ISNULL(NULLIF(@FileSizeMB, 0), 200);
 	SET @MaxBufferEvents = ISNULL(NULLIF(@MaxBufferEvents, 0), 1024);
@@ -105,7 +105,9 @@ AS
 		@SerializedOutput = @SerializedOutput OUTPUT;
 
 	DECLARE @keepSession bit = 0;
+
 	IF dbo.[is_xml_empty](@SerializedOutput) <> 1 BEGIN 
+
 		IF @ReplaceSessionIfExists = NULL BEGIN 
 			RAISERROR('Target XE Session (@TargetSessionName): [%s] already exists. Either a ) manually drop it, b) set @ReplaceSessionIfExists = N''KEEP'' to keep as-is, or c) set @ReplaceSessionIfExists = N''REPLACE'' to DROP and re-CREATE.', 16, 1, @TargetSessionName);
 			RETURN -5;
@@ -217,15 +219,25 @@ USE [{database}];
 -- TODO:
 --	PRINT '-- TODO: wire-up job (etl processing) details... here... ';
 
+	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
+
 	IF @PrintOnly = 1 BEGIN 
 		EXEC dbo.[print_long_string] @finalSQL;
 	  END;
 	ELSE BEGIN 
 		BEGIN TRY 
-			PRINT 'would execute code here';
+
+			EXEC sys.[sp_executesql]
+				@finalSQL; 
+
 		END TRY 
 		BEGIN CATCH
-			PRINT 'would report on errors here.';
+			SELECT @errorLine = ERROR_LINE(), @errorMessage = N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+
+			RAISERROR(@errorMessage, 16, 1);
+			EXEC dbo.[extract_dynamic_code_lines] @finalSQL, @errorLine, 6;
+			RETURN -100;
+
 		END CATCH;
 	END;
 

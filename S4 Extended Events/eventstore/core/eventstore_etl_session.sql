@@ -79,11 +79,11 @@ AS
 	SET @sql = REPLACE(@sql, N'{targetSchema}', @targetSchema);
 	SET @sql = REPLACE(@sql, N'{targetTable}', @targetObjectName);
 
-	DECLARE @errorID int, @errorMessage nvarchar(MAX), @errorLine int;
+-- TODO: use a helper func to get this - based on underlying OS (windows or linux). 
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
 	BEGIN TRY 
 		BEGIN TRAN;
-
--- TODO: maybe look at validating the statement via: https://overachieverllc.atlassian.net/browse/S4-564 (assuming I can ever get a viable option for that to work that doesn't do deferred name resolution).
 
 			EXEC sys.sp_executesql 
 				@sql,
@@ -98,11 +98,15 @@ AS
 		COMMIT;
 	END TRY
 	BEGIN CATCH 
-		SELECT @errorID = ERROR_NUMBER(), @errorLine = ERROR_LINE(), @errorMessage = ERROR_MESSAGE();
-		RAISERROR(N'Exception processing ETL for Session: [%s]. Error Number %i, Line %i: %s', 16, 1, @SessionName, @errorID, @errorLine, @errorMessage);
+		SELECT 
+			@errorLine = ERROR_LINE(), 
+			@errorMessage = N'Exception processing ETL for Session: [%s].' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
 
 		IF @@TRANCOUNT > 0 
 			ROLLBACK;
+
+		RAISERROR(@errorMessage, 16, 1, @SessionName);
+		EXEC dbo.[extract_dynamic_code_lines] @sql, @errorLine, 6;
 
 		RETURN -100;
 	END CATCH;
