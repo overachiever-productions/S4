@@ -5,6 +5,12 @@
 			@TargetBucketName = N's4-tests', 
 			@TestKey = N'ooink';
 
+
+	.REMARKS
+		In some cases ... permissions might be locked down such that <profile> or <machine> might not
+		have permissions to READ or ENUMERATE S3 buckets (but will (or might) have perms to WRITE to a given bucket). 
+		In such a case, @SkipBucketReadTest should be set to 1 to see if a WRITE will work WITHOUT testing/checking for buckets/read-perms first.
+
 */
 
 USE [admindb];
@@ -16,7 +22,8 @@ GO
 
 CREATE PROC dbo.[aws3_verify_bucket_write]
 	@TargetBucketName		sysname, 
-	@TestKey				sysname				
+	@TestKey				sysname, 
+	@SkipBucketReadTest		bit			= 0			-- in some (restricted) environments, current machine/profile might NOT have Get-S3Bucket perms OR READ perms - just write perms.
 AS
     SET NOCOUNT ON; 
 
@@ -42,25 +49,27 @@ AS
 	END CATCH;
 
 	-- verify that target bucket exists:
-	BEGIN TRY 
-		SET @currentCommand = N'Get-S3Bucket -BucketName "' + RTRIM(LTRIM(@TargetBucketName)) + N'"';
-		DECLARE @stringOutput nvarchar(MAX);
-		EXEC @returnValue = dbo.[execute_powershell]
-			@Command = @currentCommand,
-			@StringOutput = @stringOutput OUTPUT,
-			@ErrorMessage = @errorMessage OUTPUT;
+	IF @SkipBucketReadTest = 0 BEGIN
+		BEGIN TRY 
+			SET @currentCommand = N'Get-S3Bucket -BucketName "' + RTRIM(LTRIM(@TargetBucketName)) + N'"';
+			DECLARE @stringOutput nvarchar(MAX);
+			EXEC @returnValue = dbo.[execute_powershell]
+				@Command = @currentCommand,
+				@StringOutput = @stringOutput OUTPUT,
+				@ErrorMessage = @errorMessage OUTPUT;
 		
-		IF NULLIF(@stringOutput, N'') IS NULL BEGIN 
-			RAISERROR(N'@TargetBucketName: [%s] does not exist.', 16, 1, @TargetBucketName);
-			RETURN -20;
-		END;
+			IF NULLIF(@stringOutput, N'') IS NULL BEGIN 
+				RAISERROR(N'@TargetBucketName: [%s] does not exist.', 16, 1, @TargetBucketName);
+				RETURN -20;
+			END;
 
-	END TRY
-	BEGIN CATCH 
-		SET @errorMessage = N'Unexpected Error Validating @TargetBucketName: [' + @TargetBucketName + N']. Error ' + CAST(ERROR_NUMBER() AS sysname) + N': ' + ERROR_MESSAGE();
-		RAISERROR(@errorMessage, 16, 1);
-		RETURN -22;
-	END CATCH;
+		END TRY
+		BEGIN CATCH 
+			SET @errorMessage = N'Unexpected Error Validating @TargetBucketName: [' + @TargetBucketName + N']. Error ' + CAST(ERROR_NUMBER() AS sysname) + N': ' + ERROR_MESSAGE();
+			RAISERROR(@errorMessage, 16, 1);
+			RETURN -22;
+		END CATCH;
+	END;
 
 	SET @currentCommand = N'Write-S3Object -BucketName ''' + RTRIM(LTRIM(@TargetBucketName)) + N''' -Key ''' + @TestKey + N''' -Content ''Test Data - for Write-Test by admindb.'' -ConcurrentServiceRequest 2;';
 	PRINT @currentCommand;
