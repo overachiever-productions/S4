@@ -51,6 +51,13 @@ AS
 		RETURN -10;
 	END;
 
+	DECLARE @storageType sysname, @fileName sysname;
+	SELECT 
+		@storageType = [nodes].[data].value(N'(storage_type)[1]',N'sysname'), 
+		@fileName = [nodes].[data].value(N'(file_name)[1]',N'sysname')
+	FROM 
+		@SerializedOutput.nodes(N'//session') [nodes] ([data]);
+
 	DECLARE @cet datetime2;
 	DECLARE @lset datetime2;
 	DECLARE @attributes nvarchar(300);
@@ -62,13 +69,6 @@ AS
 		@LSET = @lset OUTPUT,
 		@Attributes = @attributes OUTPUT, 
         @InitializationDaysBack = @InitializationDaysBack;
-
-	DECLARE @storageType sysname, @fileName sysname;
-	SELECT 
-		@storageType = [nodes].[data].value(N'(storage_type)[1]',N'sysname'), 
-		@fileName = [nodes].[data].value(N'(file_name)[1]',N'sysname')
-	FROM 
-		@SerializedOutput.nodes(N'//session') [nodes] ([data]);
 
 	IF @storageType = N'ring_buffer' BEGIN 
 		SELECT 
@@ -157,6 +157,10 @@ AS
 				[row_id] = (SELECT MAX(row_id) FROM [#raw_xe_data]);
 
 			SET @ExtractionAttributes = @newAttribute;
+		  END;
+		ELSE BEGIN 
+			-- If there were no NEW rows extracted, PRESERVE the previous attributes:
+			SELECT @ExtractionAttributes = @attributes;
 		END;
 	END; 
 

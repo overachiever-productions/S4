@@ -25,7 +25,7 @@ AS
 	SELECT @CET = DATEADD(MILLISECOND, -2, GETUTCDATE());
 
 	-- grab LSET and attributes: 
-	DECLARE @intializationLSET datetime2 = DATEADD(DAY, 0 - @InitializationDaysBack, GETDATE());
+	DECLARE @intializationLSET datetime2 = DATEADD(DAY, 0 - @InitializationDaysBack, GETUTCDATE());
 	DECLARE @maxID int; 
 
 	SELECT 
@@ -37,7 +37,6 @@ AS
 		AND [lset] IS NOT NULL;
 
 	SELECT 
-		--@LSET = ISNULL([lset], @intializationLSET),	-- MKC: can't set ISNULL here... cuz, there won't ALWAYS be a row/result... 
 		@Attributes = [attributes]
 	FROM 
 		dbo.[eventstore_extractions] 

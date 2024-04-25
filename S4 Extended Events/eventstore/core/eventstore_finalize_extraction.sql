@@ -13,6 +13,7 @@ GO
 CREATE PROC dbo.[eventstore_finalize_extraction]
 	@SessionName			sysname,
 	@ExtractionId			int, 
+	@RowCount				int,
 	@Attributes				nvarchar(300)		= NULL
 AS
     SET NOCOUNT ON; 
@@ -29,7 +30,8 @@ AS
 	UPDATE [dbo].[eventstore_extractions] 
 	SET 
 		[lset] = [cet], 
-		[attributes] = @Attributes 
+		[attributes] = @Attributes, 
+		[row_count] = @RowCount
 	WHERE 
 		[extraction_id] = @ExtractionId; 
 

@@ -81,6 +81,7 @@ AS
 
 -- TODO: use a helper func to get this - based on underlying OS (windows or linux). 
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @rowCount int;
 	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
 	BEGIN TRY 
 		BEGIN TRAN;
@@ -90,9 +91,12 @@ AS
 				N'@EventData xml', 
 				@EventData = @Output;
 
+			SELECT @rowCount = @@ROWCOUNT;
+
 			EXEC dbo.[eventstore_finalize_extraction] 
 				@SessionName = @SessionName, 
 				@ExtractionId = @extractionID, 
+				@RowCount = @rowCount,
 				@Attributes = @extractionAttributes;
 		
 		COMMIT;
@@ -107,6 +111,13 @@ AS
 
 		RAISERROR(@errorMessage, 16, 1, @SessionName);
 		EXEC dbo.[extract_dynamic_code_lines] @sql, @errorLine, 6;
+
+		UPDATE dbo.[eventstore_extractions] 
+		SET
+			[error] = @errorMessage
+		WHERE 
+			[extraction_id] = @extractionID 
+			AND [session_name] = @SessionName;
 
 		RETURN -100;
 	END CATCH;
