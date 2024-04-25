@@ -83,12 +83,13 @@ AS
 		@targetTable = PARSENAME(@normalizedName, 1);
 
 	-- See vNEXT about ... not supporting schema names currently.
-	--DECLARE @targetTableName sysname = QUOTENAME(@targetSchema) + N'.' + QUOTENAME(@targetTable);
+	--	2024-03-29 (I added the following - and .. it seems to work?)
+	DECLARE @targetTableName sysname = QUOTENAME(@targetSchema) + N'.' + QUOTENAME(@targetTable);
 
 	DECLARE @indexData xml; 
 	EXEC dbo.[list_index_metrics]
 		@TargetDatabase = @targetDatabase,
-		@TargetTables = @targetTable,
+		@TargetTables = @targetTableName,
 		@ExcludeSystemTables = 1,
 		@IncludeFragmentationMetrics = 0,
 		@MinRequiredTableRowCount = 0,
@@ -115,7 +116,6 @@ AS
 			[data].[row].query(N'(//operational_metrics/operational_metrics)[1]') [operational_metrics]
 		FROM 
 			@indexData.nodes(N'//index') [data]([row])
-
 	) 
 
 	SELECT 
