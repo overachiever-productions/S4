@@ -170,7 +170,14 @@ CREATE TABLE [{logging_table_name}] (
 	[timestamp] datetime NOT NULL DEFAULT GETDATE(), 
 	[is_error] bit NOT NULL DEFAULT (0), 
 	[rolled_back] bit NOT NULL DEFAULT (0),
-	[detail] nvarchar(MAX) NOT NULL
+	[batch_size] int NOT NULL, 
+	[wait_for] sysname NOT NULL, 
+	[current_rows_processed] int NOT NULL, 
+	[total_rows_processed] int NOT NULL, 
+	[current_batch_milliseconds] int NOT NULL, 
+	[cummulative_milliseconds] int NOT NULL, 
+	[warning] nvarchar(MAX) NULL, 
+	[error] nvarchar(MAX) NULL
 ); 
 
 DECLARE @WaitForDelay sysname = N''{wait_for}''; 
@@ -182,6 +189,7 @@ DECLARE @currentRowsProcessed int = @BatchSize;
 DECLARE @totalRowsProcessed int = 0;
 DECLARE @errorDetails nvarchar(MAX);
 DECLARE @errorsOccured bit = 0;
+DECLARE @rolledBack bit = 0;
 DECLARE @currentErrorCount int = 0;{deadlock_declaration}
 DECLARE @startTime datetime = GETDATE();
 DECLARE @batchStart datetime;{dynamic_batching_declarations}
@@ -242,6 +250,7 @@ DECLARE @initialBatchSize int = @BatchSize;
 WHILE @continue = 1 BEGIN 
 	
 	SET @batchStart = GETDATE();
+	SET @errorsOccured = 0, @rolledBack = 0;
 	
 	BEGIN TRY
 		BEGIN TRAN; 
@@ -249,11 +258,10 @@ WHILE @continue = 1 BEGIN
 			-------------------------------------------------------------------------------------------------
 			-- batched operation code:
 			-------------------------------------------------------------------------------------------------
-!!!!!!!!-- Specify YOUR code here, i.e., this is just a TEMPLATE:
+--!!!!!!!!-- Specify YOUR code here, i.e., this is just a TEMPLATE:
 {Batch_Statement} 
-!!!!!!!! - end YOUR code... 
+--!!!!!!!! - end YOUR code... 
 
-!!!!!!!! - NOTE: you may want to pay attention to ROWLOCKs on INSERTs/UPDATEs/DELETEs. You may ALSO want to BYPASS triggers via CONTEXT_INFO(), etc. for the operations listed above.
 			-------------------------------------------
 
 			SELECT 
@@ -266,20 +274,21 @@ WHILE @continue = 1 BEGIN
 
 		INSERT INTO [{logging_table_name}] (
 			[timestamp],
-			[detail]
+			[batch_size], 
+			[wait_for], 
+			[current_rows_processed], 
+			[total_rows_processed], 
+			[current_batch_milliseconds], 
+			[cummulative_milliseconds]
 		)
 		SELECT 
 			GETDATE() [timestamp], 
-			(
-				SELECT 
-					@BatchSize [settings.batch_size], 
-					@WaitForDelay [settings.wait_for], 
-					@currentRowsProcessed [progress.current_batch_count], 
-					@totalRowsProcessed [progress.total_rows_processed],
-					DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [progress.batch_milliseconds], 
-					DATEDIFF(MILLISECOND, @startTime, GETDATE())[progress.total_milliseconds]
-				FOR JSON PATH, ROOT(''detail'')
-			) [detail];{MaxSeconds}{TerminateIfTempObject}{DynamicTuning}
+			@BatchSize [batch_size], 
+			@WaitForDelay [wait_for], 
+			@currentRowsProcessed [current_rows_processed], 
+			@totalRowsProcessed [total_rows_processed],
+			DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [current_batch_milliseconds], 
+			DATEDIFF(MILLISECOND, @startTime, GETDATE())[cummulative_milliseconds];{MaxSeconds}{TerminateIfTempObject}{DynamicTuning}
 		
 		WAITFOR DELAY @WaitForDelay;
 	END TRY
@@ -289,25 +298,32 @@ WHILE @continue = 1 BEGIN
 
 		IF @@TRANCOUNT > 0 BEGIN
 			ROLLBACK; 
-			PRINT ''rolled back'';
-			--SET @rolledBack = 1;
+			SET @rolledBack = 1;
 		END;
 
 		INSERT INTO [{logging_table_name}] (
 			[timestamp],
 			[is_error],
-			[detail]
+			[rolled_back], 
+			[batch_size], 
+			[wait_for], 
+			[current_rows_processed], 
+			[total_rows_processed], 
+			[current_batch_milliseconds], 
+			[cummulative_milliseconds],
+			[error]
 		)
 		SELECT
 			GETDATE() [timestamp], 
 			1 [is_error], 
-			( 
-				SELECT 
-					@currentRowsProcessed [progress.current_batch_count], 
-					@totalRowsProcessed [progress.total_rows_processed],
-					N''Unexpected Error Occurred: '' + @errorDetails [errors.error]
-				FOR JSON PATH, ROOT(''detail'')
-			) [detail];
+			@rolledBack [rolled_back], 
+			@BatchSize [batch_size], 
+			@WaitForDelay [wait_for], 
+			@currentRowsProcessed [current_rows_processed], 
+			@totalRowsProcessed [total_rows_processed],
+			DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [current_batch_milliseconds], 
+			DATEDIFF(MILLISECOND, @startTime, GETDATE())[cummulative_milliseconds],
+			@errorDetails [error];{MaxSeconds}{TerminateIfTempObject}{DynamicTuning}
 					   
 		SET @errorsOccured = 1;
 		
@@ -321,20 +337,26 @@ END;
 			INSERT INTO [{logging_table_name}] (
 				[timestamp],
 				[is_error],
-				[detail]
+				[rolled_back], 
+				[batch_size], 
+				[wait_for], 
+				[current_rows_processed], 
+				[total_rows_processed], 
+				[current_batch_milliseconds], 
+				[cummulative_milliseconds],
+				[error]
 			)
 			SELECT
 				GETDATE() [timestamp], 
 				1 [is_error], 
-				( 
-					SELECT 
-						@currentRowsProcessed [progress.current_batch_count], 
-						@totalRowsProcessed [progress.total_rows_processed],
-						DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [progress.batch_milliseconds], 
-						DATEDIFF(MILLISECOND, @startTime, GETDATE())[progress.total_milliseconds],
-						CONCAT(N''Maximum execution seconds allowed for execution met/exceeded. Max Allowed Seconds: '', {Max_Allowed_Execution_Seconds}, N''.'') [errors.error]
-					FOR JSON PATH, ROOT(''detail'')
-				) [detail];
+				@rolledBack [rolled_back], 
+				@BatchSize [batch_size], 
+				@WaitForDelay [wait_for], 
+				@currentRowsProcessed [current_rows_processed], 
+				@totalRowsProcessed [total_rows_processed],
+				DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [current_batch_milliseconds], 
+				DATEDIFF(MILLISECOND, @startTime, GETDATE())[cummulative_milliseconds],
+				CONCAT(N''Maximum execution seconds allowed for execution met/exceeded. Max Allowed Seconds: '', {Max_Allowed_Execution_Seconds}, N''.'') [error];
 			
 			SET @errorsOccured = 1;
 
@@ -344,20 +366,26 @@ END;
 			INSERT INTO [{logging_table_name}] (
 				[timestamp],
 				[is_error],
-				[detail]
+				[rolled_back], 
+				[batch_size], 
+				[wait_for], 
+				[current_rows_processed], 
+				[total_rows_processed], 
+				[current_batch_milliseconds], 
+				[cummulative_milliseconds],
+				[error]				
 			)
 			SELECT
 				GETDATE() [timestamp], 
 				1 [is_error], 
-				( 
-					SELECT 
-						@currentRowsProcessed [progress.current_batch_count], 
-						@totalRowsProcessed [progress.total_rows_processed],
-						DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [progress.batch_milliseconds], 
-						DATEDIFF(MILLISECOND, @startTime, GETDATE())[progress.total_milliseconds],
-						N''Graceful execution shutdown/bypass directive detected - object [{tempdb_safe_stop_name}] found in tempdb. Terminating Execution.'' [errors.error]
-					FOR JSON PATH, ROOT(''detail'')
-				) [detail];
+				@rolledBack [rolled_back], 
+				@BatchSize [batch_size], 
+				@WaitForDelay [wait_for], 
+				@currentRowsProcessed [current_rows_processed], 
+				@totalRowsProcessed [total_rows_processed],
+				DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [current_batch_milliseconds], 
+				DATEDIFF(MILLISECOND, @startTime, GETDATE())[cummulative_milliseconds],
+				N''Graceful execution shutdown/bypass directive detected - object [{tempdb_safe_stop_name}] found in tempdb. Terminating Execution.'' [error];
 			
 			SET @errorsOccured = 1;
 
@@ -387,18 +415,26 @@ END;
 			INSERT INTO [{logging_table_name}] (
 				[timestamp],
 				[is_error],
-				[detail]
+				[rolled_back], 
+				[batch_size], 
+				[wait_for], 
+				[current_rows_processed], 
+				[total_rows_processed], 
+				[current_batch_milliseconds], 
+				[cummulative_milliseconds],
+				[error]	
 			)
 			SELECT
 				GETDATE() [timestamp], 
 				1 [is_error], 
-				( 
-					SELECT 
-						@currentRowsProcessed [progress.current_batch_count], 
-						@totalRowsProcessed [progress.total_rows_processed],
-						N''Deadlock Detected. Logging to history table - but not counting deadlock as normal error for purposes of error handling/termination.'' [errors.error]
-					FOR JSON PATH, ROOT(''detail'')
-				) [detail];
+				@rolledBack [rolled_back], 
+				@BatchSize [batch_size], 
+				@WaitForDelay [wait_for], 
+				@currentRowsProcessed [current_rows_processed], 
+				@totalRowsProcessed [total_rows_processed],
+				DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [current_batch_milliseconds], 
+				DATEDIFF(MILLISECOND, @startTime, GETDATE())[cummulative_milliseconds],
+				N''Deadlock Detected. Logging to history table - but not counting deadlock as normal error for purposes of error handling/termination.'' [error];
 					   
 			SET @deadlockOccurred = 1;		
 		END; ';
@@ -407,18 +443,26 @@ END;
 			INSERT INTO [{logging_table_name}] (
 				[timestamp],
 				[is_error],
-				[detail]
+				[rolled_back], 
+				[batch_size], 
+				[wait_for], 
+				[current_rows_processed], 
+				[total_rows_processed], 
+				[current_batch_milliseconds], 
+				[cummulative_milliseconds],
+				[error]	
 			)
 			SELECT
 				GETDATE() [timestamp], 
 				1 [is_error], 
-				( 
-					SELECT 
-						@currentRowsProcessed [progress.current_batch_count], 
-						@totalRowsProcessed [progress.total_rows_processed],
-						CONCAT(N''Max allowed errors count reached/exceeded: '', @MaxAllowedErrors, N''. Terminating Execution.'') [errors.error]
-					FOR JSON PATH, ROOT(''detail'')
-				) [detail];
+				@rolledBack [rolled_back], 
+				@BatchSize [batch_size], 
+				@WaitForDelay [wait_for], 
+				@currentRowsProcessed [current_rows_processed], 
+				@totalRowsProcessed [total_rows_processed],
+				DATEDIFF(MILLISECOND, @batchStart, GETDATE()) [current_batch_milliseconds], 
+				DATEDIFF(MILLISECOND, @startTime, GETDATE())[cummulative_milliseconds],				
+				CONCAT(N''Max allowed errors count reached/exceeded: '', @MaxAllowedErrors, N''. Terminating Execution.'') [error];
 
 			GOTO Finalize;
 		END;';
