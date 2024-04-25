@@ -1,16 +1,28 @@
 /*
 
+	BUG/TODO: 
+		if @OverwriteTableIfIExists = N'REPLACE' 
+			then... need to DELETE FROM dbo.eventstore_extractions WHERE session_name = <session_name> too...
+
+
+	vNEXT: 
+		- move ALL checks for '@OverwriteXXXIfExists' up to the TOP of the sproc
+			and throw errors IF overwrites not allowed (and data already exists). 
+				(AND set @deleteXXX = 1 for logic/processing further down in the sproc when/as needed). 
+			THAT way we fail EARLY for any potential problems
+				where "fail early" means ... we fail BEFORE making partial changes/writes that MIGHT put things in a crummy/semi-inconsistent state.
 
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_initialize_session]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_initialize_session];
+IF OBJECT_ID('dbo.[eventstore_setup_session]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_setup_session];
 GO
 
-CREATE PROC dbo.[eventstore_initialize_session]
+CREATE PROC dbo.[eventstore_setup_session]
+	@EventStoreKey							sysname,
 	@TargetSessionName						sysname,
 	@TargetEventStoreTable					sysname,
 	@TraceTarget							sysname = N'event_file',	-- { event_file | ring_buffer }. When 'ring_buffer', use/set @MaxBufferEvents; when event_file, use/set @MaxiFiles + @FileSizeMB + @TraceFilePath.
@@ -20,8 +32,13 @@ CREATE PROC dbo.[eventstore_initialize_session]
 	@MaxBufferEvents						int = 1024,
 	@StartupState							bit = 1, 
 	@StartSessionOnCreation					bit = 1,
-	@ReplaceSessionIfExists					sysname = NULL,				-- { KEEP | REPLACE}
+	@EtlEnabled								bit = 1,
+	@EtlFrequencyMinutes					int = 10,
+	@EtlProcedureName						sysname,
+	@DataRetentionDays						int = 90,
+	@OverwriteSessionIfExists				sysname = NULL,				-- { KEEP | REPLACE}
 	@OverwriteTableIfExists					sysname = NULL,				-- { KEEP | REPLACE}
+	@OverwriteSettingsIfExist				sysname = NULL,				-- { KEEP | REPLACE}
 	@EventStoreTableDDL						nvarchar(MAX),				-- Expect exact/raw table DDL - with any IXes, compression, etc. defined as needed. ONLY 'templating' is {schema} and {table} vs hard-coded values.
 	@EventStoreSessionDDL					nvarchar(MAX),				-- Expeect MOSTLY raw Session DDL. Tokens for: {session_name}, ON {server_or_database}, {xe_target}, and {starupt_state}
 	@PrintOnly								bit = 0	
@@ -38,7 +55,7 @@ AS
 	SET @StartupState = ISNULL(@StartupState, 1);
 	SET @StartSessionOnCreation = ISNULL(@StartSessionOnCreation, 1);	
 
-	SET @ReplaceSessionIfExists = NULLIF(@ReplaceSessionIfExists, N'');
+	SET @OverwriteSessionIfExists = NULLIF(@OverwriteSessionIfExists, N'');
 	SET @OverwriteTableIfExists = NULLIF(@OverwriteTableIfExists, N'');
 
 	IF LOWER(@TraceTarget) NOT IN (N'event_file', N'ring_buffer') BEGIN 
@@ -74,6 +91,9 @@ AS
 	DECLARE @fullyQualifiedTargetTableName nvarchar(MAX) = QUOTENAME(@targetDatabase) + N'.' + QUOTENAME(@targetSchema) + N'.' + QUOTENAME(@targetObjectName) + N'';
 	DECLARE @check nvarchar(MAX) = N'SELECT @targetObjectID = OBJECT_ID(''' + @fullyQualifiedTargetTableName + N''');'
 
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Check for Overwrite Options/Settings (and needs):
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @targetObjectID int;
 	EXEC [sys].[sp_executesql] 
 		@check, 
@@ -89,6 +109,8 @@ AS
 
 		IF UPPER(@OverwriteTableIfExists) = N'REPLACE' BEGIN 
 			SET @dropTable = N'DROP TABLE [{schema}].[{table}];' + @crlf;
+
+			SET @dropTable = @dropTable + N'DELETE FROM dbo.eventstore_extractions WHERE [session_name] = N''' + @TargetSessionName + N'''' + @crlf;
 		END;
 
 		IF UPPER(@OverwriteTableIfExists) = N'KEEP' BEGIN 
@@ -105,30 +127,47 @@ AS
 		@SerializedOutput = @SerializedOutput OUTPUT;
 
 	DECLARE @keepSession bit = 0;
-
 	IF dbo.[is_xml_empty](@SerializedOutput) <> 1 BEGIN 
-
-		IF @ReplaceSessionIfExists = NULL BEGIN 
-			RAISERROR('Target XE Session (@TargetSessionName): [%s] already exists. Either a ) manually drop it, b) set @ReplaceSessionIfExists = N''KEEP'' to keep as-is, or c) set @ReplaceSessionIfExists = N''REPLACE'' to DROP and re-CREATE.', 16, 1, @TargetSessionName);
+		
+		IF @OverwriteSessionIfExists IS NULL BEGIN 
+			RAISERROR('Target XE Session (@TargetSessionName): [%s] already exists. Either a ) manually drop it, b) set @OverwriteSessionIfExists = N''KEEP'' to keep as-is, or c) set @OverwriteSessionIfExists = N''REPLACE'' to DROP and re-CREATE.', 16, 1, @TargetSessionName);
 			RETURN -5;
 		END; 
 
-		IF UPPER(@ReplaceSessionIfExists) = N'REPLACE' BEGIN 
+		IF UPPER(@OverwriteSessionIfExists) = N'REPLACE' BEGIN 
 			SET @dropSession = N'DROP EVENT SESSION [{session_name}] ON {server_or_database};' + @crlf;
 		END;
 
-		IF UPPER(@ReplaceSessionIfExists) = N'KEEP' BEGIN 
+		IF UPPER(@OverwriteSessionIfExists) = N'KEEP' BEGIN 
 			SET @keepSession =1;
 		END;
 	END;
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	/* Check to see if dbo.eventstore_settings has row-data for this session already:	*/
+	DECLARE @keepSetting bit = 0;
+	DECLARE @deleteSettingRow nvarchar(MAX) = N'';
+	IF EXISTS (SELECT NULL FROM dbo.[eventstore_settings] WHERE [event_store_key] = @EventStoreKey) BEGIN 
+		IF @OverwriteSettingsIfExist IS NULL BEGIN 
+			RAISERROR(N'Settings for event_key [%s] already exist in admindb.dbo.eventstore_settings. Either a) manually modify dbo.evenstore_settings, b) set @OverwriteSettingsIfExist = N''KEEP'' to keep as-is, or c) set @OverwriteSettingsIfExist = N''REPLACE''.', 16, 1, @EventStoreKey);
+			RETURN -100;
+		END;
+		
+		IF UPPER(@OverwriteSettingsIfExist) = N'REPLACE' BEGIN 
+			SET @deleteSettingRow = N'DELETE FROM dbo.eventstore_settings WHERE [event_store_key] = N''' + @EventStoreKey + N'''; ';
+		END;
+
+		IF UPPER(@OverwriteSettingsIfExist) = N'KEEP' BEGIN 
+			SET @keepSetting = 1;
+		END;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Process Table DDL
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @tableDDLCommand nvarchar(MAX) = @EventStoreTableDDL;
-	SET @tableDDLCommand = N'-----------------------------------------------------------------------------------------------------------------------------------------------------
+	SET @tableDDLCommand = N'/*---------------------------------------------------------------------------------------------------------------------------------------------------
 -- Create EventStore Table: [{database}].[{schema}].[{table}]
------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------*/
 USE [{database}]; 
 {drop}' + @tableDDLCommand;
 
@@ -137,9 +176,9 @@ USE [{database}];
 	SET @tableDDLCommand = REPLACE(@tableDDLCommand, N'{schema}', @targetSchema);
 	SET @tableDDLCommand = REPLACE(@tableDDLCommand, N'{table}', @targetObjectName);	
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Process Session DDL
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @serverOrDatabase sysname = N'SERVER';
 	IF @@VERSION LIKE N'%Azure%'
 		SET @serverOrDatabase = N'DATABASE';
@@ -160,9 +199,9 @@ USE [{database}];
 	)';
 
 	DECLARE @sessionDDLCommand nvarchar(MAX) = @EventStoreSessionDDL;
-	SET @sessionDDLCommand = N'-----------------------------------------------------------------------------------------------------------------------------------------------------
+	SET @sessionDDLCommand = N'/*---------------------------------------------------------------------------------------------------------------------------------------------------
 -- Create EventStore Session: [{session_name}]
------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------*/
 USE [{database}]; 
 {drop}' + @sessionDDLCommand;
 
@@ -185,19 +224,53 @@ USE [{database}];
 	SET @sessionDDLCommand = REPLACE(@sessionDDLCommand, N'{max_files}', @MaxFiles);
 	SET @sessionDDLCommand = REPLACE(@sessionDDLCommand, N'{startup_state}', @startup);
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	-- TODO: jobs stuff... 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Setup Jobs/Processing details within eventstore_settings:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @settingDMLCommand nvarchar(MAX) = N'/*---------------------------------------------------------------------------------------------------------------------------------------------------
+-- Settings: 
+---------------------------------------------------------------------------------------------------------------------------------------------------*/
+USE [{database}];
+';
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	IF @keepSetting = 0 
+		SET @settingDMLCommand = @settingDMLCommand + @deleteSettingRow + @crlf;
+
+	DECLARE @collectionEnabled bit = COALESCE(NULLIF(@StartupState, 0), NULLIF(@StartSessionOnCreation, 0), 0);
+
+	SET @settingDMLCommand = @settingDMLCommand + N'INSERT INTO [dbo].[eventstore_settings] (
+	[event_store_key],
+	[session_name],
+	[etl_proc_name],
+	[target_table],
+	[collection_enabled],
+	[etl_enabled],
+	[etl_frequency_minutes],
+	[retention_days]
+)
+VALUES (
+	N''' + @EventStoreKey + N''',
+	N''' + @TargetSessionName + N''',
+	N''' + @EtlProcedureName + N''',
+	N''' + @TargetEventStoreTable + N''',
+	' + CAST(@collectionEnabled AS sysname) + N',
+	' + CAST(@EtlEnabled AS sysname) + N',
+	' + CAST(@EtlFrequencyMinutes AS sysname) + N',
+	' + CAST(@DataRetentionDays AS sysname) + N'
+); ';
+
+	SET @settingDMLCommand = REPLACE(@settingDMLCommand, N'{database}', @targetDatabase);
+
+	-- create a job if/as needed... 
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Processing / Output
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @finalSQL nvarchar(MAX) = N'';
 
 	/* Always create the table first ... (just in case there's a job out there trying to push data from an EXISTING XE Session into a table... */
 	IF @keepTable = 1 
-		SET @finalSQL = @finalSQL + N'-- @TargetEventStoreTable set to ''KEEP'' - Keeping Table ' + @TargetEventStoreTable + N' as-is.';
+		SET @finalSQL = @finalSQL + N'-- @OverwriteTableIfExists set to ''KEEP'' - Keeping Table ' + @TargetEventStoreTable + N' as-is.';
 	ELSE 
 		SET @finalSQL = @finalSQL + @tableDDLCommand; 
 
@@ -207,17 +280,24 @@ USE [{database}];
 	SET @finalSQL = @finalSQL + @crlf + @crlf;
 
 	IF @keepSession = 1 
-		SET @finalSQL = @finalSQL + N'-- @ReplaceSessionIfExists set to ''KEEP'' - Keeping XE Session [' + @TargetSessionName + N'] as-is.' ; 
+		SET @finalSQL = @finalSQL + N'-- @OverwriteSessionIfExists set to ''KEEP'' - Keeping XE Session [' + @TargetSessionName + N'] as-is.' ; 
 	ELSE 
 		SET @finalSQL = @finalSQL + @sessionDDLCommand; 
 
 	IF @PrintOnly = 1 
 		SET @finalSQL = @finalSQL + @crlf + N'GO';
 
-	SET @finalSQL = @finalSQL + @crlf; 
+	SET @finalSQL = @finalSQL + @crlf + @crlf;
 
--- TODO:
---	PRINT '-- TODO: wire-up job (etl processing) details... here... ';
+	IF @keepSetting = 1  
+		SET @finalSQL = @finalSQL + N'-- @OverwriteSettingsIfExist set to ''KEEP'' - Keeping dbo.evenstore_settings for [' + @EventStoreKey + N'] as-is.';
+	ELSE 
+		SET @finalSQL = @finalSQL + @settingDMLCommand;
+
+	IF @PrintOnly = 1 
+		SET @finalSQL = @finalSQL + @crlf + N'GO';
+
+	SET @finalSQL = @finalSQL + @crlf;
 
 	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
 

@@ -7,13 +7,14 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_init_capture_large_sql]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_init_capture_large_sql];
+IF OBJECT_ID('dbo.[eventstore_enable_large_sql]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_enable_large_sql];
 GO
 
-CREATE PROC dbo.[eventstore_init_capture_large_sql]
-	@TargetSessionName						sysname = N'capture_large_sql', 
+CREATE PROC dbo.[eventstore_enable_large_sql]
+	@TargetSessionName						sysname = N'eventstore_large_sql',   
 	@TargetEventStoreTable					sysname = N'admindb.dbo.eventstore_large_sql', 
+	@EtlProcedureName						sysname = N'admindb.dbo.eventstore_etl_large_sql',
 	@TraceTarget							sysname = N'event_file',				
 	@TraceFilePath							sysname = N'D:\Traces', 
 	@MaxFiles								int = 10, 
@@ -24,24 +25,29 @@ CREATE PROC dbo.[eventstore_init_capture_large_sql]
 	@DurationMillisecondsThreshold			int = 20000,
 	@CPUMillisecondsThreshold				int = 15000,
 	@RowCountThreshold						int = 20000,
-	@ReplaceSessionIfExists					sysname = NULL,			-- { KEEP | REPLACE} 
+	@EventStoreDataRetentionDays			int = 90,
+	@OverwriteSessionIfExists				sysname = NULL,			-- { KEEP | REPLACE} 
 	@OverwriteTableIfExists					sysname = NULL,			-- { KEEP | REPLACE} 
+	@OverwriteSettingsIfExist				sysname = NULL,			-- { KEEP | REPLACE} 
 	@PrintOnly								bit = 0
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
-	SET @TargetSessionName = ISNULL(NULLIF(@TargetSessionName, N''), N'capture_large_sql');
-	SET @TargetEventStoreTable = ISNULL(NULLIF(@TargetEventStoreTable, N''), N'admindb.dbo.xestore_large_sql');	
+	DECLARE @eventStoreKey sysname = N'LARGE_SQL';
+
+	SET @TargetSessionName = ISNULL(NULLIF(@TargetSessionName, N''), N'eventstore_large_sql');
+	SET @TargetEventStoreTable = ISNULL(NULLIF(@TargetEventStoreTable, N''), N'admindb.dbo.eventstore_large_sql');	
+	SET @EtlProcedureName = ISNULL(@EtlProcedureName, N'admindb.dbo.eventstore_etl_large_sql');
 
 	SET @DurationMillisecondsThreshold = ISNULL(NULLIF(@DurationMillisecondsThreshold, 0), 20000);
 	SET @CPUMillisecondsThreshold = ISNULL(NULLIF(@CPUMillisecondsThreshold, 0), 15000);
 	SET @RowCountThreshold = ISNULL(NULLIF(@RowCountThreshold, 0), 20000);
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Table Definition:
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreTableDDL nvarchar(MAX) = N'CREATE TABLE [{schema}].[{table}] (
 	[timestamp] [datetime] NULL,
 	[database_name] [sysname] NULL,
@@ -60,9 +66,9 @@ AS
 ) 
 WITH (DATA_COMPRESSION = PAGE); ';
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Session Definition:
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreSessionDDL nvarchar(MAX) = N'CREATE EVENT SESSION [{session_name}] ON {server_or_database} 
 	ADD EVENT sqlserver.sql_statement_completed (
 		SET 
@@ -113,11 +119,14 @@ WITH (DATA_COMPRESSION = PAGE); ';
 	SET @eventStoreSessionDDL = REPLACE(@eventStoreSessionDDL, N'{cpuMS}', @CPUMillisecondsThreshold);
 	SET @eventStoreSessionDDL = REPLACE(@eventStoreSessionDDL, N'{rowCount}', @RowCountThreshold);
 	
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Processing (via core/base functionality):
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @enableETL bit = COALESCE(NULLIF(@StartupState, 0), NULLIF(@StartSessionOnCreation, 0), 0);
+
 	DECLARE @returnValue int;
-	EXEC @returnValue = dbo.[eventstore_initialize_session]
+	EXEC @returnValue = dbo.[eventstore_setup_session]
+		@EventStoreKey = @eventStoreKey,
 		@TargetSessionName = @TargetSessionName,
 		@TargetEventStoreTable = @TargetEventStoreTable,
 		@TraceTarget = @TraceTarget,
@@ -127,8 +136,13 @@ WITH (DATA_COMPRESSION = PAGE); ';
 		@MaxBufferEvents = @MaxBufferEvents,
 		@StartupState = @StartupState,
 		@StartSessionOnCreation = @StartSessionOnCreation,
-		@ReplaceSessionIfExists = @ReplaceSessionIfExists,
+		@EtlEnabled = @enableETL,
+		@EtlFrequencyMinutes = 5,
+		@EtlProcedureName = @EtlProcedureName,
+		@DataRetentionDays = @EventStoreDataRetentionDays,		
+		@OverwriteSessionIfExists = @OverwriteSessionIfExists,
 		@OverwriteTableIfExists = @OverwriteTableIfExists,
+		@OverwriteSettingsIfExist = @OverwriteSettingsIfExist,
 		@EventStoreTableDDL = @eventStoreTableDDL,
 		@EventStoreSessionDDL = @eventStoreSessionDDL,
 		@PrintOnly = @PrintOnly;
