@@ -10,6 +10,9 @@
 			> Otherwise, anything that's been blocking any other process for a MAX([duration]) > @BlockingThresholdSeconds should be killed. 
 
 	vNEXT:
+		- Add option to @ReportOnlyVsKill ... to just send email alerts VS trying to kill. 
+			Or, in other words, repurpose this as an alert? for long-running-processes that are BLOCKING. 
+
 		- add in some logic that will IGNORE lead-blockers that come from the DAC... 
 
 		- add in an option to REPORT on blockings by any excluded spids ... and... a threshold, i.e., something like @reportExcludedBlockersAfter '70 seconds' or whatever... 
@@ -40,7 +43,6 @@ CREATE PROC dbo.[kill_blocking_processes]
 	@MailProfileName						sysname				= N'General',
 	@EmailSubjectPrefix						nvarchar(50)		= N'[Blocked Processes]',
 	@PrintOnly								bit					= 0								-- Instead of EXECUTING commands, they're printed to the console only. 	
-
 AS
     SET NOCOUNT ON; 
 

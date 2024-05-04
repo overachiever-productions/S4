@@ -1,5 +1,5 @@
 /*
-	NOTE: This does NOT adhere to PROJECT or RETURN... 
+	NOTE: This does NOT adhere to PROJECT or RETURN... (it ONLY does RETURN)
 
 	vNEXT: 
 		Note that I COULD look into options to allow TimeZone offsets via an OVERLOAD of @TimeZone (for Pre-SQL Server 2016 instances). 
@@ -33,9 +33,9 @@ AS
 
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Bounding Predicates and Translations:
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF @TimeZone IS NOT NULL BEGIN 
 
 		IF [dbo].[get_engine_version]() < 130 BEGIN 
