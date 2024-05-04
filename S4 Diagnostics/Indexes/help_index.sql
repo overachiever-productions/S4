@@ -83,26 +83,26 @@ AS
 		@targetTable = PARSENAME(@normalizedName, 1);
 
 	-- See vNEXT about ... not supporting schema names currently.
-	--DECLARE @targetTableName sysname = QUOTENAME(@targetSchema) + N'.' + QUOTENAME(@targetTable);
+	--	2024-03-29 (I added the following - and .. it seems to work?)
+	DECLARE @targetTableName sysname = QUOTENAME(@targetSchema) + N'.' + QUOTENAME(@targetTable);
 
 	DECLARE @indexData xml; 
 	EXEC dbo.[list_index_metrics]
 		@TargetDatabase = @targetDatabase,
-		@TargetTables = @targetTable,
+		@TargetTables = @targetTableName,
 		@ExcludeSystemTables = 1,
 		@IncludeFragmentationMetrics = 0,
 		@MinRequiredTableRowCount = 0,
 		@SerializedOutput = @indexData OUTPUT; 
 
-
-	-- PICKUP/NEXT:
-	--	shred xml... 
 	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value(N'(table_name)[1]', N'sysname') [table_name], 
 			[data].[row].value(N'(index_id)[1]', N'int') [index_id], 
 			[data].[row].value(N'(index_name)[1]', N'sysname') [index_name], 
-			[data].[row].value(N'(definition)[1]', N'nvarchar(MAX)') [columns], 
+			[data].[row].value(N'(index_definition)[1]', N'nvarchar(MAX)') [index_definition], 
+			[data].[row].value(N'(key_columns)[1]', N'nvarchar(MAX)') [key_columns], 
+			[data].[row].value(N'(included)[1]', N'nvarchar(MAX)') [included_columns], 
 			[data].[row].value(N'(row_count)[1]', N'bigint') [row_count], 
 			[data].[row].value(N'(reads)[1]', N'bigint') [reads], 
 			[data].[row].value(N'(writes)[1]', N'bigint') [writes], 
@@ -116,7 +116,6 @@ AS
 			[data].[row].query(N'(//operational_metrics/operational_metrics)[1]') [operational_metrics]
 		FROM 
 			@indexData.nodes(N'//index') [data]([row])
-
 	) 
 
 	SELECT 
@@ -126,12 +125,11 @@ AS
 	FROM 
 		[shredded];
 
-
 	SELECT
-	--	[table_name],
 		[index_id],
 		[index_name],
-		[columns],
+		[key_columns],
+		[included_columns],
 		N' ' [ ],
 		[row_count],
 		[reads],
@@ -143,21 +141,18 @@ AS
 		[scans],
 		[lookups],
 		[seek_ratio],
-		[operational_metrics] 
+		[operational_metrics], 
+		[index_definition]
 	FROM 
 		#hydrated
 	ORDER BY 
 		[index_id];
-
 	
 	SELECT 
 		SUM(CASE WHEN [index_id] IN (0,1) THEN [allocated_mb] ELSE 0 END) [data], 
 		SUM(CASE WHEN [index_id] NOT IN (0,1) THEN [allocated_mb] ELSE 0 END) [index]
 	FROM 
 		[#hydrated] 
-
-
-
 
 	RETURN 0;
 GO

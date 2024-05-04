@@ -98,7 +98,7 @@ CREATE PROC dbo.backup_databases
 	@AddServerNameToSystemBackupPath	bit										= 0,							-- If set to 1, backup path is: @BackupDirectory\<db_name>\<server_name>\
 	@AllowNonAccessibleSecondaries		bit										= 0,							-- If review of @DatabasesToBackup yields no dbs (in a viable state) for backups, exception thrown - unless this value is set to 1 (for AGs, Mirrored DBs) and then execution terminates gracefully with: 'No ONLINE dbs to backup'.
 	@AlwaysProcessRetention				bit										= 0,							-- IF @AllowNonAccessibleSecondaries = 1, then if @AlwaysProcessRetention = 1, if/when we find NO databases to backup, we'll pass in the @TargetDatabases to a CLEANUP process vs simply short-circuiting execution.
-	@Directives							nvarchar(400)							= NULL,							-- { COPY_ONLY | FILE:logical_file_name | FILEGROUP:file_group_name | MARKER:file-name-tail-marker }  - NOTE: NOT mutually exclusive. Also, MULTIPLE FILE | FILEGROUP directives can be specified - just separate with commas. e.g., FILE:secondary, FILE:tertiarty. 
+	@Directives							nvarchar(400)							= NULL,							-- { KEEP_ONLINE | TAIL_OF_LOG[:<marker>][:<rollback_seconds>] | FINAL[:<marker>][:<rollback_seconds>] | COPY_ONLY | FILE:logical_file_name | FILEGROUP:file_group_name | MARKER:file-name-tail-marker }  - NOTE: NOT mutually exclusive. Also, MULTIPLE FILE | FILEGROUP directives can be specified - just separate with commas. e.g., FILE:secondary, FILE:tertiarty. 
 	@LogSuccessfulOutcomes				bit										= 0,							-- By default, exceptions/errors are ALWAYS logged. If set to true, successful outcomes are logged to dba_DatabaseBackup_logs as well.
 	@OperatorName						sysname									= N'Alerts',
 	@MailProfileName					sysname									= N'General',
@@ -234,33 +234,55 @@ AS
 
 	DECLARE @isCopyOnlyBackup bit = 0;
 	DECLARE @fileOrFileGroupDirective nvarchar(2000) = '';
+	DECLARE @setSingleUser bit = 0;
+	DECLARE @keepOnline bit = 0; 
+	DECLARE @setSingleUserRollbackSeconds int = 10;
 	DECLARE @markerOverride sysname;
 
 	IF NULLIF(@Directives, N'') IS NOT NULL BEGIN
-		SET @Directives = LTRIM(RTRIM(@Directives));
+		SET @Directives = UPPER(LTRIM(RTRIM(@Directives)));
 		
-		IF UPPER(@Directives) = N'COPY_ONLY' SET @Directives = N'COPY_ONLY:';  -- yeah, it's a hack... but meh.
-
 		DECLARE @allDirectives table ( 
 			row_id int NOT NULL, 
-			directive_type	sysname NOT NULL, 
-			logical_name sysname NULL 
+			directive sysname NOT NULL, 
+			detail sysname NULL, 
+			detail2 sysname NULL
 		);
 
-		INSERT INTO @allDirectives ([row_id], [directive_type], [logical_name])
-		EXEC dbo.[shred_string]
-			@Input = @Directives, 
-			@RowDelimiter = N',', 
-			@ColumnDelimiter = N':';
+		INSERT INTO @allDirectives ([row_id], [directive])
+		SELECT * FROM dbo.[split_string](@Directives, N',', 1);
 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) NOT IN (N'COPY_ONLY', N'FILE', N'FILEGROUP', N'MARKER')) BEGIN
-			RAISERROR(N'Invalid @Directives value specified. Permitted values are { COPY_ONLY | FILE:logical_name | FILEGROUP:group_name | MARKER:filename_tail_marker } only.', 16, 1);
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] LIKE N'%:%') BEGIN 
+			UPDATE @allDirectives 
+			SET 
+				[directive] = SUBSTRING([directive], 0, CHARINDEX(N':', [directive])), 
+				[detail] = SUBSTRING([directive], CHARINDEX(N':', [directive]) + 1, LEN([directive]))
+			WHERE 
+				[directive] LIKE N'%:%';
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [detail] LIKE N'%:%') BEGIN 
+			UPDATE @allDirectives 
+			SET 
+				[detail] = SUBSTRING([detail], 0, CHARINDEX(N':', [detail])), 
+				[detail2] = REPLACE(SUBSTRING([detail], CHARINDEX(N':', [detail]) + 1, LEN([detail])), N':', N'')			
+			WHERE 
+				[detail] LIKE N'%:%';
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'COPY_ONLY', N'FILE', N'FILEGROUP', N'MARKER', N'KEEP_ONLINE', N'TAIL_OF_LOG', N'FINAL')) BEGIN 
+			RAISERROR(N'Invalid @Directives value specified. Permitted values are { FINAL | TAIL_OF_LOG | KEEP_ONLINE | COPY_ONLY | FILE:logical_name | FILEGROUP:group_name | MARKER:filename_tail_marker } only.', 16, 1);
 			RETURN -20;
 		END;
 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) = N'COPY_ONLY') BEGIN 
+		IF EXISTS (SELECT NULL FROM @allDirectives GROUP BY [directive] HAVING COUNT(*) > 1) BEGIN 
+			RAISERROR(N'Duplicate Directives are NOT allowed within @Directives.', 16, 1);	
+			RETURN -200;
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] = N'COPY_ONLY') BEGIN 
 			IF UPPER(@BackupType) = N'DIFF' BEGIN
-				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're a logical 'fault' - hence the S4 warning: https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-2017
+				-- NOTE: COPY_ONLY DIFF backups won't throw an error (in SQL Server) but they're logically 'wrong' - hence the S4 warning: https://learn.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql?view=sql-server-ver16
 				RAISERROR(N'Invalid @Directives value specified. COPY_ONLY can NOT be specified when @BackupType = DIFF. Only FULL and LOG backups may be COPY_ONLY (and should be used only for one-off testing or other specialized needs.', 16, 1);
 				RETURN -21;
 			END; 
@@ -268,27 +290,47 @@ AS
 			SET @isCopyOnlyBackup = 1;
 		END;
 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE (UPPER([directive_type]) = N'FILE') OR (UPPER([directive_type]) = N'FILEGROUP')) BEGIN 
-
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE ([directive] = N'FILE') OR ([directive] = N'FILEGROUP')) BEGIN 
 			SELECT 
-				@fileOrFileGroupDirective = @fileOrFileGroupDirective + directive_type + N' = ''' + [logical_name] + N''', '
+				@fileOrFileGroupDirective = @fileOrFileGroupDirective + [directive] + N' = ''' + [detail] + N''', '
 			FROM 
 				@allDirectives
 			WHERE 
-				(UPPER([directive_type]) = N'FILE') OR (UPPER([directive_type]) = N'FILEGROUP')
+				([directive] = N'FILE') OR ([directive] = N'FILEGROUP')
 			ORDER BY 
 				row_id;
 
 			SET @fileOrFileGroupDirective = NCHAR(13) + NCHAR(10) + NCHAR(9) + LEFT(@fileOrFileGroupDirective, LEN(@fileOrFileGroupDirective) -1) + NCHAR(13) + NCHAR(10)+ NCHAR(9) + NCHAR(9);
 		END;
 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE UPPER([directive_type]) = N'MARKER') BEGIN
-			IF (SELECT COUNT(*) FROM @allDirectives WHERE UPPER([directive_type]) = N'MARKER') > 1 BEGIN 
-				RAISERROR(N'Only a single MARKER directive may be provided per backup execution.', 16, 1);
-				RETURN -200;
-			END;
-			
-			SELECT @markerOverride = logical_name FROM @allDirectives WHERE UPPER([directive_type]) = N'MARKER';
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] = N'TAIL_OF_LOG') BEGIN 
+			SELECT
+				@setSingleUser = 1,
+				@markerOverride = ISNULL([detail], N'tail_of_log'), 
+				@setSingleUserRollbackSeconds = ISNULL([detail2], @setSingleUserRollbackSeconds)
+			FROM 
+				@allDirectives 
+			WHERE 
+				[directive] = N'TAIL_OF_LOG';
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] = N'FINAL') BEGIN 
+			SELECT
+				@setSingleUser = 1,
+				@markerOverride = ISNULL([detail], N'tail_of_log'), 
+				@setSingleUserRollbackSeconds = ISNULL([detail2], @setSingleUserRollbackSeconds)
+			FROM 
+				@allDirectives 
+			WHERE 
+				[directive] = N'FINAL';			
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] = N'KEEP_ONLINE') BEGIN 
+			SET @keepOnline = 1;
+		END;
+
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] = N'MARKER') BEGIN
+			SELECT @markerOverride = [detail] FROM @allDirectives WHERE [directive] = N'MARKER';
 		END;
 	END;
 
@@ -413,6 +455,7 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @encryptionClause nvarchar(2000);
 
+	DECLARE @ignoredResultTypes sysname;
 	DECLARE @outcome xml;
 	DECLARE @errorMessage nvarchar(MAX);
 
@@ -520,13 +563,19 @@ DoneRemovingFilesBeforeBackup:
 
 		SET @now = GETDATE();
 		SET @timestamp = REPLACE(REPLACE(REPLACE(CONVERT(sysname, @now, 120), '-','_'), ':',''), ' ', '_');
-		SET @offset = RIGHT(CAST(CAST(RAND() AS decimal(12,11)) AS varchar(20)),7);
+		SET @offset = RIGHT(N'0000' + DATENAME(MILLISECOND, @now), 4) + RIGHT(CAST(CAST(RAND() AS decimal(12,11)) AS varchar(20)),3);
 		IF NULLIF(@markerOverride, N'') IS NOT NULL
 			SET @offset = @markerOverride;
 
 		SET @backupName = @BackupType + N'_' + @currentDatabase + (CASE WHEN @fileOrFileGroupDirective = '' THEN N'' ELSE N'_PARTIAL' END) + '_backup_' + @timestamp + '_' + @offset + @extension;
 
-		SET @command = N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N'{FILE|FILEGROUP} TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
+		SET @command = N'';
+		IF @setSingleUser = 1 BEGIN 
+			SET @command = N'USE ' + QUOTENAME(@currentDatabase) + N';
+ALTER DATABASE ' + QUOTENAME(@currentDatabase) + N' SET SINGLE_USER WITH ROLLBACK AFTER ' + CAST(@setSingleUserRollbackSeconds AS sysname) + N' SECONDS; ';
+		END;
+
+		SET @command = @command + N'BACKUP {type} ' + QUOTENAME(@currentDatabase) + N'{FILE|FILEGROUP} TO DISK = N''' + @backupPath + N'\' + @backupName + ''' 
 	WITH 
 		{COPY_ONLY}{COMPRESSION}{DIFFERENTIAL}{MAXTRANSFER}{ENCRYPTION}NAME = N''' + @backupName + ''', SKIP, REWIND, NOUNLOAD, CHECKSUM;
 	
@@ -578,15 +627,27 @@ DoneRemovingFilesBeforeBackup:
 			SET @command = REPLACE(@command, N'{MAXTRANSFER}', N'');
 		END;
 		
+		IF @setSingleUser = 1 BEGIN 
+			IF @keepOnline = 1 BEGIN 
+				PRINT '-- Directive ''KEEP_ONLINE'' was specified - NOT taking database ' + QUOTENAME(@currentDatabase) + N' offline.';
+			  END; 
+			ELSE BEGIN 
+				SET @command = @command + N' ALTER DATABASE ' + QUOTENAME(@currentDatabase) + N' SET OFFLINE; ';
+			END;
+		END;
+
 		BEGIN TRY 
 			
 			SET @errorMessage = NULL;
+			SET @ignoredResultTypes = N'{BACKUP}';
+			IF @setSingleUser = 1 SET @ignoredResultTypes = @ignoredResultTypes + N',{SINGLE_USER}';
+			IF @keepOnline = 0 SET @ignoredResultTypes = @ignoredResultTypes + N',{OFFLINE}'
 
 			EXEC dbo.[execute_command]
 				@Command = @command,
 				@ExecutionType = N'SQLCMD',
 				@ExecutionAttemptsCount = 1,
-				@IgnoredResults = N'{BACKUP}',
+				@IgnoredResults = @ignoredResultTypes,
 				@PrintOnly = @PrintOnly,
 				@Outcome = @outcome OUTPUT,
 				@ErrorMessage = @errorMessage OUTPUT;
@@ -727,7 +788,7 @@ DoneRemovingFilesBeforeBackup:
 			DECLARE @offsiteCopy table ([row_id] int IDENTITY(1, 1) NOT NULL, [output] nvarchar(2000));
 			DELETE FROM @offsiteCopy;
 
-			SET @s3FullFileKey = @s3KeyPath + '\' + @currentDatabase + N'\' + @backupName;
+			SET @s3FullFileKey = @s3KeyPath + '\' + @currentDatabase + @serverName + N'\' + @backupName;
 			SET @s3fullOffSitePath = N'S3::' + @s3BucketName + N':' + @s3FullFileKey;
 
 			SET @command = N'Write-S3Object -BucketName ''' + @s3BucketName + N''' -Key ''' + @s3FullFileKey + N''' -File ''' + @backupPath + N'\' + @backupName + N''' -ConcurrentServiceRequest 2';

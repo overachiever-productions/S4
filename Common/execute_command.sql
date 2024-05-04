@@ -250,6 +250,7 @@ AS
 	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
+			('SINGLE_USER', 'Changed database context to %'),
 			('SINGLE_USER', 'Nonqualified transactions are being rolled back. Estimated rollback completion%');
 					
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{SINGLE_USER}', N'');
@@ -267,6 +268,14 @@ AS
 		-- PlaceHolder: there isn't, currently, any 'noise' output from Write-S3Object...
 
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{S3COPYFILE}', N'');
+	END;
+
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{OFFLINE}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type],[filter_text])
+		VALUES 
+			('OFFLINE', 'Failed to restart the current database. The current database is switched to master%');
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{OFFLINE}', N'');
 	END;
 
 	-- TODO: {SHRINKLOG}
@@ -292,11 +301,11 @@ AS
 		SELECT [result] FROM dbo.[split_string](@ErrorResults, N',', 1) WHERE LEN([result]) > 0;
 	END;
 
-	CREATE TABLE #Results (
-		result_id int IDENTITY(1,1),
-		result nvarchar(MAX), 
-		ignored_match sysname NULL, 
-		explicit_error sysname NULL
+	CREATE TABLE #cmd_results (
+		[result_id] int IDENTITY(1,1),
+		[result_text] nvarchar(MAX), 
+		[ignored_match] sysname NULL, 
+		[explicit_error] sysname NULL
 	);
 
 	DECLARE @result xml;
@@ -349,38 +358,38 @@ ExecutionAttempt:
 	SET @exceptionOccurred = 0;
 	SET @executionTime = GETDATE();
 
-	DELETE FROM #Results;
+	DELETE FROM #cmd_results;
 
 	IF @PrintOnly = 1 BEGIN 
 		PRINT N'-- xp_cmdshell ''' + @xpCmd + ''';';
-        PRINT @xpCmd;
+        --PRINT @xpCmd;
 		SET @succeeded = 1; 
 		GOTO Terminate;
 	END;
 
 	BEGIN TRY 
 		--PRINT @xpCmd;
-
-		INSERT INTO #Results (result) 
+		
+		INSERT INTO #cmd_results ([result_text]) 
 		EXEC master.sys.[xp_cmdshell] @xpCmd;
 
-		DELETE FROM [#Results] WHERE [result] IS NULL;
+		DELETE FROM #cmd_results WHERE [result_text] IS NULL;
 
 		UPDATE r 
 		SET 
 			r.[ignored_match] = x.[filter_type]
 		FROM 
-			[#Results] r
-			LEFT OUTER JOIN @filters x ON (r.[result] LIKE x.[filter_text]) OR (r.[result] = x.[filter_text]) 
-				OR (x.[filter_type] IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result] = r.[result]); 
+			#cmd_results r
+			LEFT OUTER JOIN @filters x ON (r.[result_text] LIKE x.[filter_text]) OR (r.[result_text] = x.[filter_text]) 
+				OR (x.[filter_type] IN (N'SAFE', N'SAFE_WILDCARD') AND r.[result_text] = x.[filter_text]); 
 
 		IF EXISTS (SELECT NULL FROM @explicitErrors) BEGIN 
 			UPDATE r 
 			SET 
 				r.[explicit_error] = x.error_text
 			FROM 
-				[#Results] r 
-				INNER JOIN @explicitErrors x ON (r.[result] LIKE x.[error_text]) OR (r.[result] = x.[error_text]);
+				[#cmd_results] r 
+				INNER JOIN @explicitErrors x ON (r.[result_text] LIKE x.[error_text]) OR (r.[result_text] = x.[error_text]);
 		END;
 
 		SELECT @result = (SELECT 
@@ -393,9 +402,9 @@ ExecutionAttempt:
 				WHEN [ignored_match] IS NULL THEN 1
 				ELSE 0 
 			END [result_row/@is_error],
-			[result] [result_row]
+			[result_text] [result_row]
 		FROM 
-			[#Results] 
+			[#cmd_results] 
 		ORDER BY 
 			[result_id]
 		FOR XML PATH(''), TYPE);
@@ -409,7 +418,7 @@ ExecutionAttempt:
 					ELSE 0 
 				END [success]
 			FROM 
-				[#Results] 
+				[#cmd_results] 
 		) 
 
 		SELECT @succeeded = CASE WHEN MAX(success) > 0 THEN 0 ELSE 1 END FROM [simplified];

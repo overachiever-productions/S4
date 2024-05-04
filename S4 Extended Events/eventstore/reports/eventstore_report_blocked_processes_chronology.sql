@@ -26,115 +26,116 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.view_blockedprocess_chronology','P') IS NOT NULL
-	DROP PROC dbo.[view_blockedprocess_chronology];
+IF OBJECT_ID('dbo.[eventstore_report_blocked_processes_chronology]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_blocked_processes_chronology];
 GO
 
-CREATE PROC dbo.[view_blockedprocess_chronology]
-	@TranslatedBlockedProcessesTable					sysname, 
-	@OptionalStartTime									datetime	= NULL, 
-	@OptionalEndTime									datetime	= NULL, 
-	@TimeZone											sysname		= NULL
+CREATE PROC dbo.[eventstore_report_blocked_processes_chronology]
+	@Start						datetime		= NULL, 
+	@End						datetime		= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-
-	SET @TranslatedBlockedProcessesTable = NULLIF(@TranslatedBlockedProcessesTable, N'');
-	SET @TimeZone = NULLIF(@TimeZone, N'');
+	
+	DECLARE @eventStoreKey sysname = N'BLOCKED_PROCESSES';
+	DECLARE @eventStoreTarget sysname = (SELECT [target_table] FROM [dbo].[eventstore_settings] WHERE [event_store_key] = @eventStoreKey); 
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
 	DECLARE @outcome int = 0;
 
 	EXEC @outcome = dbo.load_id_for_normalized_name 
-		@TargetName = @TranslatedBlockedProcessesTable, 
-		@ParameterNameForTarget = N'@TranslatedBlockedProcessesTable', 
+		@TargetName = @eventStoreTarget, 
+		@ParameterNameForTarget = N'@eventStoreTarget', 
 		@NormalizedName = @normalizedName OUTPUT, 
 		@ObjectID = @sourceObjectID OUTPUT;
 
 	IF @outcome <> 0
-		RETURN @outcome;  -- error will have already been raised... 
+		RETURN @outcome;  -- error will have already been raised...
 
-	IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
-		SET @TimeZone = dbo.[get_local_timezone]();
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Time-Bounding Predicates and Translations:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	IF @Start IS NULL AND @End IS NULL BEGIN 
+		SET @Start = DATEADD(HOUR, -2, GETDATE());
+		SET @End = GETDATE();
+	  END; 
+	ELSE BEGIN 
+		IF @Start IS NOT NULL BEGIN 
+			SET @End = DATEADD(HOUR, 2, @Start);
+		END;
 
-	DECLARE @offsetMinutes int = 0;
-	IF @TimeZone IS NOT NULL
-		SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
-	
+		IF @End IS NULL AND @Start IS NOT NULL BEGIN 
+			RAISERROR(N'A value for @End can ONLY be specified if a value for @Start has been provided.', 16, 1);
+			RETURN -2;
+		END;
+
+		IF @End < @Start BEGIN 
+			RAISERROR(N'Specified value for @End can NOT be less than (earlier than) value provided for @Start.', 16, 1);
+			RETURN -3;
+		END;
+	END;
+
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Extraction / Work-Table:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	CREATE TABLE #work (
 		[row_id] int NOT NULL,
-		[timestamp] datetime NULL,
-		[database_name] sysname NULL,
-		[seconds_blocked] decimal(24,2) NULL,
-		[report_id] int NULL,
-		[blocking_spid] int NULL,
-		[blocking_ecid] int NULL,
-		[blocking_id] nvarchar(max) NULL,
-		[blocked_id] nvarchar(max) NULL,
-		[blocking_xactid] bigint NULL,
-		[blocking_request] nvarchar(max) NULL,
-		[blocking_sproc_statement] nvarchar(max) NULL,
-		[blocking_weight] sysname NULL,
-		[blocking_resource_id] nvarchar(80) NULL,
-		[blocking_resource] varchar(400) NULL,
-		[blocking_wait_time] int NULL,
-		[blocking_tran_count] int NULL,
-		[blocking_isolation_level] sysname NULL,
+		[timestamp] [datetime2](7) NOT NULL,
+		[database_name] [nvarchar](128) NOT NULL,
+		[seconds_blocked] [decimal](24, 2) NOT NULL,
+		[report_id] [int] NOT NULL,
+		[blocking_id] sysname NULL,  -- ''self blockers'' can/will be NULL
+		[blocked_id] sysname NOT NULL,
+		[blocking_xactid] [bigint] NULL,  -- ''self blockers'' can/will be NULL
+		[blocking_request] [nvarchar](MAX) NOT NULL,
+		[blocking_sproc_statement] [nvarchar](MAX) NOT NULL,
+		[blocking_resource_id] [nvarchar](80) NULL,
+		[blocking_resource] [varchar](2000) NOT NULL,
+		[blocking_wait_time] [int] NULL,
+		[blocking_tran_count] [int] NULL,  -- ''self blockers'' can/will be NULL
+		[blocking_isolation_level] [nvarchar](128) NULL,   -- ''self blockers'' can/will be NULL
 		[blocking_status] sysname NULL,
-		[blocking_start_offset] int NOT NULL,
-		[blocking_end_offset] int NOT NULL,
+		[blocking_start_offset] [int] NULL,
+		[blocking_end_offset] [int] NULL,
 		[blocking_host_name] sysname NULL,
 		[blocking_login_name] sysname NULL,
 		[blocking_client_app] sysname NULL,
-		[blocked_spid] int NULL,
-		[blocked_ecid] int NULL,
-		[blocked_xactid] bigint NULL,
-		[blocked_request] nvarchar(MAX) NULL,
-		[blocked_sproc_statement] nvarchar(MAX) NULL,
-		[blocked_weight] sysname NULL,
-		[blocked_resource_id] nvarchar(80) NULL,
-		[blocked_resource] varchar(400) NULL,
-		[blocked_wait_time] int NULL,
-		[blocked_tran_count] int NULL,
-		[blocked_log_used] int NULL,
-		[blocked_lock_mode] sysname NULL,
-		[blocked_isolation_level] sysname NULL,
-		[blocked_status] sysname NULL,
-		[blocked_start_offset] int NOT NULL,
-		[blocked_end_offset] int NOT NULL,
+		[blocked_spid] [int] NOT NULL,
+		[blocked_ecid] [int] NOT NULL,
+		[blocked_xactid] [bigint] NULL,  -- can be NULL
+		[blocked_request] [nvarchar](max) NOT NULL,
+		[blocked_sproc_statement] [nvarchar](max) NOT NULL,
+		[blocked_resource_id] [nvarchar](80) NOT NULL,
+		[blocked_resource] [varchar](2000) NULL,  -- can be NULL if/when there isn''t an existing translation
+		[blocked_wait_time] [int] NOT NULL,
+		[blocked_tran_count] [int] NOT NULL,
+		[blocked_log_used] [int] NOT NULL,
+		[blocked_lock_mode] sysname NULL, -- CAN be NULL
+		[blocked_isolation_level] [nvarchar](128) NULL,
+		[blocked_status] sysname NOT NULL,
+		[blocked_start_offset] [int] NOT NULL,
+		[blocked_end_offset] [int] NOT NULL,
 		[blocked_host_name] sysname NULL,
 		[blocked_login_name] sysname NULL,
 		[blocked_client_app] sysname NULL,
-		[report] xml NULL
+		[report] [xml] NOT NULL
 	);
 
 	CREATE CLUSTERED INDEX [____CLIX_#work_byReportId] ON [#work] (report_id);
 
 	DECLARE @sql nvarchar(MAX) = N'	SELECT 
 		*
-	FROM {SourceTable}{WHERE}
+	FROM 
+		{SourceTable}
+	WHERE
+		[timestamp] >= @Start
+		AND [timestamp] < @End
 	ORDER BY 
 		[row_id]; ';
 
-	DECLARE @dateTimePredicate nvarchar(MAX) = N'';
-	DECLARE @nextLine nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
-	IF @OptionalStartTime IS NOT NULL BEGIN 
-		SET @dateTimePredicate = @nextLine + N'WHERE [timestamp] >= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalStartTime), 121) + N'''';
-	END; 
-	
-	IF @OptionalEndTime IS NOT NULL BEGIN 
-		IF NULLIF(@dateTimePredicate, N'') IS NOT NULL BEGIN 
-			SET @dateTimePredicate = @dateTimePredicate + @nextLine + N' AND [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
-		  END; 
-		ELSE BEGIN 
-			SET @dateTimePredicate = @nextLine + N'WHERE [timestamp] <= ''' + CONVERT(sysname, DATEADD(MINUTE, 0 - @offsetMinutes, @OptionalEndTime), 121) + N'''';
-		END;
-	END;
-
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @normalizedName);
-	SET @sql = REPLACE(@sql, N'{WHERE}', @dateTimePredicate);
 
 	INSERT INTO [#work] (
 		[row_id],
@@ -142,14 +143,11 @@ AS
 		[database_name],
 		[seconds_blocked],
 		[report_id],
-		[blocking_spid],
-		[blocking_ecid],
 		[blocking_id],
 		[blocked_id],
 		[blocking_xactid],
 		[blocking_request],
 		[blocking_sproc_statement],
-		[blocking_weight],
 		[blocking_resource_id],
 		[blocking_resource],
 		[blocking_wait_time],
@@ -166,7 +164,6 @@ AS
 		[blocked_xactid],
 		[blocked_request],
 		[blocked_sproc_statement],
-		[blocked_weight],
 		[blocked_resource_id],
 		[blocked_resource],
 		[blocked_wait_time],
@@ -180,12 +177,17 @@ AS
 		[blocked_host_name],
 		[blocked_login_name],
 		[blocked_client_app],
-		[report]
+		[report] 
 	)
-	EXEC sys.sp_executesql 
-		@sql; 
+	EXEC sys.sp_executesql
+		@sql, 
+		N'@Start datetime, @End datetime', 
+		@Start = @Start, 
+		@End = @End;
 
-	-- Projection/Output:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Correlation + Projection:
+	-----------------------------------------------------------------------------------------------------------------------------------------------------
 	WITH leads AS (		
 	
 		SELECT report_id, blocking_id
@@ -203,7 +205,7 @@ AS
 			report_id, 
 			0 AS [level],
 			blocking_id, 
-			blocking_id [blocking_chain]
+			CAST(blocking_id AS sysname) [blocking_chain]
 		FROM 
 			leads 
 
@@ -213,12 +215,12 @@ AS
 			base.report_id, 
 			c.[level] + 1 [level],
 			base.blocked_id, 
-			c.[blocking_chain] + N' -> ' + base.blocked_id
+			CAST(c.[blocking_chain] + N' -> ' + CAST(base.blocked_id AS nvarchar(10)) AS sysname)
 		FROM 
 			[#work] base 
 			INNER JOIN chain c ON base.report_id = c.report_id AND base.blocking_id = c.blocking_id 
-
 	)
+
 	SELECT 
 		[report_id],
 		[level],
@@ -242,7 +244,7 @@ AS
 	GROUP BY 
 		[report_id];
 
-
+--
 	WITH normalized AS ( 
 
 		SELECT 
@@ -251,11 +253,9 @@ AS
 			[w].[blocked_id],
 			LAG([w].[report_id], 1, 0) OVER (ORDER BY [w].[report_id], ISNULL([c].[level], -1)) [previous_report_id],
 
-			--[w].[report_id],
 			[w].[report_id] [original_report_id],
 			[w].[database_name],
-			DATEADD(MINUTE, @offsetMinutes, [w].[timestamp]) [timestamp],
-			--[w].[timestamp],
+			[w].[timestamp],
 			[a].[process_count],
 
 			ISNULL([c].[blocking_chain], N'    ' + CAST([w].[blocked_id] AS sysname) + N' -> (' + CAST([w].[blocked_id] AS sysname) + N')') [blocking_chain],
@@ -279,8 +279,8 @@ AS
 			CASE WHEN [w].[blocked_request] LIKE N'%Object Id = [0-9]%' THEN [w].[blocked_request] + N' --> ' + ISNULL([w].[blocked_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([w].[blocked_request], N'') END [blocked_request],
 			[w].[blocked_resource],
 		
-			[w].[blocking_weight],
-			[w].[blocked_weight],
+			--[w].[blocking_weight],
+			--[w].[blocked_weight],
 
 			[w].[blocking_host_name],
 			[w].[blocking_login_name],
@@ -321,8 +321,6 @@ AS
 		[blocked_log_used],
 		[blocked_request],
 		[blocked_resource],
-		[blocking_weight],
-		[blocked_weight],
 		[blocking_host_name],
 		[blocking_login_name],
 		[blocking_client_app],
@@ -337,3 +335,5 @@ AS
 
 	RETURN 0;
 GO
+
+
