@@ -17,11 +17,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_rpt_large_sql_chronology]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_rpt_large_sql_chronology];
+IF OBJECT_ID('dbo.[eventstore_report_large_sql_chronology]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_large_sql_chronology];
 GO
 
-CREATE PROC dbo.[eventstore_rpt_large_sql_chronology]
+CREATE PROC dbo.[eventstore_report_large_sql_chronology]
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL,
 	@ExcludeSqlAgentJobs		bit				= 1, 

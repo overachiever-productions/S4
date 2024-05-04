@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_rpt_all_error_counts]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_rpt_all_error_counts];
+IF OBJECT_ID('dbo.[eventstore_report_all_error_counts]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_all_error_counts];
 GO
 
-CREATE PROC dbo.[eventstore_rpt_all_error_counts]
+CREATE PROC dbo.[eventstore_report_all_error_counts]
 	@Granularity				sysname			= N'HOUR', 
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 

@@ -16,11 +16,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_rpt_large_sql_counts]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_rpt_large_sql_counts];
+IF OBJECT_ID('dbo.[eventstore_report_large_sql_counts]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_large_sql_counts];
 GO
 
-CREATE PROC dbo.[eventstore_rpt_large_sql_counts]
+CREATE PROC dbo.[eventstore_report_large_sql_counts]
 	@Granularity				sysname			= N'HOUR', 
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 

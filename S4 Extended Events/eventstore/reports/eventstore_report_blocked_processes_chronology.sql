@@ -26,11 +26,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_rpt_blocked_processes_chronology]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_rpt_blocked_processes_chronology];
+IF OBJECT_ID('dbo.[eventstore_report_blocked_processes_chronology]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_blocked_processes_chronology];
 GO
 
-CREATE PROC dbo.[eventstore_rpt_blocked_processes_chronology]
+CREATE PROC dbo.[eventstore_report_blocked_processes_chronology]
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL
 AS
