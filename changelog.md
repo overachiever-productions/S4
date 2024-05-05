@@ -10,8 +10,6 @@ xxxx
 - Major overhaul of logic within `dbo.help_index` to leverage functionality/logic from within `dbo.list_index_metrics` (to avoid DRY and improve index context/info/outputs) - along with significant performance tweaks and improvements. Initial functionality for scripting/dumping index definitions (via `dbo.script_indexes` - which isn't QUITE done yet).
 - Fixed bug within `dbo.execute_command` causing some ugly issues with PowerShell execution, etc. 
 
-
-
 ### Added 
 - New Directives for `dbo.backup_databases` including `TAIL_OF_LOG` (for DR), `FINAL` (for migrations), and `KEEP_ONLINE`.
 - New Directive (`STOPAT`) for `dbo.restore_databases` to more easily facilitate Point-In-Time Restore Operations (DR).
