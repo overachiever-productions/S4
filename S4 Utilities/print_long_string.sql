@@ -1,18 +1,25 @@
 /*
-	Hmmmmmm
-		https://docs.microsoft.com/en-us/sql/t-sql/language-elements/sql-server-utilities-statements-backslash?view=sql-server-ver15
-
-			interesting... what about using the \ character as a line-continuation character? 
-
-
-	Obviously, PRINT is the best way to print... 
-	Only, sometimes you'll need to PRINT something with a LENGTH > 4K characters. Only, PRINT terminates at the first 4K chars - period. 
-
-	So, this sproc bypasses that - it just keeps spitting out ~4k chunks until the 'print' operation is done. 
-
-	NOTE: dbo.print_long_string 'terminates' ~4K chunks on the last CRLF before the 4K boundary ... so that we don't truncate outputs 'mid line'... 
+	OVERVIEW:
+		T-SQL's PRINT is great - but ONLY prints up to the first 4K characters - then simply STOPS writing things out. 
+		Use dbo.print_long_string when you want to print EVERYTHING within a ... long string. 
 
 
+	SAMPLE TEST(s)
+
+				DECLARE @longLine nvarchar(MAX) = N'0000. This is a line of Text and Stuff.';
+
+				DECLARE @current int = 1; 
+				WHILE @current < 1001 BEGIN 
+					-- NOTE: comment/uncomment lines below to test execution with carriage returns or not... 
+					--SET @longLine = @longLine + NCHAR(13) + NCHAR(10) + RIGHT(N'0000' + CAST(@current AS sysname), 4) +   N'. This is a line of Text and Stuff.';
+					SET @longLine = @longLine + RIGHT(N'0000' + CAST(@current AS sysname), 4) +   N'. This is a line of Text and Stuff. ';
+
+					SET @current = @current + 1;
+				END;
+
+				PRINT N'--------------------------------'
+
+				EXEC [admindb].dbo.[print_long_string] @longLine;
 
 */
 
@@ -30,38 +37,69 @@ AS
 
 	-- {copyright}
 
+	IF @Input IS NULL 
+		RETURN 0; 
+
 	DECLARE @totalLength int = LEN(@Input); 
-
-	DECLARE @currentLocation int = 1; -- NOT 0 based... 
-	DECLARE @chunk nvarchar(4000);
-
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
-	DECLARE @crlfLocation int;
 
 	IF @totalLength <= 4000 BEGIN 
 		PRINT @Input;
-		RETURN 0; -- done
+		RETURN 0;
 	END;	
 
+	DECLARE @currentLocation int = 1; -- NOT 0 based... 
+	DECLARE @chunk nvarchar(4000);
+	DECLARE @crlfLocation int;
+	
+	CREATE TABLE #chunks (
+		row_id int IDENTITY(1,1) NOT NULL, 
+		row_data nvarchar(MAX) NOT NULL 
+	); 
+
+	INSERT INTO [#chunks] ([row_data])
+	SELECT [result] FROM dbo.[split_string](@Input, @crlf, 1);
+
+	IF (SELECT COUNT(*) FROM [#chunks]) > 1 BEGIN 
+		DECLARE @rowData nvarchar(MAX);
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT row_data FROM [#chunks] ORDER BY [row_id];
+		
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @rowData;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			IF LEN(@rowData) > 4000 BEGIN 
+				SET @totalLength = LEN(@rowData);
+				WHILE @currentLocation <= @totalLength BEGIN
+					SET @chunk = SUBSTRING(@rowData, @currentLocation, 4001); -- final arg = POSITION (not number of chars to take).
+					
+					SET @currentLocation = @currentLocation + (LEN(@chunk));
+
+					PRINT @chunk;
+				END;
+			  END; 
+			ELSE 
+				PRINT @rowData; 
+
+			FETCH NEXT FROM [walker] INTO @rowData;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		RETURN 0;
+	END; 
+
+	-- Otherwise, if we're still here... 
+	SET @totalLength = LEN(@Input);
 	WHILE @currentLocation <= @totalLength BEGIN
 		SET @chunk = SUBSTRING(@Input, @currentLocation, 4001); -- final arg = POSITION (not number of chars to take).
-		
-		IF LEN(@chunk) = 4000 BEGIN 
-
-			SET @crlfLocation = CHARINDEX(REVERSE(@crlf), REVERSE(@chunk));  -- get the last (in chunk) crlf... 
-
-			IF @crlfLocation > 0 BEGIN 
-				SELECT @chunk = SUBSTRING(@chunk, 0, (LEN(@chunk) - @crlfLocation));
-			END;
-		END;
 
 		SET @currentLocation = @currentLocation + (LEN(@chunk));
 
-		--IF LEFT(@chunk, 2) = @crlf BEGIN 
-		--	SET @chunk = RIGHT(@chunk, LEN(@chunk) - 2);
-		--END;
-
-		PRINT @chunk;
+		PRINT @chunk; 
 	END;
 
 	RETURN 0;

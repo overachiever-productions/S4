@@ -5,6 +5,10 @@
         - Parameter validation... 
                                 
 
+	NOTE:
+		- On SQL Server 2016 need to use SQLNCLI instead of MSOLEDBSQL... 
+
+
     
     EXAMPLE / TEST:
 
@@ -82,6 +86,7 @@ AS
         EXEC master.dbo.sp_addlinkedserver 
 	        @server = N'PARTNER', 
 	        @srvproduct = N'', 
+-- TODO: IF SQL Server 2016 or lower, use 'SQLNCLI' instead of MSOLEDBSQL
 	        @provider = N'MSOLEDBSQL', 
 	        @datasrc = @remoteHostName, 
 	        @catalog = N'master';

@@ -38,6 +38,17 @@ There's a bug in here:
 			@TargetLine = 163
 
 
+
+
+PICKUP/NEXT: 
+-- didn't work until i specified -AllowClobber
+EXEC admindb.dbo.execute_powershell N'Install-Module -Name "AWS.Tools.S3" -Scope CurrentUser -Force -AllowClobber;';
+
+-- this didn't 'work' until I do Import-Module THEN do Get-Module... 
+EXEC admindb.dbo.execute_powershell N'Import-Module -Name "AWS.Tools.S3"; Get-Module -Name "AWS.Tools.S3";';
+
+
+
 */
 
 USE [admindb];
@@ -109,28 +120,8 @@ Validation:
 		BEGIN TRY
 
 			/* 
-				-- actually. This just worked without any issues? 
-				--	1. [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12;
-				--	2. Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.208 -Force
-				-- source: https://learn.microsoft.com/en-us/powershell/gallery/powershellget/update-powershell-51?view=powershellget-2.x 
 
-				-- TODO: need to test the above on a new 2016 instance. 
-				--	but, i THINK the 2x lines above CAN be combined into a single batch/statement/command (thanks to ;) and ... 
-				--		can be made to work on WIndows 2016 or ... frankly, anything - i.e., the idea of forcing TLS1.2 and then pushing the update makes sense. 
-
-				Docs / Fodder: 
-					- Good Stuff (official docs on how to bootstrap Nuget into PowerShell):
-						- https://learn.microsoft.com/en-us/powershell/gallery/how-to/getting-support/bootstrapping-nuget?view=powershellget-2.x&viewFallbackFrom=powershell-7.1 
-						- Note that the above contains info on how to bootstrap for machines that don't have an internet connection. 
-
-					- More fodder on how to bootstrap Nuget on machines without a connection: 
-						- https://stackoverflow.com/questions/51406685/powershell-how-do-i-install-the-nuget-provider-for-powershell-on-a-unconnected 
-						- https://www.intrepidintegration.com/powershell/how-to-get-psget-working-with-no-net/
-						- https://stackoverflow.com/questions/58349992/how-do-i-install-the-nuget-provider-for-powershell-on-a-offline-machine
-
-		 
-					- Additional options/work-arounds that MIGHT make sense:
-						- https://stackoverflow.com/a/61080628/11191
+	
 		
 			*/
 			SET @currentCommand = @tls12Directive + N'Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.208 -Force -Scope CurrentUser | ConvertTo-Xml -As Stream;';
@@ -152,6 +143,7 @@ Validation:
 	END;
 
 	-- If we're still here, time to try and install the module: 
+-- TODO: might need to provide a switch that enables the -AllowClobber switch within the following powershell command... 
 	SET @commandResults = NULL;
 	EXEC @returnValue = dbo.[execute_powershell]
 		@Command = N'Install-Module AWS.Tools.S3 -Force -Scope CurrentUser | ConvertTo-Xml -As Stream;',

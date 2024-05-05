@@ -86,9 +86,10 @@ AS
 
 	DECLARE @tab nchar(1) = NCHAR(9);
 	DECLARE @output nvarchar(MAX) = N'';
+	DECLARE @padding varchar(4) = REPLICATE(N' ', LEN(@TargetLine + @BeforeAndAfterLines));
 
 	SELECT 
-		@output = @output + CASE WHEN [row_id] = @TargetLine THEN N'-->' ELSE N'' END + + CAST(row_id AS sysname) + @tab + [result] + @crlf
+		@output = @output + CASE WHEN [row_id] = @TargetLine THEN N'--> ' ELSE @tab END + + RIGHT(@padding + CAST(row_id AS sysname), LEN(@TargetLine + @BeforeAndAfterLines)) + @tab + [result] + @crlf
 	FROM 
 		[#lines]
 	WHERE 

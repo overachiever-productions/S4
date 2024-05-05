@@ -29,17 +29,22 @@ IF OBJECT_ID('dbo.verify_database_configurations','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.verify_database_configurations 
-	@DatabasesToExclude				nvarchar(MAX) = NULL,
-	@CompatabilityExclusions		nvarchar(MAX) = NULL,
-	@ReportDatabasesNotOwnedBySA	bit	= 0,
-	@OperatorName					sysname = N'Alerts',
-	@MailProfileName				sysname = N'General',
-	@EmailSubjectPrefix				nvarchar(50) = N'[Database Configuration Alert] ',
-	@PrintOnly						bit = 0
+	@DatabasesToExclude				nvarchar(MAX)	= NULL,
+	@EnableRcsi						bit				= 0,
+	@RcsiExclusions					nvarchar(MAX)	= NULL,
+	@CompatabilityExclusions		nvarchar(MAX)	= NULL,
+	@ReportDatabasesNotOwnedBySA	bit				= 0,
+	@OperatorName					sysname			= N'Alerts',
+	@MailProfileName				sysname			= N'General',
+	@EmailSubjectPrefix				nvarchar(50)	= N'[Database Configuration Alert] ',
+	@PrintOnly						bit				= 0
 AS
 	SET NOCOUNT ON;
 
 	-- {copyright}
+	SET @RcsiExclusions = NULLIF(@RcsiExclusions, N'');
+	SET @DatabasesToExclude = NULLIF(@DatabasesToExclude, N'');
+	SET @CompatabilityExclusions = NULLIF(@CompatabilityExclusions, N'');
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -91,6 +96,15 @@ AS
 		INSERT INTO @excludedComptabilityDatabases ([name])
 		SELECT [result] FROM dbo.split_string(@CompatabilityExclusions, N',', 1) ORDER BY row_id;
 	END; 
+
+	DECLARE @excludedRcsiDatabases table (
+		[name] sysname NOT NULL
+	);
+
+	IF @RcsiExclusions IS NOT NULL BEGIN 
+		INSERT INTO @excludedRcsiDatabases ([name])
+		SELECT [result] FROM dbo.[split_string](@RcsiExclusions, N',', 1);
+	END;
 
 	DECLARE @issues table ( 
 		issue_id int IDENTITY(1,1) NOT NULL, 
@@ -185,6 +199,23 @@ AS
 	ORDER BY 
 		d.[name];
 		
+	-- RCSI: 
+	INSERT INTO @issues ([database], [issue], [command], [success_message])
+	SELECT 
+		d.[name] [database], 
+		N'RCSI should be ' + CASE WHEN @EnableRcsi = 1 THEN N'ENABLED' ELSE N'DISABLED' END + '. Currently ' + CASE WHEN @EnableRcsi = 1 THEN N'DISABLED' ELSE N'ENABLED' END + '.' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME(d.[name]) + N' SET READ_COMMITTED_SNAPSHOT ' + CASE WHEN @EnableRcsi = 1 THEN N'ON' ELSE N'OFF' END + ' WITH ROLLBACK AFTER 2 SECONDS; ' [command], 
+		N'RCSI successfully set to ' + CASE WHEN @EnableRcsi = 1 THEN N'ENABLED' ELSE N'DISABLED' END + '.' [success_message]
+	FROM 
+		sys.databases d 
+		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		LEFT OUTER JOIN @excludedRcsiDatabases e ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS LIKE e.[name] -- allow LIKE %wildcard% exclusions
+	WHERE 
+		[d].[is_read_committed_snapshot_on] <> @EnableRcsi 
+		AND e.[name] IS  NULL -- only include non-exclusions
+	ORDER BY 
+		d.[name];
+
 	-----------------------------------------------------------------------------
 	-- add other checks as needed/required per environment:
 

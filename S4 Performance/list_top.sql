@@ -17,7 +17,6 @@ AS
 
 	-- {copyright}
 	SET @TopRequests = ISNULL(@TopRequests, 20);
-
 	
 	SELECT
 		r.session_id, 

@@ -10,6 +10,9 @@
 			> Otherwise, anything that's been blocking any other process for a MAX([duration]) > @BlockingThresholdSeconds should be killed. 
 
 	vNEXT:
+		- Add option to @ReportOnlyVsKill ... to just send email alerts VS trying to kill. 
+			Or, in other words, repurpose this as an alert? for long-running-processes that are BLOCKING. 
+
 		- add in some logic that will IGNORE lead-blockers that come from the DAC... 
 
 		- add in an option to REPORT on blockings by any excluded spids ... and... a threshold, i.e., something like @reportExcludedBlockersAfter '70 seconds' or whatever... 
@@ -26,18 +29,20 @@ GO
 
 CREATE PROC dbo.[kill_blocking_processes]
 	@BlockingThresholdSeconds				int					= 60,
-	@ExcludeBackupsAndRestores				bit					= 1,			-- ALL exclude/allow directives apply to ROOT blocker only.
-	@ExcludeSqlServerAgentJobs				bit					= 1,			
-	@AllowedApplicationNames				nvarchar(MAX)		= NULL,			-- All @Allows** params will limit to ONLY lead-blockers via OR on @Allowed values
-	@AllowedHostNames						nvarchar(MAX)		= NULL,			--			 and will, further, be EXCLUDED by @Excluded*** 
-	@AllowedLogins							nvarchar(MAX)		= NULL,
+	@ExcludeBackupsAndRestores				bit					= 1,					-- ALL exclude/allow directives apply to ROOT blocker only.
+	@ExcludeSqlServerAgentJobs				bit					= 1,					
+	@KillableApplicationNames				nvarchar(MAX)		= NULL,					-- All @Allows** params will limit to ONLY lead-blockers via OR on @Allowed values
+	@KillableHostNames						nvarchar(MAX)		= NULL,					--			 and will, further, be EXCLUDED by @Excluded*** 
+	@KillableLogins							nvarchar(MAX)		= NULL,
+	@KillableDatabases						nvarchar(MAX)		= NULL, 
 	@ExcludedApplicationNames				nvarchar(MAX)		= NULL,			
 	@ExcludedDatabases						nvarchar(MAX)		= NULL,
+	@ExcludedHostNames						nvarchar(MAX)		= NULL, 
+	@ExcludedLogins							nvarchar(MAX)		= NULL, 
 	@OperatorName							sysname				= N'Alerts',
 	@MailProfileName						sysname				= N'General',
 	@EmailSubjectPrefix						nvarchar(50)		= N'[Blocked Processes]',
 	@PrintOnly								bit					= 0								-- Instead of EXECUTING commands, they're printed to the console only. 	
-
 AS
     SET NOCOUNT ON; 
 
@@ -46,10 +51,14 @@ AS
 	SET @BlockingThresholdSeconds = ISNULL(@BlockingThresholdSeconds, 30);
 	SET @ExcludeSqlServerAgentJobs = ISNULL(@ExcludeSqlServerAgentJobs, 1);
 	SET @ExcludedApplicationNames = NULLIF(@ExcludedApplicationNames, N'');
+	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
+	SET @ExcludedHostNames = NULLIF(@ExcludedHostNames, N'');
+	SET @ExcludedLogins = NULLIF(@ExcludedLogins, N'');
 
-	SET @AllowedApplicationNames = NULLIF(@AllowedApplicationNames, N'');
-	SET @AllowedHostNames = NULLIF(@AllowedHostNames, N'');
-	SET @AllowedLogins = NULLIF(@AllowedLogins, N'');
+	SET @KillableApplicationNames = NULLIF(@KillableApplicationNames, N'');
+	SET @KillableHostNames = NULLIF(@KillableHostNames, N'');
+	SET @KillableLogins = NULLIF(@KillableLogins, N'');
+	SET @KillableDatabases = NULLIF(@KillableDatabases, N'');
 
 	DECLARE @message nvarchar(MAX);
 
@@ -188,50 +197,64 @@ AS
 	END;
 	
 	/* Now that we know who the lead-blockers are, check for @Allowed/Inclusions - and then EXCLUDE by any @ExludeXXXX params. */
-	DECLARE @allowedApps table (
+	DECLARE @killableApps table (
 		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[app_name] sysname NOT NULL
 	); 
 
-	IF @AllowedApplicationNames IS NOT NULL BEGIN 
-		INSERT INTO @allowedApps ([app_name])
-		SELECT [result] FROM dbo.[split_string](@AllowedApplicationNames, N', ', 1);
+	IF @KillableApplicationNames IS NOT NULL BEGIN 
+		INSERT INTO @killableApps ([app_name])
+		SELECT [result] FROM dbo.[split_string](@KillableApplicationNames, N', ', 1);
 		
 		DELETE x 
 		FROM 
 			[#leadBlockers] x  
-			INNER JOIN @allowedApps t ON x.[program_name] NOT LIKE t.[app_name];
+			INNER JOIN @killableApps t ON x.[program_name] NOT LIKE t.[app_name];
 	END;
 
-	DECLARE @allowedHosts table (
+	DECLARE @killableHosts table (
 		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[host_name] sysname NOT NULL
 	); 
 
-	IF @AllowedHostNames IS NOT NULL BEGIN 
-		INSERT INTO @allowedHosts ([host_name])
-		SELECT [result] FROM dbo.[split_string](@AllowedHostNames, N', ', 1);
+	IF @KillableHostNames IS NOT NULL BEGIN 
+		INSERT INTO @killableHosts ([host_name])
+		SELECT [result] FROM dbo.[split_string](@KillableHostNames, N', ', 1);
 
 		DELETE x 
 		FROM 
 			[#leadBlockers] x 
-			INNER JOIN @allowedHosts t ON [x].[host_name] NOT LIKE [t].[host_name];
+			INNER JOIN @killableHosts t ON [x].[host_name] NOT LIKE [t].[host_name];
 	END;
 
-	DECLARE @targetLogins table (
+	DECLARE @killable_logins table (
 		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[login_name] sysname NOT NULL
 	); 
 
-	IF @AllowedLogins IS NOT NULL BEGIN 
-		INSERT INTO @targetLogins ([login_name])
-		SELECT [result] FROM dbo.[split_string](@AllowedLogins, N', ', 1);
+	IF @KillableLogins IS NOT NULL BEGIN 
+		INSERT INTO @killable_logins ([login_name])
+		SELECT [result] FROM dbo.[split_string](@KillableLogins, N', ', 1);
 
 		DELETE x 
 		FROM 
 			[#leadBlockers] x 
-			INNER JOIN @targetLogins t ON [x].[login_name] NOT LIKE [t].[login_name];
+			INNER JOIN @killable_logins t ON [x].[login_name] NOT LIKE [t].[login_name];
+	END;
 
+	DECLARE @killable_databases table ( 
+		[row_id] int IDENTITY(1,1) NOT NULL, 
+		[database_name] sysname NOT NULL
+	); 
+
+	IF @KillableDatabases IS NOT NULL BEGIN 
+		INSERT INTO @killable_databases ([database_name])
+		SELECT [result] FROM dbo.[split_string](@KillableDatabases, N', ', 1);
+
+		DELETE x 
+		FROM 
+			[#leadBlockers] x 
+			INNER JOIN @killable_databases d ON x.[database] NOT LIKE d.[database_name];
 	END;
 
 	DECLARE @leadBlockers int;
@@ -268,6 +291,27 @@ AS
 			[command] LIKE N'%RESTORE%'
 	END;
 
+	IF @ExcludedDatabases IS NOT NULL BEGIN 
+		DELETE b 
+		FROM 
+			[#leadBlockers] b 
+			INNER JOIN dbo.[split_string](@ExcludedDatabases, N', ', 1) x ON b.[database] LIKE x.[result];
+	END;
+
+	IF @ExcludedHostNames IS NOT NULL BEGIN 
+		DELETE b 
+		FROM 
+			[#leadBlockers] b 
+			INNER JOIN dbo.[split_string](@ExcludedHostNames, N', ', 1) x ON b.[host_name] LIKE x.[result];
+	END;
+
+	IF @ExcludedLogins IS NOT NULL BEGIN 
+		DELETE b 
+		FROM 
+			[#leadBlockers] b 
+			INNER JOIN dbo.[split_string](@ExcludedLogins, N', ', 1) x ON b.[login_name] LIKE x.[result];
+	END;
+	
 	-- Remove any processes ALREADY KILL'd (i.e., zombies - don't want to tell them to 'die!!' again): 
 	DELETE FROM [#leadBlockers] 
 	WHERE 

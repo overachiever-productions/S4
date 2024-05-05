@@ -41,7 +41,7 @@ IF OBJECT_ID('dbo.report_io_percent_of_percent_load','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[report_io_percent_of_percent_load]
-	@SourceTable				sysname, 
+	@SourceTable					sysname, 
 	@TargetDisks					sysname				= N'{ALL}', 
 	@TargetThresholds				nvarchar(MAX)		= NULL,
 	@ExcludePerfmonTotal			bit					= 1					
@@ -144,7 +144,7 @@ AS
 				SELECT 
 					[result]
 				FROM 
-					admindb.dbo.split_string(@TargetDisks, N',', 1)
+					dbo.split_string(@TargetDisks, N',', 1)
 
 				UNION 
 					

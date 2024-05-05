@@ -1,7 +1,5 @@
 /*
 
-
-
 	pseudo-code for a consumer would be something like: 
 
 		xestore_extract_blocked_processes 
@@ -21,11 +19,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.xestore_extract_session_xml','P') IS NOT NULL
-	DROP PROC dbo.[xestore_extract_session_xml];
+IF OBJECT_ID('dbo.[eventstore_extract_session_xml]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_extract_session_xml];
 GO
 
-CREATE PROC dbo.[xestore_extract_session_xml]
+CREATE PROC dbo.[eventstore_extract_session_xml]
 	@SessionName				sysname, 
 	@Output						xml					OUTPUT, 
 	@ExtractionID				int					OUTPUT, 
@@ -53,24 +51,24 @@ AS
 		RETURN -10;
 	END;
 
-	DECLARE @cet datetime2;
-	DECLARE @lset datetime2;
-	DECLARE @attributes nvarchar(300);
-
-	EXEC dbo.[xestore_initialize_extraction]
-		@SessionName = @SessionName,
-		@ExtractionID = @ExtractionID OUTPUT,
-		@CET = @cet OUTPUT,
-		@LSET = @lset OUTPUT,
-		@Attributes = @attributes OUTPUT, 
-        @InitializationDaysBack = @InitializationDaysBack;
-
 	DECLARE @storageType sysname, @fileName sysname;
 	SELECT 
 		@storageType = [nodes].[data].value(N'(storage_type)[1]',N'sysname'), 
 		@fileName = [nodes].[data].value(N'(file_name)[1]',N'sysname')
 	FROM 
 		@SerializedOutput.nodes(N'//session') [nodes] ([data]);
+
+	DECLARE @cet datetime2;
+	DECLARE @lset datetime2;
+	DECLARE @attributes nvarchar(300);
+
+	EXEC dbo.[eventstore_initialize_extraction]
+		@SessionName = @SessionName,
+		@ExtractionID = @ExtractionID OUTPUT,
+		@CET = @cet OUTPUT,
+		@LSET = @lset OUTPUT,
+		@Attributes = @attributes OUTPUT, 
+        @InitializationDaysBack = @InitializationDaysBack;
 
 	IF @storageType = N'ring_buffer' BEGIN 
 		SELECT 
@@ -159,6 +157,10 @@ AS
 				[row_id] = (SELECT MAX(row_id) FROM [#raw_xe_data]);
 
 			SET @ExtractionAttributes = @newAttribute;
+		  END;
+		ELSE BEGIN 
+			-- If there were no NEW rows extracted, PRESERVE the previous attributes:
+			SELECT @ExtractionAttributes = @attributes;
 		END;
 	END; 
 

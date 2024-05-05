@@ -92,7 +92,10 @@ GO
 --##INCLUDE: Common\tables\alert_responses.sql
 
 -----------------------------------
---##INCLUDE: Common\tables\xestore_extractions.sql
+--##INCLUDE: Common\tables\eventstore_extractions.sql
+
+-----------------------------------
+--##INCLUDE: Common\tables\eventstore_settings.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
@@ -356,6 +359,9 @@ GO
 --##INCLUDE: Common\Internal\verify_alerting_configuration.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\extract_waitresource.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
 
 -----------------------------------
@@ -375,6 +381,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\create_agent_job.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\generate_bounding_times.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases.sql
@@ -633,10 +642,13 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\help_index.sql
+--##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
+--##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\help_index.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\list_heaps.sql
@@ -676,52 +688,79 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\translation\translate_blockedprocesses_trace.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\translation\translate_deadlock_trace.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\translation\translate_largegrant_trace.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_blockedprocess_chronology.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_blockedprocess_counts.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\utilities\aggregate_blocked_processes.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_blockedprocesses_problems.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_blockedprocess_heatmap.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_deadlock_chronology.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_largegrant_counts.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_largegrant_problems.sql
-
------------------------------------
---##INCLUDE: S4 Extended Events\views\view_largegrant_heatmap.sql
-
------------------------------------
 --##INCLUDE: S4 Extended Events\utilities\list_xe_sessions.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\xestore\xestore_initialize_extraction.sql
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_initialize_extraction.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\xestore\xestore_extract_session_xml.sql
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_finalize_extraction.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\xestore\xestore_finalize_extraction.sql
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_extract_session_xml.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_etl_session.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_etl_processor.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_verify_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_setup_session.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_data_cleanup.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_timebounded_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_heatmap_frame.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_all_errors.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_blocked_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_deadlocks.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_large_sql.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_all_errors.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_blocked_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_deadlocks.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_error_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronology.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_deadlock_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_chronology.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_counts.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
@@ -753,7 +792,7 @@ GO
 --##INCLUDE: S4 Utilities\extract_code_lines.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\extract_waitresource.sql
+--##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\is_xml_empty.sql
@@ -790,6 +829,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_list_buckets.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_verify_bucket_write.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql

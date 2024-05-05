@@ -16,7 +16,7 @@ CREATE PROC dbo.[create_agent_job]
 	@JobCategoryName						sysname					= NULL, 
 	@JobEnabled								bit						= 1,					-- Default to creation of the job in Enabled state.
 	@AddBlankInitialJobStep					bit						= 1, 
-	@OperatorToAlertOnErrorss				sysname					= N'Alerts',
+	@OperatorToAlertOnErrors				sysname					= N'Alerts',
 	@OverWriteExistingJobDetails			bit						= 0,					-- NOTE: Initially, this means: DROP/CREATE. Eventually, this'll mean: repopulate the 'guts' of the job if/as needed... 
 	@JobID									uniqueidentifier		OUTPUT
 AS
@@ -70,7 +70,7 @@ AS
 		@owner_login_name = N'sa',             
 		@notify_level_eventlog = 0,           
 		@notify_level_email = 2,              
-		@notify_email_operator_name = @OperatorToAlertOnErrorss,   
+		@notify_email_operator_name = @OperatorToAlertOnErrors,   
 		@delete_level = 0,                    
 		@job_id = @JobID OUTPUT;
 
