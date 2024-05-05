@@ -92,7 +92,10 @@ GO
 --##INCLUDE: Common\tables\alert_responses.sql
 
 -----------------------------------
---##INCLUDE: Common\tables\xestore_extractions.sql
+--##INCLUDE: Common\tables\eventstore_extractions.sql
+
+-----------------------------------
+--##INCLUDE: Common\tables\eventstore_settings.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
@@ -354,6 +357,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\verify_alerting_configuration.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\extract_waitresource.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases_matching_token.sql
@@ -739,13 +745,13 @@ GO
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_error_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronlogy.sql
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronology.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_deadlocks_counts.sql
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_deadlock_counts.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_chronology.sql
@@ -784,9 +790,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\extract_waitresource.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\is_xml_empty.sql
