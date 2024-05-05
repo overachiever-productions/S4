@@ -383,6 +383,9 @@ GO
 --##INCLUDE: Common\Internal\create_agent_job.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\generate_bounding_times.sql
+
+-----------------------------------
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
