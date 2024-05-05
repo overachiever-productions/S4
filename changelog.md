@@ -2,6 +2,36 @@
 
 # Change Log
 
+## [12.0] - 2024-05-04 
+Improved DB Restore Capabilities/Options + Initial Addition of EventStore Functionality.
+
+### Fixed 
+- Major overhaul of restore-logic within `dbo.restore_databases` and associated 'helpers' to address MULTIPLE different causes of 'LSN too recent' errors caused during restores due to T-LOG and FULL/DIFF backups being executed at same time and/or at 'overlapping' times.
+- Major overhaul of logic within `dbo.help_index` to leverage functionality/logic from within `dbo.list_index_metrics` (to avoid DRY and improve index context/info/outputs) - along with significant performance tweaks and improvements. Initial functionality for scripting/dumping index definitions (via `dbo.script_indexes` - which isn't QUITE done yet).
+- Fixed bug within `dbo.execute_command` causing some ugly issues with PowerShell execution, etc. 
+
+### Added 
+- New Directives for `dbo.backup_databases` including `TAIL_OF_LOG` (for DR), `FINAL` (for migrations), and `KEEP_ONLINE`.
+- New Directive (`STOPAT`) for `dbo.restore_databases` to more easily facilitate Point-In-Time Restore Operations (DR).
+- Additional filters (exclusions) for `dbo.kill_blocking_processes` - to allow 'white-listing' of databases, hosts, logins, etc. 
+- INITIAL checkin/addition of EventStore core functionalilty (settings and ETL functionality) + some INITIAL reports.
+- Additional wrappers for setup/validation of installation + configuration of AWS.Tools.S3 PowerShell modules and functionality to allow offsite backups to AWS S3 via `dbo.backup_databases`.
+- Option to force databases to use RCSI in `dbo.verify_database_configuration`.
+- (Finally) added `dbo.extract_waitresource` to source-control (this is leveraged heavily for Deadlock and Blocked Process extraction).
+- Added `report_io_latency_percent_of_percent` report (to growing list of capacity planning reports).
+- Added `dbo.extract_dynamic_code_lines` for debugging + error-handling-context when working with dynamic SQL. 
+
+### Changed 
+- Overhaul of `dbo.script_sourcedb_migration_template` to leverage new BACKUP directives. 
+- Rewrite of `dbo.print_long_string` - to avoid dumb logic problems that added addition/spurious CRLF into outputs. 
+- Minor tweak to `dbo.restore_databases` to avoid overfilling SQL Server Agent job history with "success" messages during restore-tests against larger numbers of target databases.
+- Minor perf improvement for `dbo.restore_databases` (via `dbo.load_backup_files`) to improve stability/performance of operations against larger numbers of LOG files. 
+- Removed 'old school' sprocs/functionality for XE Session translation + reporting. (All to be replaced by EventStore functionality - as the 'old school' stuff was great-ish, but a SUPER big pain to manage and not at all documented.)
+- Minor tweak to `dbo.extract_code_lines` to improve readability/formatting of outputs. 
+
+### Known Issues 
+- EventStore functionality is NOT quite ready for prime-time. It's NOT documented and relies heavily upon conventions (which only exist in Mike's head) - and still needs some overall tuning/optimization, refactoring, and consolidation of overall functionality. 
+
 ## [11.1] - 2023-08-29 
 New Utilities + Functionality & Bug Fixes. 
 

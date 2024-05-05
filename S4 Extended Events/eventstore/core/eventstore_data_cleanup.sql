@@ -44,3 +44,6 @@ AS
 	DELETE FROM [{x}].[{table_name}] WHERE [timestamp] < @cutoff';
 
 
+	RAISERROR(N'Not done yet.', 16, 1);
+	RETURN -100; -- NOT DONE YET. 
+GO
