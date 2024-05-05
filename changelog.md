@@ -3,7 +3,7 @@
 # Change Log
 
 ## [12.0] - 2024-05-04 
-xxxx 
+Improved DB Restore Capabilities/Options + Initial Addition of EventStore Functionality.
 
 ### Fixed 
 - Major overhaul of restore-logic within `dbo.restore_databases` and associated 'helpers' to address MULTIPLE different causes of 'LSN too recent' errors caused during restores due to T-LOG and FULL/DIFF backups being executed at same time and/or at 'overlapping' times.
