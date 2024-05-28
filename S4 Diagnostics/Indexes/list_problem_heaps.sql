@@ -1,5 +1,9 @@
 /*
 
+	REFACTOR:
+		- Sick of this sproc-name getting in the way of typing out EXEC admindb.dbo.list_pr ... and have this thing pop up when ... i want to list processes. 
+			i.e., figure out what to name this (or ... change the name of dbo.list_processes).
+
 
 */
 
