@@ -205,9 +205,9 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="fix_orphaned_logins" type="P" comment="v11.1 - Renamed from dbo.fix_orphaned_logins - which doesn''t make sense - we''re fixing USERs." />
 	<entry schema="dbo" name="alter_jobstep_body" type="P" comment="v11.1 - Renamed from dbo.alter_jobstep_body - to toy with test of &lt;object&gt;-&lt;verb&gt; naming conventions for some things?" />
 
-	<entry schema="dbo" name="plancache_columns_by_index" type="P" comment="v12.4 refactoring." />
-	<entry schema="dbo" name="plancache_columns_by_table" type="P" comment="v12.4 refactoring." />
-	<entry schema="dbo" name="plancache_metrics_for_index" type="P" comment="v12.4 refactoring." />
+	<entry schema="dbo" name="plancache_columns_by_index" type="P" comment="v12.1 refactoring." />
+	<entry schema="dbo" name="plancache_columns_by_table" type="P" comment="v12.1 refactoring." />
+	<entry schema="dbo" name="plancache_metrics_for_index" type="P" comment="v12.1 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -326,7 +326,7 @@ GO
 --##INCLUDE: Common\Setup\verify_advanced_capabilities.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
--- Common and Utilities:
+-- Common Utilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -408,6 +408,12 @@ GO
 --##INCLUDE: Common\get_timezone_offset_minutes.sql
 
 -----------------------------------
+--##INCLUDE: S4 Utilities\print_long_string.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\count_matches.sql
 
 -----------------------------------
@@ -435,9 +441,6 @@ GO
 --##INCLUDE: S4 Utilities\shred_string.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\print_long_string.sql
-
------------------------------------
 --##INCLUDE: Common\Internal\get_executing_dbname.sql
 
 -----------------------------------
@@ -446,6 +449,12 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Backups:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\Utilities\log_backup_history_detail.sql
@@ -555,12 +564,6 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
-
------------------------------------
---##INCLUDE: S4 Restore\Utilities\load_header_details.sql
-
------------------------------------
 --##INCLUDE: S4 Restore\Utilities\parse_backup_filename_timestamp.sql
 
 -----------------------------------
@@ -598,7 +601,7 @@ GO
 --##INCLUDE: S4 Performance\list_cpu_history.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
---- Migration
+--- Migration:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -614,7 +617,32 @@ GO
 --##INCLUDE: S4 Migration\disable_and_script_logins.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
---- Monitoring
+--- SQL Server Agent Jobs
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\list_running_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\is_job_running.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_alter.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_get.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Monitoring:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -646,10 +674,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
+--##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
+--##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\help_index.sql
@@ -799,9 +827,6 @@ GO
 --##INCLUDE: S4 Utilities\extract_code_lines.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
-
------------------------------------
 --##INCLUDE: S4 Utilities\is_xml_empty.sql
 
 -----------------------------------
@@ -829,6 +854,9 @@ GO
 --##INCLUDE: S4 Utilities\kill_connections_by_statement.sql
 
 -----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_install_modules.sql
 
 -----------------------------------
@@ -840,9 +868,6 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_verify_bucket_write.sql
 
------------------------------------
---##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Idioms
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -852,31 +877,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Idioms\blueprints\blueprint_for_batched_operation.sql
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
---- SQL Server Agent Jobs
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
---##INCLUDE: S4 Jobs\list_running_jobs.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\is_job_running.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\get_last_job_completion.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_alter.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_get.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Resource Governor
