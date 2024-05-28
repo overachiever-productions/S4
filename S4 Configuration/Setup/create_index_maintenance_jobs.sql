@@ -138,7 +138,7 @@ AS
 		@JobCategoryName = @JobsCategoryName,
 		@JobEnabled = 0,
 		@AddBlankInitialJobStep = 1,
-		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 		@JobID = @jobId OUTPUT;
 
@@ -194,7 +194,7 @@ AS
 		@JobCategoryName = @JobsCategoryName,
 		@JobEnabled = 0,
 		@AddBlankInitialJobStep = 1,
-		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 		@JobID = @jobId OUTPUT;
 

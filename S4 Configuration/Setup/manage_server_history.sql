@@ -140,7 +140,7 @@ AS
 		@TargetJobName = @HistoryCleanupJobName,
 		@JobCategoryName = @JobCategoryName,
 		@AddBlankInitialJobStep = 1,
-		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJob,
 		@JobID = @jobId OUTPUT;
 
