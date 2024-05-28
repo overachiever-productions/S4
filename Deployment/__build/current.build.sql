@@ -204,6 +204,10 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 
 	<entry schema="dbo" name="fix_orphaned_logins" type="P" comment="v11.1 - Renamed from dbo.fix_orphaned_logins - which doesn''t make sense - we''re fixing USERs." />
 	<entry schema="dbo" name="alter_jobstep_body" type="P" comment="v11.1 - Renamed from dbo.alter_jobstep_body - to toy with test of &lt;object&gt;-&lt;verb&gt; naming conventions for some things?" />
+
+	<entry schema="dbo" name="plancache_columns_by_index" type="P" comment="v12.4 refactoring." />
+	<entry schema="dbo" name="plancache_columns_by_table" type="P" comment="v12.4 refactoring." />
+	<entry schema="dbo" name="plancache_metrics_for_index" type="P" comment="v12.4 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -657,13 +661,16 @@ GO
 --##INCLUDE: S4 Diagnostics\Indexes\list_problem_heaps.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\plancache_columns_by_index.sql
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_columns_by_table.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\plancache_columns_by_table.sql
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_metrics_for_index.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\plancache_metrics_for_index.sql
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_columns_by_index.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_statistics_by_table.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
