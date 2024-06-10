@@ -33,9 +33,21 @@ IF OBJECT_ID('dbo.alert_responses','U') IS NULL BEGIN
 	(7886, N'[IGNORE]', 1, N'A read operation on a large object failed while sending data to the client. Example of a common-ish error you MAY wish to ignore, etc. '), 
 	(17806, N'[IGNORE]', 1, N'SSPI handshake failure '),  -- TODO: configure for '[ALLOW # in (span)]'
 	(18056, N'[IGNORE]', 1, N'The client was unable to reuse a session with SPID ###, which had been reset for connection pooling. The failure ID is 8. ');			-- TODO: configure for '[ALLOW # in (span)]'
-	-- 17835, N'[IGNORE]', 1, is_enabled:0? or 1?, N'Encryption is required to connect to this server but the client library does not support encryption; the connection has been closed. Please upgrade your client library. 
-	-- 4014 ... severity 20: A fatal error occurred while reading the input stream from the network. The session will be terminated
-	-- 17828 ... severity 20: The prelogin packet used to open the connection is structurally invalid; the connection has been closed. Please contact the vendor of the client library. 
-	-- 17836 ... severity 20: Length specified in network packet payload did not match number of bytes read; the connection has been closed. Please contact the vendor of the client library.
 END;
 GO
+
+IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 4014)
+	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
+	VALUES	(4014, N'[IGNORE]', 1, 1, N'A fatal error occurred while reading the input stream from the network. The session will be terminated.');
+
+IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17828)
+	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
+	VALUES	(17828, N'[IGNORE]', 1, 1, N'The prelogin packet used to open the connection is structurally invalid; the connection has been closed. Please contact the vendor of the client library.');
+
+IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17836)
+	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
+	VALUES	(17836, N'[IGNORE]', 1, 1, N'Length specified in network packet payload did not match number of bytes read; the connection has been closed. Please contact the vendor of the client library.');
+
+IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17835)
+	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
+	VALUES	(17835, N'[IGNORE]', 1, 1, N'Encryption is required to connect to this server but the client library does not support encryption; the connection has been closed. Please upgrade your client library.');
