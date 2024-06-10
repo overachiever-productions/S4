@@ -11,6 +11,15 @@ IF EXISTS (SELECT NULL FROM sys.key_constraints WHERE [parent_object_id] = OBJEC
 		@objname = N'dbo.eventstore_extractions.PK_xestore_extractions', 
 		@newname = N'PK_eventstore_extractions';
 END;
+GO
+
+IF EXISTS (SELECT NULL FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'dbo.eventstore_extractions', N'U') AND [name] = N'CLIX_xestore_extractions_ByTraceAndLSET') BEGIN 
+	EXEC sys.sp_rename 
+		@objname = N'dbo.eventstore_extractions.CLIX_xestore_extractions_ByTraceAndLSET', 
+		@newname = N'CLIX_xestore_extractions_By_session_name_and_lset', 
+		@objtype = 'INDEX';
+
+END;
 
 IF OBJECT_ID(N'dbo.eventstore_extractions', N'U') IS NULL BEGIN 
 	CREATE TABLE dbo.eventstore_extractions ( 
@@ -25,6 +34,6 @@ IF OBJECT_ID(N'dbo.eventstore_extractions', N'U') IS NULL BEGIN
 	)
 	WITH (DATA_COMPRESSION = PAGE);
 
-	CREATE CLUSTERED INDEX CLIX_xestore_extractions_ByTraceAndLSET ON dbo.[eventstore_extractions] ([session_name], [extraction_id] DESC);
+	CREATE CLUSTERED INDEX CLIX_xestore_extractions_By_session_name_and_lset ON dbo.[eventstore_extractions] ([session_name], [extraction_id] DESC);
 END;
 GO
