@@ -36,6 +36,8 @@ IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') B
 END;
 GO
 
+ALTER DATABASE [admindb] SET DISABLE_BROKER; -- not needed, so no sense having it enabled (whereas, the model db on most systems has broker enabled). 
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 2. Core Tables:
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
