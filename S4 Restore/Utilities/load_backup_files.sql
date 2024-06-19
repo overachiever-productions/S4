@@ -378,7 +378,7 @@ AS
 		FROM 
 			#orderedResults
 		WHERE 
-			id >= @lowerID
+			id >= @lowerId
 			-- TODO / vNEXT: if/when there's an @StopTime feature added, put an upper bound on any rows > @StopTime - i.e., AND timestamp < @StopAt.
 		ORDER BY 
 			[id];
