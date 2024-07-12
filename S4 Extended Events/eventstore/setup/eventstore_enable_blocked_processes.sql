@@ -119,8 +119,6 @@ EXEC sp_configure ''blocked process threshold'', ' + CAST(@BlockedProcessThresho
 	[blocking_host_name] sysname NULL,
 	[blocking_login_name] sysname NULL,
 	[blocking_client_app] sysname NULL,
-	[blocked_spid] [int] NOT NULL,
-	[blocked_ecid] [int] NOT NULL,
 	[blocked_xactid] [bigint] NULL,  -- can be NULL
 	[blocked_request] [nvarchar](max) NOT NULL,
 	[blocked_sproc_statement] [nvarchar](max) NOT NULL,
