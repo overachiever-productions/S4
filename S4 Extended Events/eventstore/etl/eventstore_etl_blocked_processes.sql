@@ -353,7 +353,7 @@ AS
 	
 	INSERT INTO [{targetSchema}].[{targetTable}] (
 		[timestamp],
-		[database_name],
+		[database],
 		[seconds_blocked],
 		[report_id],
 		[blocking_id],
