@@ -321,7 +321,6 @@ AS
 		END;
 	END;
 
-
 	IF @Databases IS NOT NULL BEGIN 
 		DECLARE @databasesValues table (
 			[row_id] int IDENTITY(1,1) NOT NULL, 
