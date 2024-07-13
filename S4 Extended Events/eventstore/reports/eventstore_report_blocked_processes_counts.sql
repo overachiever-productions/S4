@@ -185,13 +185,15 @@ AS
 
 	CREATE TABLE #metrics ( 
 		[event_time] datetime NOT NULL, 
+		[signature] sysname NULL,  /* only used for cadence */
 		[transaction_id] bigint NULL, 
 		[blocked_id] int NOT NULL,
 		[seconds_blocked] decimal(24,2) NOT NULL, 
 		[type] sysname NOT NULL
 	);
 
-	CREATE NONCLUSTERED INDEX #metrics_By_event_time ON [#metrics] ([event_time]) INCLUDE ([transaction_id], [seconds_blocked], [type]);
+	CREATE NONCLUSTERED INDEX #metrics_by_event_time ON [#metrics] ([event_time]) INCLUDE ([transaction_id], [seconds_blocked], [type]);
+	CREATE NONCLUSTERED INDEX #metrics_for_cadence_signatures ON [#metrics] ([signature]) INCLUDE ([seconds_blocked]);
 
 	DECLARE @rowId int;
 	IF @Databases IS NOT NULL BEGIN 
@@ -386,6 +388,7 @@ AS
 
 	DECLARE @sql nvarchar(MAX) = N'SELECT 
 	[e].[timestamp] [event_time], 
+	CAST([e].[blocking_id] AS sysname) + N'':'' + CAST([e].[blocked_id] AS sysname) + N''=>'' + CAST([e].[blocking_xactid] AS sysname) + N''::'' + CAST([e].[blocked_xactid] AS sysname) [signature],
 	[e].[blocking_xactid] [transaction_id], 
 	[e].[blocked_id],
 	[e].[seconds_blocked],
@@ -417,7 +420,7 @@ WHERE
 	PRINT @timeRangeString;
 	PRINT N'';
 
-	INSERT INTO [#metrics] ([event_time], [transaction_id], [blocked_id], [seconds_blocked], [type])
+	INSERT INTO [#metrics] ([event_time], [signature], [transaction_id], [blocked_id], [seconds_blocked], [type])
 	EXEC sys.sp_executesql 
 		@sql, 
 		N'@Start datetime, @End datetime', 
@@ -428,61 +431,47 @@ WHERE
 	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-	-- Determine Cadence: 
-	/*
-		TODO: 
-			- There's a happy-path logic-bug in here. 
-				-> Assume we get a couple of operations that block for, say, 6+ seconds each time there's a problem. Fine, we'll get a MODE of 2 seconds for those and everything will be (happy-path) fine. 
-				-> But, what if we get something that blocks for 2.2 seconds - every 90 seconds (like clockwork). 
-					At that point, the MODE will be 90 seconds - because the gap/interval between blocking will be ... 90 seconds, over and over again. 
-
-			- Even if I were to use percentiles - and throw out anomalies, IF there were something that blocked (like clockwork) for barely 2+ seconds every 90 seconds, that'd ... still give me a value of 90 seconds. 
-			- Unfortunately, the above means that ... I think the only real way to address this notion of cadence will be to:
-				-> track some sort of 'setting' value for 'BLOCKED_PROCESSES' - called (imaginatively): 'BLOCKED_PROCESSES_BLOCKED_PROCESS_REPORTING_THRESHOLD' 
-					-> and make sure that's captured as part of every 'init' against the blocked-processes KEY
-					-> and, sigh, probably also have to look at tracking that value via some sort of (bletch) DDL trigger as well? 
-						But, at this point, I'm looking at something insane/ugly like ... a history table instead of a mere setting. 
-						AND then the added complexity of "oh gee - you ran this report for counts over a period of a month - but mid-month, someone switched threshold from 2 to 4 seconds" so... do I show you 3 seconds? or what? 
-
-			ULTIMATELY
-				There are probably some BETTER WAYS(TM) to address what I'm trying to tackle here. 
-				Specifically:
-					A. Maybe there's a better way to determine the ACCRUED_SECONDS value that I'm grabbing via @blockedProcessThresholdCadenceSeconds
-					B. If that's NOT the case, It MIGHT just be easier to EXCLUDE the 'nightmare' scenario I've described above by 
-						ONLY calculating 'cadence' against blocking 'events' with a blocking-'count' > N. 
-							e.g., if the 'nightmare' scenario above is that a single spid blocks for 2.x seconds every 90 seconds, then ... when I 'chain'/stack those events back to back and
-							subtract current-from-previous to get 'cadence-seconds' then... YUP, I'll keep getting 90 seconds. 
-							BUT, what if I ONLY stacked/chained events for 'blocking problems' where something blocked > 1 event? i.e., assume I'd need a minimum of X (3?) concurrent blocking issues (2, 4, 6 seconds apart)
-								and ONLY leverage those 'entries' 
-			So. yeah. 
-				Options A or B above are the best. 
-				WAY better than tracking this crap.
-	*/
+	/* Define Blocked Processes Threshold Seconds (i.e., 'cadence' for how frequently reports are being generated. */
 	DECLARE @blockedProcessThresholdCadenceSeconds int;
-	WITH differenced AS (
-		SELECT 
-			[event_time], 
-			DATEDIFF(SECOND, LAG(event_time, 1, NULL) OVER (ORDER BY [event_time]), [event_time]) [interval_seconds]
+	WITH chained AS ( 
+		SELECT TOP 5000
+			[signature]
 		FROM 
-			[#metrics]
+			[#metrics] 
+		GROUP BY 
+			[signature] 
+		HAVING 
+			COUNT(*) > 2
+	),
+	aligned AS ( 
+		SELECT TOP 20000
+			[m].[seconds_blocked], 
+			LAG([m].[seconds_blocked], 1, NULL) OVER (PARTITION BY [m].[signature] ORDER BY [m].[seconds_blocked]) [previous]
+		FROM 
+			[#metrics] [m]
+			INNER JOIN [chained] [x] ON [m].[signature] = [x].[signature]
 	), 
-	ranked AS ( 
+	diffed AS ( 
 		SELECT 
-			[interval_seconds], 
+			CAST([seconds_blocked] - [previous] AS int) [seconds]
+		FROM 
+			[aligned] 
+		WHERE 
+			[previous] IS NOT NULL
+	), 
+	ranked AS (
+		SELECT 
+			[seconds], 
 			COUNT(*) [hits],
 			DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) [rank]
 		FROM 
-			[differenced]
-		WHERE 
-			[interval_seconds] IS NOT NULL 
-			AND [interval_seconds] <> 0
+			[diffed]
 		GROUP BY 
-			[interval_seconds]
-	) 
-
+			[seconds]
+	)
 
 	SELECT 
-		@blockedProcessThresholdCadenceSeconds = ISNULL([interval_seconds], 2)
+		@blockedProcessThresholdCadenceSeconds = ISNULL([seconds], 2)
 	FROM 
 		[ranked]
 	WHERE 
