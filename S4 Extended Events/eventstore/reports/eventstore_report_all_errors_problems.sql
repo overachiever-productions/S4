@@ -1,88 +1,31 @@
 /*
 
-	vNEXT:
-		- figure out how to deal with @Statements 'splitting' as ... commas (,) will be a pain... 
-			See: https://overachieverllc.atlassian.net/browse/EVS-22?focusedCommentId=10753 
 
-	.DOCUMENTATION
-		.PARAMETERS
-			.NAME: @Statements
-			.TYPE: nvarchar(MAX) NULL 
-			.DEFAULT: NULL
-			.DESCRIPTION: 
-
-			:::WARNING
-			#### :zap: NOTE: 
-			Multiple statement patterns (i.e., using % for LIKE operations) can be specified via the `@Statements` - which SPLITs statements via the `,` character. 
-			Translation: if any of the LIKE statements you 'embed' in the `@Statements` parameter have 'natural' commas in them, replace them with the `_` (single-char) wild
-			card character. 
-		TODO: do a better job of documenting the above. See https://overachieverllc.atlassian.net/browse/EVS-22?focusedCommentId=10754 for more details.
-
-
-			.NAME: @TimeZone 
-			.TYPE: sysname NULL 
-			.DEFAULT: NULL
-			.DESCRIPTION: 
-			When specified - either explicitly or as a preference (stored in eventstore_report_preference_settings) will do two things:  
-			- Translates any explicitly specified @Start and/or @End values to the @TimeZone specified (vs being in UTC time). 
-			- Injects an additional column into the output - which shows translated times in the @TimeZone specified - along-side the UTC dates.
-			
-			**NOTE:** If @Start and @End are both provided, but @TimeZone is explicitly set to NULL - then only a UTC date/time column will be provided in the output;
-
-
-		.EXAMPLES 
-			.EXAMPLE: Basic Interaction
-			.DESCRIPTION: 
-			This'll ... just use defaults if any are loaded and ... if none are specified, it'll use hard-coded defaults for time-ranges: 
-
-			```sql
-
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts];
-
-			```
-			More text down here. 
-
-			.EXAMPLE: Explicitly Specifying `@Start` and `@End` ranges: 
-
-			```sql
-
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts]
-				@Start = '2024-06-09 23:19:42.280',
-				@End = '2024-06-11 23:19:42.280';
-
-			```
-			etc... 
-
-			.EXAMPLE: Some other Example... 
-			blah blah blah 
-
-			```sql
-
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts]
-				@UseDefaults = 0,
-				@TimeZone = N'{SERVER_LOCAL}',
-				@Start = '2024-06-09 23:19:42.280',
-				@End = '2024-06-11 23:19:42.280',
-				@Applications = N'-%agent%';
-			
-			```
-
-	vNEXT:
-					
+	EXAMPLE:
+		EXEC [admindb].dbo.[eventstore_report_all_errors_problems]
+			@Start = '2024-07-01',
+			@GroupBy = N'STATEMENT',
+			--@TimeZone = ?,
+			--@UseDefaults = ?,
+			@ErrorIds = N'-{piggly}',
+			--@Statements = N'RESTORE LOG% -%billing%',
+			@Statements = N'RESTORE LOG%',
+			@Databases = N'master, -Billing',
+			@MinimumSeverity = 16;
 
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_report_all_error_counts]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_report_all_error_counts];
+IF OBJECT_ID('dbo.[eventstore_report_all_errors_problems]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_all_errors_problems];
 GO
 
-CREATE PROC dbo.[eventstore_report_all_error_counts]
-	@Granularity				sysname			= N'HOUR', 
+CREATE PROC dbo.[eventstore_report_all_errors_problems]
 	@Start						datetime		= NULL, 
-	@End						datetime		= NULL, 
+	@End						datetime		= NULL,
+	@GroupBy					sysname			= N'ERROR',			-- { ERROR | SEVERITY | DB | LOGIN | HOST | APP | STATEMENT } 
 	@TimeZone					sysname			= NULL, 
 	@UseDefaults				bit				= 1, 
 	@MinimumSeverity			int				= -1, 
@@ -92,14 +35,14 @@ CREATE PROC dbo.[eventstore_report_all_error_counts]
 	@Hosts						nvarchar(MAX)	= NULL, 
 	@Principals					nvarchar(MAX)	= NULL,
 	@Statements					nvarchar(MAX)	= NULL, 
-	@ExcludeSystemErrors		bit				= 1						
+	@ExcludeSystemErrors		bit				= 1
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
-	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @GroupBy = UPPER(ISNULL(NULLIF(@GroupBy, N''), N'ERRROR'));
 
 	SET @MinimumSeverity = ISNULL(NULLIF(@MinimumSeverity, 0), -1);
 	SET @ErrorIds = NULLIF(@ErrorIds, N'');
@@ -113,8 +56,9 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+-- C) specify the @eventStoreKey - and @reportType
 	DECLARE @eventStoreKey sysname = N'ALL_ERRORS';
-	DECLARE @reportType sysname = N'COUNTS';
+	DECLARE @reportType sysname = N'PROBLEMS';
 	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
 
 	EXEC @outcome = dbo.[eventstore_get_target_by_key]
@@ -125,11 +69,12 @@ AS
 		RETURN @outcome;
 	
 	IF @UseDefaults = 1 BEGIN
+		PRINT 'Loading Defaults...';
+
 		DECLARE @defaultTimeZone sysname, @defaultStartTime datetime, @defaultPredicates nvarchar(MAX);
 		EXEC dbo.[eventstore_get_report_preferences]
 			@EventStoreKey = @eventStoreKey,
 			@ReportType = @reportType,
-			@Granularity = @Granularity,
 			@PreferredTimeZone = @defaultTimeZone OUTPUT,
 			@PreferredStartTime = @defaultStartTime OUTPUT,
 			@PreferredPredicates = @defaultPredicates OUTPUT;
@@ -148,8 +93,7 @@ AS
 				SUBSTRING([result], CHARINDEX(N':', [result]) + 1, LEN([result])) [value]
 			FROM  
 				dbo.[split_string](@defaultPredicates, N';', 1);
-	
-			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
+
 			IF @MinimumSeverity IS NULL SELECT @MinimumSeverity = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinimumSeverity';
 			IF @ErrorIds IS NULL SELECT @ErrorIds = [value] FROM @predicates WHERE [key] = N'@ErrorIds';
 			IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
@@ -191,48 +135,14 @@ AS
 		END;
 	END;
 
+	IF @GroupBy NOT IN (N'ERROR', N'SEVERITY', N'DB', N'LOGIN', N'HOST', N'APP', N'STATEMENT') BEGIN 
+		RAISERROR(N'Valid values for @GroupBy are { ERROR | SEVERITY | DB | LOGIN | HOST | APP | STATEMENT }.', 16, 1); 
+		RETURN -12;
+	END;
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Bounding
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	SET @outcome = 0;
-	DECLARE @times xml;
-	EXEC @outcome = dbo.[eventstore_timebounded_counts]
-		@Granularity = @Granularity,
-		@Start = @Start,
-		@End = @End,
-		@SerializedOutput = @times OUTPUT;
-
-	IF @outcome <> 0 
-		RETURN @outcome;
-
-	WITH shredded AS ( 
-		SELECT 
-			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
-			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
-		FROM 
-			@times.nodes(N'//time') [data]([row])
-	) 
-
-	SELECT 
-		[block_id],
-		[start_time],
-		[end_time]
-	INTO 
-		#times
-	FROM 
-		shredded 
-	ORDER BY 
-		[block_id];
-	
-	IF @Start IS NULL BEGIN 
-		SELECT 
-			@Start = MIN([start_time]), 
-			@End = MAX([end_time]) 
-		FROM 
-			[#times];
-	END;
-
 	IF @End IS NULL SET @End = GETUTCDATE();
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -243,8 +153,13 @@ AS
 	DECLARE @joins nvarchar(MAX) = N'';
 
 	CREATE TABLE #metrics ( 
-		[error_timestamp] datetime NOT NULL,  
-		[error_number] int NOT NULL
+		[error_number] int NOT NULL, 
+		[severity] int NULL,
+		[database] sysname NULL,
+		[user_name] sysname NULL,
+		[host_name] varchar(MAX) NULL,
+		[application_name] varchar(MAX) NULL,
+		[statement] nvarchar(MAX)
 	);
 	CREATE NONCLUSTERED INDEX #metrics_error_id ON [#metrics] ([error_number]);
 
@@ -320,7 +235,6 @@ AS
 			SET @filters = @filters + @crlftab + N'AND [x].[error_number] IS NULL';
 		END;
 	END;
-
 
 	IF @Databases IS NOT NULL BEGIN 
 		DECLARE @databasesValues table (
@@ -517,8 +431,13 @@ AS
 	END;
 
 	DECLARE @sql nvarchar(MAX) = N'SELECT 
-	[e].[timestamp] [error_timestamp], 
-	[e].[error_number]
+	[e].[error_number],
+	[e].[severity],
+	[e].[database],
+	[e].[user_name],
+	[e].[host_name],
+	[e].[application_name],
+	[e].[statement]
 FROM 
 	{SourceTable} [e]{joins}
 WHERE 
@@ -542,11 +461,14 @@ WHERE
 	PRINT @timeRangeString;
 	PRINT N'';
 
---EXEC dbo.[print_long_string] @sql;
-
 	INSERT INTO [#metrics] (
-		[error_timestamp],
-		[error_number]
+		[error_number],
+		[severity],
+		[database],
+		[user_name],
+		[host_name],
+		[application_name],
+		[statement]
 	)
 	EXEC sys.sp_executesql 
 		@sql, 
@@ -554,59 +476,53 @@ WHERE
 		@Start = @Start, 
 		@End = @End;
 
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Correlate + Project:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	SET @sql = N'WITH times AS ( 
-		SELECT 
-			[t].[block_id], 
-			[t].[start_time], 
-			[t].[end_time]
-		FROM 
-			[#times] [t]
-	),
-	correlated AS ( 
-		SELECT 
-			[t].[block_id],
-			[t].[start_time],
-			[t].[end_time],
-			[m].[error_timestamp], 
-			[m].[error_number] [error_id]
-		FROM 
-			[times] [t]
-			LEFT OUTER JOIN [#metrics] [m] ON [m].[error_timestamp] < [t].[end_time] AND [m].[error_timestamp] > [t].[start_time] -- anchors ''up'' - i.e., for an event that STARTS at 12:59:59.33 and ENDs 2 seconds later, the entry will ''show up'' in hour 13:00... 
-	), 
-	aggregated AS ( 
-		SELECT 
-			[block_id], 
-			COUNT(*) [errors], 
-			COUNT(DISTINCT [error_id]) [distinct_errors]
-		FROM 
-			[correlated] 
-		WHERE 
-			[error_timestamp] IS NOT NULL 
-		GROUP BY 
-			[block_id]
-	)
+	SET @sql = N'SELECT 
+	[{column}], 
+	COUNT(*) [total_errors]{distinct}
+FROM 
+	[#metrics] 
+GROUP BY 
+	[{column}] 
+ORDER BY 
+	COUNT(*) DESC;';
 
-	SELECT 
-		[t].[end_time] [utc_end_time],{local_zone}
-		ISNULL([a].[errors], 0) [error_count],
-		ISNULL([a].[distinct_errors], 0) [distinct_errors]
-	FROM 
-		[#times] [t] 
-		LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id]
-	ORDER BY 
-		[t].[block_id];';
+	IF @GroupBy = N'ERROR' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'error_number');
+		SET @sql = REPLACE(@sql, N'{distinct}', N'');
+	END;
 
-	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN 
-		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime) [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_time', N'') + N'_end_time],');
-	  END;
-	ELSE 
-		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+	IF @GroupBy = N'DB' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'database');
+		SET @sql = REPLACE(@sql, N'{distinct}', N',' + @crlftab + N'COUNT (DISTINCT [error_number]) [distinct_error_ids]');
+	END;
 
-	EXEC sys.[sp_executesql] 
-		@sql;
+	IF @GroupBy = N'LOGIN' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'user_name');
+		SET @sql = REPLACE(@sql, N'{distinct}', N',' + @crlftab + N'COUNT (DISTINCT [error_number]) [distinct_error_ids]');
+	END;
+
+	IF @GroupBy = N'HOST' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'host_name');
+		SET @sql = REPLACE(@sql, N'{distinct}', N',' + @crlftab + N'COUNT (DISTINCT [error_number]) [distinct_error_ids]');
+	END;
+
+	IF @GroupBy = N'APP' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'application_name');
+		SET @sql = REPLACE(@sql, N'{distinct}', N',' + @crlftab + N'COUNT (DISTINCT [error_number]) [distinct_error_ids]');
+	END;
+
+	IF @GroupBy = N'STATEMENT' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'statement');
+		SET @sql = REPLACE(@sql, N'{distinct}', N',' + @crlftab + N'COUNT (DISTINCT [error_number]) [distinct_error_ids]');
+	END;
+
+	IF @GroupBy = N'SEVERITY' BEGIN 
+		SET @sql = REPLACE(@sql, N'{column}', N'severity');
+		SET @sql = REPLACE(@sql, N'{distinct}', N',' + @crlftab + N'COUNT (DISTINCT [error_number]) [distinct_error_ids]');
+	END;
+
+	EXEC sys.sp_executesql 
+		@sql; 
 
 	RETURN 0;
 GO

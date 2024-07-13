@@ -1,6 +1,22 @@
 /*
 
 
+	EXAMPLE:
+			EXEC [admindb].dbo.[eventstore_report_blocked_processes_counts]
+				--@Granularity = ?,
+				@Start = N'2024-07-01',
+				--@End = ?,
+				@TimeZone = N'Eastern Standard Time',
+				--@UseDefaults = ?,
+				@IncludeSelfBlocking = 1,
+				@IncludePhantomBlocking = 1,
+				@Databases = N'-master, x3' --,
+				--@Applications = ?,
+				--@Hosts = ?,
+				--@Principals = ?,
+				--@Statements = N'-%SELECT%FROM%blah%';
+
+
 */
 
 USE [admindb];
@@ -263,8 +279,8 @@ AS
 		END; 
 
 		IF EXISTS (SELECT NULL FROM [#expandedDatabases] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#expandedDatabases] [d] ON [d].[is_exclude] = 1 AND [e].[database] LIKE [d].[database_name]';
-			SET @filters = @filters + @crlftab + N'AND [d].[database_name] IS NULL';
+			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#expandedDatabases] [dx] ON [dx].[is_exclude] = 1 AND [e].[database] LIKE [dx].[database_name]';
+			SET @filters = @filters + @crlftab + N'AND [dx].[database_name] IS NULL';
 		END; 
 	END;
 
@@ -288,8 +304,8 @@ AS
 		END; 
 
 		IF EXISTS (SELECT NULL FROM [#applications] WHERE [is_exclude] = 1) BEGIN
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#applications] [a] ON [a].[is_exclude] = 1 AND [e].[application_name] LIKE [a].[application_name]';
-			SET @filters = @filters + @crlftab + N'AND [a].[application_name] IS NULL';
+			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#applications] [ax] ON [ax].[is_exclude] = 1 AND [e].[application_name] LIKE [ax].[application_name]';
+			SET @filters = @filters + @crlftab + N'AND [ax].[application_name] IS NULL';
 		END;
 	END;
 
@@ -313,8 +329,8 @@ AS
 		END;
 		
 		IF EXISTS (SELECT NULL FROM [#hosts] WHERE [is_exclude] = 1) BEGIN
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#hosts] [h] ON [h].[is_exclude] = 1 AND [e].[host_name] LIKE [h].[host_name]';
-			SET @filters = @filters + @crlftab + N'AND [h].[host_name] IS NULL';
+			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#hosts] [hx] ON [hx].[is_exclude] = 1 AND [e].[host_name] LIKE [hx].[host_name]';
+			SET @filters = @filters + @crlftab + N'AND [hx].[host_name] IS NULL';
 		END;
 	END;
 
@@ -338,8 +354,8 @@ AS
 		END; 
 
 		IF EXISTS (SELECT NULL FROM [#principals] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#principals] [p] ON [p].[is_exclude] = 1 AND [p].[principal] LIKE [e].[user_name]';
-			SET @filters = @filters + @crlftab + N'AND [p].[principal] IS NULL';
+			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#principals] [px] ON [p].[is_exclude] = 1 AND [e].[user_name] LIKE [px].[principal]';
+			SET @filters = @filters + @crlftab + N'AND [px].[principal] IS NULL';
 		END; 
 	END;
 
@@ -363,8 +379,8 @@ AS
 		END;
 
 		IF EXISTS (SELECT NULL FROM [#statements] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins  + @crlftab + N'LEFT OUTER JOIN [#statements] [s] ON [s].[is_exclude] = 1 AND [e].[statement] LIKE [s].[statement]';
-			SET @filters = @filters + @crlftab + N'AND [s].[statement] IS NULL';
+			SET @joins = @joins  + @crlftab + N'LEFT OUTER JOIN [#statements] [sx] ON [sx].[is_exclude] = 1 AND [e].[statement] LIKE [sx].[statement]';
+			SET @filters = @filters + @crlftab + N'AND [sx].[statement] IS NULL';
 		END;
 	END;
 

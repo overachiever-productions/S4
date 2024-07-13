@@ -1,85 +1,34 @@
 /*
 
-	vNEXT:
-		- figure out how to deal with @Statements 'splitting' as ... commas (,) will be a pain... 
-			See: https://overachieverllc.atlassian.net/browse/EVS-22?focusedCommentId=10753 
 
-	.DOCUMENTATION
-		.PARAMETERS
-			.NAME: @Statements
-			.TYPE: nvarchar(MAX) NULL 
-			.DEFAULT: NULL
-			.DESCRIPTION: 
-
-			:::WARNING
-			#### :zap: NOTE: 
-			Multiple statement patterns (i.e., using % for LIKE operations) can be specified via the `@Statements` - which SPLITs statements via the `,` character. 
-			Translation: if any of the LIKE statements you 'embed' in the `@Statements` parameter have 'natural' commas in them, replace them with the `_` (single-char) wild
-			card character. 
-		TODO: do a better job of documenting the above. See https://overachieverllc.atlassian.net/browse/EVS-22?focusedCommentId=10754 for more details.
+	BUG:
+		looks like there's a potential logic-bug with @End ... i.e., if I specify @Start of like 2 weeks ago ... I can leave @End empty? 
+			... i've tried adding in some logic that'll try to set @End to GETUTCDATE()... but I'm not sure that's the right approach? 
+				i mean... i don't want someone specifying a start of 2 years ago... and no end date, right? 
+					or, if they do... it should have to be explicit? 
 
 
-			.NAME: @TimeZone 
-			.TYPE: sysname NULL 
-			.DEFAULT: NULL
-			.DESCRIPTION: 
-			When specified - either explicitly or as a preference (stored in eventstore_report_preference_settings) will do two things:  
-			- Translates any explicitly specified @Start and/or @End values to the @TimeZone specified (vs being in UTC time). 
-			- Injects an additional column into the output - which shows translated times in the @TimeZone specified - along-side the UTC dates.
-			
-			**NOTE:** If @Start and @End are both provided, but @TimeZone is explicitly set to NULL - then only a UTC date/time column will be provided in the output;
-
-
-		.EXAMPLES 
-			.EXAMPLE: Basic Interaction
-			.DESCRIPTION: 
-			This'll ... just use defaults if any are loaded and ... if none are specified, it'll use hard-coded defaults for time-ranges: 
-
-			```sql
-
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts];
-
-			```
-			More text down here. 
-
-			.EXAMPLE: Explicitly Specifying `@Start` and `@End` ranges: 
-
-			```sql
-
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts]
-				@Start = '2024-06-09 23:19:42.280',
-				@End = '2024-06-11 23:19:42.280';
-
-			```
-			etc... 
-
-			.EXAMPLE: Some other Example... 
-			blah blah blah 
-
-			```sql
-
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts]
-				@UseDefaults = 0,
-				@TimeZone = N'{SERVER_LOCAL}',
-				@Start = '2024-06-09 23:19:42.280',
-				@End = '2024-06-11 23:19:42.280',
-				@Applications = N'-%agent%';
-			
-			```
-
-	vNEXT:
-					
+	EXAMPLE:
+			EXEC [admindb].dbo.[eventstore_report_all_errors_heatmap]
+				@Mode = 'DAY_OF_WEEK',
+				--@Granularity = ?,
+				@Start = '2024-07-01',
+				@MinimumSeverity = 15,
+				--@ErrorIds = ?,
+				@Databases = N'-master';
 
 */
+
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_report_all_error_counts]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_report_all_error_counts];
+IF OBJECT_ID('dbo.[eventstore_report_all_errors_heatmap]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_all_errors_heatmap];
 GO
 
-CREATE PROC dbo.[eventstore_report_all_error_counts]
+CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
+	@Mode						sysname			= N'TIME_OF_DAY',
 	@Granularity				sysname			= N'HOUR', 
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
@@ -92,12 +41,13 @@ CREATE PROC dbo.[eventstore_report_all_error_counts]
 	@Hosts						nvarchar(MAX)	= NULL, 
 	@Principals					nvarchar(MAX)	= NULL,
 	@Statements					nvarchar(MAX)	= NULL, 
-	@ExcludeSystemErrors		bit				= 1						
+	@ExcludeSystemErrors		bit				= 1			
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
+	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 
@@ -114,7 +64,7 @@ AS
 	-- Metadata + Preferences
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'ALL_ERRORS';
-	DECLARE @reportType sysname = N'COUNTS';
+	DECLARE @reportType sysname = N'HEATMAP';
 	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
 
 	EXEC @outcome = dbo.[eventstore_get_target_by_key]
@@ -148,7 +98,8 @@ AS
 				SUBSTRING([result], CHARINDEX(N':', [result]) + 1, LEN([result])) [value]
 			FROM  
 				dbo.[split_string](@defaultPredicates, N';', 1);
-	
+
+			IF @Mode IS NULL SELECT @Mode = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Mode';
 			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
 			IF @MinimumSeverity IS NULL SELECT @MinimumSeverity = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinimumSeverity';
 			IF @ErrorIds IS NULL SELECT @ErrorIds = [value] FROM @predicates WHERE [key] = N'@ErrorIds';
@@ -195,12 +146,12 @@ AS
 	-- Time-Bounding
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @outcome = 0;
-	DECLARE @times xml;
-	EXEC @outcome = dbo.[eventstore_timebounded_counts]
+	DECLARE @map xml;
+	
+	EXEC @outcome = dbo.[eventstore_heatmap_frame]
 		@Granularity = @Granularity,
-		@Start = @Start,
-		@End = @End,
-		@SerializedOutput = @times OUTPUT;
+		--@TimeZone = @TimeZone,
+		@SerializedOutput = @map OUTPUT;
 
 	IF @outcome <> 0 
 		RETURN @outcome;
@@ -211,7 +162,7 @@ AS
 			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
 			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
 		FROM 
-			@times.nodes(N'//time') [data]([row])
+			@map.nodes(N'//time') [data]([row])
 	) 
 
 	SELECT 
@@ -542,8 +493,6 @@ WHERE
 	PRINT @timeRangeString;
 	PRINT N'';
 
---EXEC dbo.[print_long_string] @sql;
-
 	INSERT INTO [#metrics] (
 		[error_timestamp],
 		[error_number]
@@ -554,59 +503,161 @@ WHERE
 		@Start = @Start, 
 		@End = @End;
 
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	SET @sql = N'WITH times AS ( 
+	IF @Mode = N'TIME_OF_DAY' BEGIN
+	
+		SET @sql = N'WITH correlated AS ( 
+			SELECT 
+				[t].[block_id], 
+				[m].[error_number]				
+			FROM 
+				[#times] [t] 
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
+		), 
+		aggregated AS ( 
+			SELECT 
+				[block_id], 
+				COUNT(*) [errors], 
+				COUNT(DISTINCT [error_number]) [distinct_errors]
+			FROM 
+				[correlated] 
+			WHERE 
+				[error_number] IS NOT NULL 
+			GROUP BY 
+				[block_id]
+		)
+		
 		SELECT 
-			[t].[block_id], 
-			[t].[start_time], 
-			[t].[end_time]
+			FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
+			ISNULL([a].[errors], 0) [total_errors], 
+			ISNULL([a].[distinct_errors], 0) [distinct_errors]
 		FROM 
 			[#times] [t]
-	),
-	correlated AS ( 
-		SELECT 
-			[t].[block_id],
-			[t].[start_time],
-			[t].[end_time],
-			[m].[error_timestamp], 
-			[m].[error_number] [error_id]
-		FROM 
-			[times] [t]
-			LEFT OUTER JOIN [#metrics] [m] ON [m].[error_timestamp] < [t].[end_time] AND [m].[error_timestamp] > [t].[start_time] -- anchors ''up'' - i.e., for an event that STARTS at 12:59:59.33 and ENDs 2 seconds later, the entry will ''show up'' in hour 13:00... 
-	), 
-	aggregated AS ( 
-		SELECT 
-			[block_id], 
-			COUNT(*) [errors], 
-			COUNT(DISTINCT [error_id]) [distinct_errors]
-		FROM 
-			[correlated] 
-		WHERE 
-			[error_timestamp] IS NOT NULL 
-		GROUP BY 
-			[block_id]
-	)
+			LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
+		ORDER BY
+			[t].[block_id]; ';
 
+		IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
+			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+		  END; 
+		ELSE 
+			SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+
+		EXEC sys.[sp_executesql] 
+			@sql;
+
+		RETURN 0;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- TIME_OF_WEEK
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	PRINT N'KEY: total_errors (distinct_error_ids)';
+
+	ALTER TABLE [#times] ADD [Sunday] sysname NULL;
+	ALTER TABLE [#times] ADD [Monday] sysname NULL;
+	ALTER TABLE [#times] ADD [Tuesday] sysname NULL;
+	ALTER TABLE [#times] ADD [Wednesday] sysname NULL;
+	ALTER TABLE [#times] ADD [Thursday] sysname NULL;
+	ALTER TABLE [#times] ADD [Friday] sysname NULL;
+	ALTER TABLE [#times] ADD [Saturday] sysname NULL;	
+
+	CREATE TABLE #days ( 
+		[day_id] int IDENTITY(1,1), 
+		[day_name] sysname 
+	); 	
+
+	INSERT INTO [#days] ([day_name])
+	VALUES (N'Sunday'), (N'Monday'), (N'Tuesday'), (N'Wednesday'), (N'Thursday'), (N'Friday'), (N'Saturday');
+
+	DECLARE @currentDayID int;
+	DECLARE @currentDayName sysname;
+
+	DECLARE @select nvarchar(MAX) = N'WITH correlated AS ( 
 	SELECT 
-		[t].[end_time] [utc_end_time],{local_zone}
-		ISNULL([a].[errors], 0) [error_count],
-		ISNULL([a].[distinct_errors], 0) [distinct_errors]
+		[t].[block_id], 
+		[m].[error_number]
 	FROM 
-		[#times] [t] 
-		LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id]
-	ORDER BY 
-		[t].[block_id];';
+		[#times] [t]
+		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[error_timestamp]) = @currentDayID
+			AND (CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] as time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] as time))
+	WHERE 
+		[m].[error_timestamp] IS NOT NULL
+), 
+currentDayMetrics AS (
+	SELECT 
+		[block_id],
+		CAST(COUNT(*) as sysname) + N'' ('' + FORMAT(COUNT(DISTINCT [error_number]), ''N0'') + N'')'' [data]
+	FROM 
+		[correlated]
+	GROUP BY 
+		[block_id]
+)';
 
-	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN 
-		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime) [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_time', N'') + N'_end_time],');
-	  END;
+	DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[day_id], 
+		[day_name]
+	FROM 
+		[#days]
+	ORDER BY 
+		[day_id];
+	
+	OPEN [walker];
+	FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
+	
+	WHILE @@FETCH_STATUS = 0 BEGIN
+	
+		SET @sql = N'{select}
+
+UPDATE [t]
+SET 
+	[t].[{currentDayName}] = [m].[data]
+FROM 
+	[#times] [t]
+	INNER JOIN [currentDayMetrics] [m] ON [t].[block_id] = [m].[block_id];';
+	
+		SET @sql = REPLACE(@sql, N'{select}', @select);
+		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
+			
+		--EXEC dbo.[print_long_string] @sql;
+		EXEC sys.sp_executesql 
+			@sql, 
+			N'@currentDayID int', 
+			@currentDayID = @currentDayID;
+	
+		FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
+	END;
+	
+	CLOSE [walker];
+	DEALLOCATE [walker];
+
+	SET @sql = N'SELECT 
+	FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
+	N'' '' [ ],
+	ISNULL([Sunday], N''-'') [Sunday],  
+	ISNULL([Monday], N''-'') [Monday],
+	ISNULL([Tuesday], N''-'') [Tuesday],
+	ISNULL([Wednesday], N''-'') [Wednesday],
+	ISNULL([Thursday], N''-'') [Thursday],
+	ISNULL([Friday], N''-'') [Friday],
+	ISNULL([Saturday], N''-'') [Saturday]
+FROM 
+	[#times] [t]
+ORDER BY 
+	[block_id];';
+
+	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
+		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+	  END; 
 	ELSE 
 		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
 
 	EXEC sys.[sp_executesql] 
-		@sql;
+		@sql;	
 
 	RETURN 0;
 GO
