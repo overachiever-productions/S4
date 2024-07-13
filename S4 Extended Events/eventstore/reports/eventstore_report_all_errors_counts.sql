@@ -37,7 +37,7 @@
 
 			```sql
 
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts];
+			EXEC [admindb].dbo.[eventstore_report_all_errors_counts];
 
 			```
 			More text down here. 
@@ -46,7 +46,7 @@
 
 			```sql
 
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts]
+			EXEC [admindb].dbo.[eventstore_report_all_errors_counts]
 				@Start = '2024-06-09 23:19:42.280',
 				@End = '2024-06-11 23:19:42.280';
 
@@ -58,7 +58,7 @@
 
 			```sql
 
-			EXEC [admindb].dbo.[eventstore_report_all_error_counts]
+			EXEC [admindb].dbo.[eventstore_report_all_errors_counts]
 				@UseDefaults = 0,
 				@TimeZone = N'{SERVER_LOCAL}',
 				@Start = '2024-06-09 23:19:42.280',
@@ -75,11 +75,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_report_all_error_counts]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_report_all_error_counts];
+IF OBJECT_ID('dbo.[eventstore_report_all_errors_counts]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_all_errors_counts];
 GO
 
-CREATE PROC dbo.[eventstore_report_all_error_counts]
+CREATE PROC dbo.[eventstore_report_all_errors_counts]
 	@Granularity				sysname			= N'HOUR', 
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
