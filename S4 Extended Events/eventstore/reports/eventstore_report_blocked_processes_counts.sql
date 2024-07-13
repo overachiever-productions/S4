@@ -389,7 +389,7 @@ AS
 	DECLARE @sql nvarchar(MAX) = N'SELECT 
 	[e].[timestamp] [event_time], 
 	CAST([e].[blocking_id] AS sysname) + N'':'' + CAST([e].[blocked_id] AS sysname) + N''=>'' + CAST([e].[blocking_xactid] AS sysname) + N''::'' + CAST([e].[blocked_xactid] AS sysname) [signature],
-	[e].[blocking_xactid] [transaction_id], 
+	ISNULL([e].[blocking_xactid], 0 - [e].[blocked_xactid]) [transaction_id], 
 	[e].[blocked_id],
 	[e].[seconds_blocked],
 	CASE 
@@ -515,14 +515,9 @@ WHERE
 	maxed AS ( 
 		SELECT 
 			[block_id], 
-			[transaction_id],   -- NULL for SELF blockers... i.e., use ... blocking? actually. use -1 or 0 
-								-- and, yet, ironically, for PHANTOM blockers... the value ends up being 0. 
-								-- AND... here's the rub: I need SOMETHING to aggregate on here. 
-								--		could be SPID/ECID or blocking_txid... 
-								-- BUT
-								--		what I aggregate on is NOT the same as what I'll PRESENT in chronologies and such.
-			COUNT([block_id]) [total_events], 
-			COUNT(DISTINCT [block_id]) [total_blocked_spids],
+			[transaction_id],   
+			COUNT([transaction_id]) [total_events], 
+			COUNT(DISTINCT [transaction_id]) [total_blocked_spids],
 			MAX([running_seconds]) [running_seconds_blocked],
 			SUM([accrued_seconds]) [accrued_seconds_blocked]
 		FROM 
@@ -542,7 +537,7 @@ WHERE
 		GROUP BY 
 			[block_id]
 	)
-	
+
 	SELECT 
 		[t].[block_id],
 		[total_blocked_spids],
@@ -590,14 +585,9 @@ WHERE
 		maxed AS ( 
 			SELECT 
 				[block_id], 
-				[transaction_id],   -- NULL for SELF blockers... i.e., use ... blocking? actually. use -1 or 0 
-									-- and, yet, ironically, for PHANTOM blockers... the value ends up being 0. 
-									-- AND... here's the rub: I need SOMETHING to aggregate on here. 
-									--		could be SPID/ECID or blocking_txid... 
-									-- BUT
-									--		what I aggregate on is NOT the same as what I'll PRESENT in chronologies and such.
-				COUNT([block_id]) [total_events], 
-				COUNT(DISTINCT [block_id]) [total_blocked_spids],
+				[transaction_id], 
+				COUNT([transaction_id]) [total_events], 
+				COUNT(DISTINCT [transaction_id]) [total_blocked_spids],
 				MAX([running_seconds]) [running_seconds_blocked],
 				SUM([accrued_seconds]) [accrued_seconds_blocked]
 			FROM 
@@ -666,14 +656,9 @@ WHERE
 		maxed AS ( 
 			SELECT 
 				[block_id], 
-				[transaction_id],   -- NULL for SELF blockers... i.e., use ... blocking? actually. use -1 or 0 
-									-- and, yet, ironically, for PHANTOM blockers... the value ends up being 0. 
-									-- AND... here's the rub: I need SOMETHING to aggregate on here. 
-									--		could be SPID/ECID or blocking_txid... 
-									-- BUT
-									--		what I aggregate on is NOT the same as what I'll PRESENT in chronologies and such.
-				COUNT([block_id]) [total_events], 
-				COUNT(DISTINCT [block_id]) [total_blocked_spids],
+				[transaction_id], 
+				COUNT([transaction_id]) [total_events], 
+				COUNT(DISTINCT [transaction_id]) [total_blocked_spids],
 				MAX([running_seconds]) [running_seconds_blocked],
 				SUM([accrued_seconds]) [accrued_seconds_blocked]
 			FROM 
