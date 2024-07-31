@@ -1,12 +1,15 @@
 /*
 	INTERNAL (ish)
 
+	NOTE: Using a conditional version HACK (at the bottom of this UDF) ... 
+		i.e., tsmake needs to add options for REPLACE vs swap-out of entire sproc. 
+
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.parse_backup_filename_timestamp','FN') IS NOT NULL
+IF OBJECT_ID('dbo.[parse_backup_filename_timestamp]', N'FN') IS NOT NULL
 	DROP FUNCTION dbo.[parse_backup_filename_timestamp];
 GO
 
@@ -20,7 +23,6 @@ AS
     BEGIN; 
     	
 		DECLARE @datestring sysname;
-		DECLARE @fileOnly varchar(500) = dbo.[extract_filename_from_fullpath](@filename);
     	
     	DECLARE @parts table (
 			row_id int NOT NULL, 
@@ -36,7 +38,6 @@ AS
 			CAST([result] AS sysname)
 		FROM 
 			dbo.[split_string](@filename, N'_', 1)
-
 
 		-- KIND of an elaborate work-around to find the date-stamp WITHOUT using TRY_CAST... 
 		DECLARE @anchor int;
@@ -92,3 +93,26 @@ AS
 		RETURN CAST(@datestring AS datetime);
     END;
 GO
+
+
+-- CONDITIONAL HACK/TWEAK: 
+IF (SELECT [dbo].[get_engine_version]()) > 13.0 BEGIN
+
+	DECLARE @rewriteTarget nvarchar(MAX) = N'		SELECT 
+			[row_id],
+			CAST([result] AS sysname)
+		FROM 
+			dbo.[split_string](@filename, N''_'', 1)';
+	DECLARE @rewriteReplacement nvarchar(MAX) = N'		SELECT 
+			[row_id],
+			CAST([result] AS sysname)
+		FROM 
+			dbo.[split_string](@filename, N''_'', 1)';
+
+	DECLARE @body nvarchar(MAX) = (SELECT [definition] FROM sys.[sql_modules] WHERE [object_id] = OBJECT_ID('dbo.[parse_backup_filename_timestamp]', N'FN'));
+	IF @body IS NOT NULL BEGIN
+		DECLARE @sql nvarchar(MAX) = REPLACE(REPLACE(@body, N'CREATE FUNCTION', N'ALTER FUNCTION'), @rewriteTarget, @rewriteReplacement);
+
+		PRINT @sql;
+	END;
+END;
