@@ -82,6 +82,9 @@ END;
 GO
 
 -----------------------------------
+--##INCLUDE: Common\tables\numbers.sql
+
+-----------------------------------
 --##INCLUDE: Common\tables\backup_log.sql
 
 -----------------------------------
@@ -299,8 +302,8 @@ IF (SELECT admindb.dbo.get_s4_version('##{{S4version}}')) < 7.0 BEGIN
 	FROM 
 		[matches] m 
 		INNER JOIN [msdb].dbo.[sysjobs] j ON m.[job_id] = j.[job_id];
-
 END;
+GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Deploy new/updated code.
