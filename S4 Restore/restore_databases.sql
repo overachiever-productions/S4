@@ -86,7 +86,7 @@ here's an EXAMPLE of how to do nightly restore tests on ONLY the primary:
 				@ExecuteRecovery = 1,
 				@CheckConsistency = 0,
 				@DropDatabasesAfterRestore = 0,
-				@Directives = N'STOPAT:2023-12-27 12:06:50.300',   -- not how STOPAT is a directive with a value... 
+				@Directives = N'STOPAT:2023-12-27 12:06:50.300',   -- notice how STOPAT is a directive with a value... 
 				@PrintOnly = 1;
 
 
