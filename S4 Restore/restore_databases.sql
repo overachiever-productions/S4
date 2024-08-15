@@ -24,8 +24,6 @@
             This sproc gets around that limitation via the logic defined in dbo.dba_ExecuteAndFilterNonCatchableCommand;
 
     TODO:
-        - Look at implementing MINIMAL 'retry' logic - as per dba_BackupDatabases. Or... maybe don't... 
-
 		- DOCUMENT the PRESERVE_FILENAMES directive. Basically, assume we're MOVING databases from C:\Cluster Storage\Volume 1\some other path
 				to D:\SQLData. 
 				And we don't want mega-down-time for those moves. We could restore using restore_databases with these directives: 
@@ -1309,7 +1307,10 @@ FINALIZE:
 			[c].[restore_end] IS NOT NULL;
 	END;
 
+	DECLARE @warnings sysname = N'NONE'; -- { NONE | SANITY_ONLY | RPO_AND_SANITY | DETAILED_A
+
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+
 		IF @RpoWarningThreshold LIKE N'%,%' BEGIN 
 			WITH full_recovery AS ( 
 				SELECT 
@@ -1324,7 +1325,7 @@ FINALIZE:
 			-- NOTE: using some borderline-cheesy logic to get the 'FULL' part of @RpoWarningThreshold for these warnings:
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' exceeded Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + REPLACE(REPLACE(@RpoWarningThreshold, @threshold, N''), N',', '')
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1360,7 +1361,7 @@ FINALIZE:
 			-- NOTE: SORTA ditto on cheesy logic for 'SIMPLE' recovery part ... (i.e., not as cheesy, but still kind of using 'stealthed' info).
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' exceeded Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + @threshold
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1382,7 +1383,7 @@ FINALIZE:
 		ELSE BEGIN
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' exceeded Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1399,11 +1400,41 @@ FINALIZE:
 			ORDER BY 
 				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
 				[x].[vector];
-		  END;
+		END;
 
 		IF LEN(@rpoMessage) > 2
-			SET @rpoWarnings = N'WARNINGS: ' 
-				+ @crlf + @rpoMessage + @crlf + @crlf;
+			SET @rpoWarnings = N'RPO WARNINGS: ' + @crlf + @rpoMessage + @crlf + @crlf;
+		
+		-- File Gap Tests
+		DECLARE @cadenceGapXml xml;
+		EXEC dbo.[report_rpo_restore_violations]
+			@Scope = N'LATEST',
+			@RPOSeconds = @vector,
+			@SerializedOutput = @cadenceGapXml OUTPUT
+		
+		IF @cadenceGapXml IS NOT NULL BEGIN 
+			DECLARE @cadenceMessage nvarchar(MAX) = N'';
+
+			WITH shredded AS ( 
+				SELECT
+					[data].[row].value(N'(db_name)[1]', N'sysname') [database],
+					[data].[row].value(N'(violations)[1]', N'int') [violations]
+				FROM 
+					@cadenceGapXml.nodes(N'//database') [data]([row])
+			) 
+
+			SELECT 
+				@cadenceMessage = @cadenceMessage + @crlf + N'  WARNING: Database [' + [database] + N'] exceeded RPOs (Log Backup Cadence): ' 
+				+ @crlf + @tab + N' - There are ' + CAST([violations] AS sysname) + N' Log-Cadence RPO violations for database: [' + [database] + N'].'
+			FROM 
+				[shredded] 
+			ORDER BY 
+				[database];
+
+			SET @cadenceMessage = @cadenceMessage + @crlf + @crlf + N'	EXECUTE dbo.[report_rpo_restore_violations] for more information.';
+
+			SET @rpoWarnings = @rpoWarnings + @crlf + N'RPO LOG-CADENCE WARNINGS: ' + @crlf + @cadenceMessage + @crlf + @crlf;
+		END;
 
 	  END;
 	ELSE BEGIN 
@@ -1418,7 +1449,7 @@ FINALIZE:
 
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' failed Configuration Sanity Checks: '
+				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' Failed Sanity Checks: '
 				+ @crlf + @tab + N'- sanity_check_objective  : 26 hours'
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1437,7 +1468,7 @@ FINALIZE:
 				[x].[vector];
 
 			IF LEN(@rpoMessage) > 2
-				SET @rpoWarnings = N'CONFIGURATION CHECK WARNING(s): ' 
+				SET @rpoWarnings = N'SANITY CHECK WARNING(s): ' 
 					+ @crlf + @rpoMessage + @crlf + @crlf;			
 		END;
 	END;
