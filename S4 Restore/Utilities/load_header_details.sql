@@ -30,11 +30,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.load_header_details','P') IS NOT NULL
-	DROP PROC dbo.load_header_details;
+IF OBJECT_ID('dbo.[load_header_details]','P') IS NOT NULL
+	DROP PROC dbo.[load_header_details];
 GO
 
-CREATE PROC dbo.load_header_details 
+CREATE PROC dbo.[load_header_details] 
 	@BackupPath					nvarchar(800),				-- looks like this should be 1024 and varchar? or nvarchar? See - https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
 	@SourceVersion				decimal(4,2)	            = NULL,
 	@BackupDate					datetime		            OUTPUT, 

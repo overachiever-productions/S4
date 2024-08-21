@@ -360,17 +360,29 @@ AS
 	/*
 		Need to account for a scenario where FULL/DIFF backup EXTENDS to or past the end of a T-LOG Backup running concurrently
 		What follows below is a BIT of a hack... because it only looks for LSNs when we're dealing with FULL/DIFF and a LOG backup. 
-			i.e., the non-HACK way would be to effectively ONLY(ish) look at LSNs. 	
+			i.e., the non-HACK would ONLY look at LSNs. 	
 	*/
 	IF UPPER(@Mode) IN (N'LOG', N'LIST') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
 		/* This is a fairly nasty hack... */
-		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] < @LastAppliedFinishTime)
+		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] <= @LastAppliedFinishTime)
 	END;
 
 	IF @LastAppliedFile LIKE N'FULL%' OR @LastAppliedFile LIKE N'DIFF%' BEGIN
 		DECLARE @currentFileName varchar(500);
 		DECLARE @lowerId int = ISNULL((SELECT id FROM #orderedResults WHERE [output] = @LastAppliedFile), 2) - 1; 
 		IF @lowerId < 1 SET @lowerId = 1;
+		
+		SET @headerFullPath = @SourcePath + N'\' + @LastAppliedFile;
+		DECLARE @diffOrFullBackupFinishTime datetime;
+		
+		EXEC dbo.[load_header_details]
+			@BackupPath = @headerFullPath,
+			@BackupDate = @diffOrFullBackupFinishTime OUTPUT,  -- NOTE: load_header_details returns FINISH TIME as backup-date.
+			@BackupSize = NULL,
+			@Compressed = NULL,
+			@Encrypted = NULL;
+
+		SET @diffOrFullBackupFinishTime = DATEADD(MINUTE, 25, @diffOrFullBackupFinishTime);
 
 		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
@@ -379,7 +391,7 @@ AS
 			#orderedResults
 		WHERE 
 			id >= @lowerId
-			-- TODO / vNEXT: if/when there's an @StopTime feature added, put an upper bound on any rows > @StopTime - i.e., AND timestamp < @StopAt.
+			AND [timestamp] <= @diffOrFullBackupFinishTime	
 		ORDER BY 
 			[id];
 
@@ -451,7 +463,7 @@ AS
 		WHERE 
 			should_include = 1; 
 	END;
-
+	
 	IF UPPER(@Mode) = N'LIST' BEGIN 
 
 		IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 

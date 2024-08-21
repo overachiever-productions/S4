@@ -113,6 +113,8 @@ IF (SELECT [dbo].[get_engine_version]()) > 13.0 BEGIN
 	IF @body IS NOT NULL BEGIN
 		DECLARE @sql nvarchar(MAX) = REPLACE(REPLACE(@body, N'CREATE FUNCTION', N'ALTER FUNCTION'), @rewriteTarget, @rewriteReplacement);
 
-		PRINT @sql;
+		--PRINT @sql;
+
+		EXEC sys.sp_executesql @sql;
 	END;
 END;
