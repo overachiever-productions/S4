@@ -1,5 +1,8 @@
 /*
 
+	REFACTOR: 
+		- MAYBE call this REPORT_database_details or SHOW_database_details or ... something OTHER than ... LIST... (MAYBE).
+
 	vNEXT:
 		- Option to dump output as XML 
 			So that XML blobs can be saved/stored in admindb.dbo.db_somethings or whatever. 
@@ -7,6 +10,10 @@
 				See: https://www.notion.so/overachiever/Database-Baselines-for-admindb-fa9375b6d3f6471999f57833e3c4ca6e?pvs=4
 
 
+			DECLARE @x xml;
+			EXEC admindb.dbo.[list_database_details]
+				@SerializedOutput = @x OUTPUT;
+			SELECT @x;
 
 */
 
@@ -20,7 +27,8 @@ GO
 CREATE PROC dbo.[list_database_details]
     @TargetDatabases                nvarchar(MAX)   = N'{ALL}', 
     @ExcludedDatabases              nvarchar(MAX)   = NULL, 
-    @Priorities                     nvarchar(MAX)   = NULL
+    @Priorities                     nvarchar(MAX)   = NULL, 
+	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
 AS 
     SET NOCOUNT ON; 
 
@@ -114,15 +122,78 @@ AS
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_used] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Used %') [logused] ON [d].[name] = [logused].[db_name]
 	)
 
-	-- TODO: formatting of GB sizes and other things. 
-	--		and i MIGHT want to dump the results of this query (below) into #intermediate ... 
-	--			then query MAX(LEN(db_size_gb)) on ... so that I can pass those values into dbo.format_number() ... for the width and so on? 
 	SELECT 
-		* 
+		[name],
+		[level],
+		[state],
+		[collation],
+		[db_size_gb],
+		[log_size_gb],
+		[%_log_used] [log_used_pct],
+		[recovery],
+		[file_counts (d:l:fs:fti)],
+		[page_verify],
+		[trustworthy],
+		[rcsi],
+		[advanced_options],
+		[non_sa_owner],
+		[smells] 
+	INTO #intermediate
 	FROM 
 		core
 	ORDER BY 
-		[core].[db_size_gb] DESC;
+		[db_size_gb] DESC;
+
+
+	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
+		
+		SET @SerializedOutput = (
+			SELECT 
+				[name],
+				[level],
+				[state],
+				[collation],
+				[db_size_gb],
+				[log_size_gb],
+				[log_used_pct],
+				[recovery],
+				[file_counts (d:l:fs:fti)] [file_counts_d_l_fs_fti],
+				[page_verify],
+				[trustworthy],
+				[rcsi],
+				[advanced_options],
+				[non_sa_owner],
+				[smells]
+			FROM 
+				[#intermediate]
+			ORDER BY 
+				[name]
+			FOR XML PATH(N'database'), ROOT(N'databases'), ELEMENTS XSINIL
+		)
+
+		RETURN 0;
+	END;
+
+	SELECT 
+		[name],
+		[level],
+		[state],
+		[collation],
+		[db_size_gb],
+		[log_size_gb],
+		[log_used_pct],
+		[recovery],
+		[file_counts (d:l:fs:fti)],
+		[page_verify],
+		[trustworthy],
+		[rcsi],
+		[advanced_options],
+		[non_sa_owner],
+		[smells] 
+	FROM 
+		[#intermediate] 
+	ORDER BY 
+		[db_size_gb] DESC;
 
 	RETURN 0;
 GO

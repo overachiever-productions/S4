@@ -318,13 +318,13 @@ AS
 		SET @serializedFiles = NULL;
 
 		IF @PrintOnly = 1 BEGIN
-			PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDb + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''LIST''; ';
+			PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDb + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''REMOVE''; ';
 		END;
 
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @currentDb, 
 			@SourcePath = @targetPath, 
-			@Mode = N'LIST', 
+			@Mode = N'REMOVE', 
 			@Output = @serializedFiles OUTPUT;
 
 		WITH shredded AS ( 
