@@ -94,7 +94,6 @@ AS
     END;
 GO
 
-
 -- CONDITIONAL HACK/TWEAK: 
 IF (SELECT [dbo].[get_engine_version]()) > 13.0 BEGIN
 
@@ -104,16 +103,14 @@ IF (SELECT [dbo].[get_engine_version]()) > 13.0 BEGIN
 		FROM 
 			dbo.[split_string](@filename, N''_'', 1)';
 	DECLARE @rewriteReplacement nvarchar(MAX) = N'		SELECT 
-			[row_id],
-			CAST([result] AS sysname)
+			[ordinal] [row_id], 
+			CAST([value] AS sysname) [result]
 		FROM 
-			dbo.[split_string](@filename, N''_'', 1)';
+			STRING_SPLIT(@filename, N''_'', 1)';
 
 	DECLARE @body nvarchar(MAX) = (SELECT [definition] FROM sys.[sql_modules] WHERE [object_id] = OBJECT_ID('dbo.[parse_backup_filename_timestamp]', N'FN'));
 	IF @body IS NOT NULL BEGIN
 		DECLARE @sql nvarchar(MAX) = REPLACE(REPLACE(@body, N'CREATE FUNCTION', N'ALTER FUNCTION'), @rewriteTarget, @rewriteReplacement);
-
-		--PRINT @sql;
 
 		EXEC sys.sp_executesql @sql;
 	END;
