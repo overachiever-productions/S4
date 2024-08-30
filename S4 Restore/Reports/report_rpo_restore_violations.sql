@@ -37,7 +37,14 @@ AS
 	EXEC dbo.[list_databases]
 		@Targets = @TargetDatabases,
 		@Exclusions = @ExcludedDatabases,
-		@Priorities = NULL;
+		@Priorities = NULL,
+		@ExcludeClones = 0,
+		@ExcludeSecondaries = 0,
+		@ExcludeSimpleRecovery = 0,  -- might be simple NOW, but if we had logs... 
+		@ExcludeReadOnly = 0,
+		@ExcludeRestoring = 0,
+		@ExcludeRecovering = 0,
+		@ExcludeOffline = 0;
 
 	CREATE TABLE #executionIDs (
 		execution_id uniqueidentifier NOT NULL
@@ -62,7 +69,6 @@ AS
 	IF UPPER(@Scope) = N'QUARTER'
 		INSERT INTO [#executionIDs] ([execution_id])
 		SELECT [execution_id] FROM dbo.[restore_log] WHERE [operation_date] >= CAST(DATEADD(QUARTER, -1, GETDATE()) AS [date]) GROUP BY [execution_id];		
-
 
 	WITH core AS (
 		SELECT 
