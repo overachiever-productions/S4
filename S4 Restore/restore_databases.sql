@@ -413,6 +413,7 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 	DECLARE @stopAtLog int = NULL;
+	DECLARE @consistencyErrorsDetected bit = 0;
 
 	DECLARE @restoredFileName nvarchar(MAX);
 	DECLARE @ndfCount int = 0;
@@ -448,30 +449,30 @@ AS
             DROP TABLE #DBCC_OUTPUT;
 
         CREATE TABLE #DBCC_OUTPUT(
-                RowID int IDENTITY(1,1) NOT NULL, 
-                Error int NULL,
-                [Level] int NULL,
-                [State] int NULL,
-                MessageText nvarchar(2048) NULL,
-                RepairLevel nvarchar(22) NULL,
-                [Status] int NULL,
-                [DbId] int NULL, -- was smallint in SQL2005
-                DbFragId int NULL,      -- new in SQL2012
-                ObjectId int NULL,
-                IndexId int NULL,
-                PartitionId bigint NULL,
-                AllocUnitId bigint NULL,
-                RidDbId smallint NULL,  -- new in SQL2012
-                RidPruId smallint NULL, -- new in SQL2012
-                [File] smallint NULL,
-                [Page] int NULL,
-                Slot int NULL,
-                RefDbId smallint NULL,  -- new in SQL2012
-                RefPruId smallint NULL, -- new in SQL2012
-                RefFile smallint NULL,
-                RefPage int NULL,
-                RefSlot int NULL,
-                Allocation smallint NULL
+            RowID int IDENTITY(1,1) NOT NULL, 
+            Error int NULL,
+            [Level] int NULL,
+            [State] int NULL,
+            MessageText nvarchar(2048) NULL,
+            RepairLevel nvarchar(22) NULL,
+            [Status] int NULL,
+            [DbId] int NULL, -- was smallint in SQL2005
+            DbFragId int NULL,      -- new in SQL2012
+            ObjectId int NULL,
+            IndexId int NULL,
+            PartitionId bigint NULL,
+            AllocUnitId bigint NULL,
+            RidDbId smallint NULL,  -- new in SQL2012
+            RidPruId smallint NULL, -- new in SQL2012
+            [File] smallint NULL,
+            [Page] int NULL,
+            Slot int NULL,
+            RefDbId smallint NULL,  -- new in SQL2012
+            RefPruId smallint NULL, -- new in SQL2012
+            RefFile smallint NULL,
+            RefPage int NULL,
+            RefSlot int NULL,
+            Allocation smallint NULL
         );
     END;
 
@@ -1058,7 +1059,8 @@ AS
                     INSERT INTO #DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
                     EXEC sp_executesql @command; 
 
-                    IF EXISTS (SELECT NULL FROM #DBCC_OUTPUT) BEGIN -- consistency errors: 
+                    IF EXISTS (SELECT NULL FROM #DBCC_OUTPUT) BEGIN 
+						SET @consistencyErrorsDetected = 1;
                         SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName) + N'. Details: ' + @crlf;
                         SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM #DBCC_OUTPUT ORDER BY RowID;
 
@@ -1079,7 +1081,6 @@ AS
                             error_details = NULL
                         WHERE 
                             restore_id = @restoreLogId;
-
                     END;
                 END;
 
@@ -1425,7 +1426,7 @@ FINALIZE:
 			) 
 
 			SELECT 
-				@cadenceMessage = @cadenceMessage + @crlf + N'  WARNING: Database [' + [database] + N'] exceeded RPOs (Log Backup Cadence): ' 
+				@cadenceMessage = @cadenceMessage + @crlf + N'	Database [' + [database] + N'] exceeded RPOs (Log Backup Cadence): ' 
 				+ @crlf + @tab + N' - There are ' + CAST([violations] AS sysname) + N' Log-Cadence RPO violations for database: [' + [database] + N'].'
 			FROM 
 				[shredded] 
@@ -1510,12 +1511,18 @@ FINALIZE:
     IF @emailErrorMessage IS NOT NULL OR @rpoWarnings IS NOT NULL BEGIN
 
 		IF @emailSubject = N'' BEGIN 
-			SET @emailSubject = @EmailSubjectPrefix + N' - ERROR'; 
+			SET @emailSubject = N' - ERROR'; 
 			END; 
 		ELSE BEGIN 
-			SET @emailSubject = @EmailSubjectPrefix + N' - ' + @emailSubject; 
+			SET @emailSubject = N' - ' + @emailSubject; 
 			IF @emailErrorMessage <> N'' SET @emailSubject = @emailSubject + N' + ERRORS';
 		END;
+
+		IF @consistencyErrorsDetected = 1 BEGIN 
+			SET @emailSubject = N'!!DATABASE CORRUPTION!!' + CASE WHEN @emailSubject = N'' THEN N'' ELSE + N' + ' END + @emailSubject;
+		END;
+
+		SET @emailSubject = @EmailSubjectPrefix + @emailSubject;
 
 		SET @emailErrorMessage = ISNULL(@rpoWarnings, '') + ISNULL(@emailErrorMessage, '');
 
