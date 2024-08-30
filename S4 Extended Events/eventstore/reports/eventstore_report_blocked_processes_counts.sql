@@ -189,7 +189,7 @@ AS
 		[transaction_id] bigint NULL, 
 		[blocked_id] int NOT NULL,
 		[seconds_blocked] decimal(24,2) NOT NULL, 
-		[type] sysname NOT NULL
+		[type] sysname NULL
 	);
 
 	CREATE NONCLUSTERED INDEX #metrics_by_event_time ON [#metrics] ([event_time]) INCLUDE ([transaction_id], [seconds_blocked], [type]);
@@ -346,7 +346,7 @@ AS
 
 		INSERT INTO [#principals] ([principal], [is_exclude])
 		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) END [principal],
+			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [principal],
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
 		FROM 
 			[dbo].[split_string](@Principals, N',', 1);
@@ -481,7 +481,7 @@ WHERE
 	-- Standard Blocking:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @ansiWarnings sysname = N'ON';
-	IF @@OPTIONS & 8 < 8 BEGIN 
+	IF @@OPTIONS & 8 = 8 BEGIN 
 		SET @ansiWarnings = N'OFF';
 		SET ANSI_WARNINGS OFF;
 	END;
@@ -760,7 +760,7 @@ ORDER BY
 		SET @sql = REPLACE(@sql, N'{phantom_join}', N'');
 	END;
 
-	EXEC [dbo].[print_long_string] @sql;
+	--EXEC [dbo].[print_long_string] @sql;
 	
 	EXEC [sys].[sp_executesql]
 		@sql;

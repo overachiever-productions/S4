@@ -399,7 +399,7 @@ AS
 
 		INSERT INTO [#principals] ([principal], [is_exclude])
 		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) END [principal],
+			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [principal],
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
 		FROM 
 			[dbo].[split_string](@Principals, N',', 1);
