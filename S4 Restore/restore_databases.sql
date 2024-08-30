@@ -1508,7 +1508,7 @@ FINALIZE:
         END;
     END;
     
-    IF @emailErrorMessage IS NOT NULL OR @rpoWarnings IS NOT NULL BEGIN
+    IF NULLIF(@emailErrorMessage, N'') IS NOT NULL OR NULLIF(@rpoWarnings, N'') IS NOT NULL BEGIN
 
 		IF @emailSubject = N'' BEGIN 
 			SET @emailSubject = N' - ERROR'; 
