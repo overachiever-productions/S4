@@ -309,8 +309,8 @@ AS
     -- 'Global' Variables:
     DECLARE @isValid bit;
     DECLARE @earlyTermination nvarchar(MAX) = N'';
-    DECLARE @emailErrorMessage nvarchar(MAX);
-    DECLARE @emailSubject nvarchar(300);
+    DECLARE @emailErrorMessage nvarchar(MAX) = N'';
+    DECLARE @emailSubject nvarchar(300) = N'';
     DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
     DECLARE @tab char(1) = CHAR(9);
     DECLARE @executionID uniqueidentifier = NEWID();
@@ -1251,17 +1251,17 @@ NextDatabase:
 FINALIZE:
 
     -- close/deallocate any cursors left open:
-    IF (SELECT CURSOR_STATUS('local','restorer')) > -1 BEGIN
+    IF (SELECT CURSOR_STATUS(N'local', N'restorer')) > -1 BEGIN
         CLOSE restorer;
         DEALLOCATE restorer;
     END;
 
-    IF (SELECT CURSOR_STATUS('local','mover')) > -1 BEGIN
+    IF (SELECT CURSOR_STATUS(N'local', N'mover')) > -1 BEGIN
         CLOSE mover;
         DEALLOCATE mover;
     END;
 
-    IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN
+    IF (SELECT CURSOR_STATUS(N'local', N'logger')) > -1 BEGIN
         CLOSE logger;
         DEALLOCATE logger;
     END;
@@ -1269,6 +1269,7 @@ FINALIZE:
 	-- Process RPO Warnings: 
 	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
 	DECLARE @rpoMessage nvarchar(MAX) = N'';
+	DECLARE @warnings sysname = N'NONE'; -- { NONE | SANITY_ONLY | RPO_AND_SANITY }
 
 	IF (NULLIF(@RpoWarningThreshold, N'') IS NOT NULL) OR @SkipSanityChecks = 0 BEGIN
 		SELECT 
@@ -1307,8 +1308,6 @@ FINALIZE:
 			[c].[restore_end] IS NOT NULL;
 	END;
 
-	DECLARE @warnings sysname = N'NONE'; -- { NONE | SANITY_ONLY | RPO_AND_SANITY | DETAILED_A
-
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
 
 		IF @RpoWarningThreshold LIKE N'%,%' BEGIN 
@@ -1322,10 +1321,9 @@ FINALIZE:
 					[d].[recovery_model_desc] <> N'SIMPLE'
 			) 
 
-			-- NOTE: using some borderline-cheesy logic to get the 'FULL' part of @RpoWarningThreshold for these warnings:
-			SELECT 
+			SELECT  -- NOTE: using some borderline-cheesy logic to get the 'FULL' part of @RpoWarningThreshold for these warnings:
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' exceeded Recovery Point Objectives: '
+				+ @crlf + N'	Database ' + QUOTENAME([x].[database]) + N' EXCEEDED Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + REPLACE(REPLACE(@RpoWarningThreshold, @threshold, N''), N',', '')
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1361,7 +1359,7 @@ FINALIZE:
 			-- NOTE: SORTA ditto on cheesy logic for 'SIMPLE' recovery part ... (i.e., not as cheesy, but still kind of using 'stealthed' info).
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' exceeded Recovery Point Objectives: '
+				+ @crlf + N'	Database ' + QUOTENAME([x].[database]) + N' EXCEEDED Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + @threshold
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1383,7 +1381,7 @@ FINALIZE:
 		ELSE BEGIN
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' exceeded Recovery Point Objectives: '
+				+ @crlf + N'	Database ' + QUOTENAME([x].[database]) + N' EXCEEDED Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1402,12 +1400,15 @@ FINALIZE:
 				[x].[vector];
 		END;
 
-		IF LEN(@rpoMessage) > 2
-			SET @rpoWarnings = N'RPO WARNINGS: ' + @crlf + @rpoMessage + @crlf + @crlf;
-		
+		IF @rpoMessage <> N'' BEGIN
+			SET @emailSubject = N'RPO WARNINGS';
+			SET @rpoMessage = @rpoMessage + @crlf;
+		END;
+
 		-- File Gap Tests
 		DECLARE @cadenceGapXml xml;
 		EXEC dbo.[report_rpo_restore_violations]
+			@TargetDatabases = @DatabasesToRestore,
 			@Scope = N'LATEST',
 			@RPOSeconds = @vector,
 			@SerializedOutput = @cadenceGapXml OUTPUT
@@ -1433,9 +1434,15 @@ FINALIZE:
 
 			SET @cadenceMessage = @cadenceMessage + @crlf + @crlf + N'	EXECUTE dbo.[report_rpo_restore_violations] for more information.';
 
-			SET @rpoWarnings = @rpoWarnings + @crlf + N'RPO LOG-CADENCE WARNINGS: ' + @crlf + @cadenceMessage + @crlf + @crlf;
+			SET @rpoMessage = @rpoMessage + @crlf + N'RPO LOG-CADENCE WARNINGS: ' + @crlf + @cadenceMessage + @crlf + @crlf;
+
+			IF @emailSubject <> N'' SET @emailSubject = @emailSubject + N' + ';
+			SET @emailSubject = @emailSubject + N'RPO LOG-CADENCE WARNINGS';
 		END;
 
+		IF @rpoMessage <> N''
+			SET @rpoWarnings = N'WARNING: ' + @crlf + @rpoMessage + @crlf + @crlf;
+		
 	  END;
 	ELSE BEGIN 
 		-- If we didn't set EXPLICIT checks for RPOs, run sanity checks - unless they've been disabled. 
@@ -1449,7 +1456,7 @@ FINALIZE:
 
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: Database ' + QUOTENAME([x].[database]) + N' Failed Sanity Checks: '
+				+ @crlf + N'  Database ' + QUOTENAME([x].[database]) + N' Failed Sanity Checks: '
 				+ @crlf + @tab + N'- sanity_check_objective  : 26 hours'
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1467,9 +1474,9 @@ FINALIZE:
 				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
 				[x].[vector];
 
-			IF LEN(@rpoMessage) > 2
-				SET @rpoWarnings = N'SANITY CHECK WARNING(s): ' 
-					+ @crlf + @rpoMessage + @crlf + @crlf;			
+			IF @rpoMessage <> N'' BEGIN
+				SET @rpoWarnings = N'WARNING: ' + @crlf + @rpoMessage + @crlf + @crlf;	
+			END;
 		END;
 	END;
 
@@ -1480,7 +1487,7 @@ FINALIZE:
 
         SELECT 
 			@emailErrorMessage = @emailErrorMessage 
-			+ @crlf + N'   ERROR: problem with database ' + QUOTENAME([database]) + N'.' 
+			+ @crlf + N'   Problem with database ' + QUOTENAME([database]) + N'.' 
 			+ @crlf + @tab + N'- source_database:' + QUOTENAME([database])
 			+ @crlf + @tab + N'- restored_as: ' + QUOTENAME([restored_as]) + CASE WHEN [restore_succeeded] = 1 THEN N'' ELSE ' (attempted - but failed) ' END 
 			+ @crlf
@@ -1495,19 +1502,26 @@ FINALIZE:
             restore_id;
 
         -- notify too that we stopped execution due to early termination:
-        IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN
+        IF NULLIF(@earlyTermination, N'') IS NOT NULL BEGIN
             SET @emailErrorMessage = @emailErrorMessage + @tab + N'- ' + @earlyTermination;
         END;
     END;
     
     IF @emailErrorMessage IS NOT NULL OR @rpoWarnings IS NOT NULL BEGIN
 
+		IF @emailSubject = N'' BEGIN 
+			SET @emailSubject = @EmailSubjectPrefix + N' - ERROR'; 
+			END; 
+		ELSE BEGIN 
+			SET @emailSubject = @EmailSubjectPrefix + N' - ' + @emailSubject; 
+			IF @emailErrorMessage <> N'' SET @emailSubject = @emailSubject + N' + ERRORS';
+		END;
+
 		SET @emailErrorMessage = ISNULL(@rpoWarnings, '') + ISNULL(@emailErrorMessage, '');
 
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
         ELSE BEGIN
-            SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
 
             EXEC msdb..sp_notify_operator
                 @profile_name = @MailProfileName,
