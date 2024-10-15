@@ -2,6 +2,36 @@
 
 # Change Log
 
+## [12.1] - 2024-10-15
+Bug-Fixes for Restore Operations + Additional Tweaks and Improvements.
+
+### Fixed 
+- Bug-Fix for problem with RESTORE operations checking for LSN 'overlap' being TOO aggressive and causing RESTORE HEADER errors due to "collisions" with T-LOG backups (.trns) being actively written. (Fix was to add lower and UPPER bounds to .trns needing LSN checks.)
+- Bug-Fix for `RESTORE HEADER is terminating abnormally` errors - caused by similar issue (i.e., overly-agressive LSN-checks for overlaps) to problem with RESTORE tests failing. 
+- Corrected BUG with `dbo.help_index` which was preventing included columns from being displayed (i.e., results were always `NULL` - even if/when included columns were present as part of index definition).
+- Miscellaneous, minor, bug-fixes for CASE-SENSITIVE servers. 
+- Major performance improvements for RESTORE operations against T-LOGs (improved performance for enumerating and identifying T-LOGs for application). 
+- Minor bug-fix for file-path lengths of backup files.
+
+### Added
+- Addition of option to specify `N'{INFINITE}` retention for local/copy-to backups (previously was ONLY allowed for S3/Offsite backups) - to help lay foundation for option to enable immatable backups (ransomware protection).
+- New sproc: `dbo.kill_long_running_processes` - similar to `dbo.kill_blocking_processes` (only can simply target longer-running processes that AREN'T blocking) - as a stop-gap for applications that 'leak' connections. Can be targetted with white-listed app, user, host, db, etc. or black-listed attributes (or combinations thereof).
+- New IGNORE (defaults) responses for Alerts against error IDs `17835`, `4014`, `17826`, etc.
+- Improved / Updated logic to manage 'cadence' of blocked_process reporting/gaps (between events).
+- New dbo.numbers table to help offset SOME performance issues with larger strings and `dbo.split_string()`;
+- Initial functionality to report on SLA violations (RPOs) for scenarios where T-LOG backups execute at cadences in excess of specified RPOs (e.g., assume that RPOs are 10 minutes and T-LOG backups are scheduled to run every 10 minutes but on SOME busy/heavily-used (typically multi-tenant) systems a few T-LOG backup jobs a day take 12-14 minutes to run - at this point, RPOs have been violated; new functionality now makes this visible during restore-tests.)
+- `dbo.kill_blocking_processes` now ignores any/all `DBCC` commands (similar logic added to `dbo.kill_longrunning_processes`).
+
+### Changed 
+- `dbo.format_timespan()` used to ONLY format timespans in the format of `HHH:MM:ss.mmmm` - which caused some 'janky' ('wrapping' vs overflow) problems when a timespan was > 1000 hours. New logic uses `HHH:MM:ss.mmmm` for first a few days' worth of hours, then switches to N.N days/weeks/months/years for simplified summaries.
+- Major overhaul / rewrite of alerting logic for `dbo.restore_databases` - to make PROBLEMS much more obvious via email alerts AND to ensure that alerts, notifications, and warnings are formatted, ordered, and given SUBJECT-LINEs that make corruption, failures, and RPO violations much more obvious.
+- Overhaul of core logic/workflows for setup of EventStore sessions. 
+- `dbo.parse_backup_filename_timestamp()` now uses built-in T-SQL `STRING_SPLIT()` for better performance (against SINGLE char 'splittors') than `admindb.dbo.split_string()` UDF on SQL Server 130+ servers.
+- Major overhaul and standardization of EventStore reports - standardized 'templates', @parameters, etc. 
+- Explicit `DISABLE_BROKER` for/against the `admindb`. 
+
+### Known Issues
+
 ## [12.0] - 2024-05-04 
 Improved DB Restore Capabilities/Options + Initial Addition of EventStore Functionality.
 
