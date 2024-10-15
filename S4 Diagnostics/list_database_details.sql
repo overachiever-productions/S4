@@ -4,6 +4,10 @@
 		- MAYBE call this REPORT_database_details or SHOW_database_details or ... something OTHER than ... LIST... (MAYBE).
 
 	vNEXT:
+		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
+
+
+	vNEXT:
 		- Option to dump output as XML 
 			So that XML blobs can be saved/stored in admindb.dbo.db_somethings or whatever. 
 			AND so that there can be a sproc with options for comparisons - to list changes (so'z I can keep an eye on mods over time and so on). 
