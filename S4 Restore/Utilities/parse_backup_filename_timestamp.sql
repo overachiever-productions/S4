@@ -95,7 +95,7 @@ AS
 GO
 
 -- CONDITIONAL HACK/TWEAK: 
-IF (SELECT [dbo].[get_engine_version]()) > 13.0 BEGIN
+IF (SELECT [dbo].[get_engine_version]()) > 16.0 BEGIN
 
 	DECLARE @rewriteTarget nvarchar(MAX) = N'		SELECT 
 			[row_id],
