@@ -1,6 +1,10 @@
 /*
 	NOTE: This does NOT adhere to PROJECT or RETURN... (it ONLY does RETURN)
 
+
+	REFACTOR: 
+		dbo.eventstore_frame_heatmap (where 'frame' is a verb). I could also use a ... verby-very like dbo.eventstore_build|generate|create_heatmap.
+
 */
 
 USE [admindb];
@@ -11,36 +15,22 @@ IF OBJECT_ID('dbo.[eventstore_heatmap_frame]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[eventstore_heatmap_frame]
---	@Mode						sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | TIME_OF_WEEK } 
-	@Granularity				sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
-	@TimeZone					sysname			= NULL,			-- Defaults to UTC (as that's what ALL XE sessions record in/against). Can be changed to a TimeZone on NEWER versions of SQL Server - including {SERVER_LOCAL}. 
-	@SerializedOutput			xml				= NULL			OUTPUT
+	@Granularity				sysname			= N'HOUR',			-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
+	@SerializedOutput			xml				= NULL				OUTPUT
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-	--SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
+
 	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'HOUR'));
 	IF @Granularity LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
 
-	SET @TimeZone = NULLIF(@TimeZone, N'');	
 
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Time-Bounding Predicates and Translations:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @TimeZone IS NOT NULL BEGIN 
+SELECT @Granularity;
 
-		IF [dbo].[get_engine_version]() < 130 BEGIN 
-			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
-			RETURN -110;
-		END;
-	
-		IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
-			SET @TimeZone = dbo.[get_local_timezone]();
-
-		DECLARE @offsetMinutes int = 0;
-		IF @TimeZone IS NOT NULL
-			SELECT @offsetMinutes = dbo.[get_timezone_offset_minutes](@TimeZone);
+	IF UPPER(@Granularity) NOT IN (N'HOUR', N'MINUTE') BEGIN 
+		RAISERROR(N'Allowed values for @Granularity are HOUR(S) or MINUTE(S).', 16, 1);
+		RETURN -8;
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -89,73 +79,17 @@ AS
 		[times]
 	OPTION (MAXRECURSION 200);
 
-	--IF @Mode = N'TIME_OF_DAY' BEGIN
-		SELECT @SerializedOutput = (
-			SELECT 
-				[row_id] [block_id],
-				CAST([utc_start] AS time) [utc_start],
-				CAST([utc_end] AS time) [utc_end]
-			FROM 
-				[#times]
-			ORDER BY 
-				[row_id]
-			FOR XML PATH(N'time'), ROOT(N'times'), TYPE
-		);
-
-		RETURN 0;
-	--END;
+	SELECT @SerializedOutput = (
+		SELECT 
+			[row_id] [block_id],
+			CAST([utc_start] AS time) [start_time],
+			CAST([utc_end] AS time) [end_time]
+		FROM 
+			[#times]
+		ORDER BY 
+			[row_id]
+		FOR XML PATH(N'time'), ROOT(N'times'), TYPE
+	);
 
 	RETURN 0;
 GO
---	/*---------------------------------------------------------------------------------------------------------------------------------------------------
---	-- TIME_OF_WEEK Logic Only (already short-circuited / returned if we were processing TIME_OF_DAY)
---	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-----	SET @endTime = '2017-01-07 23:59:59.999';
-
---	DECLARE @sql nvarchar(MAX);
---	CREATE TABLE #weekView (
---		[row_id] int IDENTITY(1,1) NOT NULL, 
---		[utc_start] time NOT NULL,
---		[utc_end] time NOT NULL,
---		[Sunday] sysname NULL, 
---		[Monday] sysname NULL, 
---		[Tuesday] sysname NULL,
---		[Wednesday] sysname NULL,
---		[Thursday] sysname NULL,
---		[Friday] sysname NULL,
---		[Saturday] sysname NULL,
---	);
-
---	INSERT INTO [#weekView] (
---		[utc_start],
---		[utc_end]
---	)
---	SELECT 
---		[utc_start], 
---		[utc_end]
---	FROM 
---		[#times]
---	ORDER BY 
---		[row_id];
-
---	SELECT @SerializedOutput = (
---		SELECT 
---			[row_id],
---			[utc_start],
---			[utc_end],
---			[Sunday],
---			[Monday],
---			[Tuesday],
---			[Wednesday],
---			[Thursday],
---			[Friday],
---			[Saturday]	
---		FROM 
---			[#weekView]
---		ORDER BY 
---			[row_id] 
---		FOR XML PATH(N'time'), ROOT(N'times'), TYPE, ELEMENTS XSINIL
---	);
-
---	RETURN 0;
---GO

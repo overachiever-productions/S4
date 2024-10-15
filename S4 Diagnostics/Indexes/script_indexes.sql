@@ -251,8 +251,8 @@ AS
 		[i].[type_desc],
 		--(SELECT STRING_AGG((QUOTENAME([c].[name]) + CASE WHEN [ic].[is_descending_key] = 1 THEN N'' DESC'' ELSE N'''' END), N'', '') WITHIN GROUP(ORDER BY [ic].[key_ordinal]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[key_ordinal] > 0 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id]) [key_columns], 
 		--(SELECT STRING_AGG(QUOTENAME([c].[name]), N'', '') WITHIN GROUP(ORDER BY [ic].[key_ordinal]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[is_included_column] = 1 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id]) [included_columns],
-		(SELECT STUFF((SELECT N'','' + QUOTENAME([c].[name]) + CASE WHEN [ic].[is_descending_key] = 1 THEN N'' DESC'' ELSE N'''' END FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[key_ordinal] > 0 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id] ORDER BY [ic].[key_ordinal] FOR XML PATH(N''''), TYPE).value(N''.'', N''nvarchar(MAX)''), 1, 1, N'''')) [key_columns],
-		(SELECT STUFF((SELECT N'','' + QUOTENAME([c].[name]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[is_included_column] = 1 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id] ORDER BY [ic].[key_ordinal] FOR XML PATH(N''''), TYPE).value(N''.'', N''nvarchar(MAX)''), 1, 1, N'''')) [included_columns],
+		(SELECT STUFF((SELECT N'', '' + QUOTENAME([c].[name]) + CASE WHEN [ic].[is_descending_key] = 1 THEN N'' DESC'' ELSE N'''' END FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[key_ordinal] > 0 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id] ORDER BY [ic].[key_ordinal] FOR XML PATH(N''''), TYPE).value(N''.'', N''nvarchar(MAX)''), 1, 1, N'''')) [key_columns],
+		(SELECT STUFF((SELECT N'', '' + QUOTENAME([c].[name]) FROM [{0}].sys.[index_columns] [ic] INNER JOIN [{0}].sys.columns [c] ON [ic].[object_id] = [c].[object_id] AND [ic].[column_id] = [c].[column_id] WHERE [ic].[is_included_column] = 1 AND [ic].[object_id] = [i].[object_id] AND [ic].[index_id] = [i].[index_id] ORDER BY [ic].[key_ordinal] FOR XML PATH(N''''), TYPE).value(N''.'', N''nvarchar(MAX)''), 1, 1, N'''')) [included_columns],
 		[i].[is_unique],
 		[i].[data_space_id], 
 		[d].[name] [dataspace_name],
@@ -351,8 +351,8 @@ AS
 				CASE WHEN [i].[is_primary_key] = 1 THEN N'ALTER TABLE ' + QUOTENAME([i].[schema_name]) + N'.' + QUOTENAME([object_name]) + N' ADD CONSTRAINT ' + QUOTENAME([i].[index_name]) + @crlf + N'PRIMARY KEY ' + CASE WHEN [i].[index_id] = 1 THEN N'CLUSTERED' ELSE N'' END + N' '
 				ELSE N'CREATE ' + CASE WHEN [i].[is_unique] = 1 THEN N'UNIQUE' ELSE N'' END + CASE WHEN [i].[index_id] = 1 THEN N'' ELSE N'NON' END + N'CLUSTERED INDEX' + ' ' + QUOTENAME([i].[index_name]) + N' ' + @crlf + N'ON ' + QUOTENAME([i].[schema_name]) + N'.' + QUOTENAME([i].[object_name])
 			END
-			+ N'(' + [i].[key_columns] + N')'
-			+ CASE WHEN [i].[included_columns] IS NOT NULL THEN @crlf + N'INCLUDE(' + [i].[included_columns] + N')' ELSE N'' END
+			+ N' (' + LTRIM([i].[key_columns]) + N')'
+			+ CASE WHEN [i].[included_columns] IS NOT NULL THEN @crlf + N'INCLUDE (' + LTRIM([i].[included_columns]) + N')' ELSE N'' END
 			+ CASE WHEN [i].[filter_definition] IS NOT NULL THEN @crlf + N'WHERE ' + [i].[filter_definition] + N' ' ELSE N'' END
 			+ CASE WHEN NULLIF(ISNULL([o].[options], N''), N'') IS NULL THEN N'' ELSE @crlf + N'WITH (' + LTRIM(LEFT([o].[options], LEN([o].[options]) - 1)) + N')' END
 			+ @crlf + CASE WHEN [i].[partition_scheme_name] IS NULL THEN N'ON ' + QUOTENAME([i].[dataspace_name]) + N'' ELSE N'<partition_scheme_column_here>' END

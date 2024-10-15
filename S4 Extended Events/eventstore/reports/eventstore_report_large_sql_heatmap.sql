@@ -1,14 +1,11 @@
 /*
 
 	PICKUP/NEXT: 
-		- Better formatting of start/end times (compare with what I'm doing in view_largegrant_heatmap). 
+
 		- Weaponize for blocked-proceses, and deadlocks. (shouldn't be tooo hard). 
-		-- BEFORE doing anything other than large_sql, deadlocks, blocked-proceses: 
+	!!	-- BEFORE doing anything other than large_sql, deadlocks, blocked-proceses: 
 			figure out how to tackle UTC offsets. 
-			And, at a bare minimum: 
-				throw an error until this is actually handled. 
-				cuz, right now, it looks like this 'works' (it's ignored) - meaning
-				... peoeple could call it and not know that offsets are a lie (same as if not specified). 
+			
 			otherwise, ... need to figrue out exactly how to handle those offsets.
 				And, I THINK I handle them in the #metrics table. that'd make the most sense. I think. 
 				but, i'm going to have to test out a simpllllle example to make sure I've got the logic right. 
@@ -24,7 +21,7 @@ GO
 
 CREATE PROC dbo.[eventstore_report_large_sql_heatmap]
 	@Mode										sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | TIME_OF_WEEK } 
-	@Granularity								sysname			= N'HOUR',			-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
+	@Granularity								sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL,
@@ -41,20 +38,27 @@ AS
 	
 	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
 	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'HOUR'));
+	SET @TimeZone = NULLIF(@TimeZone, N'');
 
 	DECLARE @eventStoreKey sysname = N'LARGE_SQL';
 	DECLARE @eventStoreTarget sysname = (SELECT [target_table] FROM [dbo].[eventstore_settings] WHERE [event_store_key] = @eventStoreKey); 
+
+	-- TEMPORARY:
+	IF @TimeZone IS NOT NULL BEGIN 
+		RAISERROR(N'@TimeZone is not (yet) supported. (Leave null/empty and times will default to UTC (i.e., XE Trace Default).)', 15, 1);
+		RETURN -202;
+	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time Bounding: 
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF @Start IS NULL BEGIN 
-		SET @Start = DATEADD(DAY, - 32, GETUTCDATE());
+		SET @Start = DATEADD(DAY, - 28, GETUTCDATE());  /* 4 weeks */
 		SET @End = ISNULL(@End, GETUTCDATE());
 	END;
 	
-	IF @End < @Start BEGIN 
-		RAISERROR(N'@End may NOT be less-than (earlier than) @Start.', 16, 1);
+	IF @End <= @Start BEGIN 
+		RAISERROR(N'@End must be later than @Start.', 16, 1);
 		RETURN -2;
 	END;
 
@@ -94,14 +98,15 @@ AS
 	SELECT 
 		[block_id],
 		[utc_start],
-		[utc_end] 
+		[utc_end],
+		LEFT(CAST([utc_start] AS sysname), 12) [display_start], 
+		LEFT(CAST([utc_end] AS sysname), 12) [display_end]
 	INTO 
 		#times
 	FROM 
 		[shredded] 
 	ORDER BY 
 		[shredded].[block_id];
-		
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Configure Exclusions/Filters:
@@ -144,7 +149,7 @@ AS
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Correlate Data:
+	-- Extract Data:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	CREATE TABLE #metrics ( 
 		[execution_end_time] datetime NOT NULL, 
@@ -204,14 +209,14 @@ WHERE
 			FROM 
 				[correlated] 
 			WHERE 
-				[correlated].[execution_end_time] IS NOT NULL 
+				[execution_end_time] IS NOT NULL 
 			GROUP BY 
 				[block_id]
 		)
 		
 		SELECT 
-			[t].[utc_start],
-			[t].[utc_end],
+			[t].[display_start] [utc_start], 
+			[t].[display_end] [utc_end],
 			ISNULL([a].[events], 0) [total_events],
 			ISNULL([a].[total_cpu], 0) [total_cpu_ms],
 			ISNULL([a].[total_duration], 0) [total_duration_ms]
@@ -269,8 +274,6 @@ currentDayMetrics AS (
 		[block_id]
 )';
 
-	
-
 	DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 	SELECT 
 		[day_id], 
@@ -297,7 +300,7 @@ FROM
 		SET @sql = REPLACE(@sql, N'{select}', @select);
 		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
 			
-		EXEC dbo.[print_long_string] @sql;
+		--EXEC dbo.[print_long_string] @sql;
 		EXEC sys.sp_executesql 
 			@sql, 
 			N'@currentDayID int', 
@@ -309,11 +312,11 @@ FROM
 	CLOSE [walker];
 	DEALLOCATE [walker];
 
-	PRINT 'Cell legend: [# (C - D)] - Where # is [total_events], C is [total_cpu_ms], and D is [total_duration_ms].';
+	PRINT 'CELL LEGEND: [E (C - D)] - Where E is [total_events], C is [total_cpu_ms], and D is [total_duration_ms].';
 
 	SELECT 
-		[utc_start],
-		[utc_end], 
+	 	[display_start] [utc_start],
+		[display_end] [utc_end], 
 		N' ' [ ],
 		ISNULL([Sunday], N'-') [Sunday],  
 		ISNULL([Monday], N'-') [Monday],

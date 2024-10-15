@@ -109,6 +109,11 @@ AS
 
 	-- {copyright}
 
+	SET @CopyToBackupDirectory = NULLIF(@CopyToBackupDirectory, N'');
+	SET @OffSiteBackupPath = NULLIF(@OffSiteBackupPath, N'');
+	SET @CopyToRetention = NULLIF(@CopyToRetention, N'');
+	SET @OffSiteRetention = NULLIF(@OffSiteRetention, N'');
+
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	DECLARE @return int;
@@ -183,22 +188,18 @@ AS
 		RETURN -9;
 	END
 
--- TODO: I really need to validate retention details HERE... i.e., BEFORE we start running backups. 
---		not sure of the best way to do that - i.e., short of copy/paste of the logic (here and there).
+	EXEC @return = dbo.validate_retention @BackupRetention, N'@BackupRetention';
+	IF @return <> 0 RETURN @return;
 
--- honestly, probably makes the most sense to push validation into a scalar UDF. the UDF returns a string/error or NULL (if there's nothing wrong). That way, both sprocs can use the validation details easily. 
+	IF @CopyToBackupDirectory IS NOT NULL BEGIN 
+		EXEC @return = dbo.[validate_retention] @CopyToRetention, N'@CopyToRetention';
+		IF @return <> 0 RETURN @return;
+	END;
 
-	--IF (DATEADD(MINUTE, 0 - @fileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN 
-	--	 RAISERROR('Invalid @BackupRetentionHours - greater than or equal to NOW.', 16, 1);
-	--	 RETURN -10;
-	--END;
-
-	--IF NULLIF(@CopyToBackupDirectory, '') IS NOT NULL BEGIN
-	--	IF (DATEADD(MINUTE, 0 - @copyToFileRetentionMinutes, GETDATE())) >= GETDATE() BEGIN
-	--		RAISERROR('Invalid @CopyToBackupRetentionHours - greater than or equal to NOW.', 16, 1);
-	--		RETURN -11;
-	--	END;
-	--END;
+	IF @OffSiteBackupPath IS NOT NULL BEGIN 
+		EXEC @return = dbo.[validate_retention] @OffSiteRetention, N'@OffSiteRetention';
+		IF @return <> 0 RETURN @return;
+	END;
 
 	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
 
@@ -841,7 +842,7 @@ RemoveOlderFiles:
 			SET @errorMessage = NULL;
 			BEGIN TRY
 				
-				EXEC dbo.remove_backup_files
+				EXEC dbo.[remove_backup_files]
                     @BackupType = @BackupType,
                     @DatabasesToProcess = @currentDatabase,
                     @TargetDirectory = @BackupDirectory,

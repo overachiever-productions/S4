@@ -1,10 +1,6 @@
 /*
 
 
-	LOOKS like these are ALL junk: 
-		13000 - 14721 AND Severity < 11
-				i.e., message_id 13K - 14721 ... if/when SEVERITY < 11... 
-
 */
 
 USE [admindb];
@@ -55,7 +51,7 @@ AS
 	[user_name] [sysname] NULL,
 	[host_name] [varchar](max) NULL,
 	[application_name] [varchar](max) NULL,
-	[is_system] [sysname] NULL,
+	[is_system] [bit] NULL,
 	[statement] [varchar](max) NULL, 
 	[report] [xml] NULL
 ) 
@@ -67,45 +63,38 @@ WITH (DATA_COMPRESSION = PAGE); ';
 	DECLARE @eventStoreSessionDDL nvarchar(MAX) = N'CREATE EVENT SESSION [{session_name}] ON {server_or_database} 
 	ADD EVENT sqlserver.error_reported (  
 		ACTION (
-			sqlserver.client_app_name,
-			sqlserver.client_hostname,
-			sqlserver.database_name,
-			sqlserver.is_system,
-			sqlserver.nt_username,
-			sqlserver.sql_text,
-			sqlserver.tsql_frame,
-			sqlserver.tsql_stack,
-			sqlserver.username
+			[sqlserver].[client_app_name],
+			[sqlserver].[client_hostname],
+			[sqlserver].[database_name],
+			[sqlserver].[is_system],
+			[sqlserver].[nt_username],
+			[sqlserver].[sql_text],
+			[sqlserver].[tsql_frame],
+			[sqlserver].[tsql_stack],
+			[sqlserver].[server_principal_name]		
 		)
 		WHERE (
-			[error_number] <> (5701) AND			-- db changed
-			[error_number] <> (5703) AND			-- language changed
-			[error_number] <> (3262) AND			-- backup file is valid
-			[error_number] <> (3014) AND			-- tlog backup success
-			[error_number] <> (4035) AND			-- backup pages (count) processed
-			[error_number] <> (2528) AND			-- dbcc completed.
-			[error_number] <> (8153) AND			-- Null value eliminated in aggregate
-
-			[error_number] <> (22803) AND			-- CDC has scanned the log from LSN ..... 
-
-			--[error_number] <> (3609) AND			-- tx ended in trigger 
-			[error_number] <> (17892) AND			-- login failed due to trigger
-			[error_number] <> (18456) AND			-- login failed
-			[error_number] <> (15653) AND			-- Status update NOT necessary... 
-			[error_number] <> (14553) AND			-- Replication Distribution Subsystem (NOT an error).... 
-
-			[error_number] <> (14205) AND			-- (Unknown) (literally)
-			[error_number] <> (14570) AND			-- (Job Outcome) 
-			
-
-			[error_number] <> (15651) AND			-- # indexes/stats ... have been updated, # did not require update... 
-			[error_number] <> (15650) AND			-- Updating [object] stats... 
-			[error_number] <> (15652) AND			-- [object] has been updated (stats)
-
-			[error_number] <> (17550) AND			-- DBCC TRACEON 3604...
-			[error_number] <> (17551) AND			-- DBCC TRACEOFF 3604...
-
-			[error_number] <> (22121) AND			-- repl cleanup message... 
+			[error_number] > 0		AND			-- number of ''noise errors'' with 0 and -1 error_numbers... 
+			[error_number] <> 2528	AND			-- dbcc completed.
+			[error_number] <> 3014	AND			-- tlog backup success
+			[error_number] <> 3197	AND			-- I/O is frozen on database %ls. No user action is required. However, if I/O is not resumed promptly, you could cancel the backup.
+			[error_number] <> 3198	AND			-- I/O was resumed on database %ls. No user action is required.
+			[error_number] <> 3262	AND			-- backup file is valid
+			[error_number] <> 4035	AND			-- backup pages (count) processed
+			[error_number] <> 5701	AND			-- db changed
+			[error_number] <> 5703	AND			-- language changed
+			[error_number] <> 8153	AND			-- Null value eliminated in aggregate
+			[error_number] <> 14205 AND			-- (Unknown) (literally)
+			[error_number] <> 14553 AND			-- Replication Distribution Subsystem (NOT an error).... 
+			[error_number] <> 14570 AND			-- (Job Outcome) 
+			[error_number] <> 15650 AND			-- Updating [object] stats... 
+			[error_number] <> 15651 AND			-- # indexes/stats ... have been updated, # did not require update... 
+			[error_number] <> 15652 AND			-- [object] has been updated (stats)
+			[error_number] <> 15653 AND			-- Status update NOT necessary... 
+			[error_number] <> 17550 AND			-- DBCC TRACEON 3604...
+			[error_number] <> 17551 AND			-- DBCC TRACEOFF 3604...
+			[error_number] <> 22121 AND			-- repl cleanup message... 
+			[error_number] <> 22803 AND			-- CDC has scanned the log from LSN ..... 	
 
 			[message] NOT LIKE ''Command: UPDATE STATISTICS%'' -- commonly finding BAZILLIONS of these on most servers (obviously) - which muddies the waters... 
 		)

@@ -289,6 +289,8 @@ AS
 			[command] LIKE N'%BACKUP%'
 			OR 
 			[command] LIKE N'%RESTORE%'
+			OR 
+			[command] LIKE N'%DBCC%'
 	END;
 
 	IF @ExcludedDatabases IS NOT NULL BEGIN 

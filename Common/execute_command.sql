@@ -259,7 +259,7 @@ AS
 	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{COPYFILE}', N'')))) BEGIN
 		INSERT INTO @filters ([filter_type],[filter_text])
 		VALUES 
-			('COPYFILE', '%1 file(s) copied%');
+			('COPYFILE', '%1 [Ff]ile(s) copied%');
 
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{COPYFILE}', N'');
 	END;
@@ -402,7 +402,7 @@ ExecutionAttempt:
 				WHEN [ignored_match] IS NULL THEN 1
 				ELSE 0 
 			END [result_row/@is_error],
-			[result_text] [result_row]
+			REPLACE([result_text], NCHAR(0), N'') [result_row]
 		FROM 
 			[#cmd_results] 
 		ORDER BY 

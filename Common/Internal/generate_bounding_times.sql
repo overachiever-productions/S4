@@ -44,7 +44,7 @@ AS
 
 		UNION ALL 
 
-		SELECT DATEADD(MINUTE, @minutes, [time_block]) [time_block]
+		SELECT DATEADD(MINUTE, @Minutes, [time_block]) [time_block]
 		FROM [times]
 		WHERE [time_block] < @End
 	) 

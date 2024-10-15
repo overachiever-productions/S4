@@ -166,7 +166,7 @@ AS
 		@JobCategoryName = @JobCategoryName,
 		@JobEnabled = 0,
 		@AddBlankInitialJobStep = 1,
-		@OperatorToAlertOnErrorss = @OperatorName,
+		@OperatorToAlertOnErrors = @OperatorName,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 		@JobID = @jobId OUTPUT;
 

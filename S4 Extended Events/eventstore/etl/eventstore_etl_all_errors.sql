@@ -79,10 +79,10 @@ AS
 		[nodes].[row].value(N''(data[@name="state"]/value)[1]'', N''int'') [state],
 		[nodes].[row].value(N''(data[@name="message"]/value)[1]'', N''varchar(max)'') [message],
 		[nodes].[row].value(N''(action[@name="database_name"]/value)[1]'', N''sysname'') [database],
-		[nodes].[row].value(N''(action[@name="user_name"]/value)[1]'', N''sysname'')	[user_name],
+		[nodes].[row].value(N''(action[@name="server_principal_name"]/value)[1]'', N''sysname'') [user_name],
 		[nodes].[row].value(N''(action[@name="client_hostname"]/value)[1]'', N''varchar(max)'') [host_name],
 		[nodes].[row].value(N''(action[@name="client_app_name"]/value)[1]'', N''varchar(max)'') [application_name],
-		[nodes].[row].value(N''(action[@name="is_system"]/value)[1]'', N''sysname'') [is_system],
+		[nodes].[row].value(N''(action[@name="is_system"]/value)[1]'', N''bit'') [is_system],
 		[nodes].[row].value(N''(action[@name="sql_text"]/value)[1]'', N''varchar(max)'') [statement], 
 		[nodes].[row].query(N''.'') [report]
 	FROM 

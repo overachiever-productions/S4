@@ -124,3 +124,4 @@ IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
 		);
 	END;
 END;
+GO

@@ -6,6 +6,11 @@
 		@HostName = 'UNITYVPN', 
 		@PrintOnly = 1;
 
+
+
+	NOTE: 
+		@Interval CAN be in milliseconds - i.e., "1200 milliseconds" or "300 milliseconds"
+
 */
 
 USE [admindb];

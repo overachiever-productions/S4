@@ -58,6 +58,11 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
+	IF UPPER(@Retention) = N'{INFINITE}' BEGIN 
+		PRINT N'-- {INFINITE} retention detected. Terminating cleanup process.';
+		RETURN 0;
+	END;	
+	
 	DECLARE @Edition sysname;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
@@ -126,36 +131,24 @@ AS
 	DECLARE @retentionError nvarchar(MAX);
 	DECLARE @retentionCutoffTime datetime; 
 
-	IF UPPER(@Retention) = N'{INFINITE}' BEGIN 
-		PRINT N'-- {INFINITE} retention detected. Terminating cleanup process.';
-		RETURN 0;
-	END;
+	DECLARE @validationResult int; 
+	EXEC @validationResult = [dbo].[validate_retention]
+		@Retention = @Retention,
+		@ParameterName = N'@Retention';
+
+	IF @validationResult <> 0
+		RETURN @validationResult;
 
 	IF UPPER(@Retention) LIKE '%B%' OR UPPER(@Retention) LIKE '%BACKUP%' BEGIN 
 		
 		DECLARE @boundary int = PATINDEX(N'%[^0-9]%', @Retention)- 1;
 
-		IF @boundary < 1 BEGIN 
-			SET @retentionError = N'Invalid Vector format specified for parameter @Retention. Format must be in ''XX nn'' or ''XXnn'' format - where XX is an ''integer'' duration (e.g., 72) and nn is an interval-specifier (e.g., HOUR, HOURS, H, or h).';
-			RAISERROR(@retentionError, 16, 1);
-			RETURN -1;
-		END;
-
-		BEGIN TRY
-
-			SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
-		END TRY
-		BEGIN CATCH
-			SET @retentionValue = -1;
-		END CATCH
-
-		IF @retentionValue < 0 BEGIN 
-			RAISERROR('Invalid @Retention value specified. Number of Backups specified was formatted incorrectly or < 0.', 16, 1);
-			RETURN -25;
-		END;
+		-- Validation has already run TRY/CATCh against these... 
+		SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
+		SET @retentionValue = -1;
 
 		SET @retentionType = 'b';
-	  END;
+	   END;
 	ELSE BEGIN 
 
 		EXEC dbo.[translate_vector_datetime]
@@ -318,13 +311,13 @@ AS
 		SET @serializedFiles = NULL;
 
 		IF @PrintOnly = 1 BEGIN
-			PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDb + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''LIST''; ';
+			PRINT N'-- EXEC admindb.dbo.load_backup_files @DatabaseToRestore = N''' + @currentDb + N''', @SourcePath = N''' + @targetPath + N''', @Mode = N''REMOVE''; ';
 		END;
 
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @currentDb, 
 			@SourcePath = @targetPath, 
-			@Mode = N'LIST', 
+			@Mode = N'REMOVE', 
 			@Output = @serializedFiles OUTPUT;
 
 		WITH shredded AS ( 

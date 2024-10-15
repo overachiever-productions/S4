@@ -173,7 +173,7 @@ END;'
 		@JobCategoryName = @JobCategoryName,
 		@JobEnabled = 0, -- create restore-test job as disabled (i.e., require admin review + manual intervention to enable... 
 		@AddBlankInitialJobStep = 1,
-		@OperatorToAlertOnErrorss = @OperatorName,
+		@OperatorToAlertOnErrors = @OperatorName,
 		@OverWriteExistingJobDetails = @OverWriteExistingJob,
 		@JobID = @jobId OUTPUT;
 	

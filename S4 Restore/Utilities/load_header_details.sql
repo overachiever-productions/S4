@@ -1,17 +1,4 @@
 /*
-	https://overachieverllc.atlassian.net/browse/S4-565
-	BUG: There's an odd bug/scenario where ... 
-		- RESTORE HEADER can throw an error 
-		- that doesn't REALLY, necessarily, mean that restore-operations relying upon RESTORE HEADER will fail. 
-
-		Specifically:
-			- if dbo.load_backup_files is looking for LSNs to determine Last LSN from a FULL|DIFF backup ... 
-			- AND, we TRUNCATE the name of the file - e.g., set @BackupPath = LEFT(@BackupPath, 128) - for example... 
-			-	then... load_header_details will ... fail - cuz it can't find the file in question. 
-			-	but... if the LSNs weren't "important" (i.e., we get 'lucky' and don't have concurrently running LOGs ... 
-			-	then... the error gets written out to the SQL Server Agent's history-log/buffer. 
-			-		AND, dbo.restore_databases FAILS when all is said and done... because we threw errors. 
-
 
 		DECLARE @backupDate datetime, @backupSize int, @compressed bit, @encrypted bit;
 
@@ -30,12 +17,12 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.load_header_details','P') IS NOT NULL
-	DROP PROC dbo.load_header_details;
+IF OBJECT_ID('dbo.[load_header_details]','P') IS NOT NULL
+	DROP PROC dbo.[load_header_details];
 GO
 
-CREATE PROC dbo.load_header_details 
-	@BackupPath					nvarchar(800),				-- looks like this should be 1024 and varchar? or nvarchar? See - https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
+CREATE PROC dbo.[load_header_details] 
+	@BackupPath					nvarchar(1024),				
 	@SourceVersion				decimal(4,2)	            = NULL,
 	@BackupDate					datetime		            OUTPUT, 
 	@BackupSize					bigint			            OUTPUT, 

@@ -24,8 +24,6 @@
             This sproc gets around that limitation via the logic defined in dbo.dba_ExecuteAndFilterNonCatchableCommand;
 
     TODO:
-        - Look at implementing MINIMAL 'retry' logic - as per dba_BackupDatabases. Or... maybe don't... 
-
 		- DOCUMENT the PRESERVE_FILENAMES directive. Basically, assume we're MOVING databases from C:\Cluster Storage\Volume 1\some other path
 				to D:\SQLData. 
 				And we don't want mega-down-time for those moves. We could restore using restore_databases with these directives: 
@@ -86,7 +84,7 @@ here's an EXAMPLE of how to do nightly restore tests on ONLY the primary:
 				@ExecuteRecovery = 1,
 				@CheckConsistency = 0,
 				@DropDatabasesAfterRestore = 0,
-				@Directives = N'STOPAT:2023-12-27 12:06:50.300',   -- not how STOPAT is a directive with a value... 
+				@Directives = N'STOPAT:2023-12-27 12:06:50.300',   -- notice how STOPAT is a directive with a value... 
 				@PrintOnly = 1;
 
 
@@ -311,8 +309,8 @@ AS
     -- 'Global' Variables:
     DECLARE @isValid bit;
     DECLARE @earlyTermination nvarchar(MAX) = N'';
-    DECLARE @emailErrorMessage nvarchar(MAX);
-    DECLARE @emailSubject nvarchar(300);
+    DECLARE @emailErrorMessage nvarchar(MAX) = N'';
+    DECLARE @emailSubject nvarchar(300) = N'';
     DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
     DECLARE @tab char(1) = CHAR(9);
     DECLARE @executionID uniqueidentifier = NEWID();
@@ -415,6 +413,7 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @fileListXml nvarchar(MAX);
 	DECLARE @stopAtLog int = NULL;
+	DECLARE @consistencyErrorsDetected bit = 0;
 
 	DECLARE @restoredFileName nvarchar(MAX);
 	DECLARE @ndfCount int = 0;
@@ -450,30 +449,30 @@ AS
             DROP TABLE #DBCC_OUTPUT;
 
         CREATE TABLE #DBCC_OUTPUT(
-                RowID int IDENTITY(1,1) NOT NULL, 
-                Error int NULL,
-                [Level] int NULL,
-                [State] int NULL,
-                MessageText nvarchar(2048) NULL,
-                RepairLevel nvarchar(22) NULL,
-                [Status] int NULL,
-                [DbId] int NULL, -- was smallint in SQL2005
-                DbFragId int NULL,      -- new in SQL2012
-                ObjectId int NULL,
-                IndexId int NULL,
-                PartitionId bigint NULL,
-                AllocUnitId bigint NULL,
-                RidDbId smallint NULL,  -- new in SQL2012
-                RidPruId smallint NULL, -- new in SQL2012
-                [File] smallint NULL,
-                [Page] int NULL,
-                Slot int NULL,
-                RefDbId smallint NULL,  -- new in SQL2012
-                RefPruId smallint NULL, -- new in SQL2012
-                RefFile smallint NULL,
-                RefPage int NULL,
-                RefSlot int NULL,
-                Allocation smallint NULL
+            RowID int IDENTITY(1,1) NOT NULL, 
+            Error int NULL,
+            [Level] int NULL,
+            [State] int NULL,
+            MessageText nvarchar(2048) NULL,
+            RepairLevel nvarchar(22) NULL,
+            [Status] int NULL,
+            [DbId] int NULL, -- was smallint in SQL2005
+            DbFragId int NULL,      -- new in SQL2012
+            ObjectId int NULL,
+            IndexId int NULL,
+            PartitionId bigint NULL,
+            AllocUnitId bigint NULL,
+            RidDbId smallint NULL,  -- new in SQL2012
+            RidPruId smallint NULL, -- new in SQL2012
+            [File] smallint NULL,
+            [Page] int NULL,
+            Slot int NULL,
+            RefDbId smallint NULL,  -- new in SQL2012
+            RefPruId smallint NULL, -- new in SQL2012
+            RefFile smallint NULL,
+            RefPage int NULL,
+            RefSlot int NULL,
+            Allocation smallint NULL
         );
     END;
 
@@ -1060,7 +1059,8 @@ AS
                     INSERT INTO #DBCC_OUTPUT (Error, [Level], [State], MessageText, RepairLevel, [Status], [DbId], DbFragId, ObjectId, IndexId, PartitionId, AllocUnitId, RidDbId, RidPruId, [File], [Page], Slot, RefDbId, RefPruId, RefFile, RefPage, RefSlot, Allocation)
                     EXEC sp_executesql @command; 
 
-                    IF EXISTS (SELECT NULL FROM #DBCC_OUTPUT) BEGIN -- consistency errors: 
+                    IF EXISTS (SELECT NULL FROM #DBCC_OUTPUT) BEGIN 
+						SET @consistencyErrorsDetected = 1;
                         SET @statusDetail = N'CONSISTENCY ERRORS DETECTED against database ' + QUOTENAME(@restoredName) + N'. Details: ' + @crlf;
                         SELECT @statusDetail = @statusDetail + MessageText + @crlf FROM #DBCC_OUTPUT ORDER BY RowID;
 
@@ -1081,7 +1081,6 @@ AS
                             error_details = NULL
                         WHERE 
                             restore_id = @restoreLogId;
-
                     END;
                 END;
 
@@ -1253,17 +1252,17 @@ NextDatabase:
 FINALIZE:
 
     -- close/deallocate any cursors left open:
-    IF (SELECT CURSOR_STATUS('local','restorer')) > -1 BEGIN
+    IF (SELECT CURSOR_STATUS(N'local', N'restorer')) > -1 BEGIN
         CLOSE restorer;
         DEALLOCATE restorer;
     END;
 
-    IF (SELECT CURSOR_STATUS('local','mover')) > -1 BEGIN
+    IF (SELECT CURSOR_STATUS(N'local', N'mover')) > -1 BEGIN
         CLOSE mover;
         DEALLOCATE mover;
     END;
 
-    IF (SELECT CURSOR_STATUS('local','logger')) > -1 BEGIN
+    IF (SELECT CURSOR_STATUS(N'local', N'logger')) > -1 BEGIN
         CLOSE logger;
         DEALLOCATE logger;
     END;
@@ -1271,6 +1270,7 @@ FINALIZE:
 	-- Process RPO Warnings: 
 	DECLARE @rpoWarnings nvarchar(MAX) = NULL;
 	DECLARE @rpoMessage nvarchar(MAX) = N'';
+	DECLARE @warnings sysname = N'NONE'; -- { NONE | SANITY_ONLY | RPO_AND_SANITY }
 
 	IF (NULLIF(@RpoWarningThreshold, N'') IS NOT NULL) OR @SkipSanityChecks = 0 BEGIN
 		SELECT 
@@ -1310,6 +1310,7 @@ FINALIZE:
 	END;
 
 	IF NULLIF(@RpoWarningThreshold, N'') IS NOT NULL BEGIN 
+
 		IF @RpoWarningThreshold LIKE N'%,%' BEGIN 
 			WITH full_recovery AS ( 
 				SELECT 
@@ -1321,10 +1322,9 @@ FINALIZE:
 					[d].[recovery_model_desc] <> N'SIMPLE'
 			) 
 
-			-- NOTE: using some borderline-cheesy logic to get the 'FULL' part of @RpoWarningThreshold for these warnings:
-			SELECT 
+			SELECT  -- NOTE: using some borderline-cheesy logic to get the 'FULL' part of @RpoWarningThreshold for these warnings:
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + N'	Database ' + QUOTENAME([x].[database]) + N' EXCEEDED Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + REPLACE(REPLACE(@RpoWarningThreshold, @threshold, N''), N',', '')
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1360,7 +1360,7 @@ FINALIZE:
 			-- NOTE: SORTA ditto on cheesy logic for 'SIMPLE' recovery part ... (i.e., not as cheesy, but still kind of using 'stealthed' info).
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + N'	Database ' + QUOTENAME([x].[database]) + N' EXCEEDED Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + @threshold
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1382,7 +1382,7 @@ FINALIZE:
 		ELSE BEGIN
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' exceeded recovery point objectives: '
+				+ @crlf + N'	Database ' + QUOTENAME([x].[database]) + N' EXCEEDED Recovery Point Objectives: '
 				+ @crlf + @tab + N'- recovery_point_objective  : ' + @RpoWarningThreshold
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1399,12 +1399,51 @@ FINALIZE:
 			ORDER BY 
 				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
 				[x].[vector];
-		  END;
+		END;
 
-		IF LEN(@rpoMessage) > 2
-			SET @rpoWarnings = N'WARNINGS: ' 
-				+ @crlf + @rpoMessage + @crlf + @crlf;
+		IF @rpoMessage <> N'' BEGIN
+			SET @emailSubject = N'RPO WARNINGS';
+			SET @rpoMessage = @rpoMessage + @crlf;
+		END;
 
+		-- File Gap Tests
+		DECLARE @cadenceGapXml xml;
+		EXEC dbo.[report_rpo_restore_violations]
+			@TargetDatabases = @DatabasesToRestore,
+			@Scope = N'LATEST',
+			@RPOSeconds = @vector,
+			@SerializedOutput = @cadenceGapXml OUTPUT
+		
+		IF @cadenceGapXml IS NOT NULL BEGIN 
+			DECLARE @cadenceMessage nvarchar(MAX) = N'';
+
+			WITH shredded AS ( 
+				SELECT
+					[data].[row].value(N'(db_name)[1]', N'sysname') [database],
+					[data].[row].value(N'(violations)[1]', N'int') [violations]
+				FROM 
+					@cadenceGapXml.nodes(N'//database') [data]([row])
+			) 
+
+			SELECT 
+				@cadenceMessage = @cadenceMessage + @crlf + N'	Database [' + [database] + N'] exceeded RPOs (Log Backup Cadence): ' 
+				+ @crlf + @tab + N' - There are ' + CAST([violations] AS sysname) + N' Log-Cadence RPO violations for database: [' + [database] + N'].'
+			FROM 
+				[shredded] 
+			ORDER BY 
+				[database];
+
+			SET @cadenceMessage = @cadenceMessage + @crlf + @crlf + N'	EXECUTE dbo.[report_rpo_restore_violations] for more information.';
+
+			SET @rpoMessage = @rpoMessage + @crlf + N'RPO LOG-CADENCE WARNINGS: ' + @crlf + @cadenceMessage + @crlf + @crlf;
+
+			IF @emailSubject <> N'' SET @emailSubject = @emailSubject + N' + ';
+			SET @emailSubject = @emailSubject + N'RPO LOG-CADENCE WARNINGS';
+		END;
+
+		IF @rpoMessage <> N''
+			SET @rpoWarnings = N'WARNING: ' + @crlf + @rpoMessage + @crlf + @crlf;
+		
 	  END;
 	ELSE BEGIN 
 		-- If we didn't set EXPLICIT checks for RPOs, run sanity checks - unless they've been disabled. 
@@ -1418,7 +1457,7 @@ FINALIZE:
 
 			SELECT 
 				@rpoMessage = @rpoMessage 
-				+ @crlf + N'  WARNING: database ' + QUOTENAME([x].[database]) + N' failed Configuration Sanity Checks: '
+				+ @crlf + N'  Database ' + QUOTENAME([x].[database]) + N' Failed Sanity Checks: '
 				+ @crlf + @tab + N'- sanity_check_objective  : 26 hours'
 				+ @crlf + @tab + @tab + N'- most_recent_backup: ' + CONVERT(sysname, [x].[most_recent_backup], 120) 
 				+ @crlf + @tab + @tab + N'- restore_completion: ' + CONVERT(sysname, [x].[restore_end], 120)
@@ -1436,9 +1475,9 @@ FINALIZE:
 				CASE WHEN [x].[days_old] > 20 THEN [x].[days_old] ELSE 0 END DESC, 
 				[x].[vector];
 
-			IF LEN(@rpoMessage) > 2
-				SET @rpoWarnings = N'CONFIGURATION CHECK WARNING(s): ' 
-					+ @crlf + @rpoMessage + @crlf + @crlf;			
+			IF @rpoMessage <> N'' BEGIN
+				SET @rpoWarnings = N'WARNING: ' + @crlf + @rpoMessage + @crlf + @crlf;	
+			END;
 		END;
 	END;
 
@@ -1449,7 +1488,7 @@ FINALIZE:
 
         SELECT 
 			@emailErrorMessage = @emailErrorMessage 
-			+ @crlf + N'   ERROR: problem with database ' + QUOTENAME([database]) + N'.' 
+			+ @crlf + N'   Problem with database ' + QUOTENAME([database]) + N'.' 
 			+ @crlf + @tab + N'- source_database:' + QUOTENAME([database])
 			+ @crlf + @tab + N'- restored_as: ' + QUOTENAME([restored_as]) + CASE WHEN [restore_succeeded] = 1 THEN N'' ELSE ' (attempted - but failed) ' END 
 			+ @crlf
@@ -1464,19 +1503,32 @@ FINALIZE:
             restore_id;
 
         -- notify too that we stopped execution due to early termination:
-        IF NULLIF(@earlyTermination, '') IS NOT NULL BEGIN
+        IF NULLIF(@earlyTermination, N'') IS NOT NULL BEGIN
             SET @emailErrorMessage = @emailErrorMessage + @tab + N'- ' + @earlyTermination;
         END;
     END;
     
-    IF @emailErrorMessage IS NOT NULL OR @rpoWarnings IS NOT NULL BEGIN
+    IF NULLIF(@emailErrorMessage, N'') IS NOT NULL OR NULLIF(@rpoWarnings, N'') IS NOT NULL BEGIN
+
+		IF @emailSubject = N'' BEGIN 
+			SET @emailSubject = N' - ERROR'; 
+			END; 
+		ELSE BEGIN 
+			SET @emailSubject = N' - ' + @emailSubject; 
+			IF @emailErrorMessage <> N'' SET @emailSubject = @emailSubject + N' + ERRORS';
+		END;
+
+		IF @consistencyErrorsDetected = 1 BEGIN 
+			SET @emailSubject = N'!!DATABASE CORRUPTION!!' + CASE WHEN @emailSubject = N'' THEN N'' ELSE + N' + ' END + @emailSubject;
+		END;
+
+		SET @emailSubject = @EmailSubjectPrefix + @emailSubject;
 
 		SET @emailErrorMessage = ISNULL(@rpoWarnings, '') + ISNULL(@emailErrorMessage, '');
 
         IF @PrintOnly = 1
             PRINT N'ERROR: ' + @emailErrorMessage;
         ELSE BEGIN
-            SET @emailSubject = @EmailSubjectPrefix + N' - ERROR';
 
             EXEC msdb..sp_notify_operator
                 @profile_name = @MailProfileName,
