@@ -158,6 +158,8 @@ DECLARE @obsoleteObjects xml = CONVERT(xml, N'
             <heading>WARNING - Potential Configuration Changes Required (disk-space checks)</heading>
         </notification>
     </entry>
+    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes).">
+    </entry>
 </list>');
 
 EXEC dbo.drop_obsolete_objects @obsoleteObjects, N'master';
@@ -422,9 +424,6 @@ GO
 --##INCLUDE: S4 Utilities\count_matches.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
-
------------------------------------
 --##INCLUDE: Common\execute_uncatchable_command.sql
 
 -----------------------------------
@@ -469,6 +468,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Backups\Utilities\remove_offsite_backup_files.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Utilities\validate_retention.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
@@ -581,6 +583,9 @@ GO
 --##INCLUDE: S4 Restore\apply_logs.sql
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Reports\report_rpo_restore_violations.sql
+
+-----------------------------------
 --##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -691,7 +696,7 @@ GO
 --##INCLUDE: S4 Diagnostics\Indexes\list_heaps.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\list_problem_heaps.sql
+--##INCLUDE: S4 Diagnostics\Indexes\list_heap_problems.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_columns_by_table.sql
@@ -721,7 +726,16 @@ GO
 --##INCLUDE: S4 Diagnostics\QueryStore\view_querystore_counts.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_compilation_consumers.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_list_forced_plans.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\VersionStore\list_versionstore_transactions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\VersionStore\list_versionstore_generators.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Extended Events
@@ -729,6 +743,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\utilities\list_xe_sessions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_target_by_key.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\core\eventstore_initialize_extraction.sql
@@ -785,7 +802,16 @@ GO
 --##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_error_counts.sql
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_chronology.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_heatmap.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_problems.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronology.sql
@@ -857,6 +883,18 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\kill_connections_by_statement.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_long_running_processes.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
