@@ -639,3 +639,6 @@ ORDER BY
 		[normalized] 
 	ORDER BY 
 		[original_report_id], [level];
+
+	RETURN 0;
+GO

@@ -119,3 +119,5 @@ AS
 	ORDER BY 
 		[c].[elapsed_time_seconds] DESC;
 
+	RETURN 0; 
+GO
