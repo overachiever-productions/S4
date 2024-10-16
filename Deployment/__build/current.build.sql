@@ -36,7 +36,13 @@ IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') B
 END;
 GO
 
-ALTER DATABASE [admindb] SET DISABLE_BROKER; -- not needed, so no sense having it enabled (whereas, the model db on most systems has broker enabled). 
+USE [master];
+GO
+
+IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = N'admindb' AND [is_broker_enabled] = 1) BEGIN
+	ALTER DATABASE [admindb] SET DISABLE_BROKER; -- not needed, so no sense having it enabled (whereas, the model db on most systems has broker enabled). 
+END;
+GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 2. Core Tables:
@@ -101,6 +107,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\tables\eventstore_settings.sql
+
+-----------------------------------
+--##INCLUDE: Common\tables\eventstore_report_preferences.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
@@ -464,13 +473,13 @@ GO
 --##INCLUDE: S4 Backups\Utilities\log_backup_history_detail.sql
 
 -----------------------------------
+--##INCLUDE: S4 Backups\Utilities\validate_retention.sql
+
+-----------------------------------
 --##INCLUDE: S4 Backups\Utilities\remove_backup_files.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\Utilities\remove_offsite_backup_files.sql
-
------------------------------------
---##INCLUDE: S4 Backups\Utilities\validate_retention.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
@@ -574,6 +583,9 @@ GO
 --##INCLUDE: S4 Restore\Utilities\parse_backup_filename_timestamp.sql
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Reports\report_rpo_restore_violations.sql
+
+-----------------------------------
 --##INCLUDE: S4 Restore\restore_databases.sql
 
 -----------------------------------
@@ -581,9 +593,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Restore\apply_logs.sql
-
------------------------------------
---##INCLUDE: S4 Restore\Reports\report_rpo_restore_violations.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Reports\list_recovery_metrics.sql
@@ -748,6 +757,9 @@ GO
 --##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_target_by_key.sql
 
 -----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_translate_error_token.sql
+
+-----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\core\eventstore_initialize_extraction.sql
 
 -----------------------------------
@@ -800,6 +812,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_get_report_preferences.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_counts.sql
