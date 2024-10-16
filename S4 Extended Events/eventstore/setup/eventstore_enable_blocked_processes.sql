@@ -100,7 +100,7 @@ EXEC sp_configure ''blocked process threshold'', ' + CAST(@BlockedProcessThresho
 	DECLARE @eventStoreTableDDL nvarchar(MAX) = N'CREATE TABLE [{schema}].[{table}](
 	[row_id] [int] IDENTITY(1,1) NOT NULL,
 	[timestamp] [datetime2](7) NOT NULL,
-	[database_name] [nvarchar](128) NOT NULL,
+	[database] [nvarchar](128) NOT NULL,
 	[seconds_blocked] [decimal](24, 2) NOT NULL,
 	[report_id] [int] NOT NULL,
 	[blocking_id] sysname NULL,  -- ''self blockers'' can/will be NULL
@@ -119,8 +119,6 @@ EXEC sp_configure ''blocked process threshold'', ' + CAST(@BlockedProcessThresho
 	[blocking_host_name] sysname NULL,
 	[blocking_login_name] sysname NULL,
 	[blocking_client_app] sysname NULL,
-	[blocked_spid] [int] NOT NULL,
-	[blocked_ecid] [int] NOT NULL,
 	[blocked_xactid] [bigint] NULL,  -- can be NULL
 	[blocked_request] [nvarchar](max) NOT NULL,
 	[blocked_sproc_statement] [nvarchar](max) NOT NULL,

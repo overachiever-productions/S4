@@ -344,7 +344,7 @@ AS
 			@JobCategoryName = @JobsCategoryName,
 			@JobEnabled = 0, -- create backup jobs as disabled (i.e., require admin review + manual intervention to enable... 
 			@AddBlankInitialJobStep = 1,
-			@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+			@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 			@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 			@JobID = @jobID OUTPUT;
 		

@@ -23,7 +23,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_xe_sessions','P') IS NOT NULL
+IF OBJECT_ID('dbo.[list_xe_sessions]','P') IS NOT NULL
 	DROP PROC dbo.[list_xe_sessions];
 GO
 
@@ -122,7 +122,7 @@ FROM
 		SET @versionCols = @versionCols + @crlftab + N'[s].[buffer_processed_count], ' + @crlftab + N'[s].[buffer_processed_count],';
 	END; 
 
-	IF (SELECT dbo.[get_engine_version]()) >= 15.00 BEGIN 
+	IF (SELECT dbo.[get_engine_version]()) >= 16.00 BEGIN 
 		ALTER TABLE [#states] ADD [total_target_memory] bigint NOT NULL;
 
 		SET @versionCols = @versionCols + @crlftab + N'[s].[total_target_memory],';

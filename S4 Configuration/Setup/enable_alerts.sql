@@ -8,13 +8,14 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.enable_alerts','P') IS NOT NULL
+IF OBJECT_ID('dbo.[enable_alerts]','P') IS NOT NULL
 	DROP PROC dbo.[enable_alerts];
 GO
 
 CREATE PROC dbo.[enable_alerts]
     @OperatorName                   sysname             = N'Alerts',
     @AlertTypes                     sysname             = N'SEVERITY_AND_IO',       -- SEVERITY | IO | SEVERITY_AND_IO
+	@SecondsBetweenResponses		int					= 60,
     @PrintOnly                      bit                 = 0
 AS
     SET NOCOUNT ON; 
@@ -42,7 +43,7 @@ IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysalerts WHERE severity = {severity} A
         @message_id = {id},
         @severity = {severity},
         @enabled = 1,
-        @delay_between_responses = 0,
+        @delay_between_responses = {delay},
         @include_event_description_in = 1; 
     EXEC msdb.dbo.sp_add_notification 
 	    @alert_name = N''{name}'', 
@@ -51,6 +52,7 @@ IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysalerts WHERE severity = {severity} A
 END;' ;
 
     SET @alertTemplate = REPLACE(@alertTemplate, N'{operator}', @OperatorName);
+	SET @alertTemplate = REPLACE(@alertTemplate, N'{delay}', @SecondsBetweenResponses);
 
     DECLARE @command nvarchar(MAX) = N'';
 

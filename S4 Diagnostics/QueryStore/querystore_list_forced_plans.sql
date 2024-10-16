@@ -1,4 +1,9 @@
 /*
+	
+	REFACTOR: 
+		change this to just "querystore_forced_plans" 
+			list is redundant.
+
 
 	vNEXT:	
 		- Switch @TargetDataBASE to @TargetDataBASES - and include @excludedDatabases... 

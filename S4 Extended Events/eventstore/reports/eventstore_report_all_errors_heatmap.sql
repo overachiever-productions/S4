@@ -1,57 +1,70 @@
 /*
 
-	vNEXT:
-		MIGHT make sense to call 'phantom' blocking 'system' blocking instead? 
-		IF I do that here, though, do it in other reports/etc.
+
+	BUG:
+		looks like there's a potential logic-bug with @End ... i.e., if I specify @Start of like 2 weeks ago ... I can leave @End empty? 
+			... i've tried adding in some logic that'll try to set @End to GETUTCDATE()... but I'm not sure that's the right approach? 
+				i mean... i don't want someone specifying a start of 2 years ago... and no end date, right? 
+					or, if they do... it should have to be explicit? 
 
 
-	FODDER: 
-		- Notes/Info about EMPTY processes: 
-			https://dba.stackexchange.com/questions/168646/empty-blocking-process-in-blocked-process-report
-
-
+	EXAMPLE:
+			EXEC [admindb].dbo.[eventstore_report_all_errors_heatmap]
+				@Mode = 'DAY_OF_WEEK',
+				--@Granularity = ?,
+				@Start = '2024-07-01',
+				@MinimumSeverity = 15,
+				--@ErrorIds = ?,
+				@Databases = N'-master';
 
 */
+
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_report_blocked_processes_chronology]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_report_blocked_processes_chronology];
+IF OBJECT_ID('dbo.[eventstore_report_all_errors_heatmap]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_all_errors_heatmap];
 GO
 
-CREATE PROC dbo.[eventstore_report_blocked_processes_chronology]
+CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
+	@Mode						sysname			= N'TIME_OF_DAY',
+	@Granularity				sysname			= N'HOUR', 
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
 	@UseDefaults				bit				= 1, 
-	@IncludeSelfBlocking		bit				= 1, 
-	@IncludePhantomBlocking		bit				= 1,
+	@MinimumSeverity			int				= -1, 
+	@ErrorIds					nvarchar(MAX)	= NULL, 
 	@Databases					nvarchar(MAX)	= NULL,
 	@Applications				nvarchar(MAX)	= NULL, 
 	@Hosts						nvarchar(MAX)	= NULL, 
 	@Principals					nvarchar(MAX)	= NULL,
-	@Statements					nvarchar(MAX)	= NULL
+	@Statements					nvarchar(MAX)	= NULL, 
+	@ExcludeSystemErrors		bit				= 1			
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-	
+
+	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
+	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 
-	SET @IncludeSelfBlocking = ISNULL(@IncludeSelfBlocking, 1);
-	SET @IncludePhantomBlocking = ISNULL(@IncludePhantomBlocking, 1);
+	SET @MinimumSeverity = ISNULL(NULLIF(@MinimumSeverity, 0), -1);
+	SET @ErrorIds = NULLIF(@ErrorIds, N'');
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @Applications = NULLIF(@Applications, N'');
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
-	SET @Statements = NULLIF(@Statements, N'');	
+	SET @Statements = NULLIF(@Statements, N'');
+	SET @ExcludeSystemErrors = ISNULL(@ExcludeSystemErrors, 1);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @eventStoreKey sysname = N'BLOCKED_PROCESSES';
-	DECLARE @reportType sysname = N'PROBLEMS';
+	DECLARE @eventStoreKey sysname = N'ALL_ERRORS';
+	DECLARE @reportType sysname = N'HEATMAP';
 	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
 
 	EXEC @outcome = dbo.[eventstore_get_target_by_key]
@@ -62,13 +75,11 @@ AS
 		RETURN @outcome;
 	
 	IF @UseDefaults = 1 BEGIN
-		PRINT 'Loading Defaults...';
-
 		DECLARE @defaultTimeZone sysname, @defaultStartTime datetime, @defaultPredicates nvarchar(MAX);
 		EXEC dbo.[eventstore_get_report_preferences]
 			@EventStoreKey = @eventStoreKey,
 			@ReportType = @reportType,
-			@Granularity = NULL,
+			@Granularity = @Granularity,
 			@PreferredTimeZone = @defaultTimeZone OUTPUT,
 			@PreferredStartTime = @defaultStartTime OUTPUT,
 			@PreferredPredicates = @defaultPredicates OUTPUT;
@@ -88,11 +99,15 @@ AS
 			FROM  
 				dbo.[split_string](@defaultPredicates, N';', 1);
 
-		IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
- 		IF @Applications IS NULL SELECT @Applications = [value] FROM @predicates WHERE [key] = N'@Applications';
-		IF @Hosts IS NULL SELECT @Hosts = [value] FROM @predicates WHERE [key] = N'@Hosts';
-		IF @Principals IS NULL SELECT @Principals = [value] FROM @predicates WHERE [key] = N'@Principals';
-		IF @Statements IS NULL SELECT @Statements = [value] FROM @predicates WHERE [key] = N'@Statements';
+			IF @Mode IS NULL SELECT @Mode = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Mode';
+			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
+			IF @MinimumSeverity IS NULL SELECT @MinimumSeverity = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinimumSeverity';
+			IF @ErrorIds IS NULL SELECT @ErrorIds = [value] FROM @predicates WHERE [key] = N'@ErrorIds';
+			IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
+ 			IF @Applications IS NULL SELECT @Applications = [value] FROM @predicates WHERE [key] = N'@Applications';
+			IF @Hosts IS NULL SELECT @Hosts = [value] FROM @predicates WHERE [key] = N'@Hosts';
+			IF @Principals IS NULL SELECT @Principals = [value] FROM @predicates WHERE [key] = N'@Principals';
+			IF @Statements IS NULL SELECT @Statements = [value] FROM @predicates WHERE [key] = N'@Statements';
 		END;
 	END;
 
@@ -120,11 +135,55 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Predicate Validation:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	-- N / A
+	IF @MinimumSeverity <> -1 BEGIN 
+		IF @MinimumSeverity < 1 OR @MinimumSeverity > 25 BEGIN 
+			RAISERROR(N'@MinimumSeverity may only be set to a value between 1 and 25.', 16, 1);
+			RETURN -11;
+		END;
+	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Bounding
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	SET @outcome = 0;
+	DECLARE @map xml;
+	
+	EXEC @outcome = dbo.[eventstore_heatmap_frame]
+		@Granularity = @Granularity,
+		--@TimeZone = @TimeZone,
+		@SerializedOutput = @map OUTPUT;
+
+	IF @outcome <> 0 
+		RETURN @outcome;
+
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
+			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
+			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
+		FROM 
+			@map.nodes(N'//time') [data]([row])
+	) 
+
+	SELECT 
+		[block_id],
+		[start_time],
+		[end_time]
+	INTO 
+		#times
+	FROM 
+		shredded 
+	ORDER BY 
+		[block_id];
+	
+	IF @Start IS NULL BEGIN 
+		SELECT 
+			@Start = MIN([start_time]), 
+			@End = MAX([end_time]) 
+		FROM 
+			[#times];
+	END;
+
 	IF @End IS NULL SET @End = GETUTCDATE();
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -134,56 +193,86 @@ AS
 	DECLARE @filters nvarchar(MAX) = N'';
 	DECLARE @joins nvarchar(MAX) = N'';
 
-	CREATE TABLE #metrics (
-		[row_id] int NOT NULL,
-		[timestamp] [datetime2](7) NOT NULL,
-		[database] [nvarchar](128) NOT NULL,
-		[type] sysname NOT NULL,
-		[seconds_blocked] [decimal](24, 2) NOT NULL,
-		[report_id] [int] NOT NULL,
-		[blocking_id] sysname NULL,  -- ''self blockers'' can/will be NULL
-		[blocked_id] sysname NOT NULL,
-		[blocking_xactid] [bigint] NULL,  -- ''self blockers'' can/will be NULL
-		[blocking_request] [nvarchar](MAX) NOT NULL,
-		[blocking_sproc_statement] [nvarchar](MAX) NOT NULL,
-		[blocking_resource_id] [nvarchar](80) NULL,
-		[blocking_resource] [varchar](2000) NOT NULL,
-		[blocking_wait_time] [int] NULL,
-		[blocking_tran_count] [int] NULL,  -- ''self blockers'' can/will be NULL
-		[blocking_isolation_level] [nvarchar](128) NULL,   -- ''self blockers'' can/will be NULL
-		[blocking_status] sysname NULL,
-		[blocking_start_offset] [int] NULL,
-		[blocking_end_offset] [int] NULL,
-		[blocking_host_name] sysname NULL,
-		[blocking_login_name] sysname NULL,
-		[blocking_client_app] sysname NULL,
-		[blocked_xactid] [bigint] NULL,  -- can be NULL
-		[blocked_request] [nvarchar](max) NOT NULL,
-		[blocked_sproc_statement] [nvarchar](max) NOT NULL,
-		[blocked_resource_id] [nvarchar](80) NOT NULL,
-		[blocked_resource] [varchar](2000) NULL,  -- can be NULL if/when there isn''t an existing translation
-		[blocked_wait_time] [int] NOT NULL,
-		[blocked_tran_count] [int] NOT NULL,
-		[blocked_log_used] [int] NOT NULL,
-		[blocked_lock_mode] sysname NULL, -- CAN be NULL
-		[blocked_isolation_level] [nvarchar](128) NULL,
-		[blocked_status] sysname NOT NULL,
-		[blocked_start_offset] [int] NOT NULL,
-		[blocked_end_offset] [int] NOT NULL,
-		[blocked_host_name] sysname NULL,
-		[blocked_login_name] sysname NULL,
-		[blocked_client_app] sysname NULL,
-		[report] [xml] NOT NULL
+	CREATE TABLE #metrics ( 
+		[error_timestamp] datetime NOT NULL,  
+		[error_number] int NOT NULL
 	);
+	CREATE NONCLUSTERED INDEX #metrics_error_id ON [#metrics] ([error_number]);
 
-	CREATE CLUSTERED INDEX CLIX_#metrics_by_report_id ON [#metrics] ([report_id]);
+	IF @MinimumSeverity <> -1 BEGIN 
+		SET @filters = @filters + @crlftab + N'AND Severity >= ' + CAST(@MinimumSeverity AS sysname); 
+	END;
 
-	/*  NOTE: 
-			@IncludeSelfBlocking and @IncludePhantomBlocking
-				Are handled as 'post-predicates' (i.e., they're SIMPLY deleted if not wanted.
-	*/
+	IF @ErrorIds IS NOT NULL BEGIN 
+		DECLARE @rawErrorValues TABLE ( 
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[error_value] sysname NOT NULL 
+		); 
 
-	DECLARE @rowId int;
+		CREATE TABLE #expandedErrorIds (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[error_number] int, 
+			[is_exclude] bit DEFAULT (0),
+			PRIMARY KEY CLUSTERED ([is_exclude], [error_number]) 
+		);
+
+		INSERT INTO @rawErrorValues ([error_value])
+		SELECT [result] FROM [dbo].[split_string](@ErrorIds, N',', 1);
+
+		INSERT INTO [#expandedErrorIds] ([error_number], [is_exclude])
+		SELECT 
+			ABS(CAST([error_value] AS int)) [error_number],
+			CASE WHEN [error_value] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
+		FROM 
+			@rawErrorValues 
+		WHERE 
+			[error_value] NOT LIKE N'%{%';
+
+		IF EXISTS (SELECT NULL FROM @rawErrorValues WHERE [error_value] LIKE N'%{%') BEGIN 
+			DECLARE @rowId int; 
+			DECLARE @errorValue sysname; 
+
+			DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+			SELECT 
+				[row_id], 
+				[error_value]
+			FROM 
+				@rawErrorValues 
+			WHERE 
+				[error_value] LIKE N'%{%';
+
+			OPEN [walker];
+			FETCH NEXT FROM [walker] INTO @rowId, @errorValue;
+			
+			WHILE @@FETCH_STATUS = 0 BEGIN
+			
+				INSERT INTO [#expandedErrorIds] ([error_number], [is_exclude])
+				SELECT 
+					x.[error_id], 
+					CASE WHEN @errorValue LIKE N'-%' THEN 1 ELSE 0 END
+				FROM 
+					dbo.[eventstore_translate_error_token](@errorValue) x
+				WHERE 
+					x.[error_id] NOT IN (SELECT [error_number] FROM [#expandedErrorIds]);
+			
+				FETCH NEXT FROM [walker] INTO @rowId, @errorValue;
+			END;
+			
+			CLOSE [walker];
+			DEALLOCATE [walker];
+		END;
+
+		IF EXISTS (SELECT NULL FROM [#expandedErrorIds] WHERE [is_exclude] = 0) BEGIN 
+			SET @joins = @joins + @crlftab + N'INNER JOIN [#expandedErrorIds] [r] ON [r].[is_exclude] = 0 AND [e].[error_number] = [r].[error_number]';
+		END;
+
+		IF EXISTS (SELECT NULL FROM [#expandedErrorIds] WHERE [is_exclude] = 1) BEGIN 
+			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#expandedErrorIds] [x] ON [x].[is_exclude] = 1 AND [e].[error_number] = [x].[error_number]';
+			SET @filters = @filters + @crlftab + N'AND [x].[error_number] IS NULL';
+		END;
+	END;
+
+
 	IF @Databases IS NOT NULL BEGIN 
 		DECLARE @databasesValues table (
 			[row_id] int IDENTITY(1,1) NOT NULL, 
@@ -374,57 +463,18 @@ AS
 		END;
 	END;
 
+	IF @ExcludeSystemErrors = 1 BEGIN 
+		SET @filters = @filters + @crlftab + N'AND [e].[is_system] = 0';
+	END;
+
 	DECLARE @sql nvarchar(MAX) = N'SELECT 
-	[e].[row_id],
-	[e].[timestamp],
-	[e].[database],
-	CASE 
-		WHEN [e].[blocked_xactid] IS NOT NULL AND [e].[blocking_xactid] IS NOT NULL THEN N''STANDARD''
-		WHEN [e].[blocked_xactid] IS NOT NULL AND [e].[blocking_xactid] IS NULL THEN N''SELF''
-		WHEN [e].[blocked_xactid] IS NULL AND [e].[blocking_xactid] IS NOT NULL THEN ''PHANTOM''
-	END [type],
-	[e].[seconds_blocked],
-	[e].[report_id],
-	[e].[blocking_id],
-	[e].[blocked_id],
-	[e].[blocking_xactid],
-	[e].[blocking_request],
-	[e].[blocking_sproc_statement],
-	[e].[blocking_resource_id],
-	[e].[blocking_resource],
-	[e].[blocking_wait_time],
-	[e].[blocking_tran_count],
-	[e].[blocking_isolation_level],
-	[e].[blocking_status],
-	[e].[blocking_start_offset],
-	[e].[blocking_end_offset],
-	[e].[blocking_host_name],
-	[e].[blocking_login_name],
-	[e].[blocking_client_app],
-	[e].[blocked_xactid],
-	[e].[blocked_request],
-	[e].[blocked_sproc_statement],
-	[e].[blocked_resource_id],
-	[e].[blocked_resource],
-	[e].[blocked_wait_time],
-	[e].[blocked_tran_count],
-	[e].[blocked_log_used],
-	[e].[blocked_lock_mode],
-	[e].[blocked_isolation_level],
-	[e].[blocked_status],
-	[e].[blocked_start_offset],
-	[e].[blocked_end_offset],
-	[e].[blocked_host_name],
-	[e].[blocked_login_name],
-	[e].[blocked_client_app],
-	[e].[report] 
+	[e].[timestamp] [error_timestamp], 
+	[e].[error_number]
 FROM 
 	{SourceTable} [e]{joins}
 WHERE 
 	[e].[timestamp] >= @Start 
-	AND [e].[timestamp] <= @End{filters}
-ORDER BY 
-	[e].[row_id]';
+	AND [e].[timestamp] <= @End{filters};'
 
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @fullyQualifiedTargetTable);
 	SET @sql = REPLACE(@sql, N'{joins}', @joins);
@@ -442,48 +492,10 @@ ORDER BY
 
 	PRINT @timeRangeString;
 	PRINT N'';
-	
-	INSERT INTO [#metrics]
-	(
-		[row_id],
-		[timestamp],
-		[database],
-		[type],
-		[seconds_blocked],
-		[report_id],
-		[blocking_id],
-		[blocked_id],
-		[blocking_xactid],
-		[blocking_request],
-		[blocking_sproc_statement],
-		[blocking_resource_id],
-		[blocking_resource],
-		[blocking_wait_time],
-		[blocking_tran_count],
-		[blocking_isolation_level],
-		[blocking_status],
-		[blocking_start_offset],
-		[blocking_end_offset],
-		[blocking_host_name],
-		[blocking_login_name],
-		[blocking_client_app],
-		[blocked_xactid],
-		[blocked_request],
-		[blocked_sproc_statement],
-		[blocked_resource_id],
-		[blocked_resource],
-		[blocked_wait_time],
-		[blocked_tran_count],
-		[blocked_log_used],
-		[blocked_lock_mode],
-		[blocked_isolation_level],
-		[blocked_status],
-		[blocked_start_offset],
-		[blocked_end_offset],
-		[blocked_host_name],
-		[blocked_login_name],
-		[blocked_client_app],
-		[report]
+
+	INSERT INTO [#metrics] (
+		[error_timestamp],
+		[error_number]
 	)
 	EXEC sys.sp_executesql 
 		@sql, 
@@ -491,154 +503,161 @@ ORDER BY
 		@Start = @Start, 
 		@End = @End;
 
-	/* 'Post Predicates' */
-	IF @IncludeSelfBlocking = 0 BEGIN 
-		DELETE FROM [#metrics] WHERE [type] = N'SELF';
-	END;
-
-	IF @IncludePhantomBlocking = 0 BEGIN 
-		DELETE FROM [#metrics] WHERE [type] = N'PHANTOM';
-	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Correlate:
+	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	WITH leads AS (		
+	IF @Mode = N'TIME_OF_DAY' BEGIN
 	
-		SELECT report_id, blocking_id
-		FROM [#metrics] 
-
-		EXCEPT 
-
-		SELECT report_id, blocked_id
-		FROM [#metrics] 
-
-	), 
-	chain AS ( 
+		SET @sql = N'WITH correlated AS ( 
+			SELECT 
+				[t].[block_id], 
+				[m].[error_number]				
+			FROM 
+				[#times] [t] 
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
+		), 
+		aggregated AS ( 
+			SELECT 
+				[block_id], 
+				COUNT(*) [errors], 
+				COUNT(DISTINCT [error_number]) [distinct_errors]
+			FROM 
+				[correlated] 
+			WHERE 
+				[error_number] IS NOT NULL 
+			GROUP BY 
+				[block_id]
+		)
+		
 		SELECT 
-			report_id, 
-			0 AS [level],
-			blocking_id, 
-			CAST(blocking_id AS sysname) [blocking_chain]
+			FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
+			ISNULL([a].[errors], 0) [total_errors], 
+			ISNULL([a].[distinct_errors], 0) [distinct_errors]
 		FROM 
-			leads 
+			[#times] [t]
+			LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
+		ORDER BY
+			[t].[block_id]; ';
 
-		UNION ALL 
+		IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
+			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+		  END; 
+		ELSE 
+			SET @sql = REPLACE(@sql, N'{local_zone}', N'');
 
-		SELECT 
-			base.report_id, 
-			c.[level] + 1 [level],
-			base.blocked_id, 
-			CAST(c.[blocking_chain] + N' -> ' + CAST(base.blocked_id AS nvarchar(10)) AS sysname)
-		FROM 
-			[#metrics] base 
-			INNER JOIN chain c ON base.report_id = c.report_id AND base.blocking_id = c.blocking_id 
-	)
+		EXEC sys.[sp_executesql] 
+			@sql;
 
-	SELECT 
-		[report_id],
-		[level],
-		[blocking_id],
-		[blocking_chain]
-	INTO 
-		#chain
-	FROM 
-		chain
-	WHERE 
-		[level] <> 0;
-
-	SELECT 
-		report_id, 
-		MIN([timestamp]) [timestamp], 
-		COUNT(*) [process_count]
-	INTO 
-		#aggregated
-	FROM 
-		[#metrics]
-	GROUP BY 
-		[report_id];
+		RETURN 0;
+	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Final Projection:
+	-- TIME_OF_WEEK
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	WITH normalized AS ( 
-		SELECT 
-			ISNULL([c].[level], -1) [level],
-			[m].[blocking_id],
-			[m].[blocked_id],
-			LAG([m].[report_id], 1, 0) OVER (ORDER BY [m].[report_id], ISNULL([c].[level], -1)) [previous_report_id],
+	PRINT N'KEY: total_errors (distinct_error_ids)';
 
-			[m].[report_id] [original_report_id],
-			[m].[timestamp],
-			[m].[type],
-			[m].[database],
-			[a].[process_count],
+	ALTER TABLE [#times] ADD [Sunday] sysname NULL;
+	ALTER TABLE [#times] ADD [Monday] sysname NULL;
+	ALTER TABLE [#times] ADD [Tuesday] sysname NULL;
+	ALTER TABLE [#times] ADD [Wednesday] sysname NULL;
+	ALTER TABLE [#times] ADD [Thursday] sysname NULL;
+	ALTER TABLE [#times] ADD [Friday] sysname NULL;
+	ALTER TABLE [#times] ADD [Saturday] sysname NULL;	
 
-			ISNULL([c].[blocking_chain], N'    ' + CAST([m].[blocked_id] AS sysname) + N' -> (' + CAST([m].[blocked_id] AS sysname) + N')') [blocking_chain],
-			
-			dbo.[format_timespan]([m].[blocked_wait_time]) [time_blocked],
-			
-			CASE WHEN [m].[blocking_id] IS NULL THEN N'<blocking-self>' ELSE [m].[blocking_status] END [blocking_status],
-			[m].[blocking_isolation_level],
-			CASE WHEN [m].[blocking_id] IS NULL THEN N'(' + CAST([m].[blocked_xactid] AS sysname) + N')' ELSE CAST([m].[blocking_xactid] AS sysname) END [blocking_xactid],
-			CASE WHEN [m].[blocking_tran_count] IS NULL THEN N'(' + CAST([m].[blocked_tran_count] AS sysname) + N')' ELSE CAST([m].[blocking_tran_count] AS sysname) END [blocking_tran_count],
-			CASE WHEN [m].blocking_request LIKE N'%Object Id = [0-9]%' THEN [m].[blocking_request] + N' --> ' + ISNULL([m].[blocking_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([m].[blocking_request], N'') END [blocking_request],
-			[m].[blocking_resource],
+	CREATE TABLE #days ( 
+		[day_id] int IDENTITY(1,1), 
+		[day_name] sysname 
+	); 	
 
-			-- blocked... 
-			[m].[blocked_status], -- always suspended or background - but background can be important to know... 
-			[m].[blocked_isolation_level],
-			[m].[blocked_xactid],
-			[m].[blocked_tran_count],
-			[m].[blocked_log_used],
-			
-			CASE WHEN [m].[blocked_request] LIKE N'%Object Id = [0-9]%' THEN [m].[blocked_request] + N' --> ' + ISNULL([m].[blocked_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([m].[blocked_request], N'') END [blocked_request],
-			[m].[blocked_resource],
-			[m].[blocking_host_name],
-			[m].[blocking_login_name],
-			[m].[blocking_client_app],
-			[m].[blocked_host_name],
-			[m].[blocked_login_name],
-			[m].[blocked_client_app],
-			[m].[report]
-		FROM 
-			[#metrics] [m]
-			LEFT OUTER JOIN [#aggregated] a ON [m].[report_id] = [a].[report_id]
-			LEFT OUTER JOIN [#chain] c ON [m].[report_id] = [c].[report_id] AND [m].[blocked_id] = c.[blocking_id]
-	)
+	INSERT INTO [#days] ([day_name])
+	VALUES (N'Sunday'), (N'Monday'), (N'Tuesday'), (N'Wednesday'), (N'Thursday'), (N'Friday'), (N'Saturday');
 
+	DECLARE @currentDayID int;
+	DECLARE @currentDayName sysname;
+
+	DECLARE @select nvarchar(MAX) = N'WITH correlated AS ( 
 	SELECT 
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CONVERT(sysname, [timestamp], 121) END [utc_timestamp],
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE [type] END [blocking_type],
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE [database] END [database_name],
-		
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CAST([process_count] AS sysname) END [process_count],
-		[blocking_chain],
-		[time_blocked],
-		[blocking_status],
-		[blocking_isolation_level],
-		[blocking_xactid],
-		[blocking_tran_count],
-		[blocking_request],
-		[blocking_resource],
-		[blocked_status],
-		[blocked_isolation_level],
-		[blocked_xactid],
-		[blocked_tran_count],
-		[blocked_log_used],
-		[blocked_request],
-		[blocked_resource],
-		[blocking_host_name],
-		[blocking_login_name],
-		[blocking_client_app],
-		[blocked_host_name],
-		[blocked_login_name],
-		[blocked_client_app],
-		[report] 
+		[t].[block_id], 
+		[m].[error_number]
 	FROM 
-		[normalized] 
+		[#times] [t]
+		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[error_timestamp]) = @currentDayID
+			AND (CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] as time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] as time))
+	WHERE 
+		[m].[error_timestamp] IS NOT NULL
+), 
+currentDayMetrics AS (
+	SELECT 
+		[block_id],
+		CAST(COUNT(*) as sysname) + N'' ('' + FORMAT(COUNT(DISTINCT [error_number]), ''N0'') + N'')'' [data]
+	FROM 
+		[correlated]
+	GROUP BY 
+		[block_id]
+)';
+
+	DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[day_id], 
+		[day_name]
+	FROM 
+		[#days]
 	ORDER BY 
-		[original_report_id], [level];
+		[day_id];
+	
+	OPEN [walker];
+	FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
+	
+	WHILE @@FETCH_STATUS = 0 BEGIN
+	
+		SET @sql = N'{select}
+
+UPDATE [t]
+SET 
+	[t].[{currentDayName}] = [m].[data]
+FROM 
+	[#times] [t]
+	INNER JOIN [currentDayMetrics] [m] ON [t].[block_id] = [m].[block_id];';
+	
+		SET @sql = REPLACE(@sql, N'{select}', @select);
+		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
+			
+		--EXEC dbo.[print_long_string] @sql;
+		EXEC sys.sp_executesql 
+			@sql, 
+			N'@currentDayID int', 
+			@currentDayID = @currentDayID;
+	
+		FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
+	END;
+	
+	CLOSE [walker];
+	DEALLOCATE [walker];
+
+	SET @sql = N'SELECT 
+	FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
+	N'' '' [ ],
+	ISNULL([Sunday], N''-'') [Sunday],  
+	ISNULL([Monday], N''-'') [Monday],
+	ISNULL([Tuesday], N''-'') [Tuesday],
+	ISNULL([Wednesday], N''-'') [Wednesday],
+	ISNULL([Thursday], N''-'') [Thursday],
+	ISNULL([Friday], N''-'') [Friday],
+	ISNULL([Saturday], N''-'') [Saturday]
+FROM 
+	[#times] [t]
+ORDER BY 
+	[block_id];';
+
+	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
+		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+	  END; 
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+
+	EXEC sys.[sp_executesql] 
+		@sql;	
 
 	RETURN 0;
 GO

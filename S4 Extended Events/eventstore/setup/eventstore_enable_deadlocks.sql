@@ -58,7 +58,8 @@ AS
 	[statement] [nvarchar](MAX) NULL,
 	[input_buffer] [nvarchar](MAX) NULL,
 	[deadlock_graph] [xml] NULL
-);';
+)
+WITH (DATA_COMPRESSION = PAGE);';
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Session Definition:

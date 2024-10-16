@@ -36,6 +36,14 @@ IF NOT EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = 'admindb') B
 END;
 GO
 
+USE [master];
+GO
+
+IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = N'admindb' AND [is_broker_enabled] = 1) BEGIN
+	ALTER DATABASE [admindb] SET DISABLE_BROKER; -- not needed, so no sense having it enabled (whereas, the model db on most systems has broker enabled). 
+END;
+GO
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 2. Core Tables:
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -80,6 +88,9 @@ END;
 GO
 
 -----------------------------------
+--##INCLUDE: Common\tables\numbers.sql
+
+-----------------------------------
 --##INCLUDE: Common\tables\backup_log.sql
 
 -----------------------------------
@@ -96,6 +107,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\tables\eventstore_settings.sql
+
+-----------------------------------
+--##INCLUDE: Common\tables\eventstore_report_preferences.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
@@ -153,6 +167,8 @@ DECLARE @obsoleteObjects xml = CONVERT(xml, N'
             <heading>WARNING - Potential Configuration Changes Required (disk-space checks)</heading>
         </notification>
     </entry>
+    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes).">
+    </entry>
 </list>');
 
 EXEC dbo.drop_obsolete_objects @obsoleteObjects, N'master';
@@ -204,6 +220,10 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 
 	<entry schema="dbo" name="fix_orphaned_logins" type="P" comment="v11.1 - Renamed from dbo.fix_orphaned_logins - which doesn''t make sense - we''re fixing USERs." />
 	<entry schema="dbo" name="alter_jobstep_body" type="P" comment="v11.1 - Renamed from dbo.alter_jobstep_body - to toy with test of &lt;object&gt;-&lt;verb&gt; naming conventions for some things?" />
+
+	<entry schema="dbo" name="plancache_columns_by_index" type="P" comment="v12.1 refactoring." />
+	<entry schema="dbo" name="plancache_columns_by_table" type="P" comment="v12.1 refactoring." />
+	<entry schema="dbo" name="plancache_metrics_for_index" type="P" comment="v12.1 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -293,8 +313,8 @@ IF (SELECT admindb.dbo.get_s4_version('##{{S4version}}')) < 7.0 BEGIN
 	FROM 
 		[matches] m 
 		INNER JOIN [msdb].dbo.[sysjobs] j ON m.[job_id] = j.[job_id];
-
 END;
+GO
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Deploy new/updated code.
@@ -322,7 +342,7 @@ GO
 --##INCLUDE: Common\Setup\verify_advanced_capabilities.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
--- Common and Utilities:
+-- Common Utilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -404,10 +424,13 @@ GO
 --##INCLUDE: Common\get_timezone_offset_minutes.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\count_matches.sql
+--##INCLUDE: S4 Utilities\print_long_string.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
+--##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\count_matches.sql
 
 -----------------------------------
 --##INCLUDE: Common\execute_uncatchable_command.sql
@@ -431,9 +454,6 @@ GO
 --##INCLUDE: S4 Utilities\shred_string.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\print_long_string.sql
-
------------------------------------
 --##INCLUDE: Common\Internal\get_executing_dbname.sql
 
 -----------------------------------
@@ -444,7 +464,16 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_header_details.sql
+
+-----------------------------------
 --##INCLUDE: S4 Backups\Utilities\log_backup_history_detail.sql
+
+-----------------------------------
+--##INCLUDE: S4 Backups\Utilities\validate_retention.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\Utilities\remove_backup_files.sql
@@ -551,13 +580,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
-
------------------------------------
---##INCLUDE: S4 Restore\Utilities\load_header_details.sql
-
------------------------------------
 --##INCLUDE: S4 Restore\Utilities\parse_backup_filename_timestamp.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Reports\report_rpo_restore_violations.sql
 
 -----------------------------------
 --##INCLUDE: S4 Restore\restore_databases.sql
@@ -594,7 +620,7 @@ GO
 --##INCLUDE: S4 Performance\list_cpu_history.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
---- Migration
+--- Migration:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -610,7 +636,32 @@ GO
 --##INCLUDE: S4 Migration\disable_and_script_logins.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
---- Monitoring
+--- SQL Server Agent Jobs
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\list_running_jobs.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\is_job_running.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_alter.sql
+
+-----------------------------------
+--##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_get.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+--- Monitoring:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
@@ -642,10 +693,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
+--##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
+--##INCLUDE: S4 Diagnostics\Indexes\list_index_metrics.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\help_index.sql
@@ -654,16 +705,19 @@ GO
 --##INCLUDE: S4 Diagnostics\Indexes\list_heaps.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\list_problem_heaps.sql
+--##INCLUDE: S4 Diagnostics\Indexes\list_heap_problems.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\plancache_columns_by_index.sql
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_columns_by_table.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\plancache_columns_by_table.sql
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_metrics_for_index.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\Indexes\plancache_metrics_for_index.sql
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_columns_by_index.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_statistics_by_table.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
@@ -681,7 +735,16 @@ GO
 --##INCLUDE: S4 Diagnostics\QueryStore\view_querystore_counts.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_compilation_consumers.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_list_forced_plans.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\VersionStore\list_versionstore_transactions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\VersionStore\list_versionstore_generators.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Extended Events
@@ -689,6 +752,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\utilities\list_xe_sessions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_target_by_key.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_translate_error_token.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\core\eventstore_initialize_extraction.sql
@@ -745,7 +814,19 @@ GO
 --##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_error_counts.sql
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_get_report_preferences.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_chronology.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_heatmap.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_problems.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronology.sql
@@ -792,9 +873,6 @@ GO
 --##INCLUDE: S4 Utilities\extract_code_lines.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
-
------------------------------------
 --##INCLUDE: S4 Utilities\is_xml_empty.sql
 
 -----------------------------------
@@ -822,6 +900,21 @@ GO
 --##INCLUDE: S4 Utilities\kill_connections_by_statement.sql
 
 -----------------------------------
+--##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\kill_long_running_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
+
+-----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_install_modules.sql
 
 -----------------------------------
@@ -833,9 +926,6 @@ GO
 -----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_verify_bucket_write.sql
 
------------------------------------
---##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Idioms
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -845,31 +935,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Idioms\blueprints\blueprint_for_batched_operation.sql
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
---- SQL Server Agent Jobs
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
------------------------------------
---##INCLUDE: S4 Jobs\list_running_jobs.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\is_job_running.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\translate_program_name_to_agent_job.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\get_last_job_completion.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\get_last_job_completion_by_session_id.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_alter.sql
-
------------------------------------
---##INCLUDE: S4 Jobs\job_synchronization\jobstep_body_get.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Resource Governor

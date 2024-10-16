@@ -25,7 +25,7 @@ IF OBJECT_ID('dbo.split_string','TF') IS NOT NULL
 GO
 
 CREATE FUNCTION dbo.split_string(@serialized nvarchar(MAX), @delimiter nvarchar(20), @TrimResults bit)
-RETURNS @Results TABLE (row_id int IDENTITY NOT NULL, result nvarchar(MAX))
+RETURNS @Results table (row_id int IDENTITY NOT NULL, result nvarchar(MAX))
 	--WITH SCHEMABINDING
 AS 
 	BEGIN
@@ -56,10 +56,7 @@ AS
 			DECLARE @MaxLength int = LEN(@serialized) + LEN(@delimiter);
 
 			WITH tally (n) AS ( 
-				SELECT TOP (@MaxLength) 
-					ROW_NUMBER() OVER (ORDER BY o1.[name]) AS n
-				FROM sys.all_objects o1 
-				CROSS JOIN sys.all_objects o2
+				SELECT TOP (@MaxLength) [number] FROM dbo.numbers ORDER BY [number]
 			)
 
 			INSERT INTO @Results ([result])
@@ -78,7 +75,6 @@ AS
 		IF @TrimResults = 1 BEGIN
 			UPDATE @Results SET [result] = LTRIM(RTRIM([result])) WHERE DATALENGTH([result]) > 0;
 		END;
-
 	END;
 
 	RETURN;

@@ -6,7 +6,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_top','P') IS NOT NULL
+IF OBJECT_ID('dbo.[list_top]','P') IS NOT NULL
 	DROP PROC dbo.[list_top];
 GO
 
@@ -35,6 +35,7 @@ AS
 		r.command, 
 		s.[program_name],
 		s.[host_name],
+		s.[login_name],
 		r.percent_complete,
 		CASE s.transaction_isolation_level 
 			WHEN 0 THEN 'Unspecified' 
@@ -47,7 +48,7 @@ AS
 		r.open_transaction_count [open_tran],
 		TRY_CAST(tqp.query_plan AS xml) [statement_plan],
 		p.query_plan [batch_plan],  -- plan for entire operation/query
-		r.plan_handle
+		r.[plan_handle]
 	FROM 
 		sys.dm_exec_requests r
 		INNER JOIN (

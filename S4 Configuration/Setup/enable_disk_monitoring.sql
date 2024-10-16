@@ -110,7 +110,7 @@ AS
 		@TargetJobName = @DriveCheckJobName,
 		@JobCategoryName = @JobCategoryName,
 		@AddBlankInitialJobStep = 0,	-- this isn't usually a long-running job - so it doesn't need this... 
-		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJob,
 		@JobID = @jobId OUTPUT;
 	

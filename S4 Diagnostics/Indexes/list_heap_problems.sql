@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_problem_heaps','P') IS NOT NULL
-	DROP PROC dbo.[list_problem_heaps];
+IF OBJECT_ID('dbo.[list_heap_problems]','P') IS NOT NULL
+	DROP PROC dbo.[list_heap_problems];
 GO
 
-CREATE PROC dbo.[list_problem_heaps]
+CREATE PROC dbo.[list_heap_problems]
 	@TargetDatabase							sysname, 
 	@PageUsagePercentBelowThreshold			decimal(5,2)	= 20.0
 AS

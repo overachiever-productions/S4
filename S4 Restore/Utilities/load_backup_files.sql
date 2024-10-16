@@ -1,7 +1,7 @@
 /*
 
 	ADMINDB: 
-		- This needs a full-ish rewrite - something where the primary focus is more on LSNs than timestamps. 
+		- This needs a full-ish rewrite - something where the primary focus is more on LSNs than timestamps (ish. Because loading LSNs is EXPENSIVE and it causes file access errors if/when something else is working on a target file we want to pull header info from).
 		- And, needs to account for equivalent of @StopAt logic as well - right out of the gate. 
 		- I think it probably also makes more sense to get a full list of all files to restore based on the FULL ... 
 		-		i.e., if RESTORE-type = FULL, don't just get the last FULL, get FULL + DIFF + LOG - based on whether or not LOGs are to be applied or not. 
@@ -89,14 +89,14 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.load_backup_files','P') IS NOT NULL
-	DROP PROC dbo.load_backup_files;
+IF OBJECT_ID('dbo.[load_backup_files]','P') IS NOT NULL
+	DROP PROC dbo.[load_backup_files];
 GO
 
-CREATE PROC dbo.load_backup_files 
+CREATE PROC dbo.[load_backup_files] 
 	@DatabaseToRestore			sysname,
 	@SourcePath					nvarchar(400), 
-	@Mode						sysname,				-- FULL | DIFF | LOG | LIST			-- where LIST = 'raw'/translated results.
+	@Mode						sysname,				-- FULL | DIFF | LOG | REMOVE			-- Where REMOVE is for use via dbo.remove_backup_files (and was, once, 'LIST').
 	@LastAppliedFile			nvarchar(400)			= NULL,	  -- Hmmm. 260 chars is max prior to Windows Server 2016 - and need a REGISTRY tweak to support 1024: https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
 -- TODO: 
 -- REFACTOR: call this @BackupFinishTimeOfLastAppliedBackup ... er, well, that's what this IS... it's NOT the FINISH time of the last APPLY operation. 
@@ -113,7 +113,9 @@ AS
     -- Dependencies Validation:
 	EXEC dbo.verify_advanced_capabilities;
 
-	IF @Mode NOT IN (N'FULL',N'DIFF',N'LOG',N'LIST') BEGIN;
+	SET @Mode = UPPER(@Mode);
+
+	IF @Mode NOT IN (N'FULL', N'DIFF', N'LOG', N'REMOVE') BEGIN;
 		RAISERROR('Configuration Error: Invalid @Mode specified.', 16, 1);
 		SET @Output = NULL;
 		RETURN -1;
@@ -247,130 +249,142 @@ AS
 			c) compare vs DIFF/FULL and see if overlaps 
 			d) if, so, 'bump' timestamp of LOG forward by .5 seconds - so it's now 'after' the FULL/DIFF.
 	*/
-	IF EXISTS (SELECT NULL FROM #orderedResults GROUP BY [timestamp] HAVING COUNT(*) > 1) BEGIN 
+	IF @Mode <> N'REMOVE' BEGIN
+		IF EXISTS (SELECT NULL FROM #orderedResults GROUP BY [timestamp] HAVING COUNT(*) > 1) BEGIN 
 
-		WITH duplicates AS ( 		
-			SELECT  
-				[timestamp], 
-				COUNT(*) [x], 
-				ROW_NUMBER() OVER (ORDER BY [timestamp]) [duplicate_id]
-			FROM 
-				#orderedResults 
-			GROUP BY	
-				[timestamp]
-			HAVING 
-				COUNT(*) > 1
-		) 
+			WITH duplicates AS ( 		
+				SELECT  
+					[timestamp], 
+					COUNT(*) [x], 
+					ROW_NUMBER() OVER (ORDER BY [timestamp]) [duplicate_id]
+				FROM 
+					#orderedResults 
+				GROUP BY	
+					[timestamp]
+				HAVING 
+					COUNT(*) > 1
+			) 
 
-		UPDATE x 
-		SET 
-			x.[duplicate_id] = d.[duplicate_id]
-		FROM 
-			#orderedResults x 
-			INNER JOIN [duplicates] d ON [x].[timestamp] = [d].[timestamp];
-		
-		DECLARE @duplicateTimestampFile varchar(500);
-		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
-		SELECT 
-			[output]
-		FROM 
-			#orderedResults 
-		WHERE  
-			[duplicate_id] IS NOT NULL 
-		ORDER BY 
-			[duplicate_id];
-		
-		OPEN [walker];
-		FETCH NEXT FROM [walker] INTO @duplicateTimestampFile;
-		
-		WHILE @@FETCH_STATUS = 0 BEGIN
-		
-			SET @headerFullPath = @SourcePath + N'\' + @duplicateTimestampFile;
-			SET @firstLSN = NULL;
-			SET @lastLSN = NULL;			
-		
-			EXEC dbo.[load_header_details]
-				@BackupPath = @headerFullPath,
-				@BackupDate = NULL,
-				@BackupSize = NULL,
-				@Compressed = NULL,
-				@Encrypted = NULL,
-				@FirstLSN = @firstLSN OUTPUT,
-				@LastLSN = @lastLSN OUTPUT; 
-
-			UPDATE #orderedResults 
+			UPDATE x 
 			SET 
-				[first_lsn] = @firstLSN, 
-				[last_lsn] = @lastLSN
-			WHERE 
-				[output] = @duplicateTimestampFile;
-
-			FETCH NEXT FROM [walker] INTO @duplicateTimestampFile;
-		END;
+				x.[duplicate_id] = d.[duplicate_id]
+			FROM 
+				#orderedResults x 
+				INNER JOIN [duplicates] d ON [x].[timestamp] = [d].[timestamp];
 		
-		CLOSE [walker];
-		DEALLOCATE [walker];
-
-		DECLARE @duplicateID int = 1; 
-		DECLARE @maxDuplicateID int = (SELECT MAX(duplicate_id) FROM #orderedResults); 
-
-		DECLARE @logFirstLSN decimal(25,0), @logLastLSN decimal(25,0), @fullOrDiffLastLSN decimal(25,2);
-
-		WHILE @duplicateID <= @maxDuplicateID BEGIN 
-
-			SELECT
-				@logFirstLSN = first_lsn, 
-				@logLastLSN = last_lsn
-			FROM 
-				#orderedResults 
-			WHERE 
-				[duplicate_id] = @duplicateID 
-				AND [output] LIKE 'LOG%'
-
+			DECLARE @duplicateTimestampFile varchar(500);
+			DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 			SELECT 
-				@fullOrDiffLastLSN = last_lsn 
+				[output]
 			FROM 
 				#orderedResults 
-			WHERE 
-				[duplicate_id] = @duplicateID 
-				AND [output] NOT LIKE 'LOG%'
+			WHERE  
+				[duplicate_id] IS NOT NULL 
+			ORDER BY 
+				[duplicate_id];
+		
+			OPEN [walker];
+			FETCH NEXT FROM [walker] INTO @duplicateTimestampFile;
+		
+			WHILE @@FETCH_STATUS = 0 BEGIN
+		
+				SET @headerFullPath = @SourcePath + N'\' + @duplicateTimestampFile;
+				SET @firstLSN = NULL;
+				SET @lastLSN = NULL;			
+		
+				EXEC dbo.[load_header_details]
+					@BackupPath = @headerFullPath,
+					@BackupDate = NULL,
+					@BackupSize = NULL,
+					@Compressed = NULL,
+					@Encrypted = NULL,
+					@FirstLSN = @firstLSN OUTPUT,
+					@LastLSN = @lastLSN OUTPUT; 
 
-			IF @logFirstLSN <= @fullOrDiffLastLSN AND @logLastLSN >= @fullOrDiffLastLSN BEGIN 
 				UPDATE #orderedResults 
 				SET 
-					[modified_timestamp] = DATEADD(MILLISECOND, 500, [timestamp])
+					[first_lsn] = @firstLSN, 
+					[last_lsn] = @lastLSN
+				WHERE 
+					[output] = @duplicateTimestampFile;
+
+				FETCH NEXT FROM [walker] INTO @duplicateTimestampFile;
+			END;
+		
+			CLOSE [walker];
+			DEALLOCATE [walker];
+
+			DECLARE @duplicateID int = 1; 
+			DECLARE @maxDuplicateID int = (SELECT MAX(duplicate_id) FROM #orderedResults); 
+
+			DECLARE @logFirstLSN decimal(25,0), @logLastLSN decimal(25,0), @fullOrDiffLastLSN decimal(25,2);
+
+			WHILE @duplicateID <= @maxDuplicateID BEGIN 
+
+				SELECT
+					@logFirstLSN = first_lsn, 
+					@logLastLSN = last_lsn
+				FROM 
+					#orderedResults 
 				WHERE 
 					[duplicate_id] = @duplicateID 
 					AND [output] LIKE 'LOG%'
+
+				SELECT 
+					@fullOrDiffLastLSN = last_lsn 
+				FROM 
+					#orderedResults 
+				WHERE 
+					[duplicate_id] = @duplicateID 
+					AND [output] NOT LIKE 'LOG%'
+
+				IF @logFirstLSN <= @fullOrDiffLastLSN AND @logLastLSN >= @fullOrDiffLastLSN BEGIN 
+					UPDATE #orderedResults 
+					SET 
+						[modified_timestamp] = DATEADD(MILLISECOND, 500, [timestamp])
+					WHERE 
+						[duplicate_id] = @duplicateID 
+						AND [output] LIKE 'LOG%'
+				END;
+
+				SET @duplicateID = @duplicateID +1; 
 			END;
 
-			SET @duplicateID = @duplicateID +1; 
+			IF EXISTS (SELECT NULL FROM #orderedResults WHERE [modified_timestamp] IS NOT NULL) BEGIN 
+				UPDATE #orderedResults 
+				SET 
+					[timestamp] = [modified_timestamp]
+				WHERE 
+					[modified_timestamp] IS NOT NULL;
+			END;
 		END;
-
-		IF EXISTS (SELECT NULL FROM #orderedResults WHERE [modified_timestamp] IS NOT NULL) BEGIN 
-			UPDATE #orderedResults 
-			SET 
-				[timestamp] = [modified_timestamp]
-			WHERE 
-				[modified_timestamp] IS NOT NULL;
-		END;
-		
 	END;
-
 	/*
 		Need to account for a scenario where FULL/DIFF backup EXTENDS to or past the end of a T-LOG Backup running concurrently
 		What follows below is a BIT of a hack... because it only looks for LSNs when we're dealing with FULL/DIFF and a LOG backup. 
-			i.e., the non-HACK way would be to effectively ONLY(ish) look at LSNs. 	
+			i.e., the non-HACK would ONLY look at LSNs. 	
 	*/
-	IF UPPER(@Mode) IN (N'LOG', N'LIST') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
+	IF UPPER(@Mode) IN (N'LOG') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
 		/* This is a fairly nasty hack... */
-		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] < @LastAppliedFinishTime)
+		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] <= @LastAppliedFinishTime)
 	END;
 
 	IF @LastAppliedFile LIKE N'FULL%' OR @LastAppliedFile LIKE N'DIFF%' BEGIN
 		DECLARE @currentFileName varchar(500);
 		DECLARE @lowerId int = ISNULL((SELECT id FROM #orderedResults WHERE [output] = @LastAppliedFile), 2) - 1; 
 		IF @lowerId < 1 SET @lowerId = 1;
+		
+		SET @headerFullPath = @SourcePath + N'\' + @LastAppliedFile;
+		DECLARE @diffOrFullBackupFinishTime datetime;
+		
+		EXEC dbo.[load_header_details]
+			@BackupPath = @headerFullPath,
+			@BackupDate = @diffOrFullBackupFinishTime OUTPUT,  -- NOTE: load_header_details returns FINISH TIME as backup-date.
+			@BackupSize = NULL,
+			@Compressed = NULL,
+			@Encrypted = NULL;
+
+		SET @diffOrFullBackupFinishTime = DATEADD(MINUTE, 25, @diffOrFullBackupFinishTime);
 
 		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
@@ -378,8 +392,8 @@ AS
 		FROM 
 			#orderedResults
 		WHERE 
-			id >= @lowerID
-			-- TODO / vNEXT: if/when there's an @StopTime feature added, put an upper bound on any rows > @StopTime - i.e., AND timestamp < @StopAt.
+			id >= @lowerId
+			AND [timestamp] <= @diffOrFullBackupFinishTime	
 		ORDER BY 
 			[id];
 
@@ -451,9 +465,8 @@ AS
 		WHERE 
 			should_include = 1; 
 	END;
-
-	IF UPPER(@Mode) = N'LIST' BEGIN 
-
+	
+	IF UPPER(@Mode) = N'REMOVE' BEGIN 
 		IF (SELECT dbo.is_xml_empty(@Output)) = 1 BEGIN -- if explicitly initialized to NULL/empty... 
 			
 			SELECT @Output = (SELECT
@@ -467,7 +480,6 @@ AS
 			FOR XML PATH(''), ROOT('files'));
 
 			RETURN 0;
-
 		END;
 
 		SELECT 

@@ -12,7 +12,7 @@
 
 
 	TODO: 
-		MOVE all of the follwing into list_index_metrics... (and maybe change list_index_metrics to ... list_index_details? or somethign?)
+		MOVE all of the following into list_index_metrics... (and maybe change list_index_metrics to ... list_index_details? or somethign?)
 
 		- xml ... for advanced options? like.... is PK, is unique, is_disabled... is_hypot... (that should be in a 'WARNING')
 		
@@ -102,7 +102,7 @@ AS
 			[data].[row].value(N'(index_name)[1]', N'sysname') [index_name], 
 			[data].[row].value(N'(index_definition)[1]', N'nvarchar(MAX)') [index_definition], 
 			[data].[row].value(N'(key_columns)[1]', N'nvarchar(MAX)') [key_columns], 
-			[data].[row].value(N'(included)[1]', N'nvarchar(MAX)') [included_columns], 
+			[data].[row].value(N'(included_columns)[1]', N'nvarchar(MAX)') [included_columns], 
 			[data].[row].value(N'(row_count)[1]', N'bigint') [row_count], 
 			[data].[row].value(N'(reads)[1]', N'bigint') [reads], 
 			[data].[row].value(N'(writes)[1]', N'bigint') [writes], 
