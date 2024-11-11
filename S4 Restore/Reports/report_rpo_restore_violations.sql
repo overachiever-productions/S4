@@ -97,6 +97,7 @@ AS
 			[f].[file_name], 
 			[f].[created], 
 			LAG([f].[created], 1, NULL) OVER (PARTITION BY [database] ORDER BY [f].[created]) [previous], 
+			CASE WHEN [f].[file_name] LIKE N'DIFF_%' THEN 1 ELSE 0 END [is_diff_backup],
 			/* DATEDIFF @ SECONDS allows for roughly 68 years (with int) - so ... overflows aren't a real concern here. */
 			DATEDIFF(SECOND, LAG([f].[created], 1, NULL) OVER (PARTITION BY [database] ORDER BY [f].[created]), [f].[created]) [diff]
 		FROM	
@@ -117,6 +118,7 @@ AS
 		differenced
 	WHERE 
 		[diff] > @RPOSeconds
+		AND is_diff_backup = 0
 	GROUP BY 
 		[database], 
 		[operation_date];
