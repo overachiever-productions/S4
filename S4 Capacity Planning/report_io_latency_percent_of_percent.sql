@@ -62,7 +62,7 @@ AS
 		N'@serverName sysname OUTPUT', 
 		@serverName = @serverName OUTPUT;
 
-	DECLARE @drives table (
+	CREATE TABLE #drives (
 		row_id int IDENTITY(1,1) NOT NULL, 
 		[drive] sysname NOT NULL
 	); 
@@ -83,7 +83,7 @@ AS
 	FROM 
 		core; ';
 
-	INSERT INTO @drives ([drive])
+	INSERT INTO #drives ([drive])
 	EXEC sp_executesql 
 		@sql;
 
@@ -92,7 +92,7 @@ AS
 
 		DELETE d 
 		FROM 
-			@drives d 
+			#drives d 
 			LEFT OUTER JOIN ( 
 				SELECT 
 					[result]
@@ -132,7 +132,7 @@ AS
 
 	DECLARE @driveLatencyTemplate nvarchar(MAX) = N'WITH partitioned AS (
 		SELECT 
-			CASE WHEN ([Latency.{driveName}] <= .08) THEN 1 ELSE 0 END [latency_green],
+			CASE WHEN (ISNULL([Latency.{driveName}], .00) <= .08) THEN 1 ELSE 0 END [latency_green],
 			CASE WHEN ([Latency.{driveName}] > .08 AND [Latency.{driveName}] <= .2) THEN 1 ELSE 0 END [latency_yellow],
 			CASE WHEN ([Latency.{driveName}] > .21 AND [Latency.{driveName}] <= .59) THEN 1 ELSE 0 END [latency_red],
 			CASE WHEN ([Latency.{driveName}] > .6) THEN 1 ELSE 0 END [latency_swamped]
@@ -141,10 +141,10 @@ AS
 	), 
 	aggregated AS ( 
 		SELECT 
-			CAST(((SUM([latency_green]) / @totalRows) * 100.00) AS decimal(24,2))  [latency_green],
-			CAST(((SUM([latency_yellow]) / @totalRows) * 100.00) AS decimal(24,2))  [latency_yellow],
-			CAST(((SUM([latency_red]) / @totalRows) * 100.00) AS decimal(24,2))  [latency_red],
-			CAST(((SUM([latency_swamped]) / @totalRows) * 100.00) AS decimal(24,2))  [latency_swamped]
+			CAST(((SUM([latency_green]) / @totalRows) * 100.0) AS decimal(24,2))  [latency_green],
+			CAST(((SUM([latency_yellow]) / @totalRows) * 100.0) AS decimal(24,2))  [latency_yellow],
+			CAST(((SUM([latency_red]) / @totalRows) * 100.0) AS decimal(24,2))  [latency_red],
+			CAST(((SUM([latency_swamped]) / @totalRows) * 100.0) AS decimal(24,2))  [latency_swamped]
 		FROM 
 			[partitioned]
 	) 
@@ -167,7 +167,7 @@ AS
 	SELECT 
 		[drive]
 	FROM 
-		@drives
+		#drives
 	ORDER BY 
 		[row_id];
 
