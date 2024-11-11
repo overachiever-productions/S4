@@ -9,7 +9,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.create_server_certificate','P') IS NOT NULL
+IF OBJECT_ID(N'dbo.[create_server_certificate]', N'P') IS NOT NULL
 	DROP PROC dbo.[create_server_certificate];
 GO
 
