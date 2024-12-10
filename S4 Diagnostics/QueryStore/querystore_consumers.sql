@@ -1,8 +1,18 @@
 /*
 
 	vNEXT: 
+		- SKIM/SCAN/SHRED the latest plans (and ... all plans, frankly) 
+			and look for MISSING INDEX ... then put this into a missing_ix column or whatever... 
+			might even be able to create the equivalent of a smells column? 
+			and/or an opportunities column? 
+
+
 		- Provide an option to exclude operations like: 
 			- UPDATE STATS or IX REBUILD/ETC. or BACKUP (hmm, does that execute within a given db?) ... and so on. 
+
+
+		- provide an 'xml' column with a pre-configured query that can be run to get ALL plans for any queries with > 1 plan ... i.e., need to simplify 'fetching' those. 
+			then... automate this too for the whole 'dump' to xls or whatever via powershell - i.e., have it go ahead and grab different plans for the same queryid? 
 		
 		- Add CPU_DEVIATION and DURATION_DEVIATION ... or something similar - i.e., plans/queries where the avg is nothing close to the MAX_xxx value from sys.query_store_runtime_stats
 		- Could also add MOST_FAILED or CPU_FAILED or whatever... i.e., failed/aborted queries ordered by ... something.
@@ -10,6 +20,25 @@
 		- ADD WAITS i.e., order by highest # of waits, descending - which i can get from sys.query_store_wait_stats ... see:
 			https://docs.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store?view=sql-server-ver15
 			example of "Highest Wait Durations"
+
+
+
+	vNEXT:
+		- Not really sure that the logic (sorting) for "GRANTS" is correct. 
+			as in, when GRANTS are selected, then ... we sort by SUM(GRANTS) desc... 
+			vs what MIGHT? make more sense ... which'd be AVG(GRANTS) desc... 
+				AND... I guess I could have AVG_GRANTS or TOTAL_GRANTS as 2x different options here. 
+				That same logic would make sense for ... all other options too. 
+
+
+	SQL Server 2016
+		Query Store (metrics) do NOT provide info for: 
+		- [avg_log_bytes_used]
+		- [avg_tempdb_space_used] 
+		Meaning that ... these 2x columns have to be NUKED from the original query... 
+		AND that since I'm using them for avg and TOTAL (ish) ... the TOTAL versions of these have to be removed as well.
+
+
 
 	TODO: 
 		- there's a fun BUG with XML ... 
@@ -25,6 +54,16 @@
 			Which is happening when trying to cast the nvarchar(MAX) plan to ... xml... 
 					so... i might need to ... try and just grab the plan_handle instead? 
 
+
+
+	SAMPLE EXECUTION:
+		EXEC [admindb].dbo.[view_querystore_consumers]
+			@TargetDatabase = N'Billing', 
+			@MostExpensiveBy = N'DURATION'
+
+
+
+
 	FODDER: 
 			https://docs.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store?view=sql-server-ver15
 			https://www.mssqltips.com/sqlservertip/4047/sql-server-2016-query-store-queries/
@@ -38,11 +77,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.view_querystore_consumers','P') IS NOT NULL
-	DROP PROC dbo.[view_querystore_consumers];
+IF OBJECT_ID('dbo.[querystore_consumers]','P') IS NOT NULL
+	DROP PROC dbo.[querystore_consumers];
 GO
 
-CREATE PROC dbo.[view_querystore_consumers]
+CREATE PROC dbo.[querystore_consumers]
 	@TargetDatabase								sysname			= NULL, 
 	@MostExpensiveBy							sysname			= N'DURATION',		-- { CPU | DURATION | EXECUTIONCOUNTS | READS | WRITES | ROWCOUNTS | TEMPDB | GRANTS | TLOG | PLANCOUNTS | COMPILECOUNTS | DOP }
 	@TopResults									int				= 30,
@@ -146,37 +185,37 @@ AS
 
 	SET @sql = N'WITH core AS ( 
 	SELECT 
-		p.[query_id],
-		COUNT(DISTINCT s.[plan_id]) [plans_count],
-		SUM(p.[count_compiles]) [compiles_count],
-		SUM(s.[count_executions]) [executions_count],
-		SUM(s.[avg_cpu_time]) [avg_cpu_time],
-		SUM(s.[avg_cpu_time] * s.[count_executions]) [total_cpu_time],
-		SUM(s.[avg_duration]) [avg_duration],
-		SUM(s.[avg_duration] * s.[count_executions]) [total_duration],
-		SUM(s.[avg_logical_io_reads]) [avg_logical_reads],
-		SUM(s.[avg_logical_io_reads] * s.[count_executions]) [total_logical_reads],
-		SUM(s.[avg_logical_io_writes]) [avg_logical_writes],
-		SUM(s.[avg_logical_io_writes] * s.[count_executions]) [total_logical_writes],
-		SUM(s.[avg_physical_io_reads]) [avg_physical_reads],
-		SUM(s.[avg_physical_io_reads] * s.[count_executions]) [total_physical_reads],
-		SUM(s.[avg_query_max_used_memory]) [avg_used_memory],
-		SUM(s.[avg_query_max_used_memory] * s.[count_executions]) [total_used_memory],
-		SUM(s.[avg_rowcount]) [avg_rowcount],
-		SUM(s.[avg_rowcount] * s.[count_executions]) [total_rowcount],
-		SUM(s.[avg_log_bytes_used]) [avg_log_bytes_used],
-		SUM(s.[avg_log_bytes_used] * s.[count_executions]) [total_log_bytes_used],
-		SUM(s.[avg_tempdb_space_used]) [avg_tempdb_space_used], 
-		SUM(s.[avg_tempdb_space_used] * s.[count_executions]) [total_tempdb_space_used],
-		MAX(s.[max_dop]) [max_dop], 
-		MIN(s.[min_dop]) [min_dop]
+		[p].[query_id],
+		COUNT(DISTINCT [s].[plan_id]) [plans_count],
+		SUM([p].[count_compiles]) [compiles_count],
+		SUM([s].[count_executions]) [executions_count],
+		SUM([s].[avg_cpu_time]) [avg_cpu_time],
+		SUM([s].[avg_cpu_time] * s.[count_executions]) [total_cpu_time],
+		SUM([s].[avg_duration]) [avg_duration],
+		SUM([s].[avg_duration] * s.[count_executions]) [total_duration],
+		SUM([s].[avg_logical_io_reads]) [avg_logical_reads],
+		SUM([s].[avg_logical_io_reads] * s.[count_executions]) [total_logical_reads],
+		SUM([s].[avg_logical_io_writes]) [avg_logical_writes],
+		SUM([s].[avg_logical_io_writes] * s.[count_executions]) [total_logical_writes],
+		SUM([s].[avg_physical_io_reads]) [avg_physical_reads],
+		SUM([s].[avg_physical_io_reads] * s.[count_executions]) [total_physical_reads],
+		SUM([s].[avg_query_max_used_memory]) [avg_used_memory],
+		SUM([s].[avg_query_max_used_memory] * s.[count_executions]) [total_used_memory],
+		SUM([s].[avg_rowcount]) [avg_rowcount],
+		SUM([s].[avg_rowcount] * s.[count_executions]) [total_rowcount],
+		SUM([s].[avg_log_bytes_used]) [avg_log_bytes_used],
+		SUM([s].[avg_log_bytes_used] * s.[count_executions]) [total_log_bytes_used],
+		SUM([s].[avg_tempdb_space_used]) [avg_tempdb_space_used], 
+		SUM([s].[avg_tempdb_space_used] * s.[count_executions]) [total_tempdb_space_used],
+		MAX([s].[max_dop]) [max_dop], 
+		MIN([s].[min_dop]) [min_dop]
 	FROM 
-		[{targetDB}].sys.[query_store_runtime_stats] s
-		LEFT OUTER JOIN [{targetDB}].sys.[query_store_plan] p ON s.[plan_id] = p.[plan_id]
+		[{targetDB}].sys.[query_store_runtime_stats] [s]
+		LEFT OUTER JOIN [{targetDB}].sys.[query_store_plan] [p] ON [s].[plan_id] = [p].[plan_id]
 	WHERE 
-		NOT (s.first_execution_time > @endTime OR s.last_execution_time < @startTime)
+		NOT ([s].[first_execution_time] > @endTime OR [s].[last_execution_time] < @startTime)
 	GROUP BY 
-		p.[query_id]
+		[p].[query_id]
 ) 
 
 SELECT TOP (@TopResults)
@@ -249,6 +288,7 @@ ORDER BY
 		[row_id] int NOT NULL, 
 		[query_id] bigint NOT NULL,
 		[most_recent_plan] nvarchar(MAX) NULL, 
+		[module] sysname NULL,
 		[query_text] nvarchar(MAX) NULL 
 	); 
 
@@ -256,11 +296,13 @@ ORDER BY
 		[x].[row_id],
 		[x].[query_id],
 		(SELECT TOP (1) p.[query_plan] FROM [{targetDB}].sys.[query_store_plan] p WHERE p.[query_id] = x.[query_id] ORDER BY [plan_id] DESC) [most_recent_plan], 
+		[o].[name] [module],
 		[t].[query_sql_text]
 	FROM 
 		[#TopQueryStoreStats] [x]
 		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query] q ON [x].[query_id] = [q].[query_id]
-		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query_text] t ON [q].[query_text_id] = [t].[query_text_id]; ';
+		LEFT OUTER JOIN [{targetDB}].sys.[query_store_query_text] t ON [q].[query_text_id] = [t].[query_text_id]
+		LEFT OUTER JOIN [{targetDB}].sys.[objects] [o] ON [q].[object_id] = [o].[object_id]; ';
 
 	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
 
@@ -268,6 +310,7 @@ ORDER BY
 		[row_id],
 		[query_id],
 		[most_recent_plan],
+		[module],
 		[query_text]
 	)
 	EXEC sys.[sp_executesql]
@@ -279,6 +322,7 @@ ORDER BY
 			[x].[row_id],
 			[x].[query_id],
 			[d].[query_text], 
+			[d].[module],
 			TRY_CAST([d].[most_recent_plan] AS xml) [query_plan],
 			[x].[plans_count],
 			[x].[compiles_count],
@@ -309,18 +353,18 @@ ORDER BY
 	)
 
 	SELECT 
-		--[row_id],
-		[query_id],
-		[query_text],
-		--CASE WHEN [query_plan] IS NULL THEN (SELECT [most_recent_plan] FROM [#details] x WHERE x.[row_id] = [expanded].[row_id]) ELSE [query_plan] END [query_plan],
-		[query_plan],
-		[plans_count],
-		--[compiles_count],
+		dbo.format_timespan([total_duration_ms]) [total_duration],
+		dbo.format_timespan([total_cpu_time_ms]) [total_cpu_time],
 		[executions_count] [execution_count],
 		dbo.format_timespan([avg_duration_ms]) [avg_duration],
 		dbo.format_timespan([avg_cpu_time_ms]) [avg_cpu_time],
-		dbo.format_timespan([total_duration_ms]) [total_duration],
-		dbo.format_timespan([total_cpu_time_ms]) [total_cpu_time],
+		[module] [module_name],
+		[query_text],
+		
+		--CASE WHEN [query_plan] IS NULL THEN (SELECT [most_recent_plan] FROM [#details] x WHERE x.[row_id] = [expanded].[row_id]) ELSE [query_plan] END [query_plan],
+		[plans_count],
+		[compiles_count],
+		
 		[avg_logical_reads] [avg_reads_GB],
 		[total_logical_reads] [total_reads_GB],
 		[avg_logical_writes] [avg_writes_GB],
@@ -330,13 +374,15 @@ ORDER BY
 		[avg_used_memory] [avg_grant_GB],
 		[total_used_memory] [total_grant_GB],
 		[avg_rowcount],
-		[total_rowcount],
+		--[total_rowcount],
 		[avg_log_bytes_used] [avg_log_GB],
 		[total_log_bytes_used] [total_log_GB],
 		[avg_tempdb_space_used] [avg_spills_GB],
 		[total_tempdb_space_used] [total_spills_GB],
 		[max_dop],
-		[min_dop]
+		[query_id],
+		[query_plan] [most_recent_plan]
+		
 	FROM 
 		[expanded]
 	ORDER BY 
