@@ -25,6 +25,7 @@ CREATE PROC dbo.[eventstore_report_blocked_processes_chronology]
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
 	@UseDefaults				bit				= 1, 
+	@EventStoreTarget			sysname			= NULL,
 	@IncludeSelfBlocking		bit				= 1, 
 	@IncludePhantomBlocking		bit				= 1,
 	@Databases					nvarchar(MAX)	= NULL,
@@ -46,17 +47,33 @@ AS
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');	
+	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'BLOCKED_PROCESSES';
 	DECLARE @reportType sysname = N'PROBLEMS';
-	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
+	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0, @outputID int;
 
-	EXEC @outcome = dbo.[eventstore_get_target_by_key]
-		@EventStoreKey = @eventStoreKey,
-		@TargetTable = @fullyQualifiedTargetTable OUTPUT;
+	IF @EventStoreTarget IS NULL BEGIN
+		EXEC @outcome = dbo.[eventstore_get_target_by_key]
+			@EventStoreKey = @eventStoreKey,
+			@TargetTable = @fullyQualifiedTargetTable OUTPUT;
+
+		IF @outcome <> 0 
+			RETURN @outcome;
+	  END; 
+	ELSE BEGIN 
+		EXEC @outcome = dbo.[load_id_for_normalized_name]
+			@TargetName = @EventStoreTarget,
+			@ParameterNameForTarget = N'@EventStoreTarget',
+			@NormalizedName = @fullyQualifiedTargetTable OUTPUT, 
+			@ObjectID = @outputID OUTPUT;
+
+		IF @outcome <> 0 
+			RETURN @outcome;
+	END;
 
 	IF @outcome <> 0 
 		RETURN @outcome;
@@ -561,7 +578,7 @@ ORDER BY
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Final Projection:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	WITH normalized AS ( 
+	SET @sql = N'WITH normalized AS ( 
 		SELECT 
 			ISNULL([c].[level], -1) [level],
 			[m].[blocking_id],
@@ -574,15 +591,15 @@ ORDER BY
 			[m].[database],
 			[a].[process_count],
 
-			ISNULL([c].[blocking_chain], N'    ' + CAST([m].[blocked_id] AS sysname) + N' -> (' + CAST([m].[blocked_id] AS sysname) + N')') [blocking_chain],
+			ISNULL([c].[blocking_chain], N''    '' + CAST([m].[blocked_id] AS sysname) + N'' -> ('' + CAST([m].[blocked_id] AS sysname) + N'')'') [blocking_chain],
 			
 			dbo.[format_timespan]([m].[blocked_wait_time]) [time_blocked],
 			
-			CASE WHEN [m].[blocking_id] IS NULL THEN N'<blocking-self>' ELSE [m].[blocking_status] END [blocking_status],
+			CASE WHEN [m].[blocking_id] IS NULL THEN N''<blocking-self>'' ELSE [m].[blocking_status] END [blocking_status],
 			[m].[blocking_isolation_level],
-			CASE WHEN [m].[blocking_id] IS NULL THEN N'(' + CAST([m].[blocked_xactid] AS sysname) + N')' ELSE CAST([m].[blocking_xactid] AS sysname) END [blocking_xactid],
-			CASE WHEN [m].[blocking_tran_count] IS NULL THEN N'(' + CAST([m].[blocked_tran_count] AS sysname) + N')' ELSE CAST([m].[blocking_tran_count] AS sysname) END [blocking_tran_count],
-			CASE WHEN [m].blocking_request LIKE N'%Object Id = [0-9]%' THEN [m].[blocking_request] + N' --> ' + ISNULL([m].[blocking_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([m].[blocking_request], N'') END [blocking_request],
+			CASE WHEN [m].[blocking_id] IS NULL THEN N''('' + CAST([m].[blocked_xactid] AS sysname) + N'')'' ELSE CAST([m].[blocking_xactid] AS sysname) END [blocking_xactid],
+			CASE WHEN [m].[blocking_tran_count] IS NULL THEN N''('' + CAST([m].[blocked_tran_count] AS sysname) + N'')'' ELSE CAST([m].[blocking_tran_count] AS sysname) END [blocking_tran_count],
+			CASE WHEN [m].blocking_request LIKE N''%Object Id = [0-9]%'' THEN [m].[blocking_request] + N'' --> '' + ISNULL([m].[blocking_sproc_statement], N''#sproc_statement_extraction_error#'') ELSE ISNULL([m].[blocking_request], N'''') END [blocking_request],
 			[m].[blocking_resource],
 
 			-- blocked... 
@@ -592,7 +609,7 @@ ORDER BY
 			[m].[blocked_tran_count],
 			[m].[blocked_log_used],
 			
-			CASE WHEN [m].[blocked_request] LIKE N'%Object Id = [0-9]%' THEN [m].[blocked_request] + N' --> ' + ISNULL([m].[blocked_sproc_statement], N'#sproc_statement_extraction_error#') ELSE ISNULL([m].[blocked_request], N'') END [blocked_request],
+			CASE WHEN [m].[blocked_request] LIKE N''%Object Id = [0-9]%'' THEN [m].[blocked_request] + N'' --> '' + ISNULL([m].[blocked_sproc_statement], N''#sproc_statement_extraction_error#'') ELSE ISNULL([m].[blocked_request], N'''') END [blocked_request],
 			[m].[blocked_resource],
 			[m].[blocking_host_name],
 			[m].[blocking_login_name],
@@ -608,11 +625,10 @@ ORDER BY
 	)
 
 	SELECT 
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CONVERT(sysname, [timestamp], 121) END [utc_timestamp],
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE [type] END [blocking_type],
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE [database] END [database_name],
-		
-		CASE WHEN [original_report_id] = [previous_report_id] THEN N'' ELSE CAST([process_count] AS sysname) END [process_count],
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'''' ELSE CONVERT(sysname, [timestamp], 121) END [utc_timestamp],{local_zone}
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'''' ELSE [type] END [blocking_type],
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'''' ELSE [database] END [database_name],
+		CASE WHEN [original_report_id] = [previous_report_id] THEN N'''' ELSE CAST([process_count] AS sysname) END [process_count],
 		[blocking_chain],
 		[time_blocked],
 		[blocking_status],
@@ -638,7 +654,16 @@ ORDER BY
 	FROM 
 		[normalized] 
 	ORDER BY 
-		[original_report_id], [level];
+		[original_report_id], [level]; ';
+
+SET @TimeZone = N'Pacific Standard Time';
+	IF @TimeZone IS NOT NULL 
+		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'CASE WHEN [original_report_id] = [previous_report_id] THEN N'''' ELSE CONVERT(sysname, CAST(([timestamp] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), 121) END [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_time', N'') + N'_timestamp],');
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+
+	EXEC sys.[sp_executesql] 
+		@sql;
 
 	RETURN 0;
 GO

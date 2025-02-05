@@ -31,9 +31,10 @@ CREATE PROC dbo.[eventstore_report_blocked_processes_counts]
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
+	@UseDefaults				bit				= 1, 
+	@EventStoreTarget			sysname			= NULL,	
 	@IncludeSelfBlocking		bit				= 1, 
 	@IncludePhantomBlocking		bit				= 1,
-	@UseDefaults				bit				= 1, 
 	@Databases					nvarchar(MAX)	= NULL,
 	@Applications				nvarchar(MAX)	= NULL, 
 	@Hosts						nvarchar(MAX)	= NULL, 
@@ -46,6 +47,8 @@ AS
 	
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
+	SET @UseDefaults = ISNULL(@UseDefaults, 1);
 
 	SET @IncludeSelfBlocking = ISNULL(@IncludeSelfBlocking, 1);
 	SET @IncludePhantomBlocking = ISNULL(@IncludePhantomBlocking, 1);
@@ -60,15 +63,27 @@ AS
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'BLOCKED_PROCESSES';
 	DECLARE @reportType sysname = N'COUNT';
-	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
+	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0, @outputID int;
 
-	EXEC @outcome = dbo.[eventstore_get_target_by_key]
-		@EventStoreKey = @eventStoreKey,
-		@TargetTable = @fullyQualifiedTargetTable OUTPUT;
+	IF @EventStoreTarget IS NULL BEGIN
+		EXEC @outcome = dbo.[eventstore_get_target_by_key]
+			@EventStoreKey = @eventStoreKey,
+			@TargetTable = @fullyQualifiedTargetTable OUTPUT;
 
-	IF @outcome <> 0 
-		RETURN @outcome;
-	
+		IF @outcome <> 0 
+			RETURN @outcome;
+	  END; 
+	ELSE BEGIN 
+		EXEC @outcome = dbo.[load_id_for_normalized_name]
+			@TargetName = @EventStoreTarget,
+			@ParameterNameForTarget = N'@EventStoreTarget',
+			@NormalizedName = @fullyQualifiedTargetTable OUTPUT, 
+			@ObjectID = @outputID OUTPUT;
+
+		IF @outcome <> 0 
+			RETURN @outcome;
+	END;
+
 	IF @UseDefaults = 1 BEGIN
 		PRINT 'Loading Defaults...';
 
@@ -125,7 +140,6 @@ AS
 		ELSE 
 			SET @timeZoneTransformType = N'ALL';
 	END;
-
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Predicate Validation:
