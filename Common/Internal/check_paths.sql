@@ -7,6 +7,9 @@
 			exist (i.e., it's a lot easier to read an error that says: invalid path... than "the backup specified
 			is not valid, or you don't have permissions, etc." (i.e., SQL Server 'catch all' error). 
 
+	REFACTOR (admindb): 
+		- uh... dbo.check_path (why the hell is this plural?)
+
 */
 
 USE [admindb];

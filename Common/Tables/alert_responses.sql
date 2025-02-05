@@ -46,6 +46,10 @@ IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 401
 
 IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17828)
 	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
+	VALUES	(17821, N'[IGNORE]', 1, 1, N'A valid TLS certificate is not configured to accept strict (TDS 8.0 and above) connections. The connection has been closed.');
+
+IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17828)
+	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
 	VALUES	(17828, N'[IGNORE]', 1, 1, N'The prelogin packet used to open the connection is structurally invalid; the connection has been closed. Please contact the vendor of the client library.');
 
 IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17836)
