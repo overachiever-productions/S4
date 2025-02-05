@@ -28,7 +28,7 @@ AS
 
 	INSERT INTO [{targetSchema}].[{targetTable}] (
 		[timestamp],
-		[database_name],
+		[database],
 		[user_name],
 		[host_name],
 		[application_name],
@@ -44,7 +44,7 @@ AS
 	)
 	SELECT 
 		[nodes].[row].value(N''(@timestamp)[1]'', N''datetime'') [timestamp],
-		[nodes].[row].value(N''(action[@name="database_name"]/value)[1]'', N''sysname'') [database_name],
+		[nodes].[row].value(N''(action[@name="database_name"]/value)[1]'', N''sysname'') [database],
 		[nodes].[row].value(N''(action[@name="username"]/value)[1]'', N''sysname'') [user_name],
 		[nodes].[row].value(N''(action[@name="client_hostname"]/value)[1]'', N''sysname'') [host_name],
 		[nodes].[row].value(N''(action[@name="client_app_name"]/value)[1]'', N''sysname'') [application_name],

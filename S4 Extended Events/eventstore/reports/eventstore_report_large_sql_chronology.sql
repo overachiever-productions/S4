@@ -1,19 +1,3 @@
-/*
-
-
-
-	SAMPLE Execution: 
-
-		EXEC [admindb].dbo.[eventstore_rpt_large_sql_chronology]
-			@ExcludeSqlCmd = 0, 
-			@ExcludeSqlAgentJobs = 0, 
-			@ExcludedStatements = N'%eventstore_etl_processor%, %backup%',
-			@MinDurationMilliseconds = 25;
-
-
-
-*/
-
 USE [admindb];
 GO
 
@@ -22,107 +6,210 @@ IF OBJECT_ID('dbo.[eventstore_report_large_sql_chronology]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[eventstore_report_large_sql_chronology]
-	@Start						datetime		= NULL, 
-	@End						datetime		= NULL,
+	@Granularity				sysname			= N'HOUR', 
+	@StartUTC					datetime		= NULL, 
+	@EndUTC						datetime		= NULL, 
+	@TimeZone					sysname			= NULL, 
+	@UseDefaults				bit				= 1, 
+	@EventStoreTarget			sysname			= NULL,	
 	@ExcludeSqlAgentJobs		bit				= 1, 
-	@ExcludeSqlCmd				bit				= 1,			-- bit of a hack ... to exclude jobs ... that are executed by admindb... 
-	@ExcludedStatements			 nvarchar(MAX)	= NULL,
+	@ExcludeSqlCmd				bit				= 1,
 	@MinCpuMilliseconds			int				= -1, 
 	@MinDurationMilliseconds	int				= -1, 
-	@MinRowsModifiedCount		int				= -1
+	@MinRowsModifiedCount		int				= -1, 
+	@Databases					nvarchar(MAX)	= NULL,
+	@Applications				nvarchar(MAX)	= NULL, 
+	@Hosts						nvarchar(MAX)	= NULL, 
+	@Principals					nvarchar(MAX)	= NULL,
+	@Statements					nvarchar(MAX)	= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
+	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
+	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
+	SET @UseDefaults = ISNULL(@UseDefaults, 1);
+
 	SET @ExcludeSqlAgentJobs = ISNULL(@ExcludeSqlAgentJobs, 1);
 	SET @ExcludeSqlCmd = ISNULL(@ExcludeSqlCmd, 1);
-	SET @ExcludedStatements = NULLIF(@ExcludedStatements, N'');
-	
+	SET @MinCpuMilliseconds = ISNULL(@MinCpuMilliseconds, -1);
+	SET @MinDurationMilliseconds = ISNULL(@MinDurationMilliseconds, -1);
+	SET @MinRowsModifiedCount = ISNULL(@MinRowsModifiedCount, -1);
+
+	SET @Databases = NULLIF(@Databases, N'');
+	SET @Applications = NULLIF(@Applications, N'');
+	SET @Hosts = NULLIF(@Hosts, N'');
+	SET @Principals = NULLIF(@Principals, N'');
+	SET @Statements = NULLIF(@Statements, N'');
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Metadata + Preferences
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'LARGE_SQL';
-	DECLARE @eventStoreTarget sysname = (SELECT [target_table] FROM [dbo].[eventstore_settings] WHERE [event_store_key] = @eventStoreKey); 	
+	DECLARE @reportType sysname = N'CHRONOLOGY';
+	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0, @outputID int;
 
-	DECLARE @normalizedName sysname; 
-	DECLARE @sourceObjectID int; 
-	DECLARE @outcome int = 0;
+	IF @EventStoreTarget IS NULL BEGIN
+		EXEC @outcome = dbo.[eventstore_get_target_by_key]
+			@EventStoreKey = @eventStoreKey,
+			@TargetTable = @fullyQualifiedTargetTable OUTPUT;
 
-	EXEC @outcome = dbo.load_id_for_normalized_name 
-		@TargetName = @eventStoreTarget, 
-		@ParameterNameForTarget = N'@eventStoreTarget', 
-		@NormalizedName = @normalizedName OUTPUT, 
-		@ObjectID = @sourceObjectID OUTPUT;
-
-	IF @outcome <> 0
-		RETURN @outcome;  -- error will have already been raised...
-
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Time-Bounding Predicates and Translations:
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	IF @Start IS NULL AND @End IS NULL BEGIN 
-		SET @Start = DATEADD(HOUR, -2, GETDATE());
-		SET @End = GETDATE();
+		IF @outcome <> 0 
+			RETURN @outcome;
 	  END; 
 	ELSE BEGIN 
-		IF @Start IS NOT NULL BEGIN 
-			SET @End = DATEADD(HOUR, 2, @Start);
+		EXEC @outcome = dbo.[load_id_for_normalized_name]
+			@TargetName = @EventStoreTarget,
+			@ParameterNameForTarget = N'@EventStoreTarget',
+			@NormalizedName = @fullyQualifiedTargetTable OUTPUT, 
+			@ObjectID = @outputID OUTPUT;
+
+		IF @outcome <> 0 
+			RETURN @outcome;
+	END;
+	
+	IF @UseDefaults = 1 BEGIN
+		PRINT 'Loading Defaults...';
+
+		DECLARE @defaultTimeZone sysname, @defaultStartTime datetime, @defaultPredicates nvarchar(MAX);
+		EXEC dbo.[eventstore_get_report_preferences]
+			@EventStoreKey = @eventStoreKey,
+			@ReportType = @reportType,
+			@PreferredTimeZone = @defaultTimeZone OUTPUT,
+			@PreferredStartTime = @defaultStartTime OUTPUT,
+			@PreferredPredicates = @defaultPredicates OUTPUT;
+
+		IF @TimeZone IS NULL SET @TimeZone = @defaultTimeZone;
+		IF @StartUTC IS NULL BEGIN 
+			SET @StartUTC = ISNULL(@defaultStartTime, DATEADD(HOUR, -24, GETUTCDATE())); 
+			SET @EndUTC = GETUTCDATE();
 		END;
 
-		IF @End IS NULL AND @Start IS NOT NULL BEGIN 
-			RAISERROR(N'A value for @End can ONLY be specified if a value for @Start has been provided.', 16, 1);
-			RETURN -2;
+		IF NULLIF(@defaultPredicates, N'') IS NOT NULL BEGIN 
+			DECLARE @predicates table ([key] sysname NOT NULL, [value] sysname NOT NULL);
+			INSERT INTO @predicates ([key], [value]) 
+			SELECT 
+				LEFT([result], CHARINDEX(N':', [result]) - 1) [key], 
+				SUBSTRING([result], CHARINDEX(N':', [result]) + 1, LEN([result])) [value]
+			FROM  
+				dbo.[split_string](@defaultPredicates, N';', 1);
+
+			IF @ExcludeSqlAgentJobs IS NULL SELECT @ExcludeSqlAgentJobs = CAST([value] AS bit) FROM @predicates WHERE [key] = N'@ExcludeSqlAgentJobs';
+			IF @ExcludeSqlCmd IS NULL SELECT @ExcludeSqlCmd = CAST([value] AS bit) FROM @predicates WHERE [key] = N'@ExcludeSqlCmd';
+			IF @MinCpuMilliseconds IS NULL SELECT @MinCpuMilliseconds = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinCpuMilliseconds';
+			IF @MinDurationMilliseconds IS NULL SELECT @MinDurationMilliseconds = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinDurationMilliseconds';
+			IF @MinRowsModifiedCount IS NULL SELECT @MinRowsModifiedCount = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinRowsModifiedCount';
+
+			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
+			IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
+ 			IF @Applications IS NULL SELECT @Applications = [value] FROM @predicates WHERE [key] = N'@Applications';
+			IF @Hosts IS NULL SELECT @Hosts = [value] FROM @predicates WHERE [key] = N'@Hosts';
+			IF @Principals IS NULL SELECT @Principals = [value] FROM @predicates WHERE [key] = N'@Principals';
+			IF @Statements IS NULL SELECT @Statements = [value] FROM @predicates WHERE [key] = N'@Statements';
+		END;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Time-Zone Processing:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @timeZoneTransformType sysname = N'NONE';
+	IF @TimeZone IS NOT NULL BEGIN 
+		IF (SELECT [dbo].[get_engine_version]()) < 13.00 BEGIN
+			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
+			RETURN -110;			
 		END;
 
-		IF @End < @Start BEGIN 
-			RAISERROR(N'Specified value for @End can NOT be less than (earlier than) value provided for @Start.', 16, 1);
-			RETURN -3;
-		END;
+		IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
+			SET @TimeZone = dbo.[get_local_timezone]();
+
+		DECLARE @timeZoneOffsetMinutes int = (dbo.[get_timezone_offset_minutes](@TimeZone));
+
+		IF @TimeZone IS NULL
+			SET @timeZoneTransformType = N'OUTPUT-ONLY';
+		ELSE 
+			SET @timeZoneTransformType = N'ALL';
 	END;
 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Extraction / Work-Table:
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
-	DECLARE @exclusions nvarchar(MAX) = N'';
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Predicate Validation:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-	IF @ExcludeSqlAgentJobs = 1 BEGIN 
-		SET @exclusions = @exclusions + @crlftab + N'AND [application_name] NOT LIKE N''SQLAgent%''';
-	END;
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Time-Bounding
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF @EndUTC IS NULL SET @EndUTC = GETUTCDATE();
 
-	IF @ExcludeSqlCmd = 1 BEGIN 
-		SET @exclusions = @exclusions + @crlftab + N'AND [application_name] <> N''SQLCMD''';
-	END;
-
-	IF @MinCpuMilliseconds > 0 BEGIN 
-		SET @exclusions = @exclusions + @crlftab + N'AND [cpu_ms] > ' + CAST(@MinCpuMilliseconds AS sysname);
-	END;
-
-	IF @MinDurationMilliseconds > 0 BEGIN 
-		SET @exclusions = @exclusions + @crlftab + N'AND [duration_ms] > ' + CAST(@MinDurationMilliseconds AS sysname);
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Predicate Mapping and Extraction:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @filters nvarchar(MAX) = N'';
+	DECLARE @joins nvarchar(MAX) = N'';
+		
+	IF @Databases IS NOT NULL BEGIN
+		CREATE TABLE #expandedDatabases (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[database] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [database])
+		);
 	END; 
 
-	IF @MinRowsModifiedCount > 0 BEGIN 
-		SET @exclusions = @exclusions + @crlftab + N'AND [row_count] > ' + CAST(@MinRowsModifiedCount AS sysname);
-	END;
-
-	DECLARE @excludedStatementsJoin nvarchar(MAX) = N'';
-	IF @ExcludedStatements IS NOT NULL BEGIN 
-		CREATE TABLE #excludedStatements (
+	IF @Applications IS NOT NULL BEGIN
+		CREATE TABLE #applications (
 			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[statement] nvarchar(MAX) NOT NULL
+			[application_name] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [application_name]) 
 		);
-
-		INSERT INTO [#excludedStatements] ([statement])
-		SELECT [result] FROM [dbo].[split_string](@ExcludedStatements, N',', 1);
-		
-		SET @excludedStatementsJoin = @crlftab + N'LEFT OUTER JOIN #excludedStatements [x] ON [s].[statement] LIKE [x].[statement]';
-		SET @exclusions = @exclusions + @crlftab + N'AND [x].[statement] IS NULL';
-
 	END;
 
-	CREATE TABLE #metrics (
+	IF @Hosts IS NOT NULL BEGIN 
+		CREATE TABLE #hosts (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[host_name] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [host_name])
+		); 
+	END;
+
+	IF @Principals IS NOT NULL BEGIN
+		CREATE TABLE #principals (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[principal] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [principal])
+		); 
+	END;
+
+	IF @Statements IS NOT NULL BEGIN 
+		CREATE TABLE #statements (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[statement] nvarchar(MAX) NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude]) 
+		);
+	END;
+
+	EXEC [admindb].dbo.[eventstore_report_predicates]
+		@Databases = @Databases,
+		@Applications = @Applications,
+		@Hosts = @Hosts,
+		@Principals = @Principals,
+		@Statements = @Statements,
+		@JoinPredicates = @joins OUTPUT,
+		@FilterPredicates = @filters OUTPUT;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Metrics Extraction:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
+
+	CREATE TABLE #metrics ( 
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[timestamp] datetime NULL,
-		[database_name] sysname NULL,
+		[database] sysname NULL,
 		[user_name] sysname NULL,
 		[host_name] sysname NULL,
 		[application_name] sysname NULL,
@@ -134,39 +221,72 @@ AS
 		[physical_reads] bigint NULL,
 		[writes] bigint NULL,
 		[row_count] bigint NULL,
-		[report] xml NULL
+		[report] xml NULL, 
 	);
+	
+	DECLARE @exclusions nvarchar(MAX) = N'';
+	IF @ExcludeSqlAgentJobs = 1 BEGIN 
+		SET @exclusions = @exclusions + @crlftab + N'AND [x].[application_name] NOT LIKE N''SQLAgent%''';
+	END;
+
+	IF @ExcludeSqlCmd = 1 BEGIN 
+		SET @exclusions = @exclusions + @crlftab + N'AND [x].[application_name] <> N''SQLCMD''';
+	END;
+
+	IF @MinCpuMilliseconds > 0 BEGIN 
+		SET @exclusions = @exclusions + @crlftab + N'AND [x].[cpu_ms] > ' + CAST(@MinCpuMilliseconds AS sysname);
+	END;
+
+	IF @MinDurationMilliseconds > 0 BEGIN 
+		SET @exclusions = @exclusions + @crlftab + N'AND [x].[duration_ms] > ' + CAST(@MinDurationMilliseconds AS sysname);
+	END; 
+
+	IF @MinRowsModifiedCount > 0 BEGIN 
+		SET @exclusions = @exclusions + @crlftab + N'AND [x].[row_count] > ' + CAST(@MinRowsModifiedCount AS sysname);
+	END;
 
 	DECLARE @sql nvarchar(MAX) = N'SELECT 
-	[s].[timestamp],
-	[s].[database_name],
-	[s].[user_name],
-	[s].[host_name],
-	[s].[application_name],
-	[s].[module],
-	[s].[statement],
-	[s].[offset],
-	[s].[cpu_ms],
-	[s].[duration_ms],
-	[s].[physical_reads],
-	[s].[writes],
-	[s].[row_count],
-	[s].[report]
+	[x].[timestamp],
+	[x].[database],
+	[x].[user_name],
+	[x].[host_name],
+	[x].[application_name],
+	[x].[module],
+	[x].[statement],
+	[x].[offset],
+	[x].[cpu_ms],
+	[x].[duration_ms],
+	[x].[physical_reads],
+	[x].[writes],
+	[x].[row_count],
+	[x].[report]
 FROM 
-	{SourceTable} [s]{excludedStatementsJoin}
-WHERE
-	[timestamp] >= @Start
-	AND [timestamp] < @End{exclusions}
-ORDER BY 
-	[timestamp]; ';
+	{SourceTable} [x]{joins}
+WHERE 
+	[x].[timestamp] >= @StartUTC 
+	AND [x].[timestamp] <= @EndUTC{filters}{exclusions};'
 
-	SET @sql = REPLACE(@sql, N'{SourceTable}', @normalizedName);
-	SET @sql = REPLACE(@sql, N'{excludedStatementsJoin}', @excludedStatementsJoin);
+	SET @sql = REPLACE(@sql, N'{SourceTable}', @fullyQualifiedTargetTable);
+	SET @sql = REPLACE(@sql, N'{joins}', @joins);
+	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 	SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
+	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @StartUTC, 121) + N' - ' + CONVERT(sysname, @EndUTC, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
+
+	IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
+		SELECT 
+			@StartUTC = CAST((@StartUTC AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
+			@EndUTC   = CAST((@EndUTC   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
+
+		SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @StartUTC, 121) + N' - ' + CONVERT(sysname, @EndUTC, 121) + N' (UTC).';
+	END;
+
+	PRINT @timeRangeString;
+	PRINT N'';
+	
 	INSERT INTO [#metrics] (
 		[timestamp],
-		[database_name],
+		[database],
 		[user_name],
 		[host_name],
 		[application_name],
@@ -180,14 +300,14 @@ ORDER BY
 		[row_count],
 		[report]
 	)
-	EXEC sys.sp_executesql
+	EXEC sys.sp_executesql 
 		@sql, 
-		N'@Start datetime, @End datetime', 
-		@Start = @Start, 
-		@End = @End;
+		N'@StartUTC datetime, @EndUTC datetime', 
+		@StartUTC = @StartUTC, 
+		@EndUTC = @EndUTC;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Translate SQL Server Agent Job Names: 
+	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF @ExcludeSqlAgentJobs = 0 BEGIN 
 		DECLARE @rowId int;
@@ -225,12 +345,11 @@ ORDER BY
 		
 		CLOSE [walker];
 		DEALLOCATE [walker];
-
 	END;
 
-	SELECT 
-		[timestamp],
-		[database_name],
+	SET @sql = N'SELECT 
+		[timestamp] [utc_end_time],{local_zone}
+		[database],
 		[user_name],
 		[host_name],
 		[application_name],
@@ -246,7 +365,16 @@ ORDER BY
 	FROM 
 		[#metrics]
 	ORDER BY 
-		[timestamp];
+		[timestamp]; ';
+
+	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN 
+		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'[timestamp] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_timestamp],' );
+	  END;
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+
+	EXEC sys.[sp_executesql] 
+		@sql;
 
 	RETURN 0;
 GO

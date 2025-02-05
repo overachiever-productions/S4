@@ -50,7 +50,7 @@ AS
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreTableDDL nvarchar(MAX) = N'CREATE TABLE [{schema}].[{table}] (
 	[timestamp] [datetime] NULL,
-	[database_name] [sysname] NULL,
+	[database] [sysname] NULL,
 	[user_name] [sysname] NULL,
 	[host_name] [sysname] NULL,
 	[application_name] [sysname] NULL,
