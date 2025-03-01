@@ -1,6 +1,22 @@
 ﻿/*
 
+	REWRITE (not REFACTOR):
+		The functionality here is great. 
+		The ... naming and @Params are a train-wreck. 
 
+		i.e., sprocs should, IDEALLY, do 'one' thing. 
+			This has an AND in the name - which indicates an immediate problem. 
+
+		ALSO... 
+			if I JUST want to SCRIPT the enabled/disabled statuses ... 
+			that's what? @PrintOnly = 1?
+
+		LIKEWISE
+			what if I just want to DISABLE jobs - and not script their states? 
+
+		i.e., this needs to be 2x sprocs. 
+			dbo.script_job_states
+			dbo.disable_agent_jobs
 
 */
 

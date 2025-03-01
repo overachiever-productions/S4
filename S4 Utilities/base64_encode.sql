@@ -24,16 +24,8 @@ AS
 	-- {copyright}
     
     BEGIN; 
-    	DECLARE @output nvarchar(MAX); 
-
-		--DECLARE @xml xml = (SELECT CAST(@Input AS varbinary(MAX)) FOR XML PATH(N'node'), BINARY BASE64);
-
-		--SELECT @output = @xml.value(N'(node)[1]', N'nvarchar(MAX)');
-    	
-    	SELECT @output = (
+    	RETURN (
 			SELECT CAST(@Input AS varbinary(MAX)) FOR XML PATH(N'node'), BINARY BASE64, TYPE
 		).value(N'(node)[1]', N'nvarchar(MAX)');
-    	
-    	RETURN @output;
     END;
 GO

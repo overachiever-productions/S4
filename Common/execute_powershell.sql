@@ -14,6 +14,15 @@
 			-- text output: 
 				EXEC dbo.execute_powershell @Command = N'$PSVersionTable;';
 
+			-- text output - but as a variable: 
+				DECLARE @stringVersion nvarchar(MAX);
+				EXEC dbo.execute_powershell 
+					@Command = N'$PSVersionTable;', 
+					@StringOutput = @stringVersion OUTPUT;
+
+				SELECT @stringVersion;
+
+
 			-- same as above, but transform output to XML from within PowerShell, and get XML as STRING back in SQL: 
 				EXEC dbo.execute_powershell @Command = N'$PSVersionTable | ConvertTo-XML -As Stream;';
 
@@ -42,6 +51,7 @@
 					@Command = N'$PSVersionTable | ConvertTo-Json;', 
 					@StringOutput = @json OUTPUT; 
 
+				SELECT @json;
 				SELECT * FROM OPENJSON(@json) [messy - but json-y];
 
 */
@@ -49,7 +59,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.execute_powershell','P') IS NOT NULL
+IF OBJECT_ID('dbo.[execute_powershell]','P') IS NOT NULL
 	DROP PROC dbo.[execute_powershell];
 GO
 
@@ -71,7 +81,7 @@ AS
 
 	EXEC @returnValue = [dbo].[execute_command]
 		@Command = @Command,
-		@ExecutionType = N'POSH',
+		@ExecutionType = N'PS',   -- POSH
 		@ExecutionAttemptsCount = @ExecutionAttemptsCount,
 		@DelayBetweenAttempts = @DelayBetweenAttempts,
 		@SafeResults = N'{ALL}',  -- we're just piping results to/from PowerShell
@@ -91,6 +101,11 @@ AS
 	FROM 
 		@commandOutput.nodes(N'//iterations/iteration/result_row') n(r); 
 
+	IF @StringOutput IS NULL BEGIN 
+		SELECT @StringOutput = @output;
+		RETURN 0;
+	END;
+
 	IF (SELECT dbo.is_xml_empty(@SerializedXmlOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		BEGIN TRY
 			-- NOTE: the FOR XML PATH output returned via dbo.execute_command ONLY encodes < and >, so only un-transform them via dbo.xml_decode (i.e., second parameter).
@@ -109,11 +124,6 @@ AS
 			SET @ErrorMessage = CAST (ERROR_NUMBER() AS sysname) + N': ' + ERROR_MESSAGE();
 			RETURN -10;
 		END CATCH;
-	END;
-
-	IF @StringOutput IS NULL BEGIN 
-		SELECT @StringOutput = @output;
-		RETURN 0;
 	END;
 
 	EXEC dbo.[print_long_string] @output;

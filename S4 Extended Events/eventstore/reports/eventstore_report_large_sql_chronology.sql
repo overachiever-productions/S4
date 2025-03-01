@@ -1,3 +1,15 @@
+/*
+	PICKUP / NEXT: 
+		- validate the target for @ProjectionTarget
+		- can't be a # 
+		- can be a ## 
+		- otherwise, target DB is implied as current or has to exist. 
+		- THROW if target TABLE already exists. 
+			NOT going to bother with 'force' or other problems. 
+			Just let the user/caller know that they flubbed it and THEY can fix it. 
+
+*/
+
 USE [admindb];
 GO
 
@@ -12,6 +24,7 @@ CREATE PROC dbo.[eventstore_report_large_sql_chronology]
 	@TimeZone					sysname			= NULL, 
 	@UseDefaults				bit				= 1, 
 	@EventStoreTarget			sysname			= NULL,	
+	@ProjectionTarget			sysname			= NULL,
 	@ExcludeSqlAgentJobs		bit				= 1, 
 	@ExcludeSqlCmd				bit				= 1,
 	@MinCpuMilliseconds			int				= -1, 
@@ -135,6 +148,9 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Predicate Validation:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	-- HACK: https://overachieverllc.atlassian.net/browse/EVS-38 
+	IF @StartUTC IS NULL 
+		SET @StartUTC = DATEADD(YEAR, -10, GETDATE());
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Bounding
@@ -264,7 +280,7 @@ FROM
 	{SourceTable} [x]{joins}
 WHERE 
 	[x].[timestamp] >= @StartUTC 
-	AND [x].[timestamp] <= @EndUTC{filters}{exclusions};'
+	AND [x].[timestamp] <= @EndUTC{filters}{exclusions};'; 
 
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @fullyQualifiedTargetTable);
 	SET @sql = REPLACE(@sql, N'{joins}', @joins);
@@ -356,16 +372,23 @@ WHERE
 		[module],
 		[statement],
 		[offset],
-		[cpu_ms],
-		dbo.[format_timespan]([duration_ms]) [duration],
+		[cpu_ms] / 1000 [cpu_ms],
+		dbo.[format_timespan]([duration_ms] / 1000) [duration],
 		[physical_reads],
 		[writes],
 		[row_count],
-		[report]
+		[report]{into}
 	FROM 
 		[#metrics]
 	ORDER BY 
 		[timestamp]; ';
+
+	IF @ProjectionTarget IS NOT NULL BEGIN 
+		SET @sql = REPLACE(@sql, N'{into}', @crlftab + NCHAR(9) + N'INTO ' + @ProjectionTarget);
+		PRINT 'Dumped to ... ' + @ProjectionTarget;
+	  END; 
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{into}', N'');
 
 	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN 
 		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'[timestamp] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_timestamp],' );

@@ -6,13 +6,19 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('[dbo].[numbers]', N'U') IS NULL BEGIN
-	CREATE TABLE dbo.[numbers] (
-		[number] int NOT NULL 
-	)
-	WITH (DATA_COMPRESSION = PAGE);
+THROW 'not done yet.';
 
-	CREATE CLUSTERED INDEX CLIX_numbers_by_number ON dbo.[numbers]([number]) WITH (DATA_COMPRESSION = PAGE);
+IF OBJECT_ID('[dbo].[numbers]', N'U') IS NULL BEGIN
+	DECLARE @numbersDDL nvarchar(MAX) = N'CREATE TABLE dbo.[numbers] (
+	[number] int NOT NULL 
+){with};
+	
+CREATE CLUSTERED INDEX CLIX_numbers_by_number ON dbo.[numbers]([number]){with};	'; 
+
+	IF dbo.[get_engine_version](1) >= 1300.4001 
+		SET @numbersDDL = REPLACE(@numbersDDL, N'{with}', N' WITH (DATA_COMPRESSION = PAGE)');
+	ELSE 
+		SET @numbersDDL = REPLACE(@numbersDDL, N'{with}', N'');
 
 	INSERT INTO [numbers] ([number])
 	SELECT TOP (50000) 
@@ -21,3 +27,5 @@ IF OBJECT_ID('[dbo].[numbers]', N'U') IS NULL BEGIN
 	CROSS JOIN sys.all_objects o2
 END
 GO
+
+ALTER TABLE dbo.[numbers] WITH

@@ -30,7 +30,7 @@ PICKUP/NEXT:
 				RETURN value of 0 and @Results are EMPTY (i.e., this command succeeded without any problems/issues on the first attempt). 
 				RETURN value of 0 and @Results contains 1 or more rows (i.e., there were one or more INITIAL failures (detailed by @Results per each attempt) and then the @Command succceeded). 
 				RETURN value of 1 and @Results contains 1 or more rows (i.e., the @command NEVER succeeded and each time it was attempted the specific error/outcome was added as a new 'row' in @Results).
-
+				RETURN value of something OTHER than 0 or 1 and ??? 
 
 	vNEXT:
         - allow {DEFAULT} tokens/valus to be passed into @DelayBetweenAttempts and @IgnoredResults
@@ -128,7 +128,7 @@ GO
 
 CREATE PROC dbo.[execute_command]
 	@Command								nvarchar(MAX), 
-	@ExecutionType							sysname						= N'SQLCMD',						-- { SQLCMD | SHELL | POSH | PARTNER }
+	@ExecutionType							sysname						= N'SQLCMD',						-- { SQLCMD | SHELL | PS | PS_CORE | PARTNER }
 	@ExecutionAttemptsCount					int							= 2,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
 	@DelayBetweenAttempts					sysname						= N'5s',
 	@IgnoredResults							nvarchar(2000)				= N'{COMMAND_SUCCESS}',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, {tokens}'. Allowed Tokens: {COMMAND_SUCCESS} | {USE_DB_SUCCESS} | {ROWS_AFFECTED} | {BACKUP} | {RESTORE} | {SHRINKLOG} | {DBCC} ... 
@@ -148,7 +148,7 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
-	SET @ExecutionType = ISNULL(@ExecutionType, N'SQLCMD');
+	SET @ExecutionType = UPPER(ISNULL(@ExecutionType, N'SQLCMD'));
 	SET @IgnoredResults = NULLIF(@IgnoredResults, N'');
 	SET @SafeResults = NULLIF(@SafeResults, N'');
 
@@ -156,8 +156,8 @@ AS
 
     IF @ExecutionAttemptsCount > 0 
 
-    IF UPPER(@ExecutionType) NOT IN (N'SQLCMD', N'SHELL', N'POSH', N'PARTNER') BEGIN 
-        RAISERROR(N'Permitted @ExecutionType values are { SQLCMD | SHELL | POSH | PARTNER }.', 16, 1);
+    IF @ExecutionType NOT IN (N'SQLCMD', N'SHELL', N'PS', N'PS_CORE', N'PARTNER') BEGIN 
+        RAISERROR(N'Permitted @ExecutionType values are { SQLCMD | SHELL | PS | PS_CORE | PARTNER }.', 16, 1);
         RETURN -2;
     END; 
 
@@ -322,31 +322,32 @@ AS
 	DECLARE @serverName sysname = '.';
     DECLARE @execOutput int;
 
-	IF UPPER(@ExecutionType) = N'SHELL' BEGIN
+	IF @ExecutionType = N'SHELL' BEGIN
         SET @xpCmd = CAST(@Command AS varchar(2000));
     END;
     
-    IF UPPER(@ExecutionType) IN (N'SQLCMD', N'PARTNER') BEGIN
+    IF @ExecutionType IN (N'SQLCMD', N'PARTNER') BEGIN
 		SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
 
-        IF UPPER(@ExecutionType) = N'SQLCMD' BEGIN 
+        IF @ExecutionType = N'SQLCMD' BEGIN 
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
 			    SET @serverName = N' .\' + @@SERVICENAME;
 	    END; 
 
-	    IF UPPER(@ExecutionType) = N'PARTNER' BEGIN 
+	    IF @ExecutionType = N'PARTNER' BEGIN 
 		    SELECT @serverName = REPLACE([data_source], N'tcp:', N'') FROM sys.servers WHERE [name] = N'PARTNER';
 	    END; 
 
 		SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
     END;
 
-	IF UPPER(@ExecutionType) IN (N'POSH') BEGIN 
-		SET @xpCmd = 'Powershell.exe -Command "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+	IF @ExecutionType IN (N'PS', N'PS_CORE') BEGIN 
+		--SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -nop -ec ' + dbo.[base64_encode](@Command);
 	END;
 	
 	DECLARE @executionCount int = 0;
-	DECLARE @succeeded bit = 0;
+	DECLARE @succeeded bit = 0; 
 	DECLARE @executionTime datetime;
 	DECLARE @exceptionOccurred bit = 0;
     
