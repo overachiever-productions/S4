@@ -1,17 +1,16 @@
 /*
 
-	vNEXT: 
-		address CDC, TRUSTWORTHY, REPL, BROKER, and other directives. 
-
 	vNEXT:
 		checkfor + add/configure INDIRECT CHECKPOINTs
 
+	TODO: 
+		restrict @Directives to RESTRICTED_USER, KEEP_REPLICATION, KEEP_CDC, ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER, STOP_ON_ERROR | CONTINUE_ON_ERROR
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.script_targetdb_migration_template','P') IS NOT NULL
+IF OBJECT_ID('dbo.[script_targetdb_migration_template]','P') IS NOT NULL
 	DROP PROC dbo.[script_targetdb_migration_template];
 GO
 
@@ -19,21 +18,31 @@ CREATE PROC dbo.[script_targetdb_migration_template]
 	@TargetDatabase					sysname				= NULL, 
 	@TargetCompatLevel				sysname				= N'{LATEST}',			-- { {LATEST} | 150 | 140 | 130 | 120 } 
 	@CheckSanityMarker				bit					= 1, 
-	--@EnableBroker					sysname				= NULL, -- ' ... steps/modes to enable broker here - and integrate those into RECOVERY... 
+	@Directives						sysname				= NULL,					-- USAGE: this is just a LITERAL string to add to the end of the RESTORE <dbName> WITH RECOVERY<x>; (where x = @Directives LITERAL TEXT). 
 	@UpdateStatistics				bit					= 1, 
-	@CheckForOrphans				bit					= 1
+	@CheckForOrphans				bit					= 1, 
+	@IgnoredOrphans					nvarchar(MAX)		= NULL
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-	
+
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 	SET @TargetCompatLevel = ISNULL(NULLIF(@TargetCompatLevel, N''), N'{LATEST}');
 
 	SET @CheckSanityMarker = ISNULL(@CheckSanityMarker, 1);
+	SET @Directives = NULLIF(@Directives, N'');
 
 	SET @UpdateStatistics = ISNULL(@UpdateStatistics, 1);
 	SET @CheckForOrphans = ISNULL(@CheckForOrphans, 1);
+	SET @IgnoredOrphans = NULLIF(@IgnoredOrphans, N'');
+
+
+	IF @Directives IS NOT NULL BEGIN 
+		SET @Directives = LTRIM(RTRIM(@Directives));
+		IF ASCII(@Directives) <> 44 
+			SET @Directives = N',' + @Directives;
+	END;
 
 	IF @TargetDatabase IS NULL BEGIN 
 		RAISERROR(N'@TargetDatabase cannot be NULL or empty.', 16, 1);
@@ -54,10 +63,9 @@ GO
 
 
 IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = N''' + @TargetDatabase + N''' AND [state_desc] = N''RESTORING'') BEGIN
-	RESTORE DATABASE [' + @TargetDatabase + N'] WITH RECOVERY;
+	RESTORE DATABASE [' + @TargetDatabase + N'] WITH RECOVERY + N' + @Directives + N';
 END;
 GO
-
 
 ALTER DATABASE [' + @TargetDatabase + N'] SET COMPATIBILITY_LEVEL = ' + @TargetCompatLevel + N'; 
 GO
@@ -75,37 +83,33 @@ GO
 
 ALTER DATABASE [' + @TargetDatabase + N'] SET PAGE_VERIFY CHECKSUM;
 GO
-
-------------------------------------------------------------------------
--- NOTE/TODO: 
---		Address CDC, REPL, BROKER, TRUSTWORTHY and any other directives necessary. (NOTE THAT SOME OF THESE SHOULD BE ADDRESSED during RECOVERY process... 
-
 ';
 
 	IF @CheckSanityMarker = 1 BEGIN
 		PRINT N'
-
 ------------------------------------------------------------------------
 -- Check for Sanity Table:
 SELECT * FROM [' + @TargetDatabase + N']..[___migrationMarker];
 GO 		
 ';
 
-
 	END;
-
 
 	IF @CheckForOrphans = 1 BEGIN 
 
 		PRINT N'------------------------------------------------------------------------
 -- Check for Orphans: 
+EXEC admindb.dbo.list_orphaned_users 
+	@TargetDatabase = N''' + @TargetDatabase + N''', 
+	@ExcludedUsers = N''' + @IgnoredOrphans + N''';
+GO
+
 EXEC [' + @TargetDatabase + N']..sp_change_users_login ''Report'';
 GO
 
 ';
 
 	END; 
-
 
 	IF @UpdateStatistics = 1 BEGIN 
 
