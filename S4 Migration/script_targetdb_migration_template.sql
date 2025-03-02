@@ -63,7 +63,7 @@ GO
 
 
 IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = N''' + @TargetDatabase + N''' AND [state_desc] = N''RESTORING'') BEGIN
-	RESTORE DATABASE [' + @TargetDatabase + N'] WITH RECOVERY + N' + @Directives + N';
+	RESTORE DATABASE [' + @TargetDatabase + N'] WITH RECOVERY' + @Directives + N';
 END;
 GO
 
@@ -100,13 +100,9 @@ GO
 		PRINT N'------------------------------------------------------------------------
 -- Check for Orphans: 
 EXEC admindb.dbo.list_orphaned_users 
-	@TargetDatabase = N''' + @TargetDatabase + N''', 
+	@TargetDatabases = N''' + @TargetDatabase + N''', 
 	@ExcludedUsers = N''' + @IgnoredOrphans + N''';
 GO
-
-EXEC [' + @TargetDatabase + N']..sp_change_users_login ''Report'';
-GO
-
 ';
 
 	END; 
