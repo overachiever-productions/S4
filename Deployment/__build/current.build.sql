@@ -225,6 +225,9 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="plancache_columns_by_index" type="P" comment="v12.1 refactoring." />
 	<entry schema="dbo" name="plancache_columns_by_table" type="P" comment="v12.1 refactoring." />
 	<entry schema="dbo" name="plancache_metrics_for_index" type="P" comment="v12.1 refactoring." />
+
+	<entry schema="dbo" name="disable_and_script_logins" type="P" comment="v13.0 refactoring." />
+	<entry schema="dbo" name="disable_and_script_job_states" type="P" comment="v13.0 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
