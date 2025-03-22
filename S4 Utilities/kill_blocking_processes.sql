@@ -450,7 +450,7 @@ SendMessage:
 	ELSE BEGIN 
 		EXEC [msdb]..[sp_notify_operator] 
 			@profile_name = @MailProfileName,
-			@name = @OperatorName, -- operator name
+			@name = @OperatorName, 
 			@subject = @subject, 
 			@body = @message;	
 	END;
