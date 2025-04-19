@@ -23,7 +23,8 @@ CREATE PROC dbo.list_collisions
 	@IncludePlans									bit				= 1, 
 	@IncludeContext									bit				= 1,
 	@UseInputBuffer									bit				= 0,     -- for any statements (query_handles) that couldn't be pulled from sys.dm_exec_requests and then (as a fallback) from sys.sysprocesses, this specifies if we should use DBCC INPUTBUFFER(spid) or not... 
-	@ExcludeFullTextCollisions						bit				= 1   
+	@ExcludeFullTextCollisions						bit				= 1, 
+	@FormatTimeSpans								bit				= 1	-- some callers might NOT want this... 
 	--@MinimumWaitThresholdInMilliseconds				int			= 200	
 	--@ExcludeSystemProcesses							bit			= 1		-- TODO: this needs to be restricted to ... blocked only? or... how's that work... (what if i don't care that a system process is blocked... but that system process is blocking a user process? then what?
 AS 
@@ -262,10 +263,12 @@ AS
 					[s].[login_name], 
 					[s].[host_name], 
 					[s].[program_name], 
-					[s].[host_process_id]
+					[s].[host_process_id], 
+					[cn].[client_net_address] [ip_address]
 				FROM 
 					#core c2 
 					LEFT OUTER JOIN sys.[dm_exec_sessions] s ON c2.[session_id] = [s].[session_id]
+					LEFT OUTER JOIN sys.[dm_exec_connections] cn ON [c2].[session_id] = [cn].[session_id]
 				WHERE 
 					c2.[session_id] = c.[session_id]
 				FOR 
@@ -331,7 +334,7 @@ AS
 		[c].[wait_type],
 		[c].[wait_resource],
 	
-		CASE WHEN c.[total_elapsed_time] IS NOT NULL THEN dbo.format_timespan([c].[total_elapsed_time]) ELSE CASE WHEN c.[last_request_start_time] IS NOT NULL AND DATEDIFF(DAY, c.[last_request_start_time], GETDATE()) < 20 THEN dbo.format_timespan(DATEDIFF(MILLISECOND, c.[last_request_start_time], GETDATE())) ELSE ''> 20 days'' END END [duration],
+		{duration}
 		
 		CASE WHEN [c].[is_user_process] = 1 THEN 0 ELSE 1 END [is_system],
         ISNULL([c].[transaction_scope], '') [transaction_scope],
@@ -363,8 +366,16 @@ AS
 		SET @finalProjection = REPLACE(@finalProjection, N'{plans_join}', N'');
 	END;
 
-	-- final projection:
-	EXEC sp_executesql @finalProjection;
+	IF @FormatTimeSpans = 1 
+		SET @finalProjection = REPLACE(@finalProjection, N'{duration}', N'CASE WHEN c.[total_elapsed_time] IS NOT NULL THEN dbo.format_timespan([c].[total_elapsed_time]) ELSE CASE WHEN c.[last_request_start_time] IS NOT NULL AND DATEDIFF(DAY, c.[last_request_start_time], GETDATE()) < 20 THEN dbo.format_timespan(DATEDIFF(MILLISECOND, c.[last_request_start_time], GETDATE())) ELSE ''> 20 days'' END END [duration],');
+	ELSE 
+		SET @finalProjection = REPLACE(@finalProjection, N'{duration}', N'ISNULL(c.[total_elapsed_time], DATEDIFF(MILLISECOND, c.[last_request_start_time], GETDATE())) [duration],');
+
+	--EXEC dbo.[print_long_string]
+		--@Input = @finalProjection;
+
+	EXEC sp_executesql 
+		@finalProjection;
 
 	RETURN 0;
 GO

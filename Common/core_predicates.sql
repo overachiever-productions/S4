@@ -126,7 +126,7 @@ AS
 	END;
 
 	IF @Applications IS NOT NULL BEGIN
-		INSERT INTO [#ts_cp_applications]([applications], [exclude])
+		INSERT INTO [#ts_cp_applications]([application], [exclude])
 		SELECT 
 			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [application], 
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
@@ -145,7 +145,7 @@ AS
 	END;
 
 	IF @Hosts IS NOT NULL BEGIN
-		INSERT INTO [#ts_cp_hosts]([hosts], [exclude])
+		INSERT INTO [#ts_cp_hosts]([host], [exclude])
 		SELECT 
 			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [host], 
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
@@ -164,7 +164,7 @@ AS
 	END;
 
 	IF @IPs IS NOT NULL BEGIN
-		INSERT INTO [#ts_cp_ips]([ips], [exclude])
+		INSERT INTO [#ts_cp_ips]([ip], [exclude])
 		SELECT 
 			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [ip], 
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
@@ -183,7 +183,7 @@ AS
 	END;
 
 	IF @Principals IS NOT NULL BEGIN
-		INSERT INTO [#ts_cp_principals]([principals], [exclude])
+		INSERT INTO [#ts_cp_principals]([principal], [exclude])
 		SELECT 
 			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [principal], 
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
@@ -202,7 +202,7 @@ AS
 	END;
 
 	IF @Statements IS NOT NULL BEGIN
-		INSERT INTO [#ts_cp_statements]([statements], [exclude])
+		INSERT INTO [#ts_cp_statements]([statement], [exclude])
 		SELECT 
 			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [statement], 
 			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
@@ -219,6 +219,9 @@ AS
 			SET @FilterPredicates = @FilterPredicates + @crlftab + N'AND [ts_sx].[statement] IS NULL';	
 		END;
 	END;
+
+	SET @JoinPredicates = ISNULL(@JoinPredicates, N'');
+	SET @FilterPredicates = ISNULL(@FilterPredicates, N'');
 
 	RETURN 0;
 GO
