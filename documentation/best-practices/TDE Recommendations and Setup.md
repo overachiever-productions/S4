@@ -353,8 +353,12 @@ To monitor overall encryption (or decryption) progress, you can use the followin
 ```sql
 
 SELECT 
-	DB_NAME([database_id]) [database_name],
-	CASE [encryption_state] 
+	[d].[name],
+	[d].[database_id],
+	--[d].[is_encrypted],
+	
+	--DB_NAME([k].[database_id]) [database_name],
+	CASE ISNULL([k].[encryption_state], 0)
 		WHEN 0 THEN 'Not Configured for Encryption'
 		WHEN 1 THEN 'Not Encrypted'
 		WHEN 2 THEN 'Encryption in progress...'
@@ -365,16 +369,20 @@ SELECT
 		ELSE 'Unknown'
 	END [encryption_state],
 	CASE
-		WHEN [encryption_state] = 3 THEN CAST(100.0 AS real) 
-		ELSE [percent_complete] 
+		WHEN [k].[encryption_state] IS NULL THEN CAST(0.0 AS real)
+		WHEN [k].[encryption_state] = 3 THEN CAST(100.0 AS real) 
+		ELSE [k].[percent_complete] 
 	END [percent_complete],
-	[set_date],
-	[key_algorithm],
-	[key_length],
-	[encryptor_thumbprint],
-	[encryptor_type]
+	[k].[set_date],
+	ISNULL([k].[key_algorithm], N'') [key_algorithm],
+	[k].[key_length],
+	[k].[encryptor_thumbprint],
+	ISNULL([k].[encryptor_type], N'') [encryptor_type]
 FROM 
-	sys.dm_database_encryption_keys;
+	sys.databases [d]
+	LEFT OUTER JOIN sys.[dm_database_encryption_keys] [k] ON [d].[database_id] = [k].[database_id]
+ORDER BY 
+	[d].[database_id];
 	
 ```
 

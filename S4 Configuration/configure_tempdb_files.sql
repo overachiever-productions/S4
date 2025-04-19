@@ -4,6 +4,10 @@
 		- current implementation = MVP implementation
 
 		- Only expects/accounts for 1x log file (anything else is a serious edge-case and/or bad/wrong/weird).
+
+
+	WARNING: 
+		- This script requires a RESTART of SQL Server if setting files to smaller size or lower-file-count. 
 	
 */
 
@@ -18,18 +22,18 @@ CREATE PROC dbo.[configure_tempdb_files]
 	@TargetDataFileCount				int				= NULL, 
 	@TargetDataFilePath					sysname			= NULL, 
 	@TargetLogFilePath					sysname			= NULL, 
-	-- vNEXT:
-	--@DataFileStartSizeInMBs			int			= NULL, 
-	--@DataFileGrowthSizeInMBs			int				= NULL,
-	--@LogFileStartSizeInMBs			int			= NULL, 
-	--@LogFileGrowthSizeInMBs			int			= NULL, 
+	@DataFileStartSizeInMBs				int				= NULL, 
+	@DataFileGrowthSizeInMBs			int				= NULL,
+	@DataFileMaxSizeInMBs				int				= NULL, 
+	@LogFileStartSizeInMBs				int				= NULL, 
+	@LogFileGrowthSizeInMBs				int				= NULL, 
+	@LogFileMaxSizeInMBs				int				= NULL, 
 	@PrintOnly							bit				= 1
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
-	-- TODO: Validate inputs
 	SET @TargetDataFilePath	= NULLIF(@TargetDataFilePath, N'');
 	SET @TargetLogFilePath	= NULLIF(@TargetLogFilePath, N'');
 
@@ -40,8 +44,8 @@ AS
 	DECLARE @currentDataFilesCount int; 
 	SELECT @currentDataFilesCount = COUNT(*) FROM [tempdb].sys.[database_files] WHERE [type] = 0;
 
-	--DECLARE @removeTemplate nvarchar(MAX) = N'ALTER DATABASE [tempdb] REMOVE FILE [{name}]; ';
-	DECLARE @removeTemplate nvarchar(MAX) = N'EXEC admindb.dbo.force_removal_of_tempdb_file @FileName = N''{name}'', @Force = N''FORCE''; ';
+	DECLARE @removeTemplate nvarchar(MAX) = N'ALTER DATABASE [tempdb] REMOVE FILE [{name}]; ';
+	--DECLARE @removeTemplate nvarchar(MAX) = N'EXEC admindb.dbo.force_removal_of_tempdb_file @FileName = N''{name}'', @Force = N''FORCE''; ';
 	DECLARE @addTemplate nvarchar(MAX) = N'ALTER DATABASE [tempdb] ADD FILE (NAME = ''{name}'', FILENAME = ''{fileName}'', SIZE = {size}, MAXSIZE = {maxSize}, FILEGROWTH = {growth}); ';
 	DECLARE @modifyTemplate nvarchar(MAX) = N'ALTER DATABASE [tempdb] MODIFY FILE (NAME = ''{name}'', FILENAME = ''{path}{name}.ndf''); ';
 	DECLARE @modifyLogTemplate nvarchar(MAX) = N'ALTER DATABASE [tempdb] MODIFY FILE (NAME =''{name}'', FILENAME = ''{fileName}''); ';
