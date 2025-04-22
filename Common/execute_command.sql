@@ -278,6 +278,31 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{OFFLINE}', N'');
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{B2COPYFILE}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type], [filter_text])
+		VALUES
+			(N'B2COPYFILE', N'URL by file name:%'),
+			(N'B2COPYFILE', N'URL by fileId:%'),
+			(N'B2COPYFILE', N'{'),
+			(N'B2COPYFILE', N'    },'),
+			(N'B2COPYFILE', N'    "accountId"%'),
+			(N'B2COPYFILE', N'    "action":%'),
+			(N'B2COPYFILE', N'    "bucketId":%'),
+			(N'B2COPYFILE', N'    "content%'),
+			(N'B2COPYFILE', N'    "file%'),
+			(N'B2COPYFILE', N'        "src_last_modified_millis%'),
+			(N'B2COPYFILE', N'    "serverSideEncryption":%'),
+			(N'B2COPYFILE', N'        "mode": %'),
+			(N'B2COPYFILE', N'        "retainUntilTimestamp": null'),
+			(N'B2COPYFILE', N'    "legalHold":%'),
+			(N'B2COPYFILE', N'    "replicationStatus":%'),
+			(N'B2COPYFILE', N'    "size": %'),
+			(N'B2COPYFILE', N'    "uploadTimestamp": %'),
+			(N'B2COPYFILE', N'}');
+
+		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{B2COPYFILE}', N'')
+	END;
+
 	-- TODO: {SHRINKLOG}
 	-- TODO: {DBCC} (success)
 
