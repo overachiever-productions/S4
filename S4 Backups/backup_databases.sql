@@ -367,6 +367,7 @@ AS
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
 		-- NOTE: @ExcludeSecondaries, @ExcludeRecovering, @ExcludeRestoring, @ExcludeOffline ALL default to 1 - meaning that, for backups, we want the default (we CAN'T back those databases up no matter how much we want). (Well, except for secondaries...hmm).
+		@ExcludeReadOnly = 0, 
 		@ExcludeSimpleRecovery = @excludeSimple;
 
 	-- verify that we've got something: 
