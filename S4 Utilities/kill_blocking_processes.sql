@@ -554,6 +554,12 @@ ORDER BY
 			AND [duration] > @alertThresholdMilliseconds;
 	END;
 
+	UPDATE [#actionable] 
+	SET 
+		[action] = N'BLOCKER'
+	WHERE 
+		[action] IS NULL; 
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- KILL killable SPIDS:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -744,9 +750,9 @@ SendMessage:
 
 	DECLARE @body nvarchar(MAX) = N'';
 	SELECT 
-		@body = @body + CASE WHEN [action] IN(N'KILL', N'ALERT') THEN N'LEAD BLOCKER: ' ELSE @tab + N'VICTIM ' END +
-		@crlf + @tab + N'ACTION					: ' + ISNULL([action], N'#NONE#') + 
-		@crlf + @tab + N'OUTCOME					: ' + ISNULL([outcome], N'') + 
+		@body = @body + CASE WHEN [action] IN (N'KILL', N'ALERT', N'BLOCKER') THEN N'BLOCKER: ' ELSE  N'  VICTIM: ' END +
+		CASE WHEN ISNULL([action], N'VICTIM') = N'VICTIM' THEN N'' ELSE @crlf + @tab + N'ACTION					: ' + ISNULL([action], N'') END + 
+		CASE WHEN NULLIF([outcome], N'') IS NULL THEN N'' ELSE @crlf + @tab + N'OUTCOME				: ' + [outcome] END +
 		@crlf + @tab + N'database				:' + ISNULL([database], N'') +
 		@crlf + @tab + N'Session Id             : ' + CAST(ISNULL([session_id], -1) AS sysname) +
 		@crlf + @tab + N'Blocking Chain			: ' + CAST(ISNULL([blocking_chain], -1) AS sysname) + 
