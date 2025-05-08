@@ -91,7 +91,7 @@ CREATE PROC dbo.backup_databases
 	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., N'S3::bucket-name:path\sub-path' or  N'B2::bucket-name:path\sub-path'  - does NOT allow multiple paths/targets. 
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
-	@OffSiteRetention					nvarchar(10)							= NULL,							-- { vector | n backups | {INFINITE} }   - where {INFINITE} is a token meaning: S4 won't tackle cleanups, instead this is handled by retention policies.
+	@OffSiteRetention					nvarchar(10)							= N'{INFINITE}',				-- { vector | n backups | {INFINITE} }   - where {INFINITE} is a token meaning: S4 won't tackle cleanups, instead this is handled by retention policies.
 	@RemoveFilesBeforeBackup			bit										= 0,							-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
 	@EncryptionCertName					sysname									= NULL,							-- Ignored if not specified. 
 	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
