@@ -2,7 +2,7 @@
 
 	NOTE/WARN: this is VERY rough draft. It works for happy-path only scenarios... 
 
-
+	AND... can't handle any kind of 'illegal' xml characters in ... @AwsSecretKey
 	
 
 
