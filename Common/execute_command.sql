@@ -298,7 +298,8 @@ AS
 			(N'B2COPYFILE', N'    "replicationStatus":%'),
 			(N'B2COPYFILE', N'    "size": %'),
 			(N'B2COPYFILE', N'    "uploadTimestamp": %'),
-			(N'B2COPYFILE', N'}');
+			(N'B2COPYFILE', N'}'), 
+			(N'B2COPYFILE', N'        "algorithm": %');  -- this is thrown out if/when the underlying bucket is encrypted. e.g., "algorithm": "AES256",
 
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{B2COPYFILE}', N'')
 	END;
