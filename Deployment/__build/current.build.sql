@@ -51,7 +51,7 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('version_history', 'U') IS NULL BEGIN
+IF OBJECT_ID('dbo.version_history', 'U') IS NULL BEGIN
 
 	CREATE TABLE dbo.version_history (
 		version_id int IDENTITY(1,1) NOT NULL, 
@@ -350,6 +350,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: Common\base64_encode.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\normalize_file_path.sql
 
 -----------------------------------
@@ -381,6 +384,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\verify_alerting_configuration.sql
+
+-----------------------------------
+--##INCLUDE: Common\core_predicates.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\extract_waitresource.sql
@@ -634,10 +640,16 @@ GO
 --##INCLUDE: S4 Migration\script_targetdb_migration_template.sql
 
 -----------------------------------
---##INCLUDE: S4 Migration\disable_and_script_job_states.sql
+--##INCLUDE: S4 Migration\disable_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 Migration\disable_and_script_logins.sql
+--##INCLUDE: S4 Migration\disable_logins.sql
+
+-----------------------------------
+--##INCLUDE: S4 Migration\script_job_states.sql
+
+-----------------------------------
+--##INCLUDE: S4 Migration\script_login_states.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- SQL Server Agent Jobs
@@ -733,7 +745,7 @@ GO
 --##INCLUDE: S4 Diagnostics\Security\list_login_permissions.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\QueryStore\view_querystore_consumers.sql
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_consumers.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\view_querystore_counts.sql

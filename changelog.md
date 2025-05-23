@@ -2,6 +2,32 @@
 
 # Change Log
 
+## [12.2] - 2025-05-23
+Miscellaneous bug-fixes and minor improvements to backups.
+
+### Fixed 
+- Bug-fix to address problems with RPO Violations erroneously reporting 'gaps' caused by DIFF backups. 
+- Corrected issue with IO latency (percent-of-percent load/distribution) percentages not totaling 100%.
+- Corrected duplicate exclusion for filtered alerts against 17828 (17821) and 17836 (17832).
+
+## Improved 
+- `dbo.backup_databases` No longer requires `@OffsiteRetention` to be specified. Instead, it defaults to the value of `N'{INFINITE}` (which is the only value/option currently specified.)
+
+### Added 
+- Initial implementation of Base64 encoding functionality. (Primarily for calls into PowerShell.)
+- Initial functionality to allow 'arbitrary' `@EventStoreTarget` parameters for Blocked Processes and Large-SQL Reports/Reporting-Logic.
+- Initial addition of common/standardized predicates for all Event Store Reports.
+- `dbo.script_targetdb_migration_template` now has (initial) options for DIRECTIVES during restore, and can specify `@IgnoredOrphans` (primarily to address orphans in source environment).
+- Initial addition of `dbo.core_predicates` for use (going forward) as single (DRY) location for all common predication logic (logins, databases, hosts, statements, etc.).
+- EARLY logic/functionality to allow offsite backups to be pushed to Backblaze (i.e., `B2` and `S3` are now both supported for offsite backups).
+
+### Changed 
+- Refactored `dbo.view_querystore_consumers` to `dbo.querystore_consumers`.
+- `dbo.verify_database_configurations` now attempts to switch (user) databases to FULL recovery. 
+- FULL refactoring of scripting for job-states and logins into 2x distinct (for each) scripts that can disable all (with exclusions) jobs/logins and (different/stand-alone) scripts to script logins / job enabled details. 
+- FULL rewrite of `dbo.kill_blocking_processes` to standardize identification, enable alerts and/or KILL operations, and facilitate simplified/streamlined capture - along with options to specify COMMON predicates. 
+- `dbo.backup_databases` no longer attempts to execute T-LOG backups against `READ_ONLY` databases.
+
 ## [12.1] - 2024-10-15
 Bug-Fixes for Restore Operations + Additional Tweaks and Improvements.
 
