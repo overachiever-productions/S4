@@ -167,9 +167,8 @@ DECLARE @obsoleteObjects xml = CONVERT(xml, N'
             <heading>WARNING - Potential Configuration Changes Required (disk-space checks)</heading>
         </notification>
     </entry>
-    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes).">
-	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers.">
-    </entry>
+    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
+	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @obsoleteObjects, N'master';
