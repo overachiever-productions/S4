@@ -7,6 +7,10 @@
 		DECLARE @command nvarchar(MAX) = N'. .C:\SomeDir\MyScript.ps1' + NCHAR(13) + NCHAR(10) + N'Do-MyFunc -Param1 ''foo'' -Param2 12';
 		SELECT dbo.base64_encode(@command);
 
+
+	REFACTOR:
+		PROBABLY just call this dbo.encode (and have a corresponding dbo.decode) and specify 2x params: @Input, @TargetType (HTML, URI, Base64, XML, JSON, etc) or @SourceType (ditto).
+
 */
 
 USE [admindb];
