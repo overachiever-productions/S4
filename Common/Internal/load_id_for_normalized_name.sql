@@ -72,7 +72,7 @@ AS
 		@targetObjectId = @targetObjectId OUTPUT;
 
 	IF @targetObjectId IS NULL BEGIN 
-		RAISERROR(N'Invalid Table Name specified for %s. Please use dbname.schemaname.objectname qualified names.', 16, 1, @ParameterNameForTarget);
+		RAISERROR(N'Specified Object for Parameter %s ([%s]) NOT FOUND. Please make sure this object exists before continuing.', 16, 1, @ParameterNameForTarget, @TargetName);
 		RETURN -10;
 	END;
 

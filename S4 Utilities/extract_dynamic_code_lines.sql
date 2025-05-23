@@ -1,5 +1,7 @@
 /*
 
+	.TARGET 
+	dbo.[extract_dynamic_code_lines]
 
 	.SYNOPSIS 
 	Debugging aid to help provide context for syntax and other errors. 
@@ -28,6 +30,13 @@
 	<description here about how outputs are printed - not projected as table, etc.... and that there's a 'visual map' with code-lines numbered
 	and with a --> pointer to the @TargetLine
 
+	.RESULT 
+	.TABLE (optional table name can go here - cuz... i guess there might be scenarios with multiple result sets). 
+	column_name	int	description goes here - and note that I'm not doing anything other than tab-separation for columns. I mean, I could use | bars | and I guess that would work. 
+	another_column	nvarchar(12)	another description goes here. and i guess it probably makes more sense to put | bars into place. 
+	final_columns | tinyint | this is an example of what it would look like to have bars as separators. yeah. they're way better. and then I can just trim whitespace after 'splitting'. 
+		<NOTE: output tables can/will only EVER have 3 columns: Column Name | Data type | Description - just as is done with T-SQL docs online.> 
+
 	.EXAMPLE
 	-- I'm really only putting this into place as an EXAMPLE of what it'll look like to have T-SQL code in here. 
 	--		along with having comments and the "whole 9 yards"... 
@@ -36,24 +45,34 @@
 
 	.EXAMPLE
 	.TITLE Optional Title for this Example would go here.
+	Some sort of overview about what the example/sample is doing and so on.
 
-	.RESULT 
-	.TABLE (optional table name can go here - cuz... i guess there might be scenarios with multiple result sets). 
-	column_name	int	description goes here - and note that I'm not doing anything other than tab-separation for columns. I mean, I could use | bars | and I guess that would work. 
-	another_column	nvarchar(12)	another description goes here. and i guess it probably makes more sense to put | bars into place. 
-	final_columns | tinyint | this is an example of what it would look like to have bars as separators. yeah. they're way better. and then I can just trim whitespace after 'splitting'. 
-		<NOTE: output tables can/will only EVER have 3 columns: Column Name | Data type | Description - just as is done with T-SQL docs online.> 
+	More text that's still part of the intro or whatever. 
+
+	Could put in screenshots here? i mean... yeah. need to figure out how that's going to work. 
+
+	```sql 
+
+	SELECT @@VERSION; 
+
+	``` 
+	And the sql/code above is why I NEED TO KNOW if/when a CREATE xxx or DROP y or whatever is inside block-comments. 
+	Cuz, otherwise, it'd throw EVERYTHING off. 
+	Otherwise, this 'example' is finished. 
+
+	.EXAMPLE 
+	.TITLE Example B
+	Another Example, this time ... smaller and with less stuff. 
 
 
 	the other thing I need to tackle is ... making this 'powershell-like' syntax/approach to documentation for tsmake ... more like T-SQL docs. 
 		such as: 
-			- ARGUMENT? instead of PARAMETER? 
 			- Option for .RETURNCODE ? 
 			- Maybe .RESULT and .RESULTSET as differentiators between text and 'sets'/tables? 
 			- Possibly??? .PERMISSIONS ... i mean, this is the admindb ... so, expectation is that everything will have these. 
 				ahhh. no. I'm wrong. MY implementation will be for the admindb (initially) - but then for DDA, and BATCHER and... i want this framework viable for others... 
 			- .SEEALSO ? (a name and a link?) only... how do I handle links? 
-			- .SYNTAX - t-sql/pseudo-code that outlines the syntax for the calls/optional-call-types? 
+			- .SYNTAX - t-sql/pseudo-code that outlines the syntax for the calls/optional-call-types? and... probably going to have to put this into a ``` pre ``` 
 			- .APPLIES (not sure how to tackle these - i mean, i could do .APPLIES<crlf>SQL 2017+<crlf2>.APPLIES<crlf>SQL Linux, SQL Azure, etc.<crlfs>.APPLIES<crlf>!RDS!
 					where the idea is that I could list options for which products/platforms DO apply via .APPLIES... and !wrapping in exclamation points! would mean fails/red-mark vs green.
 						same idea with ?SQL Server Linux?  ... meaning ... (?) icon ... 

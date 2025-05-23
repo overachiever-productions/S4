@@ -79,11 +79,11 @@ AS
 	DECLARE @serverVersion int;
 	SET @serverVersion = (SELECT CAST((LEFT(CAST(SERVERPROPERTY('ProductVersion') AS sysname), CHARINDEX('.', CAST(SERVERPROPERTY('ProductVersion') AS sysname)) - 1)) AS int)) * 10;
 
-	DECLARE @databasesToCheck table (
+	CREATE TABLE #databasesToCheck (
 		[name] sysname
 	);
 	
-	INSERT INTO @databasesToCheck ([name])
+	INSERT INTO #databasesToCheck ([name])
 	EXEC dbo.list_databases 
 		@Targets = N'{USER}',
 		@Exclusions = @DatabasesToExclude;
@@ -106,13 +106,13 @@ AS
 		SELECT [result] FROM dbo.[split_string](@RcsiExclusions, N',', 1);
 	END;
 
-	DECLARE @issues table ( 
-		issue_id int IDENTITY(1,1) NOT NULL, 
+	CREATE TABLE #issues ( 
+		[issue_id] int IDENTITY(1,1) NOT NULL, 
 		[database] sysname NOT NULL, 
-		issue varchar(2000) NOT NULL, 
-		command nvarchar(2000) NOT NULL, 
-		success_message varchar(2000) NOT NULL,
-		succeeded bit NOT NULL DEFAULT (0),
+		[issue] varchar(2000) NOT NULL, 
+		[command] nvarchar(2000) NOT NULL, 
+		[success_message] varchar(2000) NOT NULL,
+		[succeeded] bit NOT NULL DEFAULT (0),
 		[error_message] nvarchar(MAX) NULL 
 	);
 
@@ -123,7 +123,7 @@ AS
 	-- Checks: 
 	
 	-- Compatablity Checks: 
-	INSERT INTO @issues ([database], [issue], [command], [success_message])
+	INSERT INTO #issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database],
 		N'Compatibility should be ' + CAST(@serverVersion AS sysname) + N'. Currently set to ' + CAST(d.[compatibility_level] AS sysname) + N'.' [issue], 
@@ -131,7 +131,7 @@ AS
 		N'Database Compatibility successfully set to ' + CAST(@serverVersion AS sysname) + N'.'  [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		INNER JOIN #databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 		LEFT OUTER JOIN @excludedComptabilityDatabases e ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS LIKE e.[name] -- allow LIKE %wildcard% exclusions
 	WHERE 
 		d.[compatibility_level] <> CAST(@serverVersion AS tinyint)
@@ -140,7 +140,7 @@ AS
 		d.[name] ;
 		
 	-- Page Verify: 
-	INSERT INTO @issues ([database], [issue], [command], [success_message])
+	INSERT INTO #issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database], 
 		N'Page Verify should be set to CHECKSUM. Currently set to ' + ISNULL(page_verify_option_desc, 'NOTHING') + N'.' [issue], 
@@ -148,7 +148,7 @@ AS
 		N'Page Verify successfully set to CHECKSUM.' [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		INNER JOIN #databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 	WHERE 
 		page_verify_option_desc <> N'CHECKSUM'
 	ORDER BY 
@@ -156,7 +156,7 @@ AS
 
 	-- OwnerChecks:
 	IF @ReportDatabasesNotOwnedBySA = 1 BEGIN
-		INSERT INTO @issues ([database], [issue], [command], [success_message])
+		INSERT INTO #issues ([database], [issue], [command], [success_message])
 		SELECT 
 			d.[name] [database], 
 			N'Should be owned by 0x01 (SysAdmin). Currently owned by 0x' + CONVERT(nvarchar(MAX), owner_sid, 2) + N'.' [issue], 
@@ -164,13 +164,13 @@ AS
 			N'Database owndership successfully transferred to 0x01 (SysAdmin).' [success_message]
 		FROM 
 			sys.databases d
-			INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+			INNER JOIN #databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 		WHERE 
 			owner_sid <> 0x01;
 	END;
 
 	-- AUTO_CLOSE:
-	INSERT INTO @issues ([database], [issue], [command], [success_message])
+	INSERT INTO #issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database], 
 		N'AUTO_CLOSE should be DISABLED. Currently ENABLED.' [issue], 
@@ -178,14 +178,14 @@ AS
 		N'AUTO_CLOSE successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		INNER JOIN #databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 	WHERE 
 		[is_auto_close_on] = 1
 	ORDER BY 
 		d.[name];
 
 	-- AUTO_SHRINK:
-	INSERT INTO @issues ([database], [issue], [command], [success_message])
+	INSERT INTO #issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database], 
 		N'AUTO_SHRINK should be DISABLED. Currently ENABLED.' [issue], 
@@ -193,14 +193,14 @@ AS
 		N'AUTO_SHRINK successfully set to DISABLED.' [success_message]
 	FROM 
 		sys.databases d
-		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		INNER JOIN #databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 	WHERE 
 		[is_auto_shrink_on] = 1
 	ORDER BY 
 		d.[name];
 		
 	-- RCSI: 
-	INSERT INTO @issues ([database], [issue], [command], [success_message])
+	INSERT INTO #issues ([database], [issue], [command], [success_message])
 	SELECT 
 		d.[name] [database], 
 		N'RCSI should be ' + CASE WHEN @EnableRcsi = 1 THEN N'ENABLED' ELSE N'DISABLED' END + '. Currently ' + CASE WHEN @EnableRcsi = 1 THEN N'DISABLED' ELSE N'ENABLED' END + '.' [issue], 
@@ -208,13 +208,28 @@ AS
 		N'RCSI successfully set to ' + CASE WHEN @EnableRcsi = 1 THEN N'ENABLED' ELSE N'DISABLED' END + '.' [success_message]
 	FROM 
 		sys.databases d 
-		INNER JOIN @databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+		INNER JOIN #databasesToCheck x ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
 		LEFT OUTER JOIN @excludedRcsiDatabases e ON d.[name] COLLATE SQL_Latin1_General_CP1_CI_AS LIKE e.[name] -- allow LIKE %wildcard% exclusions
 	WHERE 
 		[d].[is_read_committed_snapshot_on] <> @EnableRcsi 
 		AND e.[name] IS  NULL -- only include non-exclusions
 	ORDER BY 
 		d.[name];
+
+	-- Recovery Model: 
+	INSERT INTO #issues ([database], [issue], [command], [success_message])
+	SELECT 
+		[d].[name] [database], 
+		N'Database Recovery should be set to FULL - but is currently [' + [d].[recovery_model_desc] + N'].' [issue], 
+		N'ALTER DATABASE ' + QUOTENAME([d].[name]) + N' SET RECOVERY FULL; ' [command], 
+		N'Database [' + [d].[name] + N'] successfully set to FULL RECOVERY' [success_message]
+	FROM 
+		sys.databases [d]
+		INNER JOIN #databasesToCheck [x] ON [d].[name] COLLATE SQL_Latin1_General_CP1_CI_AS = x.[name]
+	WHERE 
+		[d].[recovery_model_desc] <> N'FULL'
+	ORDER BY 
+		[d].[name];
 
 	-----------------------------------------------------------------------------
 	-- add other checks as needed/required per environment:
@@ -227,14 +242,14 @@ AS
 
 	-----------------------------------------------------------------------------
 	-- (attempted) fixes: 
-	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
+	IF EXISTS (SELECT NULL FROM #issues) BEGIN 
 
 		DECLARE fixer CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
 			[issue_id], 
 			[command] 
 		FROM 
-			@issues 
+			#issues 
 		ORDER BY [issue_id];
 
 		DECLARE @currentID int;
@@ -253,12 +268,12 @@ AS
 				    EXEC sp_executesql @currentCommand;
                 END;
 
-                UPDATE @issues SET [succeeded] = 1 WHERE [issue_id] = @currentID;
+                UPDATE #issues SET [succeeded] = 1 WHERE [issue_id] = @currentID;
 
 			END TRY 
 			BEGIN CATCH
 				SET @errorMessage = CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
-				UPDATE @issues SET [error_message] = @errorMessage WHERE [issue_id] = @currentID;
+				UPDATE #issues SET [error_message] = @errorMessage WHERE [issue_id] = @currentID;
 			END CATCH
 
 			FETCH NEXT FROM [fixer] INTO @currentID, @currentCommand;
@@ -273,17 +288,17 @@ AS
 	-- reporting: 
 	DECLARE @emailBody nvarchar(MAX) = NULL;
 	DECLARE @emailSubject nvarchar(300);
-	IF EXISTS (SELECT NULL FROM @issues) BEGIN 
+	IF EXISTS (SELECT NULL FROM #issues) BEGIN 
 		SET @emailBody = N'';
 		
 		DECLARE @correctionErrorsOccurred bit = 0;
 		DECLARE @correctionsCompletedSuccessfully bit = 0; 
 
-		IF EXISTS (SELECT NULL FROM @issues WHERE [succeeded] = 0) BEGIN -- process ERRORS first. 
+		IF EXISTS (SELECT NULL FROM #issues WHERE [succeeded] = 0) BEGIN -- process ERRORS first. 
 			SET @correctionErrorsOccurred = 1;
 		END; 
 
-		IF EXISTS (SELECT NULL FROM @issues WHERE [succeeded] = 1) BEGIN -- report on successful changes: 
+		IF EXISTS (SELECT NULL FROM #issues WHERE [succeeded] = 1) BEGIN -- report on successful changes: 
 			SET @correctionsCompletedSuccessfully = 1;
 		END;
 
@@ -300,7 +315,7 @@ AS
 					+ @tab + @tab + N'ATTEMPTED CORRECTION: -> ' + [command] + @crlf
 					+ @tab + @tab + @tab + N'ERROR: ' + ISNULL([error_message], N'##Unknown/Uncaptured##') + @crlf + @crlf
 			FROM 
-				@issues 
+				#issues 
 			WHERE 
 				[succeeded] = 0 
 			ORDER BY [issue_id];
@@ -321,7 +336,7 @@ AS
 				+ @tab + @tab + @tab + @tab + N'Detected Problem: ' + [issue] + @crlf
 				+ @tab + @tab + @tab + @tab + N'Executed Correction: ' + [command] + @crlf + @crlf
 			FROM 
-				@issues 
+				#issues 
 			WHERE 
 				[succeeded] = 1 
 			ORDER BY [issue_id];

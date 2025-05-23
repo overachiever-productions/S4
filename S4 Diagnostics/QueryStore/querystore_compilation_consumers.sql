@@ -1,4 +1,10 @@
 /*
+	
+	SCOPE: 
+		This primarily exists to spot MAJOR problems with compilation - i.e., situations where updating STATS (prior to compilation - or as a part of compilation) 
+			might take minutes (or hours - it CAN happen) ...
+		It also helps end up being REALLY solid at helping figure out potential CPU 'problems' or consumers ... 
+
 
 	BUGs: 
 		- I'm doing QUERYID wrong: https://www.notion.so/overachiever/Plan-Cache-Compilations-1015380af00e8041a35bf13bf0239f49?pvs=4 

@@ -88,10 +88,10 @@ CREATE PROC dbo.backup_databases
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
 	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
 	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } NOTE {PARTNER} allowed as a token (if a PARTNER is defined).
-	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., S3::bucket-name:path\sub-path'
+	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., N'S3::bucket-name:path\sub-path' or  N'B2::bucket-name:path\sub-path'  - does NOT allow multiple paths/targets. 
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
 	@CopyToRetention					nvarchar(10)							= NULL,							-- [DITTO: As above, but allows for diff retention settings to be configured for copied/secondary backups.]
-	@OffSiteRetention					nvarchar(10)							= NULL,							-- { vector | n backups | {INFINITE} }   - where {INFINITE} is a token meaning: S4 won't tackle cleanups, instead this is handled by retention policies.
+	@OffSiteRetention					nvarchar(10)							= N'{INFINITE}',				-- { vector | n backups | {INFINITE} }   - where {INFINITE} is a token meaning: S4 won't tackle cleanups, instead this is handled by retention policies.
 	@RemoveFilesBeforeBackup			bit										= 0,							-- { 0 | 1 } - when true, then older backups will be removed BEFORE backups are executed.
 	@EncryptionCertName					sysname									= NULL,							-- Ignored if not specified. 
 	@EncryptionAlgorithm				sysname									= NULL,							-- Required if @EncryptionCertName is specified. AES_256 is best option in most cases.
@@ -335,11 +335,14 @@ AS
 		END;
 	END;
 
-	IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
-		IF @OffSiteBackupPath NOT LIKE 'S3::%' BEGIN 
-			RAISERROR('S3 Backups are the only OffSite Backup Types currently supported. Please use the format S3::bucket-name:path\sub-path', 16, 1);
+	IF @OffSiteBackupPath IS NOT NULL BEGIN 
+		IF NOT (LOWER(@OffSiteBackupPath) LIKE N's3::%' OR LOWER(@OffSiteBackupPath) LIKE N'b2::%') BEGIN
+			RAISERROR('S3 and B2 are the only Cloud Backup Types currently supported.', 16, 1);
 			RETURN -200;
 		END;
+
+	-- TODO: https://overachieverllc.atlassian.net/browse/S4-639
+
 	END;
 
 	IF @AlwaysProcessRetention = 1 BEGIN 
@@ -367,6 +370,7 @@ AS
 	    @Exclusions = @DatabasesToExclude,
 		@Priorities = @Priorities,
 		-- NOTE: @ExcludeSecondaries, @ExcludeRecovering, @ExcludeRestoring, @ExcludeOffline ALL default to 1 - meaning that, for backups, we want the default (we CAN'T back those databases up no matter how much we want). (Well, except for secondaries...hmm).
+		@ExcludeReadOnly = 0, 
 		@ExcludeSimpleRecovery = @excludeSimple;
 
 	-- verify that we've got something: 
@@ -414,22 +418,25 @@ AS
 	SET @CopyToBackupDirectory = dbo.normalize_file_path(@CopyToBackupDirectory);
 	SET @OffSiteBackupPath = dbo.normalize_file_path(@OffSiteBackupPath);
 
+	-- TODO: https://overachieverllc.atlassian.net/browse/S4-640
 	IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
-		DECLARE @s3BucketName sysname; 
-		DECLARE @s3KeyPath sysname;
-		DECLARE @s3FullFileKey sysname;
-		DECLARE @s3fullOffSitePath sysname;
+		DECLARE @cloudType sysname;
+		DECLARE @cloudBucketName sysname; 
+		DECLARE @cloudKeyPath sysname;
+		DECLARE @cloudFullFileKey sysname;
+		DECLARE @cloudfullOffSitePath sysname;
 
-		DECLARE @s3Parts table (row_id int NOT NULL, result nvarchar(MAX) NOT NULL);
+		DECLARE @cloudParts table (row_id int NOT NULL, result nvarchar(MAX) NOT NULL);
 
-		INSERT INTO @s3Parts (
+		INSERT INTO @cloudParts (
 			[row_id],
 			[result]
 		)
-		SELECT [row_id], [result] FROM dbo.[split_string](REPLACE(@OffSiteBackupPath, N'S3::', N''), N':', 1)
+		SELECT [row_id], [result] FROM dbo.[split_string](REPLACE(@OffSiteBackupPath, N'::', N':'), N':', 1)
 
-		SELECT @s3BucketName = [result] FROM @s3Parts WHERE [row_id] = 1;
-		SELECT @s3KeyPath = [result] FROM @s3Parts WHERE [row_id] = 2;
+		SELECT @cloudType = UPPER([result]) FROM @cloudParts WHERE [row_id] = 1;
+		SELECT @cloudBucketName = [result] FROM @cloudParts WHERE [row_id] = 2;
+		SELECT @cloudKeyPath = [result] FROM @cloudParts WHERE [row_id] = 3;
 	END;
 
 	----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -782,32 +789,42 @@ ALTER DATABASE ' + QUOTENAME(@currentDatabase) + N' SET SINGLE_USER WITH ROLLBAC
 		SET @errorMessage = NULL;
 		SET @offSiteCopyDetails = NULL;
 		SET @outcome = NULL;
+
+		-- TODO: https://overachieverllc.atlassian.net/browse/S4-640
+
 		IF NULLIF(@OffSiteBackupPath, N'') IS NOT NULL BEGIN 
 			
 			SET @offSiteCopyStart = GETDATE();
+			DECLARE @cloudExecutionType sysname; 
+			DECLARE @cloudIgnoredResults sysname = N'{' + @cloudType + N'COPYFILE}';
 
-			DECLARE @offsiteCopy table ([row_id] int IDENTITY(1, 1) NOT NULL, [output] nvarchar(2000));
-			DELETE FROM @offsiteCopy;
+			SET @cloudFullFileKey = @cloudKeyPath + '\' + @currentDatabase + @serverName + N'\' + @backupName;
 
-			SET @s3FullFileKey = @s3KeyPath + '\' + @currentDatabase + @serverName + N'\' + @backupName;
-			SET @s3fullOffSitePath = N'S3::' + @s3BucketName + N':' + @s3FullFileKey;
-
-			SET @command = N'Write-S3Object -BucketName ''' + @s3BucketName + N''' -Key ''' + @s3FullFileKey + N''' -File ''' + @backupPath + N'\' + @backupName + N''' -ConcurrentServiceRequest 2';
+			IF @cloudType = N'S3' BEGIN 
+				SET @cloudExecutionType = N'PS';
+				SET @cloudfullOffSitePath = N'S3::' + @cloudBucketName + N':' + @cloudFullFileKey;		
+				SET @command = N'Write-S3Object -BucketName ''' + @cloudBucketName + N''' -Key ''' + @cloudFullFileKey + N''' -File ''' + @backupPath + N'\' + @backupName + N''' -ConcurrentServiceRequest 2';
+			  END;
+			ELSE BEGIN 
+				SET @cloudExecutionType = N'SHELL';
+				SET @cloudfullOffSitePath = N'B2::' + @cloudBucketName + N':' + @cloudFullFileKey;
+				SET @command = N'C:\Perflogs\b2.exe file upload --no-progress --threads 2 "' + @cloudBucketName + N'" "' + @backupPath + N'\' + @backupName + N'" "' + REPLACE(@cloudFullFileKey, N'\', N'/') + N'"';
+			END;
 
 			BEGIN TRY 
 				EXEC dbo.[execute_command]
 					@Command = @command,
-					@ExecutionType = N'POSH',
+					@ExecutionType = @cloudExecutionType,
 					@ExecutionAttemptsCount = 3,
 					@DelayBetweenAttempts = N'3 seconds',
-					@IgnoredResults = N'{S3COPYFILE}',
+					@IgnoredResults = @cloudIgnoredResults,
 					@PrintOnly = @PrintOnly,
 					@Outcome = @outcome OUTPUT,
 					@ErrorMessage = @errorMessage OUTPUT
 
 			END TRY 
 			BEGIN CATCH
-				SET @errorMessage = N'Exception copying backup to OffSite Location [' + @s3fullOffSitePath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				SET @errorMessage = N'Exception copying backup to OffSite Location [' + @cloudfullOffSitePath + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
 			END CATCH;
 
 			IF @errorMessage IS NOT NULL OR dbo.[transient_error_occurred](@outcome) = 1 BEGIN
@@ -816,7 +833,7 @@ ALTER DATABASE ' + QUOTENAME(@currentDatabase) + N' SET SINGLE_USER WITH ROLLBAC
 
 			UPDATE @executionDetails
 			SET 
-				offsite_path = @s3fullOffSitePath,
+				offsite_path = @cloudfullOffSitePath,
 				offsite_succeeded = CASE WHEN @errorMessage IS NULL THEN 1 ELSE 0 END,
 				offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
 				failed_offsite_attempts = ((SELECT @outcome.value(N'count(/iterations/iteration)', N'int')) - (CASE WHEN @errorMessage IS NULL THEN 0 ELSE 1 END)), 

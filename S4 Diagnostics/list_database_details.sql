@@ -6,6 +6,8 @@
 	vNEXT:
 		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
 
+	vNEXT:
+		Need to add a smell / problem for any DBs on the C:\ drive. 
 
 	vNEXT:
 		- Option to dump output as XML 

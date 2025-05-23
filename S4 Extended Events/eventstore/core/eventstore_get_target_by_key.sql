@@ -42,7 +42,7 @@ AS
 		@TargetName = @eventStoreTarget,
 		@ParameterNameForTarget = N'@eventStoreTarget',
 		@NormalizedName = @TargetTable OUTPUT, 
-		@ObjectID = @outputId OUTPUT;
+		@ObjectID = @outputID OUTPUT;
 
 	IF @outcome <> 0 
 		RETURN @outcome; 

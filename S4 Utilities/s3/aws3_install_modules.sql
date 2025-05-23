@@ -25,6 +25,10 @@
 			EXEC [admindb].dbo.execute_powershell 
 				@Command = N'Import-Module AWS.Tools.S3 -Force;';
 
+			-- Check for Regions: 
+			EXEC [admindb].dbo.[execute_powershell]
+				@Command = N'Get-AWSRegion';
+
 			-- Verify: 
 
 

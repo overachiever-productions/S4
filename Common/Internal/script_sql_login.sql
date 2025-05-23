@@ -147,7 +147,7 @@ AS
         @defaultLang, 
         @checkExpiration, 
         @checkPolicy
-     );
+    );
 
     IF @Output IS NULL BEGIN 
         SET @Output = @formatted;
