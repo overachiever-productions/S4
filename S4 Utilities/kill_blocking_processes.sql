@@ -756,6 +756,7 @@ SendMessage:
 		@crlf + @tab + N'database				:' + ISNULL([database], N'') +
 		@crlf + @tab + N'Session Id             : ' + CAST(ISNULL([session_id], -1) AS sysname) +
 		@crlf + @tab + N'Blocking Chain			: ' + CAST(ISNULL([blocking_chain], -1) AS sysname) + 
+		@crlf + @tab + N'Transaction Type		: ' + ISNULL([transaction_type], N'#UNKNOWN#') + 
 		@crlf + @tab + N'Status                 : ' + ISNULL([status], N'') +
 		@crlf + @tab + N'Command                : ' + ISNULL([command], N'') +
 		@crlf + @tab + N'Run Time               : ' + ISNULL([duration], N'') + 
