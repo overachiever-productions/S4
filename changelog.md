@@ -5,12 +5,15 @@
 ## [12.2] - 2025-05-23
 Miscellaneous bug-fixes and minor improvements to backups.
 
+### Known Issues
+- Creation of numbers-table (`dbo.numbers`) is currently 'lazy' and does NOT enable `DATA_ENCRYPTION` for SQL Server 2016 SP1 + instances. (It only enables for SQL Server 2017+.)
+
 ### Fixed 
 - Bug-fix to address problems with RPO Violations erroneously reporting 'gaps' caused by DIFF backups. 
 - Corrected issue with IO latency (percent-of-percent load/distribution) percentages not totaling 100%.
 - Corrected duplicate exclusion for filtered alerts against 17828 (17821) and 17836 (17832).
 
-## Improved 
+### Improved 
 - `dbo.backup_databases` No longer requires `@OffsiteRetention` to be specified. Instead, it defaults to the value of `N'{INFINITE}` (which is the only value/option currently specified.)
 
 ### Added 
@@ -27,6 +30,7 @@ Miscellaneous bug-fixes and minor improvements to backups.
 - FULL refactoring of scripting for job-states and logins into 2x distinct (for each) scripts that can disable all (with exclusions) jobs/logins and (different/stand-alone) scripts to script logins / job enabled details. 
 - FULL rewrite of `dbo.kill_blocking_processes` to standardize identification, enable alerts and/or KILL operations, and facilitate simplified/streamlined capture - along with options to specify COMMON predicates. 
 - `dbo.backup_databases` no longer attempts to execute T-LOG backups against `READ_ONLY` databases.
+
 
 ## [12.1] - 2024-10-15
 Bug-Fixes for Restore Operations + Additional Tweaks and Improvements.
