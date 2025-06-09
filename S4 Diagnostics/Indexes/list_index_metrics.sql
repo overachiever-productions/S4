@@ -16,6 +16,13 @@
 		- integrate:
 			D:\Dropbox\Projects\SQLServerAudits.com\Scripts\Diagnostics\Get Forwarded Record Counts.sql
 
+		- Hmm. sys.dm_db_index_xxxx_stats FUNCs all support the option to pull back data for a SINGLE DB or ... ALL dbs. 
+				I need to look at adding in N'{CURRENT}' (a NEW token - for the current database) ... to target the CURRENT database
+						which would work against 'grounded' and SQL Azure as well. 
+				AND then ... allow {ALL} and/or specific databases via wildcards and -Name, etc. 
+
+			I'm then going to have to modify #sys_indexes to include database_id and ... the corresponding @sql to include this same value. 
+			And then ... I'm going to need to be able to LOOP for each DB in question. 
 */
 
 USE [admindb];
@@ -34,12 +41,14 @@ CREATE PROC dbo.[list_index_metrics]
 	@MinRequiredTableRowCount					int					= 0,						-- ignore tables with < rows than this value... (but, note: this is per TABLE, not per IX cuz filtered indexes might only have a few rows on a much larger table).
 	@OrderBy									sysname				= N'ROW_COUNT',				-- { ROW_COUNT | FRAGMENTATION | SIZE | BUFFER_SIZE | READS | WRITES }
 	@IncludeDefinition							bit					= 1,						 -- include/generate the exact definition needed for the IX... 
-	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
+	@SerializedOutput							XML					= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 		
+	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
+
 	IF @TargetDatabase IS NULL BEGIN 
 		EXEC dbo.[get_executing_dbname] @ExecutingDBName = @TargetDatabase OUTPUT;
 		
@@ -50,18 +59,17 @@ AS
 	END;
 
 	SET @TargetTables = ISNULL(NULLIF(@TargetTables, N''), N'{ALL}'); 
---	SET @ExcludedTables = NULLIF(@ExcludedTables, N'');
 
 	DECLARE @sql nvarchar(MAX);
 
 -- TODO: @ExcludedTables ... and i think I only allow that to work with/against {ALL}
 --		as in, if {ALL} then @Excluded can be set, otherwise... i guess there's a potential for @TargetTables to be a LIKE? 
+	CREATE TABLE #target_tables (
+		[table_name] sysname NOT NULL, 
+		[object_id] int NULL
+	);	
+	
 	IF @TargetTables <> N'{ALL}' BEGIN 
-		CREATE TABLE #target_tables (
-			[table_name] sysname NOT NULL, 
-			[object_id] int NULL
-		);
-
 		INSERT INTO [#target_tables] ([table_name])
 		SELECT [result] FROM dbo.split_string(@TargetTables, N',', 1);
 
@@ -350,6 +358,7 @@ AS
 	);
 
 	IF @IncludeFragmentationMetrics = 1 BEGIN
+		DECLARE @targetObject int = 0; -- equivalent to DEFAULT
 
 		SET @sql = N'SELECT
 			[object_id],
@@ -360,22 +369,58 @@ AS
 			CAST(avg_fragmentation_in_percent AS decimal(5,2)) avg_fragmentation_percent,
 			fragment_count
 		FROM 
-			sys.dm_db_index_physical_stats(DB_ID(@TargetDatabase), NULL, -1, 0, ''LIMITED''); ';
+			sys.dm_db_index_physical_stats(DB_ID(@TargetDatabase), @targetObject, DEFAULT, DEFAULT, ''LIMITED''); ';
 
-		INSERT INTO [#physical_stats] (
-			[object_id],
-			[index_id],
-			[alloc_unit_type_desc],
-			[index_depth],
-			[index_level],
-			[avg_fragmentation_percent],
-			[fragment_count]
-		)
-		EXEC [sys].[sp_executesql]
-			@sql, 
-			N'@TargetDatabase sysname', 
-			@TargetDatabase = @TargetDatabase;
+		IF @TargetTables <> N'{ALL}' BEGIN
+				DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+				SELECT 
+					[object_id]
+				FROM 
+					[#target_tables];
+				
+				OPEN [walker];
+				FETCH NEXT FROM [walker] INTO @targetObject;
+				
+				WHILE @@FETCH_STATUS = 0 BEGIN
+				
+					INSERT INTO [#physical_stats] (
+						[object_id],
+						[index_id],
+						[alloc_unit_type_desc],
+						[index_depth],
+						[index_level],
+						[avg_fragmentation_percent],
+						[fragment_count]
+					)
+					EXEC [sys].[sp_executesql]
+						@sql, 
+						N'@TargetDatabase sysname, @targetObject int', 
+						@TargetDatabase = @TargetDatabase,
+						@targetObject = @targetObject;					
+				
+					FETCH NEXT FROM [walker] INTO @targetObject;
+				END;
+				
+				CLOSE [walker];
+				DEALLOCATE [walker];		
 
+		  END; 
+		ELSE BEGIN
+			INSERT INTO [#physical_stats] (
+				[object_id],
+				[index_id],
+				[alloc_unit_type_desc],
+				[index_depth],
+				[index_level],
+				[avg_fragmentation_percent],
+				[fragment_count]
+			)
+			EXEC [sys].[sp_executesql]
+				@sql, 
+				N'@TargetDatabase sysname, @targetObject int', 
+				@TargetDatabase = @TargetDatabase,
+				@targetObject = @targetObject;
+		END;
 	END;
 
 	-----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -471,7 +516,6 @@ AS
 	ELSE BEGIN 
 		SET @sql = REPLACE(@sql, N'{objects}', NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9) + N'INNER JOIN #target_tables [t] ON [p].[object_id] = [t].[object_id]');
 	END;
-
 
 	CREATE TABLE #buffer_stats (
 		[object_id] int NOT NULL,

@@ -119,7 +119,23 @@ AS
 	) 
 
 	SELECT 
-		* 
+		[table_name],
+        [index_id],
+        [index_name],
+        [index_definition],
+        [key_columns],
+        [included_columns],
+        [row_count],
+        [reads],
+        [writes],
+        [allocated_mb],
+        [used_mb],
+        [cached_mb],
+        [seeks],
+        [scans],
+        [lookups],
+        [seek_ratio],
+        [operational_metrics] 
 	INTO 
 		#hydrated 
 	FROM 
