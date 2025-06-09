@@ -2,12 +2,20 @@
 
 	REFACTOR: 
 		- MAYBE call this REPORT_database_details or SHOW_database_details or ... something OTHER than ... LIST... (MAYBE).
+		- Or ... dbo.database_details ? 
+
+	vNEXT: 
+		I know I need to do some 'conditional' logic to address 'columns' (i.e., features/details) that are NOT available on EARLIER versions
+			of SQL Server. However, do any of those get 'untriggered' by means of compat? (I don't think so. BUT, assume that we're talking about
+			accelerated_database_recovery... ... which is a 150? feature. If the SERVER is 150, 160, 170 ... great. BUT what if the DB is COMPAT 100? or something odd? 
+				does that 'hide'/remove the column in question? (Again, i don't think so. but I really need to test for this.)
 
 	vNEXT:
 		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
 
 	vNEXT:
 		Need to add a smell / problem for any DBs on the C:\ drive. 
+		Also need to NOTE / point-out if/when TDE or AlwaysEncrypted is in play. 
 
 	vNEXT:
 		- Option to dump output as XML 
