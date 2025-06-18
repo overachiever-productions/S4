@@ -30,3 +30,8 @@ IF NOT EXISTS (SELECT NULL FROM dbo.[numbers]) BEGIN
 	CROSS JOIN sys.all_objects o2;
 END; 
 GO 
+
+-- Sanity Check: 
+IF NOT EXISTS (SELECT NULL FROM dbo.[numbers] WHERE [number] = 50000) BEGIN
+	SELECT N'Table dbo.numbers does NOT have 50K rows.' [critical_error];
+END;
