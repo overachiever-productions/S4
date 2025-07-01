@@ -7,6 +7,13 @@
         - FURTHER, by 'shelling out', S4 can CAPTURE detailed specifics about ANY errors and email/send those to admins (whereas that's not possible otherwise).
 
 
+	vNEXT: 
+		- Consolidate @Targets and @Exclusions down to @Databases. 
+		
+	BUG?: 
+		- Looks like it's trying to actually run checks against [USER] and ... not getting an ERROR? i.e., the list of dbs to execute example is ... doing some odd stuff. 
+		-	(I'm assuming the above goes away once @Targets and @Exclusions is consolidated.)
+
 
 	SIGNATURE / TESTS: 
 
@@ -21,6 +28,9 @@
 				EXEC dbo.check_database_consistency 
 					@Targets = N'admindb'; 			
 
+
+				EXEC dbo.check_database_consistency
+					@Targets = N'Billing_corrupt';
 
 		-- Expect list of dbs/commands to execute against: 
 
@@ -98,17 +108,19 @@ AS
 		[results] xml NOT NULL, 
 		[error_message] nvarchar(MAX) NULL
 	);
+
+	DECLARE @executionId uniqueidentifier = NEWID(), @executionDate date = GETUTCDATE(), @startTime datetime, @succeeded bit;
 	
 	DECLARE @currentDbName sysname; 
     DECLARE @sql nvarchar(MAX);
     DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks};';
-	DECLARE @succeeded int;
+	
+	DECLARE @result int;
 
     IF @IncludeExtendedLogicalChecks = 1 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N', EXTENDED_LOGICAL_CHECKS');
     ELSE 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N'');
-
 
 	DECLARE @outcome xml;
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
@@ -123,10 +135,12 @@ AS
     FETCH NEXT FROM [walker] INTO @currentDbName;
 
     WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+		SET @startTime = GETDATE();
 
 		SET @sql = REPLACE(@template, N'{DbName}', @currentDbName);
 
-		EXEC @succeeded = dbo.[execute_command]
+		EXEC @result = dbo.[execute_command]
 			@Command = @sql,
 			@ExecutionType = N'SQLCMD',
 			@ExecutionAttemptsCount = 1,
@@ -136,7 +150,9 @@ AS
 			@Outcome = @outcome OUTPUT, 
 			@ErrorMessage = @errorMessage OUTPUT;
 
-		IF @succeeded <> 0 BEGIN 
+		IF @result <> 0 BEGIN 
+			SET @succeeded = 0;
+
 			INSERT INTO @errors (
 				[database_name],
 				[results], 
@@ -147,7 +163,30 @@ AS
 				@outcome,
 				@errorMessage
 			);
-		END;
+		  END;
+		ELSE 
+			SET @succeeded = 1;
+
+		INSERT INTO [dbo].[corruption_check_history] (
+			[execution_id],
+			[execution_date],
+			[database],
+			[check_start],
+			[check_end],
+			[check_succeeded],
+			[results],
+			[errors]
+		)
+		VALUES (
+			@executionId,
+			@executionDate, 
+			@currentDbName,
+			@startTime,
+			GETDATE(),
+			@succeeded,
+			@outcome,
+			@errorMessage
+		);
 
         FETCH NEXT FROM [walker] INTO @currentDbName;    
     END;
