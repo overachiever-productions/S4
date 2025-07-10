@@ -109,7 +109,7 @@ AS
 		[error_message] nvarchar(MAX) NULL
 	);
 
-	DECLARE @executionId uniqueidentifier = NEWID(), @executionDate date = GETUTCDATE(), @startTime datetime, @succeeded bit;
+	DECLARE @executionId uniqueidentifier = NEWID(), @executionDate date = GETDATE(), @startTime datetime, @succeeded bit;
 	
 	DECLARE @currentDbName sysname; 
     DECLARE @sql nvarchar(MAX);

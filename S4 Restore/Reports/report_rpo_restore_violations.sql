@@ -1,8 +1,28 @@
-
 /*
+
+	REFACTOR
+		Do i REALLY need RESTORE in the title? 
+			i.e., report_rpo_violations?  (i mean, ARGUABLY, I might be able to get RPO violations from job-histories or file-names - vs RESTORES. so ... there's that).
 
 	NOTE: 
         - This sproc adheres to the PROJECT/RETURN usage convention.
+
+
+	vNEXT:
+		- There's a logic bomb with current implementations if/when we 'wrap' from (say late night one night into early AM the next day): 
+			see: https://overachieverllc.atlassian.net/browse/S4-656
+		
+		
+		- Think it probably makes sense to add in an @Mode - with options/values of { DETAIL | AGGREGATE } (or something similar)
+			see: https://overachieverllc.atlassian.net/browse/S4-655
+		- NOTE: there's a 'logic complication' outlined in the above issue as well. 
+
+
+
+
+
+
+
 
 
 */
@@ -96,10 +116,10 @@ AS
 			[f].[operation_date],
 			[f].[file_name], 
 			[f].[created], 
-			LAG([f].[created], 1, NULL) OVER (PARTITION BY [database] ORDER BY [f].[created]) [previous], 
+			LAG([f].[created], 1, NULL) OVER (PARTITION BY [f].[database], [f].[operation_date] ORDER BY [f].[created]) [previous], 
 			CASE WHEN [f].[file_name] LIKE N'DIFF_%' THEN 1 ELSE 0 END [is_diff_backup],
 			/* DATEDIFF @ SECONDS allows for roughly 68 years (with int) - so ... overflows aren't a real concern here. */
-			DATEDIFF(SECOND, LAG([f].[created], 1, NULL) OVER (PARTITION BY [database] ORDER BY [f].[created]), [f].[created]) [diff]
+			DATEDIFF(SECOND, LAG([f].[created], 1, NULL) OVER (PARTITION BY [f].[database], [f].[operation_date] ORDER BY [f].[created]), [f].[created]) [diff]
 		FROM	
 			files [f]
 	)
