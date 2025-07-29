@@ -46,7 +46,7 @@ USE [admindb];
 GO
 
 
-IF OBJECT_ID('dbo.settings','U') IS NULL BEGIN
+IF OBJECT_ID(N'dbo.settings', N'U') IS NULL BEGIN
 
 	CREATE TABLE dbo.settings (
 		setting_id int IDENTITY(1,1) NOT NULL,
@@ -125,3 +125,38 @@ IF EXISTS (SELECT NULL FROM dbo.[version_history]) BEGIN
 	END;
 END;
 GO
+
+IF EXISTS (SELECT NULL FROM sys.[check_constraints] WHERE [name] = N'CK_settings_setting_type' AND [definition] NOT LIKE N'%ROWMAP%') BEGIN
+	BEGIN TRAN;
+		ALTER TABLE dbo.[settings] DROP CONSTRAINT [CK_settings_setting_type];	
+		
+		ALTER TABLE dbo.[settings] ADD CONSTRAINT [CK_settings_setting_type] CHECK ([setting_type] IN (N'UNIQUE', N'COMBINED', N'ROWMAP'));
+
+	COMMIT;
+END; 
+
+IF NOT EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'FULL_backup_file_count') BEGIN
+
+	INSERT INTO dbo.[settings] (
+		[setting_type],
+		[setting_key],
+		[setting_value],
+		[comments]
+	)
+	VALUES (
+		N'ROWMAP', 
+		N'FULL_backup_file_count', 
+		N'10,40,80,120', 
+		N'Sizes are in GBs; '
+	);
+
+END;
+
+
+SELECT * FROM [dbo].[settings]
+
+
+
+
+
+

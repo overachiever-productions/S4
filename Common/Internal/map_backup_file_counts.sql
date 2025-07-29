@@ -1,11 +1,14 @@
 /*
-		Uses a ROW-MAP to assign file-counts - based on size. 
-			where a ROW-MAP is 5x rows - first is a 'slot' for 1 file, second is a slot for 2 files, 3rd is for 4 files, and so on (see file_counts CTE below for details). 
-			And the VALUE we care about for each slot/row is ... the SIZE (cut-off). 
 
-			i.e., with the logic above and an @SizeMap of N'10,40,80,120'
-				a DB 39GB in size comes in just UNDER 40 - or ROW #2 - so ... 2 files
-				If the DB had been 41 GB, it'd have been > 40 - or into ROW #3 - i.e., 4 files. 
+		CONVENTIONS
+			ROWMAP: https://www.notion.so/overachiever/Conventions-2305380af00e80058a53f0694401062c?source=copy_link#2305380af00e80089854dbbca7e18f2f
+				Uses a ROW-MAP to assign file-counts - based on size. 
+					where a ROW-MAP is 5x rows - first is a 'slot' for 1 file, second is a slot for 2 files, 3rd is for 4 files, and so on (see file_counts CTE below for details). 
+					And the VALUE we care about for each slot/row is ... the SIZE (cut-off). 
+
+					i.e., with the logic above and an @SizeMap of N'10,40,80,120'
+						a DB 39GB in size comes in just UNDER 40 - or ROW #2 - so ... 2 files
+						If the DB had been 41 GB, it'd have been > 40 - or into ROW #3 - i.e., 4 files. 
 
 
 		EXAMPLES: 

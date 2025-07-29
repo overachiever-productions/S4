@@ -87,6 +87,7 @@ CREATE PROC dbo.backup_databases
 	@DatabasesToExclude					nvarchar(MAX)							= NULL,							-- { NULL | name1,name2 }  
 	@Priorities							nvarchar(MAX)							= NULL,							-- { higher,priority,dbs,*,lower,priority,dbs } - where * represents dbs not specifically specified (which will then be sorted alphabetically
 	@BackupDirectory					nvarchar(2000)							= N'{DEFAULT}',					-- { {DEFAULT} | path_to_backups }
+	@FileCount							sysname									= N'{DEFAULT}',					-- Complex. Can be { DEFAULT | 'row, map, here' | hard-coded-number }. DEFAULT = row-map defined in dbo.settings; hard-coded-number would be something like N'8' - i.e., use 8x files 
 	@CopyToBackupDirectory				nvarchar(2000)							= NULL,							-- { NULL | path_for_backup_copies } NOTE {PARTNER} allowed as a token (if a PARTNER is defined).
 	@OffSiteBackupPath					nvarchar(2000)							= NULL,							-- e.g., N'S3::bucket-name:path\sub-path' or  N'B2::bucket-name:path\sub-path'  - does NOT allow multiple paths/targets. 
 	@BackupRetention					nvarchar(10),															-- [DOCUMENT HERE]
@@ -114,6 +115,9 @@ AS
 	SET @CopyToRetention = NULLIF(@CopyToRetention, N'');
 	SET @OffSiteRetention = NULLIF(@OffSiteRetention, N'');
 
+	SET @BackupDirectory = UPPER(ISNULL(NULLIF(@BackupDirectory, N''), N'{DEFAULT}'));
+	SET @FileCount = UPPER(ISNULL(NULLIF(@FileCount, N''), N'{DEFAULT}'));
+
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
 	DECLARE @return int;
@@ -124,6 +128,7 @@ AS
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
 	DECLARE @Edition sysname;
+	DECLARE @backupFileCount int = 1;
 	SELECT @Edition = CASE SERVERPROPERTY('EngineEdition')
 		WHEN 2 THEN 'STANDARD'
 		WHEN 3 THEN 'ENTERPRISE'
@@ -187,6 +192,23 @@ AS
 		RAISERROR('@DatabasesToBackup may NOT be set to the token {READ_FROM_FILESYSTEM} when processing backups.', 16, 1);
 		RETURN -9;
 	END
+
+
+-- VALIDATION: 
+--		allowed values are: 5-wide/deep (or less?) rowmap, DEFAULT, or a hard-coded number. 
+--			if DEFAULT, then attempt to grab rowmap from dbo.settings - based on file-type. 
+
+
+	--IF @FileCount = N'{DEFAULT}' BEGIN
+	--	SELECT @FileCount = 'Get File Count from dbo.Settings WHERE Backup-Type = @BackupType';
+	--  END;
+	--ELSE BEGIN
+	--	SET @backupFileCount = TRY_CAST(@FileCount AS int);
+
+	--END;
+
+--SELECT @FileCount [@FileCount], @backupFileCount [backup_file_count];
+--RETURN 0;
 
 	EXEC @return = dbo.validate_retention @BackupRetention, N'@BackupRetention';
 	IF @return <> 0 RETURN @return;
