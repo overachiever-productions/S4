@@ -116,6 +116,8 @@ AS
     DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks};';
 	
 	DECLARE @result int;
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @exceptionDetails nvarchar(MAX);
 
     IF @IncludeExtendedLogicalChecks = 1 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N', EXTENDED_LOGICAL_CHECKS');
@@ -139,16 +141,31 @@ AS
 		SET @startTime = GETDATE();
 
 		SET @sql = REPLACE(@template, N'{DbName}', @currentDbName);
+		SET @result = 0;
+		SET @errorMessage = NULL; 
+		SET @exceptionDetails = NULL;
 
-		EXEC @result = dbo.[execute_command]
-			@Command = @sql,
-			@ExecutionType = N'SQLCMD',
-			@ExecutionAttemptsCount = 1,
-			@DelayBetweenAttempts = NULL,
-			@IgnoredResults = N'{COMMAND_SUCCESS}',
-			@PrintOnly = @PrintOnly,
-			@Outcome = @outcome OUTPUT, 
-			@ErrorMessage = @errorMessage OUTPUT;
+		BEGIN TRY
+			EXEC @result = dbo.[execute_command]
+				@Command = @sql,
+				@ExecutionType = N'SQLCMD',
+				@ExecutionAttemptsCount = 1,
+				@DelayBetweenAttempts = NULL,
+				@IgnoredResults = N'{COMMAND_SUCCESS}',
+				@PrintOnly = @PrintOnly,
+				@Outcome = @outcome OUTPUT, 
+				@ErrorMessage = @errorMessage OUTPUT;
+		END TRY
+		BEGIN CATCH
+			SELECT 
+				@exceptionDetails = N'EXCEPTION: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+			
+			IF @@TRANCOUNT > 0 
+				ROLLBACK;			
+
+			SET @result = ISNULL(NULLIF(@result, 0), -999);
+			SET @errorMessage = ISNULL(@errorMessage, N'') + N' ' + @exceptionDetails;
+		END CATCH;
 
 		IF @result <> 0 BEGIN 
 			SET @succeeded = 0;
@@ -198,9 +215,7 @@ AS
 	DECLARE @emailSubject nvarchar(300);
 
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN 
-		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 		DECLARE @tab nchar(1) = NCHAR(9);
-
 
 		SET @emailSubject = ISNULL(@EmailSubjectPrefix, N'') + ' DATABASE CONSISTENCY CHECK ERRORS';
 		SET @emailBody = N'The following problems were encountered: ' + @crlf; 
