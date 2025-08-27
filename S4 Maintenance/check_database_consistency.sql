@@ -55,6 +55,7 @@ CREATE PROC dbo.[check_database_consistency]
 	@Exclusions								nvarchar(MAX)	                        = NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	                        = NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@IncludeExtendedLogicalChecks           bit                                     = 0,
+	@MaxDOP									int										= 1,
     @OperatorName						    sysname									= N'Alerts',
 	@MailProfileName					    sysname									= N'General',
 	@EmailSubjectPrefix					    nvarchar(50)							= N'[Database Corruption Checks] ',	
@@ -113,7 +114,7 @@ AS
 	
 	DECLARE @currentDbName sysname; 
     DECLARE @sql nvarchar(MAX);
-    DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks};';
+    DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks}{DOP};';
 	
 	DECLARE @result int;
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -123,6 +124,13 @@ AS
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N', EXTENDED_LOGICAL_CHECKS');
     ELSE 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N'');
+
+	IF @MaxDOP > 1 BEGIN 
+		SET @template = REPLACE(@template, N'{DOP}', N', MAXDOP = ' + CAST(@MaxDOP AS sysname));	
+	  END;
+	ELSE BEGIN 
+		SET @template = REPLACE(@template, N'{DOP}', N'');
+	END;
 
 	DECLARE @outcome xml;
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
@@ -188,6 +196,7 @@ AS
 			[execution_id],
 			[execution_date],
 			[database],
+			[dop],
 			[check_start],
 			[check_end],
 			[check_succeeded],
@@ -198,6 +207,7 @@ AS
 			@executionId,
 			@executionDate, 
 			@currentDbName,
+			@MaxDOP,
 			@startTime,
 			GETDATE(),
 			@succeeded,
