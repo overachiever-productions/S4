@@ -34,4 +34,6 @@ GO
 -- Sanity Check: 
 IF NOT EXISTS (SELECT NULL FROM dbo.[numbers] WHERE [number] = 50000) BEGIN
 	SELECT N'Table dbo.numbers does NOT have 50K rows.' [critical_error];
+
+	RAISERROR(N'Fatal Error. Table dbo.Numbers not Populated Correctly.', 20, 1) WITH LOG;
 END;
