@@ -2,7 +2,7 @@
 
 	REFACTOR: 
 		- MAYBE call this REPORT_database_details or SHOW_database_details or ... something OTHER than ... LIST... (MAYBE).
-		- Or ... dbo.database_details ? 
+		- Or ... dbo.database_details ? (yeah. i like dbo.database_details more than anything)
 
 	vNEXT: 
 		I know I need to do some 'conditional' logic to address 'columns' (i.e., features/details) that are NOT available on EARLIER versions
@@ -11,7 +11,14 @@
 				does that 'hide'/remove the column in question? (Again, i don't think so. but I really need to test for this.)
 
 	vNEXT:
+		I really need to know what % of the DB is FREE (the same way I do with logs - but vs data/ix/etc).
+
+
+	vNEXT:
 		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
+
+	vNEXT:
+		I should ALSO report on 'secondary'/sync info - i.e., if a DB is in an AG (or, bletch: mirrored) ... then I want to know about this - including partner info, etc. 
 
 	vNEXT:
 		Need to add a smell / problem for any DBs on the C:\ drive. 
