@@ -16,7 +16,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.dump_module_code','P') IS NOT NULL
+IF OBJECT_ID('dbo.[dump_module_code]','P') IS NOT NULL
 	DROP PROC dbo.[dump_module_code];
 GO
 
