@@ -1,5 +1,12 @@
 /*
 
+	REFACTOR:
+		- for admindb ... might/probably want @ExecutionAttemptsCount to be @RetryCount and @DelayBetweenRetries. 
+			as in, it'll always attempt to execute (if @PrintOnly = 0). 
+			and will ONLY retry if @Rretries > 0 
+			that'd make the factors a BIT cleaner.
+
+
 PICKUP/NEXT: 
 	Need to standardize and simplify the @Command handling. 
 	Specifically: 
