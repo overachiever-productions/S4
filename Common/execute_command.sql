@@ -363,7 +363,13 @@ AS
     END;
     
     IF @ExecutionType IN (N'SQLCMD', N'PARTNER') BEGIN
-		SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+
+		IF @Command LIKE N'%-Q%' BEGIN
+			SET @xpCmd = 'sqlcmd{0} ' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ');
+		  END;
+		ELSE BEGIN
+			SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+		END;
 
         IF @ExecutionType = N'SQLCMD' BEGIN 
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
