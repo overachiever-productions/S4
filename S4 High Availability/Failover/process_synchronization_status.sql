@@ -132,11 +132,9 @@ AS
 					ELSE BEGIN
 						BEGIN TRY
 							EXEC sp_executesql @ownerChangeCommand;
-						
-							
 						END TRY 
 						BEGIN CATCH 
-
+							
 						END CATCH
 					END;
 				END
