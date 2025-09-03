@@ -46,6 +46,27 @@ AS
 	-- TODO: Verify that we've got a Mirroring Endpoint (and, ideally, that CONNECT/etc. has been granted to something on the partner/etc.). 
 
 
+    -- TODO: integrate THIS logic with the original XE Session logic below: 
+    -- also... I should have one of these XE session definitions and simply deploy it if it doesn't exist. 
+    -- See https://overachieverllc.atlassian.net/browse/S4-671 for more info. 
+	IF (SELECT [admindb].dbo.[get_engine_version]()) >= 11.0 BEGIN 
+		
+		DECLARE @startupState bit; 
+		SELECT @startupState = startup_state FROM sys.[server_event_sessions] WHERE [name] = N'AlwaysOn_health';
+
+		IF @startupState IS NOT NULL AND @startupState <> 1 BEGIN 
+			DECLARE @sql nvarchar(MAX) = N'ALTER EVENT SESSION [AlwaysOn_health] ON SERVER WITH (STARTUP_STATE = ON); ';
+			EXEC sys.sp_executesql @sql;
+		END
+
+		IF NOT EXISTS (SELECT NULL FROM sys.[dm_xe_sessions] WHERE [name] = N'AlwaysOn_health') BEGIN
+			SET @sql = N'ALTER EVENT SESSION [AlwaysOn_health] ON SERVER STATE = START; ';
+
+			EXEC sys.sp_executesql @sql;
+		END;
+	END;
+
+    -- (old/existing XE Session Logic).
 	-- Verify AG health XE session:
 	IF (SELECT [admindb].dbo.[get_engine_version]()) >= 11.0 BEGIN 
 		IF NOT EXISTS (SELECT NULL FROM sys.[server_event_sessions] WHERE [name] = N'AlwaysOn_health') BEGIN
@@ -65,8 +86,8 @@ AS
 				SELECT 0, N'WARNING', N'AlwaysOn_health XE session is NOT currently running.';
 			END;
 		END;
-
 	END;
+
 
 
     -- Database Mail
@@ -89,8 +110,8 @@ AS
     END 
 
     -- SQL Agent can talk to Database Mail and a profile has been configured: 
-    declare @DatabaseMailProfile nvarchar(255)
-    exec master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
+    DECLARE @DatabaseMailProfile nvarchar(255)
+    EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'DatabaseMailProfile', @param = @DatabaseMailProfile OUT, @no_output = N'no_output'
  
      IF @DatabaseMailProfile IS NULL BEGIN 
  	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
@@ -129,10 +150,10 @@ AS
 
     -- check for missing code/objects:
     DECLARE @ObjectNames TABLE (
-	    name sysname
-    )
+	    [name] sysname
+    );
 
-    INSERT INTO @ObjectNames (name)
+    INSERT INTO @ObjectNames ([name])
     VALUES 
     (N'server_trace_flags'),
     (N'is_primary_database'),
@@ -180,7 +201,6 @@ AS
 	    SELECT 3, N'ERROR', N'Message ID 1480 is not set to use the WITH_LOG option.';
     END
 
-
     -- objects/code:
     DELETE FROM @ObjectNames;
     INSERT INTO @ObjectNames (name)
@@ -215,7 +235,6 @@ AS
     --WHERE 
     --	o.name IS NULL;
 
-
     -- Alerts for 1440/1480
     --IF NOT EXISTS (SELECT NULL FROM msdb.dbo.sysalerts WHERE message_id = 1440) BEGIN 
     --	INSERT INTO #Errors (SectionID, Severity, ErrorText)
@@ -232,7 +251,6 @@ AS
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
 	    SELECT 3, N'WARNING', N'A SQL Server Agent Job that calls [process_synchronization_failover] (to handle database failover) was not found.';
     END 
-
 
     -------------------------------------------------------------------------------------
     -- 4. Monitoring. 
@@ -268,7 +286,6 @@ AS
 	    INSERT INTO #Errors (SectionID, Severity, ErrorText)
 	    SELECT 4, N'WARNING', N'A SQL Server Agent Job that calls [data_synchronization_checks] (to run health checks) was not found.';
     END 
-
 
     -------------------------------------------------------------------------------------
     -- 5. Backups
