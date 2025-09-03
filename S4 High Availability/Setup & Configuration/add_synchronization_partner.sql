@@ -135,25 +135,6 @@ AS
         RETURN -20;
     END CATCH;
 
-	-- As part of setting up for failover, make sure the AG XE is enabled as well: 
--- TODO: https://overachieverllc.atlassian.net/browse/S4-671
-	IF (SELECT [admindb].dbo.[get_engine_version]()) >= 11.0 BEGIN 
-		
-		DECLARE @startupState bit; 
-		SELECT @startupState = startup_state FROM sys.[server_event_sessions] WHERE [name] = N'AlwaysOn_health';
-
-		IF @startupState IS NOT NULL AND @startupState <> 1 BEGIN 
-			DECLARE @sql nvarchar(MAX) = N'ALTER EVENT SESSION [AlwaysOn_health] ON SERVER WITH (STARTUP_STATE = ON); ';
-			EXEC sys.sp_executesql @sql;
-		END
-
-		IF NOT EXISTS (SELECT NULL FROM sys.[dm_xe_sessions] WHERE [name] = N'AlwaysOn_health') BEGIN
-			SET @sql = N'ALTER EVENT SESSION [AlwaysOn_health] ON SERVER STATE = START; ';
-
-			EXEC sys.sp_executesql @sql;
-		END;
-	END;
-
     IF @ExecuteSetupOnPartnerServers = 1 BEGIN
         DECLARE @localHostName sysname = @@SERVERNAME;
 
