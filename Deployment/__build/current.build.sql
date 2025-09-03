@@ -107,7 +107,7 @@ GO
 --##INCLUDE: Common\tables\restore_log.sql
 
 -----------------------------------
---##INCLUDE: Common\tables\consistency_check_history.sql
+--##INCLUDE: Common\tables\corruption_check_history.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\settings.sql
