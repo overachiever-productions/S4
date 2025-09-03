@@ -2,11 +2,30 @@
 
 # Change Log
 
+## [12.4] - 2025-09-03
+Miscellaneous Improvements and AG / HA Optimizations.
+
+### Fixed 
+- Orchestration Problem with location of `dbo.get_engine_version()` during setup/deployment. Was previously 'lower' in execution order, causing ugly bugs/problems with NEW deployments. 
+- Perf fix for `dbo.index_metrics` (previous code wasn't correctly predicating for specified TABLE names via `sys.dm_db_index_physical_stats()` causing operations to (obviously) take FOREVER on larger DBs.)
+- Multiple fixes and improvements for ('internal') `dbo.numbers` table - including checks to verify whether populated or not. 
+
+### Improved
+- AG Setup Sprocs (`dbo.add_synchronization_partner`, `dbo.create_sync_check_jobs`, and `dbo.process_synchronization_failover`) all bolstered/improved to address issues with non-idempotentcy in some environments/scenarios. 
+
+### Added
+- `dbo.check_database_consistency` now LOGS outcome / details to `dbo.corruption_check_history` table. 
+- **High-level** metrics for DBCC checks (logged into `dbo.corruption_check_history`) via `dbo.corruption_check_analytics` (an Inline Function). 
+- INITIAL logic for addition of `@DotIncludeFile` for PowerShell operations (5.1 and Core) against `dbo.execute_command` and `dbo.execute_powershell`. (Initial = works well, but not fully integrated with 'code library' functionality - coming soon-ish.)
+
+### Changed
+- Minor, internal, tweaks/cleanup to `@ExecutionType` operators for PowerShell/Pwsh operations. SHOULD be transparent to callers. 
+
 ## [12.2] - 2025-05-23
 Miscellaneous bug-fixes and minor improvements to backups.
 
 ### Known Issues
-- Creation of numbers-table (`dbo.numbers`) is currently 'lazy' and does NOT enable `DATA_ENCRYPTION` for SQL Server 2016 SP1 + instances. (It only enables for SQL Server 2017+.)
+- Creation of numbers-table (`dbo.numbers`) is currently 'lazy' and does NOT enable `DATA_COMPRESSION` for SQL Server 2016 SP1 + instances. (It only enables for SQL Server 2017+.)
 
 ### Fixed 
 - Bug-fix to address problems with RPO Violations erroneously reporting 'gaps' caused by DIFF backups. 

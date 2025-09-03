@@ -33,7 +33,7 @@ CREATE PROC dbo.[create_sync_check_jobs]
 	@JobsCategoryName								sysname				= N'SynchronizationChecks',							
 	@JobOperatorToAlertOnErrors						sysname				= N'Alerts',	
 	@ProfileToUseForAlerts							sysname				= N'General',
-	@OverWriteExistingJobs							bit					= 0
+	@OverWriteExistingJobs							bit					= 1
 AS
     SET NOCOUNT ON; 
 
@@ -256,7 +256,7 @@ AS
 		@JobCategoryName = @JobsCategoryName,
 		@JobEnabled = 0, -- create jobs in disabled state - so that admins have to review and manually enable... 
 		@AddBlankInitialJobStep = 0,  -- not for these jobs, they should be fairly short in execution... 
-		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 		@JobID = @jobID OUTPUT;
 	
@@ -327,7 +327,7 @@ AS
 		@JobCategoryName = @JobsCategoryName,
 		@JobEnabled = 0, -- create jobs in disabled state - so that admins have to review and manually enable... 
 		@AddBlankInitialJobStep = 0,  -- not for these jobs, they should be fairly short in execution... 
-		@OperatorToAlertOnErrorss = @JobOperatorToAlertOnErrors,
+		@OperatorToAlertOnErrors = @JobOperatorToAlertOnErrors,
 		@OverWriteExistingJobDetails = @OverWriteExistingJobs,
 		@JobID = @jobID OUTPUT;
 

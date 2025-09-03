@@ -7,6 +7,13 @@
         - FURTHER, by 'shelling out', S4 can CAPTURE detailed specifics about ANY errors and email/send those to admins (whereas that's not possible otherwise).
 
 
+	vNEXT: 
+		- Consolidate @Targets and @Exclusions down to @Databases. 
+		
+	BUG?: 
+		- Looks like it's trying to actually run checks against [USER] and ... not getting an ERROR? i.e., the list of dbs to execute example is ... doing some odd stuff. 
+		-	(I'm assuming the above goes away once @Targets and @Exclusions is consolidated.)
+
 
 	SIGNATURE / TESTS: 
 
@@ -21,6 +28,9 @@
 				EXEC dbo.check_database_consistency 
 					@Targets = N'admindb'; 			
 
+
+				EXEC dbo.check_database_consistency
+					@Targets = N'Billing_corrupt';
 
 		-- Expect list of dbs/commands to execute against: 
 
@@ -45,6 +55,7 @@ CREATE PROC dbo.[check_database_consistency]
 	@Exclusions								nvarchar(MAX)	                        = NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	                        = NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@IncludeExtendedLogicalChecks           bit                                     = 0,
+	@MaxDOP									int										= 1,
     @OperatorName						    sysname									= N'Alerts',
 	@MailProfileName					    sysname									= N'General',
 	@EmailSubjectPrefix					    nvarchar(50)							= N'[Database Corruption Checks] ',	
@@ -98,17 +109,28 @@ AS
 		[results] xml NOT NULL, 
 		[error_message] nvarchar(MAX) NULL
 	);
+
+	DECLARE @executionId uniqueidentifier = NEWID(), @executionDate date = GETDATE(), @startTime datetime, @succeeded bit;
 	
 	DECLARE @currentDbName sysname; 
     DECLARE @sql nvarchar(MAX);
-    DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks};';
-	DECLARE @succeeded int;
+    DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks}{DOP};';
+	
+	DECLARE @result int;
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @exceptionDetails nvarchar(MAX);
 
     IF @IncludeExtendedLogicalChecks = 1 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N', EXTENDED_LOGICAL_CHECKS');
     ELSE 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N'');
 
+	IF @MaxDOP > 1 BEGIN 
+		SET @template = REPLACE(@template, N'{DOP}', N', MAXDOP = ' + CAST(@MaxDOP AS sysname));	
+	  END;
+	ELSE BEGIN 
+		SET @template = REPLACE(@template, N'{DOP}', N'');
+	END;
 
 	DECLARE @outcome xml;
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
@@ -123,20 +145,39 @@ AS
     FETCH NEXT FROM [walker] INTO @currentDbName;
 
     WHILE @@FETCH_STATUS = 0 BEGIN 
+		
+		SET @startTime = GETDATE();
 
 		SET @sql = REPLACE(@template, N'{DbName}', @currentDbName);
+		SET @result = 0;
+		SET @errorMessage = NULL; 
+		SET @exceptionDetails = NULL;
 
-		EXEC @succeeded = dbo.[execute_command]
-			@Command = @sql,
-			@ExecutionType = N'SQLCMD',
-			@ExecutionAttemptsCount = 1,
-			@DelayBetweenAttempts = NULL,
-			@IgnoredResults = N'{COMMAND_SUCCESS}',
-			@PrintOnly = @PrintOnly,
-			@Outcome = @outcome OUTPUT, 
-			@ErrorMessage = @errorMessage OUTPUT;
+		BEGIN TRY
+			EXEC @result = dbo.[execute_command]
+				@Command = @sql,
+				@ExecutionType = N'SQLCMD',
+				@ExecutionAttemptsCount = 1,
+				@DelayBetweenAttempts = NULL,
+				@IgnoredResults = N'{COMMAND_SUCCESS}',
+				@PrintOnly = @PrintOnly,
+				@Outcome = @outcome OUTPUT, 
+				@ErrorMessage = @errorMessage OUTPUT;
+		END TRY
+		BEGIN CATCH
+			SELECT 
+				@exceptionDetails = N'EXCEPTION: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+			
+			IF @@TRANCOUNT > 0 
+				ROLLBACK;			
 
-		IF @succeeded <> 0 BEGIN 
+			SET @result = ISNULL(NULLIF(@result, 0), -999);
+			SET @errorMessage = ISNULL(@errorMessage, N'') + N' ' + @exceptionDetails;
+		END CATCH;
+
+		IF @result <> 0 BEGIN 
+			SET @succeeded = 0;
+
 			INSERT INTO @errors (
 				[database_name],
 				[results], 
@@ -147,7 +188,32 @@ AS
 				@outcome,
 				@errorMessage
 			);
-		END;
+		  END;
+		ELSE 
+			SET @succeeded = 1;
+
+		INSERT INTO [dbo].[corruption_check_history] (
+			[execution_id],
+			[execution_date],
+			[database],
+			[dop],
+			[check_start],
+			[check_end],
+			[check_succeeded],
+			[results],
+			[errors]
+		)
+		VALUES (
+			@executionId,
+			@executionDate, 
+			@currentDbName,
+			@MaxDOP,
+			@startTime,
+			GETDATE(),
+			@succeeded,
+			@outcome,
+			@errorMessage
+		);
 
         FETCH NEXT FROM [walker] INTO @currentDbName;    
     END;
@@ -159,9 +225,7 @@ AS
 	DECLARE @emailSubject nvarchar(300);
 
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN 
-		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 		DECLARE @tab nchar(1) = NCHAR(9);
-
 
 		SET @emailSubject = ISNULL(@EmailSubjectPrefix, N'') + ' DATABASE CONSISTENCY CHECK ERRORS';
 		SET @emailBody = N'The following problems were encountered: ' + @crlf; 

@@ -65,7 +65,7 @@ GO
 
 CREATE PROC dbo.[execute_powershell]
 	@Command							nvarchar(MAX),
-	@ExecutionAttemptsCount				int						= 2,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
+	@ExecutionAttemptsCount				int						= 1,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
 	@DelayBetweenAttempts				sysname					= N'5s',
 	@PrintOnly							bit						= 0,
 	@SerializedXmlOutput				xml						= N'<default/>'		OUTPUT, 
@@ -81,7 +81,7 @@ AS
 
 	EXEC @returnValue = [dbo].[execute_command]
 		@Command = @Command,
-		@ExecutionType = N'PS',   -- POSH
+		@ExecutionType = N'PS',   
 		@ExecutionAttemptsCount = @ExecutionAttemptsCount,
 		@DelayBetweenAttempts = @DelayBetweenAttempts,
 		@SafeResults = N'{ALL}',  -- we're just piping results to/from PowerShell
