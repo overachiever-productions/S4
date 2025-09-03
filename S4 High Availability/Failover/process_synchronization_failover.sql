@@ -14,7 +14,7 @@
 					- Batch Jobs for a DB that's now the SECONDARY are disabled. 
 					- Batch Jobs for a DB that's now the PRIMARY are set to Enabled. 
 					(Batch Jobs = any job where the Job.CategoryName = NameOfASynchronizedDatabase)
-				b) attempts to repair orphaned users on DB that has just become the PRIMARY.
+				b) attempts to repair orphaned users on DBs that have just become the PRIMARY.
 
 	
 	vNEXT:
@@ -50,8 +50,7 @@ AS
 	SET NOCOUNT ON;
 
 	IF @PrintOnly = 0
-		WAITFOR DELAY '00:00:05.00'; -- No, really, give things about 5 seconds (just to let db states 'settle in' to synchronizing/synchronized).
-
+		WAITFOR DELAY '00:00:05.00'; -- No, really, give things time to settle down...  (just to let db states 'settle in' to synchronizing/synchronized).
 
 	DECLARE @printedCommands xml; 
 	DECLARE @syncSummary xml;
@@ -60,7 +59,6 @@ AS
 		@PrintOnly = @PrintOnly,
 		@PrintedCommands = @printedCommands OUTPUT,
 		@SynchronizationSummary = @syncSummary OUTPUT
-	
 	
 	IF @PrintOnly = 1 BEGIN
 		DECLARE @commands table (
@@ -112,7 +110,6 @@ AS
 		DEALLOCATE [command_walker];
 
 		PRINT N'';
-
 	END;
 
 	DECLARE @databases table (
@@ -185,7 +182,6 @@ AS
 	ORDER BY 
 		[row_id];
 
-
 	DECLARE @serverName sysname = @@SERVERNAME;
 	
 	-----------------------------------------------------------------------------------------------
@@ -218,7 +214,7 @@ AS
 		PRINT 'SUBJECT: ' + @subject;
 		PRINT 'BODY: ' + @crlf + @message;
 
-		END
+	  END
 	ELSE BEGIN
 		-- send a message:
 		EXEC msdb..sp_notify_operator 
