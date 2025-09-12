@@ -5,6 +5,9 @@
         - Parameter validation... 
                                 
 
+	NOTE: 
+		- @ServerNames are NOT required IF SQL Server SERVICE (on all nodes) has ALREADY been granted access to WSFC Cluster for AG purposes (and restarted). 
+
 	NOTE:
 		- On SQL Server 2016 need to use SQLNCLI instead of MSOLEDBSQL... 
 
@@ -14,13 +17,14 @@
 
             Dynamic Determination of Partner Name (i.e., don't specify any values for @ServerNames):
 				EXEC dbo.add_synchronization_partner
-					@ExecuteSetupOnPartnerServer = 1;
+					@ExecuteSetupOnPartnerServers = 1;
 
 
-			Specifying BOTH server names - and executing on both servers independantly: 
+			Option to EXPLICITLY specify @ServerNames - and executing on both servers independantly: 
 				EXEC dbo.add_synchronization_partner
-					@ServerNames = N'AWS-SQL-1, AWS-SQL-2', 
-					@ExecuteSetupOnPartnerServer = 0;
+					--@ServerNames = N'SQL-160-02A, SQL-160-02B', 
+					@ExecuteSetupOnPartnerServers = 1, 
+					@OverwritePartnerDefinitions = 1;
 				
 
 
@@ -34,7 +38,7 @@ IF OBJECT_ID('dbo.add_synchronization_partner','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[add_synchronization_partner]
-	@ServerNames							sysname		= NULL,			-- specify 2x server names, e.g., SQL1 and SQL2 - and the sproc will figure out self and partner accordingly. 
+	@ServerNames							sysname		= NULL,			-- see note in header... about not required IF
     @ExecuteSetupOnPartnerServers           bit         = 1,			-- by default, attempt to create a 'PARTNER' on the PARTNER, that... points back here... 
 	@OverwritePartnerDefinitions			bit			= 0				-- MIGHT be one of the few cases where DEFAULTing to 1 makes sense... 
 AS
@@ -52,16 +56,38 @@ AS
 		SELECT 
 			@ServerNames = @ServerNames + [member_name]  + N','
 		FROM 
-			sys.dm_hadr_cluster_members 
+			sys.[dm_hadr_cluster_members] 
 		WHERE 
 			member_type = 0;
+
+		IF @ServerNames = N'' BEGIN 
+			
+			DECLARE @nodeNamesXml xml;
+			DECLARE @nodeNamesError nvarchar(MAX);
+			EXEC admindb.dbo.execute_powershell 
+				@Command = N'Get-ClusterNode | Select-Object -Property Name | ConvertTo-Xml -As Stream',  
+				@ErrorMessage = @nodeNamesError OUTPUT,
+				@SerializedXmlOutput = @nodeNamesXml OUTPUT;
+
+			IF @nodeNamesError IS NULL BEGIN
+
+				IF dbo.[is_xml_empty](@nodeNamesXml) = 0 BEGIN
+	
+					SELECT 
+						@ServerNames = @ServerNames + r.d.value(N'(./Property[@Name="Name"]/text())[1]', N'sysname') + N','
+					FROM 
+						@nodeNamesXml.nodes(N'Objects/Object') r(d);
+				END;
+
+			END;
+		END;
 
 		IF @ServerNames <> N''
 			SET @ServerNames = LEFT(@ServerNames, LEN(@ServerNames) -1);
 	END;
 
 	IF NULLIF(@ServerNames, N'') IS NULL BEGIN
-		RAISERROR('Please Specify a value for either @PartnerName (e.g., ''SQL2'' if executing on SQL1) or for @ServerNames (e.g., ''SQL1,SQL2'' if running on either SQL1 or SQL2).', 16, 1);
+		RAISERROR('Please Specify a value for  for @ServerNames (e.g., ''SQL1,SQL2'' if running on either SQL1 or SQL2).', 16, 1);
 		RETURN - 2;
 	END;
 
@@ -136,9 +162,9 @@ AS
     END CATCH;
 
     IF @ExecuteSetupOnPartnerServers = 1 BEGIN
-        DECLARE @localHostName sysname = @@SERVERNAME;
 
-        DECLARE @command nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.add_synchronization_partner @ExecuteSetupOnPartnerServers = 0, @OverwritePartnerDefinitions = {overwrite};';
+        DECLARE @command nvarchar(MAX) = N'EXEC [PARTNER].admindb.dbo.add_synchronization_partner @ServerNames = @ServerNames, @ExecuteSetupOnPartnerServers = 0, @OverwritePartnerDefinitions = {overwrite};';
+		
 		IF @OverwritePartnerDefinitions = 1 
 			SET @command = REPLACE(@command, N'{overwrite}', N'1');
 		ELSE 
@@ -147,8 +173,8 @@ AS
         BEGIN TRY 
             EXEC sp_executesql 
                 @command, 
-                N'@localHostName sysname', 
-                @localHostName = @localHostName;
+                N'@ServerNames sysname', 
+                @ServerNames = @ServerNames;
         END TRY 
 
         BEGIN CATCH
