@@ -202,17 +202,34 @@ AS
 	END;
 
 	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
+		DECLARE @partnerName sysname; 
 
-		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
-			RAISERROR('The {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
-			RETURN -20;
+		IF dbo.[get_engine_version]() > 16.0 BEGIN 
+			IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
+				IF EXISTS (SELECT NULL FROM sys.[availability_groups] WHERE [is_contained] = 1) BEGIN
+					-- BUG: this code (currently) assumes that there are only TWO members in the AG: 
+					SELECT
+						@partnerName = [rs].[replica_server_name]
+					FROM
+						[sys].[availability_replicas] [rs]
+						INNER JOIN [sys].[availability_groups] [ags] ON [rs].[group_id] = [ags].[group_id]
+					WHERE
+						[ags].[is_contained] = 1 AND [rs].[replica_server_name] NOT IN (@@SERVERNAME);
+				END;
+			END;
 		END;
 
-		DECLARE @partnerName sysname; 
-		EXEC sys.[sp_executesql]
-			N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
-			N'@partnerName sysname OUTPUT', 
-			@partnerName = @partnerName OUTPUT;
+		IF @partnerName IS NULL BEGIN
+			IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
+				RAISERROR('The {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
+				RETURN -20;
+			END;
+
+			EXEC sys.[sp_executesql]
+				N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
+				N'@partnerName sysname OUTPUT', 
+				@partnerName = @partnerName OUTPUT;
+		END;
 
 		SET @CopyToBackupDirectory = REPLACE(@CopyToBackupDirectory, N'{PARTNER}', @partnerName);
 	END;
