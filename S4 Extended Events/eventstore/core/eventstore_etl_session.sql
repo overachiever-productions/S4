@@ -84,7 +84,7 @@ AS
 	DECLARE @rowCount int;
 	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
 	BEGIN TRY 
-		BEGIN TRAN;
+		--BEGIN TRAN;
 
 			EXEC sys.sp_executesql 
 				@sql,
@@ -99,7 +99,7 @@ AS
 				@RowCount = @rowCount,
 				@Attributes = @extractionAttributes;
 		
-		COMMIT;
+		--COMMIT;
 	END TRY
 	BEGIN CATCH 
 		SELECT 
