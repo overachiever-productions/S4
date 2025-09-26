@@ -1,8 +1,10 @@
 /*
 
-	REFACTOR: 
-		- MAYBE call this REPORT_database_details or SHOW_database_details or ... something OTHER than ... LIST... (MAYBE).
-		- Or ... dbo.database_details ? (yeah. i like dbo.database_details more than anything)
+	TODO: (low priority) 
+		implement @Databases ... NOT 'honored' at all at this point. 
+		AND... I THINK the logical place to do this is AFTER pulling results for ALL dbs. 
+			i.e., everything in the current query/operation is FAST/FINE. 
+				so... treat @Databases as a POST predicate vs pre-predicate (which'll just complicate logic like crazy if doing this 'pre').
 
 	vNEXT: 
 		I know I need to do some 'conditional' logic to address 'columns' (i.e., features/details) that are NOT available on EARLIER versions
@@ -12,7 +14,14 @@
 
 	vNEXT:
 		I really need to know what % of the DB is FREE (the same way I do with logs - but vs data/ix/etc).
+		https://overachieverllc.atlassian.net/browse/S4-615
 
+
+	vNEXT:
+		https://overachieverllc.atlassian.net/browse/S4-482
+
+	vNEXT:
+		add change-tracking as an additional 'advanced_option' via ... SELECT * FROM sys.change_tracking_databases; (join)
 
 	vNEXT:
 		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
@@ -32,7 +41,7 @@
 
 
 			DECLARE @x xml;
-			EXEC admindb.dbo.[list_database_details]
+			EXEC admindb.dbo.[database_details]
 				@SerializedOutput = @x OUTPUT;
 			SELECT @x;
 
@@ -41,19 +50,54 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[list_database_details]','P') IS NOT NULL
-	DROP PROC dbo.[list_database_details];
+IF OBJECT_ID('dbo.[database_details]','P') IS NOT NULL
+	DROP PROC dbo.[database_details];
 GO
 
-CREATE PROC dbo.[list_database_details]
-    @TargetDatabases                nvarchar(MAX)   = N'{ALL}', 
-    @ExcludedDatabases              nvarchar(MAX)   = NULL, 
-    @Priorities                     nvarchar(MAX)   = NULL, 
+CREATE PROC dbo.[database_details]
+    @Databases						nvarchar(MAX)   = N'{ALL}', 
+    --@Priorities                     nvarchar(MAX)   = NULL,		-- I don't think need this for this sproc... 
 	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
 AS 
     SET NOCOUNT ON; 
 
     -- {copyright}
+
+	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
+
+	CREATE TABLE #freeSpace (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[database_name] sysname NOT NULL, 
+		[file_name] sysname NOT NULL, 
+		[type] tinyint NOT NULL,
+		[file_size_mb] decimal(24,2) NULL, 
+		[free_space_mb] decimal(24,2) NULL 
+	); 
+	DECLARE @sql nvarchar(MAX) = N'USE [{CURRENT_DB}];
+	INSERT INTO [#freeSpace] ([database_name], [file_name], [type], [file_size_mb], [free_space_mb])
+	SELECT
+		N''{CURRENT_DB}'' [database_name], 
+		[name] AS [file_name],
+		[type],
+		CAST(([size] / 128.0) AS decimal(22,2)) AS [file_size_mb],
+		CAST(([size] / 128.0 - CAST(FILEPROPERTY([name], ''SpaceUsed'') AS int) / 128.0) AS decimal(22,2)) AS [free_space_mb]
+	FROM
+		[sys].[database_files]; ';
+
+	-- TODO: extract VLFs using dbo.execute_per_database... 
+
+	DECLARE @errors xml;
+	EXEC dbo.[execute_per_database]
+		@Databases = @Databases,
+		@Statement = @sql,
+		@Errors = @errors OUTPUT;
+
+	IF @errors IS NOT NULL BEGIN 
+		RAISERROR('Unexpected errors extracting free-space: ', 16, 1);
+		-- TODO: I need to shred this vs just selecting it. 
+		SELECT @errors;
+		RETURN -22;
+	END;
 
 	SELECT 
 		database_id, 
@@ -85,32 +129,13 @@ AS
 
 			[d].[collation_name] [collation],
 			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,1)) [db_size_gb],
+			(SELECT SUM([free_space_mb]) FROM [#freeSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
 			CAST(([logsize].[log_size] / 1024.0) AS decimal(24,1)) [log_size_gb],
 			CASE 
 				WHEN [logsize].[log_size] = 0 THEN -1.0
 				WHEN [logused].[log_used] = 0 THEN 0.0
 				ELSE CAST((([logused].[log_used] / [logsize].[log_size]) * 100.0) AS decimal(5,1))
 			END [%_log_used],
-
-			-- TODO: 
-			--		and in % of data-file used/free ... 
-			--		here's how to calculate that: 
-			--	
-			--				SELECT
-			--					DB_NAME() [database_name],
-			--					[name] AS [file_name],
-			--					CAST(([size] / 128.0) AS decimal(22,2)) AS [file_size_mb],
-			--					CAST(([size] / 128.0 - CAST(FILEPROPERTY([name], 'SpaceUsed') AS int) / 128.0) AS decimal(22,2)) AS [free_space_mb]
-			--				FROM
-			--					[sys].[database_files];
-			--
-			--		and... between all of the different data-file, log-file, log-file-%-used, and data-file-%-used + log-file-as-data-file-% ... 
-			--			it probably makes sense to break all of the above out into xml or something. 
-			--			AND, if the log file > 75% of the data-file or larger (and the data-file > xMB in size) then... throw in a SMELL. 
-
-
-			-- TODO: possibly add in VLF counts here as well? 
-			--		ah, maybe make it an @IncludeVLFs bit ...  ? 
 
 			[d].recovery_model_desc [recovery],
 			
@@ -149,6 +174,7 @@ AS
 		[state],
 		[collation],
 		[db_size_gb],
+		CASE WHEN [free_space_mb] IS NULL THEN NULL ELSE CAST([free_space_mb] / 1024. AS decimal(24,2)) END [free_space_gb],
 		[log_size_gb],
 		[%_log_used] [log_used_pct],
 		[recovery],
@@ -174,8 +200,9 @@ AS
 				[level],
 				[state],
 				[collation],
-				[db_size_gb],
-				[log_size_gb],
+				[db_size_gb] [size_gb],
+				[free_space_gb] [free_gb],
+				[log_size_gb] [log_gb],
 				[log_used_pct],
 				[recovery],
 				[file_counts (d:l:fs:fti)] [file_counts_d_l_fs_fti],
@@ -200,11 +227,12 @@ AS
 		[level],
 		[state],
 		[collation],
-		[db_size_gb],
-		[log_size_gb],
+		[db_size_gb] [size_gb],
+		[free_space_gb] [free_gb],
+		[log_size_gb] [log_gb],
 		[log_used_pct],
 		[recovery],
-		[file_counts (d:l:fs:fti)],
+		[file_counts (d:l:fs:fti)] [file_counts (d:l:fs:ft)],
 		[page_verify],
 		[trustworthy],
 		[rcsi],
