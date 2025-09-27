@@ -1,10 +1,11 @@
 /*
 
 	REFACTOR:
-		- for admindb ... might/probably want @ExecutionAttemptsCount to be @RetryCount and @DelayBetweenRetries. 
+		- for admindb ... @ExecutionAttemptsCount changed to @RetryCount and @DelayBetweenRetries. 
 			as in, it'll always attempt to execute (if @PrintOnly = 0). 
 			and will ONLY retry if @Rretries > 0 
 			that'd make the factors a BIT cleaner.
+				i.e., it'll ALWAYS run. (If @PrintOnly = 0). but it'll only retry if @Retries > 0
 
 
 PICKUP/NEXT: 
