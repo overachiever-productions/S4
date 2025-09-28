@@ -13,11 +13,16 @@ IF OBJECT_ID('dbo.[initialize_codelibrary]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[initialize_codelibrary]
-
+	@ForceInitialization			bit = 0
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	DECLARE @settingsKey sysname = N'code_library_enabled';
+	IF EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = @settingsKey AND [setting_value] = N'1') BEGIN
+		IF @ForceInitialization = 0 RETURN 0;
+	END;
 
 	DECLARE @crlfTab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
 	DECLARE @perfLogs sysname = N'C:\Perflogs';
@@ -156,6 +161,8 @@ AS
 		RETURN -12;
 	END;
 
+	INSERT INTO dbo.[settings] ([setting_type], [setting_key], [setting_value], [comments])
+	VALUES (N'UNIQUE', @settingsKey, N'1', CONVERT(sysname, GETDATE(), 121));
+
 	RETURN 0;
 GO
-
