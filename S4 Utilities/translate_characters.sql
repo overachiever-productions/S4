@@ -1,4 +1,5 @@
 /*
+
 		Super Helpful when debugging and trying to figure out why the bleep isn't my IF @x = 'true' or whatever logic matching/working... 
 	
 */
@@ -25,7 +26,5 @@ AS
 	FROM 
 		dbo.[numbers]
 	WHERE 
-		[number] <= LEN(@input)
-	ORDER BY 
-		[number];
+		[number] <= LEN(@input);
 GO
