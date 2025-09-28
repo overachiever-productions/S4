@@ -1,7 +1,6 @@
 /*
 
-	DECLARE @command varchar(2000) = 'bcp "SELECT [code] FROM admindb..[code_library] WHERE script_id = 2;" queryout C:\Perflogs\lib\sql.perfmoncfg -f C:\Perflogs\lib\code.fmt -T';
-	EXEC xp_cmdshell @command;
+
 
 */
 
@@ -22,6 +21,11 @@ AS
 	DECLARE @settingsKey sysname = N'code_library_enabled';
 	IF EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = @settingsKey AND [setting_value] = N'1') BEGIN
 		IF @ForceInitialization = 0 RETURN 0;
+	END;
+
+	IF IS_SRVROLEMEMBER(N'sysadmin') = 0 BEGIN 
+		RAISERROR(N'Initialization of Code Library Functionality can ONLY be executed by members of SysAdmin.', 16, 1);
+		RETURN -100;
 	END;
 
 	DECLARE @crlfTab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
