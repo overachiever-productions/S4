@@ -401,7 +401,7 @@ AS
 				--		so that the code can be -File'd / dotSource'd. 
 			  END; 
 			ELSE BEGIN
-				IF IS_SRVROLEMEMBER('sysadmin') = 0 BEGIN
+				IF IS_SRVROLEMEMBER(N'sysadmin') = 0 BEGIN
 					RAISERROR(N'While xp_cmdshell CAN be configured for execution by non-SysAdmins, this is a BAD IDEA and admindb will NOT allow execution of arbitrary PowerShell code.', 20, 255) WITH LOG;
 					RETURN -9;
 				END;
