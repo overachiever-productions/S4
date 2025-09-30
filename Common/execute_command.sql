@@ -314,6 +314,15 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{B2COPYFILE}', N'')
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{BCP}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type], [filter_text])
+		VALUES
+			(N'BCP', N'Starting copy%'),
+			(N'BCP', N'1 rows copi%'),
+			(N'BCP', N'Network packet size%'),
+			(N'BCP', N'Clock Time (ms%');
+
+	END;
 	-- TODO: {SHRINKLOG}
 	-- TODO: {DBCC} (success)
 
