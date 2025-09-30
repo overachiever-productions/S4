@@ -10,6 +10,13 @@
 		- Section (in the outcome - if there are any issues) refers to the scripts defined in Part IV of the accompanying documentation. 
                 -- TODO: drop/ignore section stuff (or ... re-implement it - i.e., it's from pre-sprocified versions).
 
+
+    NEEDED:
+        - this SHOULD check/verify that the SQL Server Agent IS running. And SET to AUTO START.
+        - https://overachieverllc.atlassian.net/browse/S4-570
+        - https://overachieverllc.atlassian.net/browse/S4-676
+        - I MAY want to check for whether we're using NT SERVICE\MSSQLSERVER / similar (local) accounts vs DOMAIN or NETWORK accounts for BOTH SQL Server AND SQL Server Agent.
+
     vNEXT:
         - possible @IgnoreSuchAndSuch parameters... 
         - Some of the checks in this validation script are hard-coded to ENGLISH (1033). (can change this to use current server's default language)... 
@@ -29,9 +36,6 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-
-    IF OBJECT_ID('tempdb..#ERRORs') IS NOT NULL
-	    DROP TABLE #Errors;
 
     CREATE TABLE #Errors (
 	    ErrorId int IDENTITY(1,1) NOT NULL, 
@@ -87,8 +91,6 @@ AS
 			END;
 		END;
 	END;
-
-
 
     -- Database Mail
     IF (SELECT value_in_use FROM sys.configurations WHERE name = 'Database Mail XPs') != 1 BEGIN

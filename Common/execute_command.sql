@@ -1,10 +1,11 @@
 /*
 
 	REFACTOR:
-		- for admindb ... might/probably want @ExecutionAttemptsCount to be @RetryCount and @DelayBetweenRetries. 
+		- for admindb ... @ExecutionAttemptsCount changed to @RetryCount and @DelayBetweenRetries. 
 			as in, it'll always attempt to execute (if @PrintOnly = 0). 
 			and will ONLY retry if @Rretries > 0 
 			that'd make the factors a BIT cleaner.
+				i.e., it'll ALWAYS run. (If @PrintOnly = 0). but it'll only retry if @Retries > 0
 
 
 PICKUP/NEXT: 
@@ -314,6 +315,15 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{B2COPYFILE}', N'')
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{BCP}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type], [filter_text])
+		VALUES
+			(N'BCP', N'Starting copy%'),
+			(N'BCP', N'1 rows copi%'),
+			(N'BCP', N'Network packet size%'),
+			(N'BCP', N'Clock Time (ms%');
+
+	END;
 	-- TODO: {SHRINKLOG}
 	-- TODO: {DBCC} (success)
 
@@ -363,7 +373,13 @@ AS
     END;
     
     IF @ExecutionType IN (N'SQLCMD', N'PARTNER') BEGIN
-		SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+
+		IF @Command LIKE N'%-Q%' BEGIN
+			SET @xpCmd = 'sqlcmd{0} ' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ');
+		  END;
+		ELSE BEGIN
+			SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+		END;
 
         IF @ExecutionType = N'SQLCMD' BEGIN 
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
@@ -395,7 +411,7 @@ AS
 				--		so that the code can be -File'd / dotSource'd. 
 			  END; 
 			ELSE BEGIN
-				IF IS_SRVROLEMEMBER('sysadmin') = 0 BEGIN
+				IF IS_SRVROLEMEMBER(N'sysadmin') = 0 BEGIN
 					RAISERROR(N'While xp_cmdshell CAN be configured for execution by non-SysAdmins, this is a BAD IDEA and admindb will NOT allow execution of arbitrary PowerShell code.', 20, 255) WITH LOG;
 					RETURN -9;
 				END;
