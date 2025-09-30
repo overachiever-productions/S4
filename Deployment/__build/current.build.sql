@@ -391,6 +391,9 @@ GO
 --##INCLUDE: Common\Internal\verify_alerting_configuration.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\verify_directory_access.sql
+
+-----------------------------------
 --##INCLUDE: Common\core_predicates.sql
 
 -----------------------------------
