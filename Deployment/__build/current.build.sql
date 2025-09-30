@@ -229,6 +229,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="plancache_columns_by_table" type="P" comment="v12.1 refactoring." />
 	<entry schema="dbo" name="plancache_metrics_for_index" type="P" comment="v12.1 refactoring." />
 
+	<entry schema="dbo" name="list_database_details" type="P" comment="v12.6 refactoring." />
+
 	<entry schema="dbo" name="disable_and_script_logins" type="P" comment="v13.0 refactoring." />
 	<entry schema="dbo" name="disable_and_script_job_states" type="P" comment="v13.0 refactoring." />
 </list>');
@@ -389,6 +391,9 @@ GO
 --##INCLUDE: Common\Internal\verify_alerting_configuration.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\verify_directory_access.sql
+
+-----------------------------------
 --##INCLUDE: Common\core_predicates.sql
 
 -----------------------------------
@@ -417,6 +422,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\generate_bounding_times.sql
+
+-----------------------------------
+--##INCLUDE: Common\load_database_names.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases.sql
