@@ -127,6 +127,9 @@ GO
 -----------------------------------
 --##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
 
+-----------------------------------
+--##INCLUDE: Common\tables\code_library.sql
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 3. Cleanup and remove objects from previous versions (start by creating/adding dbo.drop_obsolete_objects and other core 'helper' code)
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -202,14 +205,10 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
             <warning>WARNING: v4.9 to v5.0+ name-change detected. Job Steps with calls to dbo.data_synchronization_checks were found. Please update to call dbo.verify_data_synchronization instead.</warning>
         </check>
     </entry>
-
-    <entry schema="dbo" name="load_database_names" type="P" comment="v5.2 - S4-52, S4-78, S4-87 - changing dbo.load_database_names to dbo.list_databases." />
     
     <entry schema="dbo" name="get_time_vector" type="P" comment="v5.6 Vector Standardization (cleanup)." />
     <entry schema="dbo" name="get_vector" type="P" comment="v5.6 Vector Standardization (cleanup)." />
     <entry schema="dbo" name="get_vector_delay" type="P" comment="v5.6 Vector Standardization (cleanup)." />
-
-    <entry schema="dbo" name="load_databases" type="P" comment="v5.8 refactor/changes." />
 
     <entry schema="dbo" name="script_server_logins" type="P" comment="v6.2 refactoring." />
     <entry schema="dbo" name="print_logins" type="P" comment="v6.2 refactoring." />
@@ -358,6 +357,9 @@ GO
 --##INCLUDE: Common\base64_encode.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\verify_directory_access.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\normalize_file_path.sql
 
 -----------------------------------
@@ -466,6 +468,9 @@ GO
 --##INCLUDE: Common\execute_powershell.sql
 
 -----------------------------------
+--##INCLUDE: Common\execute_per_database.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\establish_directory.sql
 
 -----------------------------------
@@ -504,6 +509,19 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Backups\backup_databases.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Code Library:
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: S4 Tools\CodeLibrary\create_code_formatfile.sql
+
+-----------------------------------
+--##INCLUDE: S4 Tools\CodeLibrary\load_library_code.sql
+
+-----------------------------------
+--##INCLUDE: S4 Tools\CodeLibrary\deploy_library_code.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Configuration:
@@ -937,6 +955,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\kill_long_running_processes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Utilities\translate_characters.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\s3\aws3_verify_configuration.sql
