@@ -2,6 +2,26 @@
 
 # Change Log
 
+## [12.6] - 2025-09-30
+Incremental updates and mods; Initial Introduction of Code Library Framework.
+
+### Fixed 
+- Deployment bugs/errors with `dbo.numbers` table. 
+
+### Improved 
+- Additional improvements and mods to synchronization setup for deployment of code to PARTNER servers. 
+- Tweaks (non-NULLable columns) for storaged of blocked process reports. 
+- Overhaul/rewrite of `dbo.list_databases` via NEW sproc: `dbo.load_database_names` - which allows targeting/exclusions via `@Databases` (instead of @Target and @Exclusions) + (finally) allows wildcard support (while continuing support for `{TOKEN}`s). 
+
+### Added 
+- New sproc: `dbo.execute_per_database` - allows execution of code per all and/or specified `@Databases`.
+- Initial addition of Code Library functionality - i.e., ability to deploy serialized code from/via `admindb.dbo.code_library` (including code-signed .ps1 files) - to simplify Data Collector set and other OS-level (Windows) interactions. 
+- New troubleshooting sproc/helper: `dbo.translate_characters` - simple routine to spit out each char in a string with position (index), current value/char, ASCII, and UNICoDE values for help with debugging/troubleshooting string-matching and evaluation logic.
+- Diagnostic sproc: `dbo.database_details` - work in progress, but provides high-level details about databases. 
+
+### Known Issues
+- Code Library Functionality is not currently suppported pre-SQL Server 2016 (i.e., use of `COMPRESS()` function will cause errors during attempts to install).
+
 ## [12.4] - 2025-09-03
 Miscellaneous Improvements and AG / HA Optimizations.
 
