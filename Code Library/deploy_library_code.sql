@@ -85,7 +85,7 @@ AS
 		SET @stringResult = REPLACE(@stringResult, @crlf, N'');
 
 		IF @stringResult = @hash BEGIN 
-			PRINT 'File [' + @file + N'] already deployed to [' + @directory + N'] with up-to-date hash: [' + @hash + N'].';
+			--PRINT 'File [' + @file + N'] already deployed to [' + @directory + N'] with up-to-date hash: [' + @hash + N'].';
 			RETURN 0;
 		END;
 	END;
