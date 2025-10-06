@@ -434,7 +434,7 @@ AS
 		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "{dotInclude}' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
 
 		IF @dotInclude IS NOT NULL BEGIN 
-			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''' + @dotInclude + N'''; ');
+			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''''' + @dotInclude + N'''''; ');
 		  END; 
 		ELSE 
 			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'');
