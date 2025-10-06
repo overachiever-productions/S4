@@ -141,7 +141,7 @@ AVG/MAX durations and file-counts for restore + consistency checks:
 ----		well... or... if 49:12:12 pretty clear..... guess it is. (so, just make sure that'll work as expected).
 
 --DECLARE @LatestBatch uniqueidentifier;
---SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_test_id] DESC);
+--SELECT @LatestBatch = (SELECT TOP 1 [execution_id] FROM dbo.[restore_log] ORDER BY [restore_id] DESC);
 
 --DECLARE @Errors bit = 0;
 
@@ -171,7 +171,7 @@ AVG/MAX durations and file-counts for restore + consistency checks:
 --WITH core AS ( 
 --	SELECT 
 --		rl.[execution_id],
---		(SELECT MIN([test_date]) FROM dbo.[restore_log] x WHERE x.[execution_id] = rl.[execution_id]) [test_date],
+--		(SELECT MIN([operation_date]) FROM dbo.[restore_log] x WHERE x.[execution_id] = rl.[execution_id]) [test_date],
 --		CASE
 --			WHEN rl.[restore_succeeded] = 1 THEN DATEDIFF(SECOND, rl.[restore_start], rl.[restore_end])
 --			ELSE 0

@@ -1,12 +1,10 @@
 /*
 
 	REFACTOR
-		Do i REALLY need RESTORE in the title? 
-			i.e., report_rpo_violations?  (i mean, ARGUABLY, I might be able to get RPO violations from job-histories or file-names - vs RESTORES. so ... there's that).
+		dbo.rto_violations
 
 	NOTE: 
         - This sproc adheres to the PROJECT/RETURN usage convention.
-
 
 	vNEXT:
 		- There's a logic bomb with current implementations if/when we 'wrap' from (say late night one night into early AM the next day): 
@@ -16,13 +14,6 @@
 		- Think it probably makes sense to add in an @Mode - with options/values of { DETAIL | AGGREGATE } (or something similar)
 			see: https://overachieverllc.atlassian.net/browse/S4-655
 		- NOTE: there's a 'logic complication' outlined in the above issue as well. 
-
-
-
-
-
-
-
 
 
 */

@@ -18,7 +18,8 @@ CREATE PROC dbo.[add_failover_processing]
     @SqlServerAgentJobNameCategory                      sysname         = N'Synchronization',
 	@MailProfileName			                        sysname         = N'General',
 	@OperatorName				                        sysname         = N'Alerts', 
-    @ExecuteSetupOnPartnerServer                        bit = 1
+    @ExecuteSetupOnPartnerServer                        bit = 1, 
+    @OverWriteExistingJobs                              bit = 1             
 AS
     SET NOCOUNT ON; 
 
@@ -59,7 +60,7 @@ AS
 
     DECLARE @jobID uniqueidentifier;
     DECLARE @failoverHandlerCommand nvarchar(MAX) = N'EXEC [admindb].dbo.process_synchronization_failover{CONFIGURATION};
-GO'
+GO';
 
     IF UPPER(@OperatorName) = N'ALERTS' AND UPPER(@MailProfileName) = N'GENERAL' 
         SET @failoverHandlerCommand = REPLACE(@failoverHandlerCommand, N'{CONFIGURATION}', N'');
@@ -70,25 +71,18 @@ GO'
 
     BEGIN TRY
 
-        EXEC msdb.dbo.[sp_add_job]
-            @job_name = @SqlServerAgentFailoverResponseJobName,
-            @enabled = 1,
-            @description = N'Automatically executed in response to a synchronized database failover event.',
-            @category_name = @SqlServerAgentJobNameCategory,
-            @owner_login_name = N'sa',
-            @notify_level_email = 2,
-            @notify_email_operator_name = @OperatorName,
-            @delete_level = 0,
-            @job_id = @jobID OUTPUT;
-
-        -- TODO: might need a version check here... i.e., this behavior is new to ... 2017? (possibly 2016?) (or I'm on drugs) (eithe way, NOT clearly documented as of 2019-07-29)
-        EXEC msdb.dbo.[sp_add_jobserver] 
-            @job_name = @SqlServerAgentFailoverResponseJobName, 
-            @server_name = N'(LOCAL)';
+        EXEC dbo.[create_agent_job]
+        	@TargetJobName = @SqlServerAgentFailoverResponseJobName,
+        	@JobCategoryName = @SqlServerAgentJobNameCategory,
+        	@JobEnabled = 1,
+        	@AddBlankInitialJobStep = 1,
+        	@OperatorToAlertOnErrors = @OperatorName,
+        	@OverWriteExistingJobDetails = @OverWriteExistingJobs,
+        	@JobID = @jobID OUTPUT;
 
         EXEC msdb.dbo.[sp_add_jobstep]
             @job_name = @SqlServerAgentFailoverResponseJobName, 
-            @step_id = 1,
+            @step_id = 2,
             @step_name = N'Respond to Failover',
             @subsystem = N'TSQL',
             @command = @failoverHandlerCommand,
@@ -137,16 +131,18 @@ GO'
     @SqlServerAgentJobNameCategory = @SqlServerAgentJobNameCategory,      
     @MailProfileName = @MailProfileName,
     @OperatorName =  @OperatorName,				          
-    @ExecuteSetupOnPartnerServer = 0; ';
+    @ExecuteSetupOnPartnerServer = 0, 
+    @OverWriteExistingJobs = @OverWriteExistingJobs; ';
 
         BEGIN TRY 
             EXEC sp_executesql 
                 @command, 
-                N'@SqlServerAgentFailoverResponseJobName sysname, @SqlServerAgentJobNameCategory sysname, @MailProfileName sysname, @OperatorName sysname', 
+                N'@SqlServerAgentFailoverResponseJobName sysname, @SqlServerAgentJobNameCategory sysname, @MailProfileName sysname, @OperatorName sysname, @OverWriteExistingJobs bit', 
                 @SqlServerAgentFailoverResponseJobName = @SqlServerAgentFailoverResponseJobName, 
                 @SqlServerAgentJobNameCategory = @SqlServerAgentJobNameCategory, 
                 @MailProfileName = @MailProfileName, 
-                @OperatorName = @OperatorName;
+                @OperatorName = @OperatorName, 
+                @OverWriteExistingJobs = @OverWriteExistingJobs;
 
         END TRY
         BEGIN CATCH 

@@ -96,9 +96,9 @@ IF OBJECT_ID('dbo.[extract_dynamic_code_lines]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[extract_dynamic_code_lines]
-	@DynamicCode				nvarchar(MAX), 
-	@TargetLine					int, 
-	@BeforeAndAfterLines		int			= 6
+	@DynamicCode						nvarchar(MAX), 
+	@TargetLine							int, 
+	@StringOutput						nvarchar(MAX)			= N''	OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -107,9 +107,10 @@ AS
 	SET @DynamicCode = NULLIF(@DynamicCode, N'');
 
 	IF @DynamicCode IS NULL BEGIN 
-		PRINT 'empty';
+		GOTO Output;
 	END;
 
+	DECLARE @beforeAndAfterLines int = 6;
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 
 	SELECT 
@@ -125,8 +126,8 @@ AS
 	DECLARE @lineCount int; 
 	SELECT @lineCount = (SELECT COUNT(*) FROM [#lines]);
 
-	DECLARE @startLine int = @TargetLine - @BeforeAndAfterLines;
-	DECLARE @endLine int = @TargetLine + @BeforeAndAfterLines;
+	DECLARE @startLine int = @TargetLine - @beforeAndAfterLines;
+	DECLARE @endLine int = @TargetLine + @beforeAndAfterLines;
 
 	IF @startLine < 0 SET @startLine = 0;
 	IF @endLine > @lineCount SET @endLine = @lineCount;
@@ -144,7 +145,13 @@ AS
 		row_id <= @endLine
 	ORDER BY 
 		row_id;
-
+	
+Output:
+	IF @StringOutput IS NULL BEGIN 
+		SELECT @StringOutput = @output;
+		RETURN 0;
+	END;
+	
 	PRINT N'/* ';
 	PRINT N'';
 	

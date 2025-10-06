@@ -404,7 +404,7 @@ AS
 	[e].[timestamp] [event_time], 
 	CAST([e].[blocking_id] AS sysname) + N'':'' + CAST([e].[blocked_id] AS sysname) + N''=>'' + CAST([e].[blocking_xactid] AS sysname) + N''::'' + CAST([e].[blocked_xactid] AS sysname) [signature],
 	ISNULL([e].[blocking_xactid], 0 - [e].[blocked_xactid]) [transaction_id], 
-	[e].[blocked_id],
+	CASE WHEN [e].[blocked_id] LIKE N''% (%'' THEN LEFT([e].[blocked_id], CHARINDEX('' '', [e].[blocked_id]) - 1) ELSE [e].[blocked_id] END [blocked_id],
 	[e].[seconds_blocked],
 	CASE 
 		WHEN [e].[blocked_xactid] IS NOT NULL AND [e].[blocking_xactid] IS NOT NULL THEN N''STANDARD''

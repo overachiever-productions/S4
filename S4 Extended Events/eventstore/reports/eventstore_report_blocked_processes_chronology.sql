@@ -161,7 +161,7 @@ AS
 		[blocking_id] sysname NULL,  -- ''self blockers'' can/will be NULL
 		[blocked_id] sysname NOT NULL,
 		[blocking_xactid] [bigint] NULL,  -- ''self blockers'' can/will be NULL
-		[blocking_request] [nvarchar](MAX) NOT NULL,
+		[blocking_request] [nvarchar](MAX) NULL,
 		[blocking_sproc_statement] [nvarchar](MAX) NOT NULL,
 		[blocking_resource_id] [nvarchar](80) NULL,
 		[blocking_resource] [varchar](2000) NOT NULL,
@@ -177,7 +177,7 @@ AS
 		[blocked_xactid] [bigint] NULL,  -- can be NULL
 		[blocked_request] [nvarchar](max) NOT NULL,
 		[blocked_sproc_statement] [nvarchar](max) NOT NULL,
-		[blocked_resource_id] [nvarchar](80) NOT NULL,
+		[blocked_resource_id] [nvarchar](80) NULL,
 		[blocked_resource] [varchar](2000) NULL,  -- can be NULL if/when there isn''t an existing translation
 		[blocked_wait_time] [int] NOT NULL,
 		[blocked_tran_count] [int] NOT NULL,
@@ -656,7 +656,6 @@ ORDER BY
 	ORDER BY 
 		[original_report_id], [level]; ';
 
-SET @TimeZone = N'Pacific Standard Time';
 	IF @TimeZone IS NOT NULL 
 		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'CASE WHEN [original_report_id] = [previous_report_id] THEN N'''' ELSE CONVERT(sysname, CAST(([timestamp] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), 121) END [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_time', N'') + N'_timestamp],');
 	ELSE 

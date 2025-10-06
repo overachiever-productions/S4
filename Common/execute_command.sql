@@ -1,5 +1,13 @@
 /*
 
+	REFACTOR:
+		- for admindb ... @ExecutionAttemptsCount changed to @RetryCount and @DelayBetweenRetries. 
+			as in, it'll always attempt to execute (if @PrintOnly = 0). 
+			and will ONLY retry if @Rretries > 0 
+			that'd make the factors a BIT cleaner.
+				i.e., it'll ALWAYS run. (If @PrintOnly = 0). but it'll only retry if @Retries > 0
+
+
 PICKUP/NEXT: 
 	Need to standardize and simplify the @Command handling. 
 	Specifically: 
@@ -129,6 +137,7 @@ GO
 CREATE PROC dbo.[execute_command]
 	@Command								nvarchar(MAX), 
 	@ExecutionType							sysname						= N'SQLCMD',						-- { SQLCMD | SHELL | PS | PS_CORE | PARTNER }
+	@DotIncludeFile							sysname						= NULL, 
 	@ExecutionAttemptsCount					int							= 2,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
 	@DelayBetweenAttempts					sysname						= N'5s',
 	@IgnoredResults							nvarchar(2000)				= N'{COMMAND_SUCCESS}',				--  'comma, delimited, list of, wild%card, statements, to ignore, can include, {tokens}'. Allowed Tokens: {COMMAND_SUCCESS} | {USE_DB_SUCCESS} | {ROWS_AFFECTED} | {BACKUP} | {RESTORE} | {SHRINKLOG} | {DBCC} ... 
@@ -151,6 +160,7 @@ AS
 	SET @ExecutionType = UPPER(ISNULL(@ExecutionType, N'SQLCMD'));
 	SET @IgnoredResults = NULLIF(@IgnoredResults, N'');
 	SET @SafeResults = NULLIF(@SafeResults, N'');
+	SET @DotIncludeFile = NULLIF(@DotIncludeFile, N'');
 
 	IF @ExecutionAttemptsCount <= 0 SET @ExecutionAttemptsCount = 1;
 
@@ -305,6 +315,15 @@ AS
 		SET @IgnoredResults = REPLACE(@IgnoredResults, N'{B2COPYFILE}', N'')
 	END;
 
+	IF (LEN(@IgnoredResults) <> LEN((REPLACE(@IgnoredResults, N'{BCP}', N'')))) BEGIN
+		INSERT INTO @filters ([filter_type], [filter_text])
+		VALUES
+			(N'BCP', N'Starting copy%'),
+			(N'BCP', N'1 rows copi%'),
+			(N'BCP', N'Network packet size%'),
+			(N'BCP', N'Clock Time (ms%');
+
+	END;
 	-- TODO: {SHRINKLOG}
 	-- TODO: {DBCC} (success)
 
@@ -354,7 +373,13 @@ AS
     END;
     
     IF @ExecutionType IN (N'SQLCMD', N'PARTNER') BEGIN
-		SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+
+		IF @Command LIKE N'%-Q%' BEGIN
+			SET @xpCmd = 'sqlcmd{0} ' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ');
+		  END;
+		ELSE BEGIN
+			SET @xpCmd = 'sqlcmd{0} -Q "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+		END;
 
         IF @ExecutionType = N'SQLCMD' BEGIN 
 		    IF @@SERVICENAME <> N'MSSQLSERVER'  -- Account for named instances:
@@ -369,8 +394,50 @@ AS
     END;
 
 	IF @ExecutionType IN (N'PS', N'PS_CORE') BEGIN 
-		--SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
-		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -nop -ec ' + dbo.[base64_encode](@Command);
+
+		DECLARE @dotInclude sysname = NULL;
+
+		IF @DotIncludeFile IS NOT NULL BEGIN 
+			IF @DotIncludeFile LIKE N'%{%' BEGIN
+				PRINT N'Signed Code Library Functionality (dot-include by key-name) is not YET supported.';
+				--SET @dotInclude = N'<LOAD A FILE HERE - or throw if signature is no good>';
+				-- TODO: load/initialize the code. As in: 
+				--		check to see if the KEY exists in 'library'. 
+				--				if not, throw. 
+				--		if so, see if the CODE for the KEY exists on disk - and what the CHECKSUM is. 
+				--			if doesn't exist (on disk) or CHECKSUM is different... 
+				--				then stream (OA signed) contents to disk. 
+				--		then, return the PATH for the code in question as @dotInclude. 
+				--		so that the code can be -File'd / dotSource'd. 
+			  END; 
+			ELSE BEGIN
+				IF IS_SRVROLEMEMBER(N'sysadmin') = 0 BEGIN
+					RAISERROR(N'While xp_cmdshell CAN be configured for execution by non-SysAdmins, this is a BAD IDEA and admindb will NOT allow execution of arbitrary PowerShell code.', 20, 255) WITH LOG;
+					RETURN -9;
+				END;
+
+				-- TODO: need to make sure that the file-path is properly rooted - i.e., either absolute path or .\ ... 
+				--		er. honestly, not sure if I care. especially if dbo.execute_powershell can LOOK FOR errors about "can't find whatchu talkin'bout willis" in terms of file-paths not found/etc. 
+
+				SET @dotInclude = @DotIncludeFile; 
+			END;
+		END;
+
+		/*---------------------------------------------------------------------------------------------------------------------------------------------------
+		-- NOTE: calling pwsh.exe or PowerShell.exe from the command line (cmd) is ... interesting in that -C and -F arguments MUST (both) be the LAST parameter
+					specified. And this is because anything AFTER either -C or -F is considered to be full-on arguments (either for the file or the command). 
+			TRANSLATION: 
+				- @dotInclude can't/won't use the -F command as the -C parameter CAN'T be used after that. 
+					- so, instead, -C will full-on dot-source the @dotInclude file, then ... continue on with the @Command passed in. 
+				- Or, stated differently, @dotInclude is going to be 'syntactic sugar-ly' loaded into place as PART of the command - to make execution easier for users.
+		---------------------------------------------------------------------------------------------------------------------------------------------------*/
+		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "{dotInclude}' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
+
+		IF @dotInclude IS NOT NULL BEGIN 
+			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''' + @dotInclude + N'''; ');
+		  END; 
+		ELSE 
+			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'');
 	END;
 	
 	DECLARE @executionCount int = 0;
@@ -399,7 +466,7 @@ ExecutionAttempt:
 		--PRINT @xpCmd;
 		
 		INSERT INTO #cmd_results ([result_text]) 
-		EXEC master.sys.[xp_cmdshell] @xpCmd;
+		EXEC sys.[xp_cmdshell] @xpCmd;
 
 		DELETE FROM #cmd_results WHERE [result_text] IS NULL;
 

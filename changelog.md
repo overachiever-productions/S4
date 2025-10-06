@@ -2,11 +2,50 @@
 
 # Change Log
 
+## [12.6] - 2025-09-30
+Incremental updates and mods; Initial Introduction of Code Library Framework.
+
+### Fixed 
+- Deployment bugs/errors with `dbo.numbers` table. 
+
+### Improved 
+- Additional improvements and mods to synchronization setup for deployment of code to PARTNER servers. 
+- Tweaks (non-NULLable columns) for storaged of blocked process reports. 
+- Overhaul/rewrite of `dbo.list_databases` via NEW sproc: `dbo.load_database_names` - which allows targeting/exclusions via `@Databases` (instead of @Target and @Exclusions) + (finally) allows wildcard support (while continuing support for `{TOKEN}`s). 
+
+### Added 
+- New sproc: `dbo.execute_per_database` - allows execution of code per all and/or specified `@Databases`.
+- Initial addition of Code Library functionality - i.e., ability to deploy serialized code from/via `admindb.dbo.code_library` (including code-signed .ps1 files) - to simplify Data Collector set and other OS-level (Windows) interactions. 
+- New troubleshooting sproc/helper: `dbo.translate_characters` - simple routine to spit out each char in a string with position (index), current value/char, ASCII, and UNICoDE values for help with debugging/troubleshooting string-matching and evaluation logic.
+- Diagnostic sproc: `dbo.database_details` - work in progress, but provides high-level details about databases. 
+
+### Known Issues
+- Code Library Functionality is not currently suppported pre-SQL Server 2016 (i.e., use of `COMPRESS()` function will cause errors during attempts to install).
+
+## [12.4] - 2025-09-03
+Miscellaneous Improvements and AG / HA Optimizations.
+
+### Fixed 
+- Orchestration Problem with location of `dbo.get_engine_version()` during setup/deployment. Was previously 'lower' in execution order, causing ugly bugs/problems with NEW deployments. 
+- Perf fix for `dbo.index_metrics` (previous code wasn't correctly predicating for specified TABLE names via `sys.dm_db_index_physical_stats()` causing operations to (obviously) take FOREVER on larger DBs.)
+- Multiple fixes and improvements for ('internal') `dbo.numbers` table - including checks to verify whether populated or not. 
+
+### Improved
+- AG Setup Sprocs (`dbo.add_synchronization_partner`, `dbo.create_sync_check_jobs`, and `dbo.process_synchronization_failover`) all bolstered/improved to address issues with non-idempotentcy in some environments/scenarios. 
+
+### Added
+- `dbo.check_database_consistency` now LOGS outcome / details to `dbo.corruption_check_history` table. 
+- **High-level** metrics for DBCC checks (logged into `dbo.corruption_check_history`) via `dbo.corruption_check_analytics` (an Inline Function). 
+- INITIAL logic for addition of `@DotIncludeFile` for PowerShell operations (5.1 and Core) against `dbo.execute_command` and `dbo.execute_powershell`. (Initial = works well, but not fully integrated with 'code library' functionality - coming soon-ish.)
+
+### Changed
+- Minor, internal, tweaks/cleanup to `@ExecutionType` operators for PowerShell/Pwsh operations. SHOULD be transparent to callers. 
+
 ## [12.2] - 2025-05-23
 Miscellaneous bug-fixes and minor improvements to backups.
 
 ### Known Issues
-- Creation of numbers-table (`dbo.numbers`) is currently 'lazy' and does NOT enable `DATA_ENCRYPTION` for SQL Server 2016 SP1 + instances. (It only enables for SQL Server 2017+.)
+- Creation of numbers-table (`dbo.numbers`) is currently 'lazy' and does NOT enable `DATA_COMPRESSION` for SQL Server 2016 SP1 + instances. (It only enables for SQL Server 2017+.)
 
 ### Fixed 
 - Bug-fix to address problems with RPO Violations erroneously reporting 'gaps' caused by DIFF backups. 

@@ -33,7 +33,7 @@ CREATE PROC dbo.[create_sync_check_jobs]
 	@JobsCategoryName								sysname				= N'SynchronizationChecks',							
 	@JobOperatorToAlertOnErrors						sysname				= N'Alerts',	
 	@ProfileToUseForAlerts							sysname				= N'General',
-	@OverWriteExistingJobs							bit					= 0
+	@OverWriteExistingJobs							bit					= 1
 AS
     SET NOCOUNT ON; 
 

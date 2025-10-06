@@ -106,10 +106,10 @@ EXEC sp_configure ''blocked process threshold'', ' + CAST(@BlockedProcessThresho
 	[blocking_id] sysname NULL,  -- ''self blockers'' can/will be NULL
 	[blocked_id] sysname NOT NULL,
 	[blocking_xactid] [bigint] NULL,  -- ''self blockers'' can/will be NULL
-	[blocking_request] [nvarchar](MAX) NOT NULL,
-	[blocking_sproc_statement] [nvarchar](MAX) NOT NULL,
+	[blocking_request] [nvarchar](MAX) NULL,
+	[blocking_sproc_statement] [nvarchar](MAX) NULL,
 	[blocking_resource_id] [nvarchar](80) NULL,
-	[blocking_resource] [varchar](2000) NOT NULL,
+	[blocking_resource] [varchar](2000) NULL,
 	[blocking_wait_time] [int] NULL,
 	[blocking_tran_count] [int] NULL,  -- ''self blockers'' can/will be NULL
 	[blocking_isolation_level] [nvarchar](128) NULL,   -- ''self blockers'' can/will be NULL
@@ -120,9 +120,9 @@ EXEC sp_configure ''blocked process threshold'', ' + CAST(@BlockedProcessThresho
 	[blocking_login_name] sysname NULL,
 	[blocking_client_app] sysname NULL,
 	[blocked_xactid] [bigint] NULL,  -- can be NULL
-	[blocked_request] [nvarchar](max) NOT NULL,
-	[blocked_sproc_statement] [nvarchar](max) NOT NULL,
-	[blocked_resource_id] [nvarchar](80) NOT NULL,
+	[blocked_request] [nvarchar](max) NULL,
+	[blocked_sproc_statement] [nvarchar](max) NULL,
+	[blocked_resource_id] [nvarchar](80) NULL,
 	[blocked_resource] [varchar](2000) NULL,  -- can be NULL if/when there isn''t an existing translation
 	[blocked_wait_time] [int] NOT NULL,
 	[blocked_tran_count] [int] NOT NULL,

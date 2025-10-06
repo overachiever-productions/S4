@@ -55,6 +55,7 @@ CREATE PROC dbo.[check_database_consistency]
 	@Exclusions								nvarchar(MAX)	                        = NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	                        = NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@IncludeExtendedLogicalChecks           bit                                     = 0,
+	@MaxDOP									int										= 1,
     @OperatorName						    sysname									= N'Alerts',
 	@MailProfileName					    sysname									= N'General',
 	@EmailSubjectPrefix					    nvarchar(50)							= N'[Database Corruption Checks] ',	
@@ -113,14 +114,23 @@ AS
 	
 	DECLARE @currentDbName sysname; 
     DECLARE @sql nvarchar(MAX);
-    DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks};';
+    DECLARE @template nvarchar(MAX) = N'DBCC CHECKDB([{DbName}]) WITH NO_INFOMSGS, ALL_ERRORMSGS{ExtendedChecks}{DOP};';
 	
 	DECLARE @result int;
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @exceptionDetails nvarchar(MAX);
 
     IF @IncludeExtendedLogicalChecks = 1 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N', EXTENDED_LOGICAL_CHECKS');
     ELSE 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N'');
+
+	IF @MaxDOP > 1 BEGIN 
+		SET @template = REPLACE(@template, N'{DOP}', N', MAXDOP = ' + CAST(@MaxDOP AS sysname));	
+	  END;
+	ELSE BEGIN 
+		SET @template = REPLACE(@template, N'{DOP}', N'');
+	END;
 
 	DECLARE @outcome xml;
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
@@ -139,16 +149,31 @@ AS
 		SET @startTime = GETDATE();
 
 		SET @sql = REPLACE(@template, N'{DbName}', @currentDbName);
+		SET @result = 0;
+		SET @errorMessage = NULL; 
+		SET @exceptionDetails = NULL;
 
-		EXEC @result = dbo.[execute_command]
-			@Command = @sql,
-			@ExecutionType = N'SQLCMD',
-			@ExecutionAttemptsCount = 1,
-			@DelayBetweenAttempts = NULL,
-			@IgnoredResults = N'{COMMAND_SUCCESS}',
-			@PrintOnly = @PrintOnly,
-			@Outcome = @outcome OUTPUT, 
-			@ErrorMessage = @errorMessage OUTPUT;
+		BEGIN TRY
+			EXEC @result = dbo.[execute_command]
+				@Command = @sql,
+				@ExecutionType = N'SQLCMD',
+				@ExecutionAttemptsCount = 1,
+				@DelayBetweenAttempts = NULL,
+				@IgnoredResults = N'{COMMAND_SUCCESS}',
+				@PrintOnly = @PrintOnly,
+				@Outcome = @outcome OUTPUT, 
+				@ErrorMessage = @errorMessage OUTPUT;
+		END TRY
+		BEGIN CATCH
+			SELECT 
+				@exceptionDetails = N'EXCEPTION: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+			
+			IF @@TRANCOUNT > 0 
+				ROLLBACK;			
+
+			SET @result = ISNULL(NULLIF(@result, 0), -999);
+			SET @errorMessage = ISNULL(@errorMessage, N'') + N' ' + @exceptionDetails;
+		END CATCH;
 
 		IF @result <> 0 BEGIN 
 			SET @succeeded = 0;
@@ -171,6 +196,7 @@ AS
 			[execution_id],
 			[execution_date],
 			[database],
+			[dop],
 			[check_start],
 			[check_end],
 			[check_succeeded],
@@ -181,6 +207,7 @@ AS
 			@executionId,
 			@executionDate, 
 			@currentDbName,
+			@MaxDOP,
 			@startTime,
 			GETDATE(),
 			@succeeded,
@@ -198,9 +225,7 @@ AS
 	DECLARE @emailSubject nvarchar(300);
 
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN 
-		DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 		DECLARE @tab nchar(1) = NCHAR(9);
-
 
 		SET @emailSubject = ISNULL(@EmailSubjectPrefix, N'') + ' DATABASE CONSISTENCY CHECK ERRORS';
 		SET @emailBody = N'The following problems were encountered: ' + @crlf; 

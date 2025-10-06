@@ -289,7 +289,7 @@ AS
 		DECLARE @output xml, @errorMessage nvarchar(MAX);
 		EXEC [admindb].dbo.[execute_command]
 			@Command = N'(Get-Counter -Counter ''\Processor(_Total)\% Privileged Time'' -MaxSamples 10).CounterSamples.CookedValue;',
-			@ExecutionType = N'POSH',
+			@ExecutionType = N'PS_CORE',
 			@IgnoredResults = N'',
 			@SafeResults = N'{ALL}',	/* treat all results as safe... */
 			@ErrorResults = N'',
