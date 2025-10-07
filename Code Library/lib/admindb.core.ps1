@@ -14,6 +14,10 @@ function Remove-DataCollectorFiles {
 	Get-ChildItem $directory | Where-Object { $_.CreationTime -lt $threshold } | Remove-Item -Force;
 }
 
+function Test-CollectorSetPermissions {
+	
+}
+
 function Get-DataCollectorStatus {
 	param (
 		[Parameter(Mandatory)]
@@ -26,27 +30,12 @@ function Get-DataCollectorStatus {
 		if ($state -in ('Running', 'Stopped')) {
 			return $state;
 		}
-	}
-	catch { }
-	
-	try {
-		$query = logman query "$CollectorName";
-		if ($query -like "Data Collector Set was not found.") {
-			return "<EMPTY>";
-		}
 		
-		$regex = New-Object System.Text.RegularExpressions.Regex("(?i)(?s)Status:\s+(?<status>[^\r]+){1}", [System.Text.RegularExpressions.RegexOptions]::Multiline);
-		$matches = $regex.Match($query);
-		
-		if ($matches) {
-			$state = $matches.Groups[1].Value;
-		}
+		return "Unknown";
 	}
 	catch {
-		$state = "<EMPTY>";
+		# todo, watch for 'Access is denied.' ... 
 	}
-	
-	return $state;
 }
 
 function Install-DataCollector {
