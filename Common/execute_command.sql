@@ -400,19 +400,14 @@ AS
 		IF @DotIncludeFile IS NOT NULL BEGIN 
 			IF @DotIncludeFile LIKE N'%{%' BEGIN
 				DECLARE @key sysname = REPLACE(REPLACE(@DotIncludeFile, N'{', N''), N'}', N'');
-				
-				
-				
-				PRINT N'Signed Code Library Functionality (dot-include by key-name) is not YET supported.';
-				--SET @dotInclude = N'<LOAD A FILE HERE - or throw if signature is no good>';
-				-- TODO: load/initialize the code. As in: 
-				--		check to see if the KEY exists in 'library'. 
-				--				if not, throw. 
-				--		if so, see if the CODE for the KEY exists on disk - and what the CHECKSUM is. 
-				--			if doesn't exist (on disk) or CHECKSUM is different... 
-				--				then stream (OA signed) contents to disk. 
-				--		then, return the PATH for the code in question as @dotInclude. 
-				--		so that the code can be -File'd / dotSource'd. 
+				SELECT @dotInclude = [file_path] FROM dbo.[code_library] WHERE [library_key] = @key;
+
+				IF @DotIncludeFile IS NULL BEGIN 
+					RAISERROR(N'CodeLibrary File-Key Token [%s] for parameter @DotFileInclude (translated to [%s]) does not match a valid CodeLibrary Key.', 16, 1, @DotIncludeFile, @key);
+					RETURN -50;
+				END;
+
+				EXEC dbo.[verify_codelibrary_file] @key;
 			  END; 
 			ELSE BEGIN
 				IF IS_SRVROLEMEMBER(N'sysadmin') = 0 BEGIN
