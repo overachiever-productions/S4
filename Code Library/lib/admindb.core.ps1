@@ -1,21 +1,22 @@
 ﻿Set-StrictMode -Version 1.0;
 
-function Remove-DataCollectorFiles {
+function Enable-DataCollectorAutoStart {
 	param (
 		[Parameter(Mandatory)]
-		[string]$CollectorName,
-		[Parameter(Mandatory)]
-		[int]$DaysToKeep
+		[string]$CollectorName
 	);
 	
-	$threshold = (Get-Date).AddDays(0 - $DaysToKeep);
-	$directory = Join-Path -Path "C:\PerfLogs\" -ChildPath $CollectorName;
+	$task = Get-ScheduledTask -TaskName $CollectorName -TaskPath "\Microsoft\Windows\PLA\";
+	$trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay 00:00:03;
 	
-	Get-ChildItem $directory | Where-Object { $_.CreationTime -lt $threshold } | Remove-Item -Force;
-}
-
-function Test-CollectorSetPermissions {
-	
+	if ((Get-WindowsServerVersion) -in @("Windows2019", "Windows2022", "Windows2025")) {
+		## https://docs.microsoft.com/en-us/troubleshoot/windows-server/performance/user-defined-dcs-doesnt-run-as-scheduled
+		$newAction = New-ScheduledTaskAction -Execute "C:\windows\system32\rundll32.exe" -Argument "C:\windows\system32\pla.dll,PlaHost `"$CollectorName`" `"`$(Arg0)`"";
+		Set-ScheduledTask -TaskName $CollectorName -TaskPath "\Microsoft\Windows\PLA\" -Action $newAction -Trigger $trigger | Out-Null;
+	}
+	else {
+		Set-ScheduledTask -TaskName $CollectorName -TaskPath "\Microsoft\Windows\PLA\" -Trigger $trigger | Out-Null;
+	}
 }
 
 function Get-DataCollectorStatus {
@@ -35,6 +36,45 @@ function Get-DataCollectorStatus {
 	}
 	catch {
 		# todo, watch for 'Access is denied.' ... 
+	}
+}
+
+filter Get-WindowsServerVersion {
+	[System.Version]$Version = [System.Environment]::OSVersion.Version;
+	
+	# https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions#Server_versions
+	if ($Version.Major -eq 10) {
+		if ($Version.Build -ge 26100) {
+			return "Windows2025";
+		}
+		if ($Version.Build -ge 20348) {
+			return "Windows2022";
+		}
+		if ($Version.Build -ge 17763) {
+			return "Windows2019";
+		}
+		else {
+			return "Windows2016";
+		}
+	}
+	if ($Version.Major -eq 6) {
+		switch ($Version.Minor) {
+			0 {
+				return "Windows2008";
+			}
+			1 {
+				return "Windows2008R2";
+			}
+			2 {
+				return "Windows2012";
+			}
+			3 {
+				return "Windows2012R2";
+			}
+			default {
+				return "UNKNOWN"
+			}
+		}
 	}
 }
 
@@ -66,24 +106,20 @@ function Install-DataCollector {
 	Enable-DataCollectorAutoStart -CollectorName $CollectorName;
 }
 
-function Uninstall-DataCollector {
+function Remove-DataCollectorFiles {
 	param (
 		[Parameter(Mandatory)]
 		[string]$CollectorName,
-		[switch]$Force
+		[Parameter(Mandatory)]
+		[int]$DaysToKeep
 	);
 	
-	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
-	if ('<EMPTY>' -eq $status) {
-		return;
-	}
+	$threshold = (Get-Date).AddDays(0 - $DaysToKeep);
+	$directory = Join-Path -Path "C:\PerfLogs\" -ChildPath $CollectorName;
 	
-	if (-not ($Force)) {
-		
-	}
-	
-	Stop-DataCollector -CollectorName $CollectorName;
-	Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
+	Get-ChildItem $directory | Where-Object {
+		$_.CreationTime -lt $threshold
+	} | Remove-Item -Force;
 }
 
 function Start-DataCollector {
@@ -145,72 +181,75 @@ function Stop-DataCollector {
 	}
 }
 
-function Enable-DataCollectorAutoStart {
+function Uninstall-DataCollector {
 	param (
 		[Parameter(Mandatory)]
-		[string]$CollectorName
+		[string]$CollectorName,
+		[switch]$Force
 	);
 	
-	$task = Get-ScheduledTask -TaskName $CollectorName -TaskPath "\Microsoft\Windows\PLA\";
-	$trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay 00:00:03;
+	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
+	if ('<EMPTY>' -eq $status) {
+		return;
+	}
 	
-	if ((Get-WindowsServerVersion) -in @("Windows2019", "Windows2022", "Windows2025")) {
-		## https://docs.microsoft.com/en-us/troubleshoot/windows-server/performance/user-defined-dcs-doesnt-run-as-scheduled
-		$newAction = New-ScheduledTaskAction -Execute "C:\windows\system32\rundll32.exe" -Argument "C:\windows\system32\pla.dll,PlaHost `"$CollectorName`" `"`$(Arg0)`"";
-		Set-ScheduledTask -TaskName $CollectorName -TaskPath "\Microsoft\Windows\PLA\" -Action $newAction -Trigger $trigger | Out-Null;
+	if (-not ($Force)) {
+		
 	}
-	else {
-		Set-ScheduledTask -TaskName $CollectorName -TaskPath "\Microsoft\Windows\PLA\" -Trigger $trigger | Out-Null;
-	}
+	
+	Stop-DataCollector -CollectorName $CollectorName;
+	Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
 }
 
-filter Get-WindowsServerVersion {
+function Test-IsUserLocalGroupMember {
 	param (
-		[System.Version]$Version = [System.Environment]::OSVersion.Version
+		[Parameter(Mandatory)]
+		[string]$Group,
+		[string]$Member = $($env:USERNAME)  
 	);
 	
-	# https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions#Server_versions
-	if ($Version.Major -eq 10) {
-		if ($Version.Build -ge 26100) {
-			return "Windows2025";
-		}
-		if ($Version.Build -ge 20348) {
-			return "Windows2022";
-		}
-		if ($Version.Build -ge 17763) {
-			return "Windows2019";
-		}
-		else {
-			return "Windows2016";
-		}
+	$match = Get-LocalGroupMember -Group $Group -Member $Member -ErrorAction SilentlyContinue;
+	
+	if ($match) {
+		return $true;
 	}
-	if ($Version.Major -eq 6) {
-		switch ($Version.Minor) {
-			0 {
-				return "Windows2008";
-			}
-			1 {
-				return "Windows2008R2";
-			}
-			2 {
-				return "Windows2012";
-			}
-			3 {
-				return "Windows2012R2";
-			}
-			default {
-				return "UNKNOWN"
-			}
-		}
+	
+	return $false;
+}
+
+function Test-PerformanceGroupMembership {
+	param (
+		[Parameter(Mandatory)]
+		[string]$Member	
+	);
+	
+	# SQL Server Shouldn't (EVER) be running as a member of Local Admins (or even Power Users) - but an interactive user might be:
+	if ((Test-IsUserLocalGroupMember -Group "Administrators" -Member $Member) -or (Test-IsUserLocalGroupMember -Group "Power Users" -Member $Member)) {
+		return "Both (Admin/PowerUser)";
+	}
+	
+	[string[]]$perms = @();
+	if ((Test-IsUserLocalGroupMember -Group "Performance Log Users" -Member $Member)) {
+		$perms += "Write";
+	}
+	
+	if ((Test-IsUserLocalGroupMember -Group "Performance Monitor Users" -Member $Member)) {
+		$perms += "Read";
+	}
+	
+	switch ($perms.Count) {
+		0 { return "None"; }
+		1 { return $perms[0]; }
+		2 { return "Both"; }
 	}
 }
 
 
 # SIG # Begin signature block
-# MIIqlAYJKoZIhvcNAQcCoIIqhTCCKoECAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIIqkwYJKoZIhvcNAQcCoIIqhDCCKoACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBEWT+KJ0F297MY
-# blWUeUDZtnLBMBcT53ZzkYAIp+y/5qCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDqUIkhTRimuzvV
+# ZzCUJF/CovevCAguiSlLqwSSsulG6qCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
 # hWVI5v9FUTANBgkqhkiG9w0BAQwFADBMMSAwHgYDVQQLExdHbG9iYWxTaWduIFJv
 # b3QgQ0EgLSBSNjETMBEGA1UEChMKR2xvYmFsU2lnbjETMBEGA1UEAxMKR2xvYmFs
 # U2lnbjAeFw0xNDEyMTAwMDAwMDBaFw0zNDEyMTAwMDAwMDBaMEwxIDAeBgNVBAsT
@@ -408,31 +447,31 @@ filter Get-WindowsServerVersion {
 # GGzNmTqazSZwROZmmJwlHhlqx9jz5/+mNXf79X27jILHb31UMrvqmQs56CBRFS+J
 # 4yrhxSDzenhOPa8XYpJUjSeMkDfc4ynoQpO2+DsrC5lQuOQ0Bpgj7urftVS7rtvx
 # 6t1y+UXtsdpDO4D8b2zf3JFtuKXU73XNZUxkLFnfEy4CG0v6BJPAuzcdH7Ig008z
-# rxahHMCqqIgxggTcMIIE2AIBATCBjzB7MQswCQYDVQQGEwJVUzEOMAwGA1UECAwF
+# rxahHMCqqIgxggTbMIIE1wIBATCBjzB7MQswCQYDVQQGEwJVUzEOMAwGA1UECAwF
 # VGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAPBgNVBAoMCFNTTCBDb3JwMTcwNQYD
 # VQQDDC5TU0wuY29tIEVWIENvZGUgU2lnbmluZyBJbnRlcm1lZGlhdGUgQ0EgUlNB
 # IFIzAhB5w2lRigPnF+NXyyeBVD75MA0GCWCGSAFlAwQCAQUAoEwwGQYJKoZIhvcN
-# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIDbpQf4/JixMngVoOt/U
-# wwFAgFoaTJSP1eu+Xboa0Y5IMAsGByqGSM49AgEFAARnMGUCMGJktsHfg9IcbsPC
-# OVyxG+SbZIG8panrMst5zQrzDwOJimnN9d3n8838f/SHKfkSBAIxAM8oh5Daz6ro
-# Kg/Y3oWVg5zImWtkKlcjcBVoibs1bMktWYTz8xphVqib/jCXifmmcKGCA2wwggNo
-# BgkqhkiG9w0BCQYxggNZMIIDVQIBATBvMFsxCzAJBgNVBAYTAkJFMRkwFwYDVQQK
-# ExBHbG9iYWxTaWduIG52LXNhMTEwLwYDVQQDEyhHbG9iYWxTaWduIFRpbWVzdGFt
-# cGluZyBDQSAtIFNIQTM4NCAtIEc0AhABXMCK85u0U3OWiccagp0yMAsGCWCGSAFl
-# AwQCAaCCAT0wGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
-# DxcNMjUxMDA3MTYzNjAyWjArBgkqhkiG9w0BCTQxHjAcMAsGCWCGSAFlAwQCAaEN
-# BgkqhkiG9w0BAQsFADAvBgkqhkiG9w0BCQQxIgQgwrFXB0Vfobn+Nl7ybh5iIk5E
-# 8XYdSUjdE6KF1oNgM2IwgaQGCyqGSIb3DQEJEAIMMYGUMIGRMIGOMIGLBBRwX9qC
-# VDLz9Ycr7b8jrKAkuqNbVTBzMF+kXTBbMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQ
-# R2xvYmFsU2lnbiBudi1zYTExMC8GA1UEAxMoR2xvYmFsU2lnbiBUaW1lc3RhbXBp
-# bmcgQ0EgLSBTSEEzODQgLSBHNAIQAVzAivObtFNzlonHGoKdMjANBgkqhkiG9w0B
-# AQsFAASCAYBiLNYkB69vaLGPodaETMg9XlqzjNVowQMvL66vSymqhNWccpfjTuZz
-# iRPOj/yODcR186e30afE4iNxMKswmfmdqdaumdJZxEswSWghgNTdZs4kb/L++2+u
-# +42fRtu034KjcdKP8qz6ajjgSB5kHWIyniCWG/gsKc7NXdYPOYu1+SFkZFVzs2xl
-# dnsSh+hJ1a/WIdbeP1Z/UTYOKDWMchI7B+bhNjRlohgoOOdiEKUYhI8AO17cia4X
-# 7d8FEA17vPBgwCgGqQgsW7kVdMPfGm9XQ0A58gM5+7sb1P73IWuc6M73QS2v7CJ2
-# fCnVfLlQ37dw2ZOy4OHYkUQbANhWeWndvlPAQlxZmDQ520MKfYnufyfOeZfvDmGA
-# qNrAtZOgqlZmhXIs6qqJ6yk6Ws8/Hh3IqL5LPrWAWIPND8l710zLs1cLWsZ9z40d
-# yclPneMHVdgsHk67FSMWp3o/WIqDueBZnbAMtCvlTTgX3JXKEdIHOJMAKAr1XZeD
-# KdIq5GuRrqQ=
+# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIFD8l759FrwNN0S6WHPo
+# QQpE9ybFComjjRWK2Oq2ovAyMAsGByqGSM49AgEFAARmMGQCME7tdCwFk8At0Vam
+# 3zAtWBcsAEG/OnuASU4k9ZpoIIwataPNRAUBhkdIeqVA/6VFIwIwXFe+CabNwOI/
+# pga6Ep7xDGILfJTeQaTXMf+aTsz2SjRA95OlK7ykWMYNzC0UoucRoYIDbDCCA2gG
+# CSqGSIb3DQEJBjGCA1kwggNVAgEBMG8wWzELMAkGA1UEBhMCQkUxGTAXBgNVBAoT
+# EEdsb2JhbFNpZ24gbnYtc2ExMTAvBgNVBAMTKEdsb2JhbFNpZ24gVGltZXN0YW1w
+# aW5nIENBIC0gU0hBMzg0IC0gRzQCEAFcwIrzm7RTc5aJxxqCnTIwCwYJYIZIAWUD
+# BAIBoIIBPTAYBgkqhkiG9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEP
+# Fw0yNTEwMDcxODUwMjdaMCsGCSqGSIb3DQEJNDEeMBwwCwYJYIZIAWUDBAIBoQ0G
+# CSqGSIb3DQEBCwUAMC8GCSqGSIb3DQEJBDEiBCChxbYwJniEUzGwYueSeczvvUdu
+# rq+eKmu4G+tFLpp8tzCBpAYLKoZIhvcNAQkQAgwxgZQwgZEwgY4wgYsEFHBf2oJU
+# MvP1hyvtvyOsoCS6o1tVMHMwX6RdMFsxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBH
+# bG9iYWxTaWduIG52LXNhMTEwLwYDVQQDEyhHbG9iYWxTaWduIFRpbWVzdGFtcGlu
+# ZyBDQSAtIFNIQTM4NCAtIEc0AhABXMCK85u0U3OWiccagp0yMA0GCSqGSIb3DQEB
+# CwUABIIBgG/4nyGHiEyw6EY+VmD2lRT+Q6zFC4YYZGdYcMJNN/DyRG62vmtr1G+G
+# 8gWe1VS6jKUSlRXqbBru72pH6cX+v8dUez0UTqrmTFhsM1pt2MRmO0m4DOB1WPve
+# +rfBoVu5lviEszdOFUEdlfvlqNsZc+3nHlrXQJSGQQsljVl+ProuhoK9c8MneJjj
+# 1xjDMNbRCurt/ETptBnCLm/wovb8h6f6IOWF/re/xsk4QMufYk8jkozZw9tNchpD
+# R/wvZUCSebQqY8PGlGZPRnWwYiCIWs+SskFKE8It6j+B65mJVgKHSArptfnt82q3
+# i10ki6p041iLEiKxUm1R4vqdZzhdKj/HZRz78LTlGZRH3FGhJnAiomHwf5MkOk1L
+# LI9LYXVbD+xe2tZ6hyqJHh8jhvgnIvEPW5AKRBHfT0jReTsUcPDdQtRRO5jyUytQ
+# JmUiwA6+/smJal2lNkICDlPzQHNDW+fbNzebzz8pKGHVUhz+gXmNDu+pukLU0c3z
+# UVN3MnDTVg==
 # SIG # End signature block
