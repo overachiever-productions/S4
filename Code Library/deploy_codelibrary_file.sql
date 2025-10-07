@@ -93,7 +93,7 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Write File to Disk (if not already written):
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @command nvarchar(MAX) = N'bcp "EXEC admindb.dbo.[load_library_code] {id};" queryout "{path}" -f C:\Perflogs\lib\code.fmt -T';
+	DECLARE @command nvarchar(MAX) = N'bcp "EXEC admindb.dbo.[codelibrary_file] {id};" queryout "{path}" -f C:\Perflogs\lib\code.fmt -T';
 	SET @command = REPLACE(@command, N'{id}', @libraryId);
 	SET @command = REPLACE(@command, N'{path}', @path);
 
