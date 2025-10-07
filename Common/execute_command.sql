@@ -434,7 +434,7 @@ AS
 		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "{dotInclude}' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
 
 		IF @dotInclude IS NOT NULL BEGIN 
-			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''''' + @dotInclude + N'''''; ');
+			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''' + @dotInclude + N'''; ');
 		  END; 
 		ELSE 
 			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'');
@@ -456,15 +456,12 @@ ExecutionAttempt:
 	DELETE FROM #cmd_results;
 
 	IF @PrintOnly = 1 BEGIN 
-		PRINT N'-- xp_cmdshell ''' + @xpCmd + ''';';
-        --PRINT @xpCmd;
+		PRINT N'-- EXEC sys.xp_cmdshell ''' + @xpCmd + ''';';
 		SET @succeeded = 1; 
 		GOTO Terminate;
 	END;
 
 	BEGIN TRY 
-		--PRINT @xpCmd;
-		
 		INSERT INTO #cmd_results ([result_text]) 
 		EXEC sys.[xp_cmdshell] @xpCmd;
 
