@@ -456,7 +456,7 @@ ExecutionAttempt:
 	DELETE FROM #cmd_results;
 
 	IF @PrintOnly = 1 BEGIN 
-		PRINT N'-- EXEC sys.xp_cmdshell ''' + @xpCmd + ''';';
+		PRINT N'-- EXEC sys.xp_cmdshell ''' + REPLACE(@xpCmd, N'''', N'''''') + ''';';
 		SET @succeeded = 1; 
 		GOTO Terminate;
 	END;
