@@ -58,7 +58,7 @@ AS
 	DECLARE @lastDeployed datetime = (SELECT [last_deployed] FROM dbo.[code_library] WHERE [library_key] = @Key);
 
 	IF (@lastDeployed IS NULL) OR (@lastDeployed < @olderThan) OR (@lastDeployed < (SELECT MAX([deployed]) FROM dbo.[version_history])) BEGIN
-		EXEC dbo.[deploy_library_code] @Key = @Key;
+		EXEC dbo.[deploy_codelibrary_file] @Key = @Key;
 	END;
 
 	RETURN 0;

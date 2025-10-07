@@ -8,11 +8,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID(N'dbo.[deploy_library_code]', N'P') IS NOT NULL
-	DROP PROC  dbo.[deploy_library_code];
+IF OBJECT_ID(N'dbo.[deploy_codelibrary_file]', N'P') IS NOT NULL
+	DROP PROC  dbo.[deploy_codelibrary_file];
 GO
 
-CREATE PROC	dbo.[deploy_library_code]
+CREATE PROC	dbo.[deploy_codelibrary_file]
 	@Key					sysname, 
 	@PrintOnly				bit					= 0
 AS
