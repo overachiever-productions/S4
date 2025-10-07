@@ -36,7 +36,19 @@ function Get-DataCollectorStatus {
 	}
 	catch {
 		# todo, watch for 'Access is denied.' ... 
+		return $_;
 	}
+}
+
+function Get-DataCollectors {
+	$results = Invoke-Expression "logman query";
+	
+	# check for "The command completed successfully." - if NOT present then failed. (look for access denied? )
+	
+	# then ... split by line... 
+	# and ignore first 2 lines ... and the last... 
+	# and return a PSCustomObject with name, and status (skip type - i don't need that)
+	# er, maybe only report on  type = "Counter" ... 
 }
 
 filter Get-WindowsServerVersion {
