@@ -399,6 +399,10 @@ AS
 
 		IF @DotIncludeFile IS NOT NULL BEGIN 
 			IF @DotIncludeFile LIKE N'%{%' BEGIN
+				DECLARE @key sysname = REPLACE(REPLACE(@DotIncludeFile, N'{', N''), N'}', N'');
+				
+				
+				
 				PRINT N'Signed Code Library Functionality (dot-include by key-name) is not YET supported.';
 				--SET @dotInclude = N'<LOAD A FILE HERE - or throw if signature is no good>';
 				-- TODO: load/initialize the code. As in: 
@@ -434,6 +438,7 @@ AS
 		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "{dotInclude}' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
 
 		IF @dotInclude IS NOT NULL BEGIN 
+			/* NOTE: This is ... tricky. IF @xpCmd is T-SQL PRINT'd, it'll need 'double' ticks (i.e., NOT what's down below). BUT, when EXECUTED, double-ticks (e.g., . ''C:\Perflogs...'') obviously don't work. */
 			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''' + @dotInclude + N'''; ');
 		  END; 
 		ELSE 

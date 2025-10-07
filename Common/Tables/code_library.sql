@@ -31,6 +31,7 @@ IF OBJECT_ID(N'dbo.[code_library]', N'U') IS NULL BEGIN
 		[file_hash] varchar(64) NOT NULL, 
 		[file_path] sysname NOT NULL, 
 		[code] varbinary(MAX) NOT NULL, 
+		[last_deployed] datetime NULL,
 		CONSTRAINT PK_code_library PRIMARY KEY CLUSTERED ([library_id])
 	);
 

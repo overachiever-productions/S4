@@ -1,5 +1,7 @@
 /*
 
+	REFACTOR: 
+		dbo.deploy_codelibrary_file.
 
 */
 
@@ -85,8 +87,7 @@ AS
 		SET @stringResult = REPLACE(@stringResult, @crlf, N'');
 
 		IF @stringResult = @hash BEGIN 
-			--PRINT 'File [' + @file + N'] already deployed to [' + @directory + N'] with up-to-date hash: [' + @hash + N'].';
-			RETURN 0;
+			GOTO Update_Deployed;
 		END;
 	END;
 
@@ -117,6 +118,9 @@ AS
 		RAISERROR(N'Error writing library-file to disk. Path: [%s]. Command: [%s]. Error: [%s].', 16, 1, @path, @command, @errorMessage);
 		RETURN -30;
 	END;	
+
+Update_Deployed:
+	UPDATE dbo.[code_library] SET [last_deployed] = GETDATE() WHERE [library_key] = @Key;
 
 	RETURN 0;
 GO
