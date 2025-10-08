@@ -420,7 +420,7 @@ AS
 	DECLARE @fileListXml nvarchar(MAX);
 	DECLARE @stopAtLog int = NULL;
 	DECLARE @consistencyErrorsDetected bit = 0;
-	DECLARE @diffOnly bit = 0, @previousFullFilesForDiff xml, @previousFullRestoreId int;
+	DECLARE @diffOnly bit = 0, @previousFullRestoreId int;
 
 	DECLARE @restoredFileName nvarchar(MAX);
 	DECLARE @ndfCount int = 0;
@@ -533,7 +533,7 @@ AS
 		SET @ignoredLogFiles = 0;
         SET @statusDetail = NULL; 
 		SET @isPartialRestore = 0;
-		SELECT @diffOnly = 0, @previousFullFilesForDiff = NULL, @previousFullRestoreId = NULL;
+		SELECT @diffOnly = 0, @previousFullRestoreId = NULL;
 		SET @serializedFileList = NULL;
         DELETE FROM @restoredFiles;
 		
@@ -811,17 +811,21 @@ AS
         
 Apply_Diff:
 		IF @diffOnly = 1 BEGIN
-			SET @previousFullRestoreId = (SELECT MAX([restore_id]) FROM dbo.[restore_log] WHERE [database] = @DatabasesToRestore AND [restored_as] = @restoredName AND [error_details] IS NULL AND [dropped] = N'LEFT ONLINE');
+			SELECT 
+				@previousFullRestoreId = MAX([restore_id]) 
+			FROM dbo.[restore_log] 
+			WHERE 
+				[database] = @DatabasesToRestore 
+				AND [restored_as] = @restoredName 
+				AND [error_details] IS NULL 
+				AND [dropped] = N'LEFT ONLINE'
+				AND [restored_files].value(N'count(/files/file)', N'int') = 1;
+			
 			IF @previousFullRestoreId IS NOT NULL BEGIN
 
-				SELECT @previousFullFilesForDiff = [restored_files] FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId;
-				
-				IF (SELECT @previousFullFilesForDiff.value(N'count(/files/file)', N'int')) <> 1 BEGIN
-					SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'xxxx';
-				  END;
-				ELSE BEGIN
-					SET @backupDate = (SELECT @previousFullFilesForDiff.value(N'(/files/file[@id = 1]/created)[1]', N'datetime'));
-				END;
+				SET @backupDate = (SELECT [restored_files].value(N'(/files/file[@id = 1]/created)[1]', N'datetime') FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId);
+
+				SELECT @backupDate [backup_dtate];
 
 			  END;
 			ELSE BEGIN 
@@ -832,6 +836,9 @@ Apply_Diff:
 				GOTO NextDatabase;
 			END;
 		END;
+
+RETURN 0;
+
 
 		IF @directivesText NOT LIKE N'%EXCLUDE_DIFF%' BEGIN
 			-- Restore any DIFF backups if present:
