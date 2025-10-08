@@ -280,14 +280,13 @@ AS
 
 		-- determine last successfully applied t-log:
 		SELECT @fileList = [restored_files] FROM dbo.[restore_log] WHERE [restore_id] = (SELECT MAX(restore_id) FROM [dbo].[restore_log] WHERE [database] = @sourceDbName AND [restored_as] = @targetDbName AND [restore_succeeded] = 1);
-SELECT MAX(restore_id) [id] FROM [dbo].[restore_log] WHERE [database] = @sourceDbName AND [restored_as] = @targetDbName AND [restore_succeeded] = 1
-SELECT @fileList;
+
 		IF @fileList IS NULL BEGIN 
 			SET @statusDetail = N'Attempt to apply logs from ' + QUOTENAME(@sourceDbName) + N' to ' + QUOTENAME(@targetDbName) + N' could not be completed. No details in dbo.restore_log for last backup-file used during restore/application process. Please use dbo.restore_databases to ''seed'' databases.';
 			GOTO NextDatabase;
 		END; 
 
-		SELECT @latestPreviousFileRestored = @fileList.value('(/files/file[@id = max(/files/file/@id)]/name)[1]', 'sysname');
+		SELECT @latestPreviousFileRestored = @fileList.value(N'(/files/file[@id = max(/files/file/@id)]/name)[1]', N'sysname');
 
 		IF @latestPreviousFileRestored IS NULL BEGIN 
 			SET @statusDetail = N'Attempt to apply logs from ' + QUOTENAME(@sourceDbName) + N' to ' + QUOTENAME(@targetDbName) + N' could not be completed. The column: restored_files in dbo.restore_log is missing data on the last file applied to ' + QUOTENAME(@targetDbName) + N'. Please use dbo.restore_databases to ''seed'' databases.';
@@ -295,7 +294,8 @@ SELECT @fileList;
 		END; 
 
 		SET @sourcePath = @BackupsRootPath + N'\' + @sourceDbName;
-
+SELECT @latestPreviousFileRestored [latest];
+SELECT @sourcePath [path];
 		SET @backupFilesList = NULL;
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @sourceDbName, 
@@ -533,10 +533,7 @@ NextDatabase:
 			FOR XML PATH('file'), ROOT('files')
 		);
 
-		IF @PrintOnly = 1
-			PRINT @appliedFileList; 
-		ELSE BEGIN
-			
+		IF @PrintOnly = 0 BEGIN
 			IF @logsWereApplied = 0
 				SET @operationSuccess = 0 
 			ELSE 
@@ -550,19 +547,26 @@ NextDatabase:
 
 		-- Report on outcome for manual operations/interactions: 
 		IF @logsWereApplied = 1 BEGIN
-			SET @outputSummary = N'Applied the following Logs: ' + @crlf;
+			IF @PrintOnly = 0 BEGIN
+				SET @outputSummary = N'Applied the following Logs: ' + @crlf;
 
-			SELECT 
-				@outputSummary = @outputSummary + @tab + [FileName] + @crlf
-			FROM 
-				@appliedFiles 
-			ORDER BY 
-				ID;
+				SELECT 
+					@outputSummary = @outputSummary + @tab + [FileName] + @crlf
+				FROM 
+					@appliedFiles 
+				ORDER BY 
+					ID;
 
-			EXEC [dbo].[print_long_string] @outputSummary;
+				EXEC [dbo].[print_long_string] @outputSummary;
+			END;
 		END; ELSE BEGIN
 			IF NULLIF(@statusDetail,'') IS NULL
-				PRINT N'Success. No new/applicable logs found.';
+				IF @PrintOnly = 0 BEGIN
+					PRINT N'Success. No new/applicable logs found.';
+				  END;
+				ELSE BEGIN
+					PRINT N'No new/applicable logs found.';
+				END;
 		END;
 
 		FETCH NEXT FROM [restorer] INTO @sourceDbName, @targetDbName;
