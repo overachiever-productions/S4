@@ -114,7 +114,7 @@ CREATE PROC dbo.restore_databases
 	@SkipSanityChecks				bit				= 0,				-- ONLY evaluated if @RpoChecks are NULL. Similar to RPO tests - if restore is > 26 hours old, sends alerts about possible config error. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
-    @Directives						nvarchar(400)	= NULL,				-- { PRESERVE_FILENAMES | RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
+    @Directives						nvarchar(400)	= NULL,				-- { STOPAT:yyyy-mm-dd hh:MM:ss.nnn | EXCLUDE_DIFF | PRESERVE_FILENAMES | RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }
 	@OperatorName					sysname			= N'Alerts',
     @MailProfileName				sysname			= N'General',
     @EmailSubjectPrefix				nvarchar(50)	= N'[RESTORE TEST] ',
@@ -192,6 +192,11 @@ AS
         RAISERROR('Databases cannot be explicitly REPLACED and DROPPED after being replaced. If you wish DBs to be restored (on a different server for testing) with SAME names as PROD, simply leave suffix empty (but not NULL) and leave @AllowReplace NULL.', 16, 1);
         RETURN -6;
     END;
+
+	IF (@IfTargetExists = N'APPLY_DIFF') AND (@Directives LIKE N'%EXCLUDE_DIFF%') BEGIN
+		RAISERROR(N'Behavior for @IfTargetExists of ''APPLY_DIFF'' is NOT compatible with @Directive ''EXCLUDE_DIFF''.', 16, 1);
+		RETURN -7;
+	END;
 
     IF UPPER(@DatabasesToRestore) IN (N'{SYSTEM}', N'{USER}') BEGIN
         RAISERROR('The tokens {SYSTEM} and {USER} cannot be used to specify which databases to restore via dbo.restore_databases. Use either {READ_FROM_FILESYSTEM} (plus any exclusions via @DatabasesToExclude), or specify a comma-delimited list of databases to restore.', 16, 1);
@@ -289,8 +294,8 @@ AS
 		END;
 
 		-- verify that only supported directives are defined: 
-		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'STOPAT', N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER', N'PRESERVE_FILENAMES')) BEGIN
-			RAISERROR(N'Invalid @Directives value specified. Permitted values are { STOPAT:<datetime> | RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | PRESERVE_FILENAMES | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }.', 16, 1);
+		IF EXISTS (SELECT NULL FROM @allDirectives WHERE [directive] NOT IN (N'STOPAT', N'EXCLUDE_DIFF', N'RESTRICTED_USER', N'KEEP_REPLICATION', N'KEEP_CDC', N'ENABLE_BROKER', N'ERROR_BROKER_CONVERSATIONS' , N'NEW_BROKER', N'PRESERVE_FILENAMES')) BEGIN
+			RAISERROR(N'Invalid @Directives value specified. Permitted values are { STOPAT:<datetime> | EXCLUDE_DIFF | RESTRICTED_USER | KEEP_REPLICATION | KEEP_CDC | PRESERVE_FILENAMES | [ ENABLE_BROKER | ERROR_BROKER_CONVERSATIONS | NEW_BROKER ] }.', 16, 1);
 			RETURN -20;
 		END;
 
@@ -302,8 +307,7 @@ AS
 
 		SELECT @directivesText = @directivesText + [directive] + N', ' 
 		FROM @allDirectives 
-		WHERE 
-			[directive] <> N'STOPAT'
+		WHERE [directive] <> N'STOPAT'
 		ORDER BY [row_id];
 	END;
 
@@ -814,69 +818,71 @@ Apply_Diff:
 
 		END;
 
-		-- Restore any DIFF backups if present:
-        SET @serializedFileList = NULL;
-		EXEC dbo.load_backup_files 
-            @DatabaseToRestore = @databaseToRestore, 
-            @SourcePath = @sourcePath, 
-            @Mode = N'DIFF', 
-			@StopAt = @stopAt,
-			@LastAppliedFinishTime = @backupDate, 
-            @Output = @serializedFileList OUTPUT;
+		IF @directivesText NOT LIKE N'%EXCLUDE_DIFF%' BEGIN
+			-- Restore any DIFF backups if present:
+			SET @serializedFileList = NULL;
+			EXEC dbo.load_backup_files 
+				@DatabaseToRestore = @databaseToRestore, 
+				@SourcePath = @sourcePath, 
+				@Mode = N'DIFF', 
+				@StopAt = @stopAt,
+				@LastAppliedFinishTime = @backupDate, 
+				@Output = @serializedFileList OUTPUT;
 		
-		IF (SELECT dbo.[is_xml_empty](@serializedFileList)) = 0 BEGIN 
+			IF (SELECT dbo.[is_xml_empty](@serializedFileList)) = 0 BEGIN 
 
-			WITH shredded AS ( 
-				SELECT 
-					[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
-				FROM 
-					@serializedFileList.nodes('//file') [data]([row])
-			) 
-			SELECT @backupName = (SELECT TOP 1 [file_name] FROM [shredded]);
+				WITH shredded AS ( 
+					SELECT 
+						[data].[row].value('@file_name', 'nvarchar(max)') [file_name]
+					FROM 
+						@serializedFileList.nodes('//file') [data]([row])
+				) 
+				SELECT @backupName = (SELECT TOP 1 [file_name] FROM [shredded]);
 
-			SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
+				SET @pathToDatabaseBackup = @sourcePath + N'\' + @backupName
 
-            SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
+				SET @command = N'RESTORE DATABASE ' + QUOTENAME(@restoredName) + N' FROM DISK = N''' + @pathToDatabaseBackup + N''' WITH NORECOVERY;';
 
-			INSERT INTO @restoredFiles ([FileName], [Detected])
-			SELECT @backupName, GETDATE();
+				INSERT INTO @restoredFiles ([FileName], [Detected])
+				SELECT @backupName, GETDATE();
 
-            BEGIN TRY
-                IF @PrintOnly = 1 BEGIN
-                    PRINT @command;
-                  END;
-                ELSE BEGIN
-                    SET @outcome = NULL;
-                    EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+				BEGIN TRY
+					IF @PrintOnly = 1 BEGIN
+						PRINT @command;
+					  END;
+					ELSE BEGIN
+						SET @outcome = NULL;
+						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
 
-                    SET @statusDetail = @outcome;
-                END;
-            END TRY
-            BEGIN CATCH
-                SELECT @statusDetail = N'Unexpected Exception while executing DIFF Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-            END CATCH
+						SET @statusDetail = @outcome;
+					END;
+				END TRY
+				BEGIN CATCH
+					SELECT @statusDetail = N'Unexpected Exception while executing DIFF Restore from File: "' + @pathToDatabaseBackup + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
+				END CATCH
 				
-			BEGIN TRY
-				-- Update MetaData: 
-				EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
+				BEGIN TRY
+					-- Update MetaData: 
+					EXEC dbo.load_header_details @BackupPath = @pathToDatabaseBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
 
-				UPDATE @restoredFiles 
-				SET 
-					[Applied] = GETDATE(), 
-					[BackupCreated] = @backupDate, 
-					[BackupSize] = @backupSize, 
-					[Compressed] = @compressed, 
-					[Encrypted] = @encrypted
-				WHERE 
-					[FileName] = @backupName;
-			END TRY
-			BEGIN CATCH 
-				SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error updating list of restored files after DIFF. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
-			END CATCH;
+					UPDATE @restoredFiles 
+					SET 
+						[Applied] = GETDATE(), 
+						[BackupCreated] = @backupDate, 
+						[BackupSize] = @backupSize, 
+						[Compressed] = @compressed, 
+						[Encrypted] = @encrypted
+					WHERE 
+						[FileName] = @backupName;
+				END TRY
+				BEGIN CATCH 
+					SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error updating list of restored files after DIFF. Error: ' + CAST(ERROR_NUMBER() AS sysname) + N' - ' + ERROR_MESSAGE();
+				END CATCH;
 
-            IF @statusDetail IS NOT NULL BEGIN
-                GOTO NextDatabase;
-            END;
+				IF @statusDetail IS NOT NULL BEGIN
+					GOTO NextDatabase;
+				END;
+			END;
 		END;
 
         -- Restore any LOG backups if specified and if present:
