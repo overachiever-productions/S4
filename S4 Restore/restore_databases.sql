@@ -106,7 +106,7 @@ CREATE PROC dbo.restore_databases
     @RestoredRootDataPath			nvarchar(MAX)	= N'{DEFAULT}',
     @RestoredRootLogPath			nvarchar(MAX)	= N'{DEFAULT}',
     @RestoredDbNamePattern			nvarchar(40)	= N'{0}_s4test',
-    @AllowReplace					nchar(7)		= NULL,				-- NULL or the exact term: N'REPLACE'...
+	@IfTargetExists					sysname			= N'THROW',			-- Options: { THROW | APPLY_DIFF | REPLACE } 
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
@@ -123,6 +123,8 @@ AS
     SET NOCOUNT ON;
 
 	-- {copyright}
+
+	SET @IfTargetExists = UPPER(ISNULL(@IfTargetExists, N'THROW'));
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -181,12 +183,12 @@ AS
         RETURN -6;
     END;
 
-    IF NULLIF(@AllowReplace, N'') IS NOT NULL AND UPPER(@AllowReplace) <> N'REPLACE' BEGIN
-        RAISERROR('The @AllowReplace switch must be set to NULL or the exact term N''REPLACE''.', 16, 1);
-        RETURN -4;
-    END;
+	IF @IfTargetExists NOT IN (N'THROW', N'APPLY_DIFF', N'REPLACE') BEGIN
+		RAISERROR(N'Valid options for @IfTargetExists are { THROW | APPLY_DIFF | REPLACE }.', 16, 1);
+		RETURN -4;
+	END;
 
-    IF NULLIF(@AllowReplace, N'') IS NOT NULL AND @DropDatabasesAfterRestore = 1 BEGIN
+    IF (@IfTargetExists = N'REPLACE') AND (@DropDatabasesAfterRestore = 1) BEGIN
         RAISERROR('Databases cannot be explicitly REPLACED and DROPPED after being replaced. If you wish DBs to be restored (on a different server for testing) with SAME names as PROD, simply leave suffix empty (but not NULL) and leave @AllowReplace NULL.', 16, 1);
         RETURN -6;
     END;
@@ -414,6 +416,7 @@ AS
 	DECLARE @fileListXml nvarchar(MAX);
 	DECLARE @stopAtLog int = NULL;
 	DECLARE @consistencyErrorsDetected bit = 0;
+	DECLARE @diffOnly bit = 0;
 
 	DECLARE @restoredFileName nvarchar(MAX);
 	DECLARE @ndfCount int = 0;
@@ -526,6 +529,7 @@ AS
 		SET @ignoredLogFiles = 0;
         SET @statusDetail = NULL; 
 		SET @isPartialRestore = 0;
+		SET @diffOnly = 0;
 		SET @serializedFileList = NULL;
         DELETE FROM @restoredFiles;
 		
@@ -552,7 +556,7 @@ AS
 		IF EXISTS (SELECT NULL FROM master.sys.databases WHERE [name] = @restoredName) BEGIN
 
 			-- IF we're going to allow an explicit REPLACE, start by putting the target DB into SINGLE_USER mode: 
-			IF @AllowReplace = N'REPLACE' BEGIN
+			IF @IfTargetExists = N'REPLACE' BEGIN
 				
 				BEGIN TRY 
 
@@ -621,6 +625,11 @@ AS
 
 			  END;
 			ELSE BEGIN
+				IF @IfTargetExists = N'APPLY_DIFF' BEGIN
+					SET @diffOnly = 1;
+					GOTO Apply_Diff;
+				END;
+
 				SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
 				GOTO NextDatabase;
 			END;
@@ -796,6 +805,15 @@ AS
             GOTO NextDatabase;
         END;
         
+Apply_Diff:
+		IF @diffOnly = 1 BEGIN
+			PRINT 'doing diffs.';
+
+			RAISERROR(';fake error', 16, 1)
+			RETURN -1000;
+
+		END;
+
 		-- Restore any DIFF backups if present:
         SET @serializedFileList = NULL;
 		EXEC dbo.load_backup_files 
