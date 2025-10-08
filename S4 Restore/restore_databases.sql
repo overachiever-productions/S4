@@ -815,30 +815,23 @@ Apply_Diff:
 				@previousFullRestoreId = MAX([restore_id]) 
 			FROM dbo.[restore_log] 
 			WHERE 
-				[database] = @DatabasesToRestore 
+				[database] = @databaseToRestore 
 				AND [restored_as] = @restoredName 
 				AND [error_details] IS NULL 
 				AND [dropped] = N'LEFT ONLINE'
 				AND [restored_files].value(N'count(/files/file)', N'int') = 1;
 			
 			IF @previousFullRestoreId IS NOT NULL BEGIN
-
 				SET @backupDate = (SELECT [restored_files].value(N'(/files/file[@id = 1]/created)[1]', N'datetime') FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId);
-
-				SELECT @backupDate [backup_dtate];
-
 			  END;
 			ELSE BEGIN 
-				SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'didn''t find a viable db to restore-from. must match db-name, restored-as, no-errors, and be left online.';
+				SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error with attempt to execute APPLY_DIFF. No previous restore for database [' + @restoredName + N'] from backups for database: ['+ @databaseToRestore + N'] found in non-error + non-recovered state.';
 			END;
 
 			IF @statusDetail IS NOT NULL BEGIN
 				GOTO NextDatabase;
 			END;
 		END;
-
-RETURN 0;
-
 
 		IF @directivesText NOT LIKE N'%EXCLUDE_DIFF%' BEGIN
 			-- Restore any DIFF backups if present:
