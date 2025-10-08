@@ -257,7 +257,7 @@ AS
 		warning_id int IDENTITY(1,1) NOT NULL, 
 		warning nvarchar(MAX) NOT NULL 
 	);
-
+	
     DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
     SELECT 
         [source_database_name],
@@ -276,10 +276,12 @@ AS
 		SET @restoreStart = GETDATE();
 		SET @noFilesApplied = 0;  
 		DELETE FROM @appliedFiles;
+		DELETE FROM @logFilesToRestore;
 
 		-- determine last successfully applied t-log:
 		SELECT @fileList = [restored_files] FROM dbo.[restore_log] WHERE [restore_id] = (SELECT MAX(restore_id) FROM [dbo].[restore_log] WHERE [database] = @sourceDbName AND [restored_as] = @targetDbName AND [restore_succeeded] = 1);
-
+SELECT MAX(restore_id) [id] FROM [dbo].[restore_log] WHERE [database] = @sourceDbName AND [restored_as] = @targetDbName AND [restore_succeeded] = 1
+SELECT @fileList;
 		IF @fileList IS NULL BEGIN 
 			SET @statusDetail = N'Attempt to apply logs from ' + QUOTENAME(@sourceDbName) + N' to ' + QUOTENAME(@targetDbName) + N' could not be completed. No details in dbo.restore_log for last backup-file used during restore/application process. Please use dbo.restore_databases to ''seed'' databases.';
 			GOTO NextDatabase;
@@ -302,9 +304,6 @@ AS
 			@LastAppliedFile = @latestPreviousFileRestored, 
 			@Output = @backupFilesList OUTPUT;
 		
-		-- reset values per every 'loop' of main processing body:
-		DELETE FROM @logFilesToRestore;
-
 		WITH shredded AS ( 
 			SELECT 
 				[data].[row].value('@id[1]', 'int') [id], 
@@ -545,7 +544,7 @@ NextDatabase:
 
 			IF @noFilesApplied = 0 BEGIN
 				INSERT INTO dbo.[restore_log] ([execution_id], [operation_date], [operation_type], [database], [restored_as], [restore_start], [restore_end], [restore_succeeded], [restored_files], [recovery], [dropped], [error_details])
-				VALUES (@executionID, GETDATE(), 'APPLY-LOGS', @sourceDbName, @targetDbName, @restoreStart, GETDATE(), @operationSuccess, @appliedFileList, @RecoveryType, 'LEFT-ONLINE', NULLIF(@statusDetail, ''));
+				VALUES (@executionID, GETDATE(), 'APPLY-LOGS', @sourceDbName, @targetDbName, @restoreStart, GETDATE(), @operationSuccess, @appliedFileList, @RecoveryType, 'LEFT ONLINE', NULLIF(@statusDetail, ''));
 			END;
 		END;
 
