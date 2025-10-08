@@ -193,7 +193,7 @@ AS
         RETURN -6;
     END;
 
-	IF (@IfTargetExists = N'APPLY_DIFF') AND (@Directives LIKE N'%EXCLUDE_DIFF%') BEGIN
+	IF (@IfTargetExists IN (N'APPLY_DIFF')) AND (@Directives LIKE N'%EXCLUDE_DIFF%') BEGIN
 		RAISERROR(N'Behavior for @IfTargetExists of ''APPLY_DIFF'' is NOT compatible with @Directive ''EXCLUDE_DIFF''.', 16, 1);
 		RETURN -7;
 	END;
@@ -629,7 +629,7 @@ AS
 
 			  END;
 			ELSE BEGIN
-				IF @IfTargetExists = N'APPLY_DIFF' BEGIN
+				IF @IfTargetExists IN (N'APPLY_DIFF') BEGIN
 					SET @diffOnly = 1;
 					GOTO Apply_Diff;
 				END;
@@ -637,7 +637,13 @@ AS
 				SET @statusDetail = N'Cannot restore database [' + @databaseToRestore + N'] as [' + @restoredName + N'] - because target database already exists. Consult documentation for WARNINGS and options for using @AllowReplace parameter.';
 				GOTO NextDatabase;
 			END;
-        END;
+          END;
+		ELSE BEGIN 
+			IF @IfTargetExists = N'APPLY_DIFF' BEGIN
+				SET @diffOnly = 1;
+				GOTO Apply_Diff;
+			END;
+		END;
 
 		-- Check for a FULL backup: 
 		--			NOTE: If dbo.load_backup_files does NOT return any results and if @databaseToRestore is a {SYSTEM} database, then dbo.load_backup_files ...
