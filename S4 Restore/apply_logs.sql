@@ -390,17 +390,15 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					GOTO NextDatabase;
 				END;
 
-				-- Check for any new files if we're now 'out' of files to process: 
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
-					
-					PRINT N'-- Checking for additional (newly created) T-LOG Backups that may have been created since operation start.';  -- https://overachieverllc.atlassian.net/browse/S4-694
+					PRINT N'-- Checking for additional (newly created) T-LOG Backups created since operation start.';
 
                     SET @backupFilesList = NULL;
 					EXEC dbo.load_backup_files 
                         @DatabaseToRestore = @sourceDbName, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
-						@LastAppliedFinishTime = @backupDate,
+						@LastAppliedFile = @backupName,
                         @Output = @backupFilesList OUTPUT;
 
 					WITH shredded AS ( 
