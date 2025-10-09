@@ -842,12 +842,13 @@ Apply_Diff:
 		IF @directivesText NOT LIKE N'%EXCLUDE_DIFF%' BEGIN
 			-- Restore any DIFF backups if present:
 			SET @serializedFileList = NULL;
+
 			EXEC dbo.load_backup_files 
 				@DatabaseToRestore = @databaseToRestore, 
 				@SourcePath = @sourcePath, 
 				@Mode = N'DIFF', 
 				@StopAt = @stopAt,
-				@LastAppliedFinishTime = @backupDate, 
+				@LastAppliedFile = @backupName,
 				@Output = @serializedFileList OUTPUT;
 		
 			IF (SELECT dbo.[is_xml_empty](@serializedFileList)) = 0 BEGIN 
@@ -918,7 +919,7 @@ Apply_Diff:
                 @SourcePath = @sourcePath, 
                 @Mode = N'LOG', 
 				@StopAt = @stopAt,
-				@LastAppliedFinishTime = @backupDate,
+				@LastAppliedFile = @backupName,
                 @Output = @serializedFileList OUTPUT;
 
 			WITH shredded AS ( 
@@ -1013,7 +1014,7 @@ Apply_Diff:
 							@DatabaseToRestore = @databaseToRestore, 
 							@SourcePath = @sourcePath, 
 							@Mode = N'LOG', 
-							@LastAppliedFinishTime = @backupDate,
+							@LastAppliedFile = @backupName,
 							@Output = @serializedFileList OUTPUT;
 
 						WITH shredded AS ( 
