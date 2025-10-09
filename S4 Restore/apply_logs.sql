@@ -1,16 +1,10 @@
 /*
-	TODO: 
-		- this piglet needs a MAJOR refactor... i wrote it over a period of days (calendar-wise) so ideas/concepts are 'all over the place' and i've got lots of REDUNDANCIES in error checking, evaluation/logic, etc. 
-		
 
-	vNEXT: 
-		- implement @RestoreBufferDelay	... 
 
 	FODDER: 
 		Info on .tuf files (in short, they're to keep any 'in flight' transactions that would NORMALLY have to be rolled-back IF we were recovering (whereas, if we specify NORECOVERY, there's no worry about these TXs until WITH RECOVERY is fired). 
 			- https://sqlserver-help.com/2014/07/24/sql-server-internals-what-is-tuf-file-in-sql-server/
 			- https://support.microsoft.com/en-us/help/962008/fix-error-message-when-you-use-log-shipping-in-sql-server-2008-during
-
 
 
 	EXEC admindb.dbo.apply_logs
@@ -133,9 +127,9 @@ AS
 
     -----------------------------------------------------------------------------
 	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	DECLARE @serialized nvarchar(MAX) = '';
 	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
-		DECLARE @serialized nvarchar(MAX) = '';
 
 		EXEC dbo.[load_backup_database_names]
 		    @TargetDirectory = @BackupsRootPath,
@@ -234,9 +228,6 @@ AS
         GOTO FINALIZE;
     END;
 	
-	-- Begin application of logs:
-    PRINT '-- Databases To Attempt Log Application Against: ' + @serialized;
-
 	DECLARE @logFilesToRestore table ( 
 		id int IDENTITY(1,1) NOT NULL, 
 		log_file sysname NOT NULL
@@ -294,8 +285,7 @@ AS
 		END; 
 
 		SET @sourcePath = @BackupsRootPath + N'\' + @sourceDbName;
-SELECT @latestPreviousFileRestored [latest];
-SELECT @sourcePath [path];
+		
 		SET @backupFilesList = NULL;
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @sourceDbName, 
@@ -377,15 +367,13 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					ELSE BEGIN
 						SET @outcome = NULL;
 						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
-						SET @statusDetail = @outcome;
+						SET @statusDetail = @outcome + @crlf + @tab + N'Exception occurred while attempting to apply: [' + @pathToTLogBackup + N'].';
 					END;
 				END TRY
 				BEGIN CATCH
 					SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-					-- don't go to NextDatabase - we need to record meta data FIRST... 
 				END CATCH
 
-				-- Update MetaData: 
 				EXEC dbo.load_header_details @BackupPath = @pathToTLogBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
 
 				UPDATE @appliedFiles 
@@ -397,16 +385,17 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					[Encrypted] = @encrypted
 				WHERE 
 					[FileName] = @backupName;
-
+				
 				IF @statusDetail IS NOT NULL BEGIN
 					GOTO NextDatabase;
 				END;
 
 				-- Check for any new files if we're now 'out' of files to process: 
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
+					
+					PRINT N'-- Checking for additional (newly created) T-LOG Backups that may have been created since operation start.';  -- https://overachieverllc.atlassian.net/browse/S4-694
 
                     SET @backupFilesList = NULL;
-					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files 
                         @DatabaseToRestore = @sourceDbName, 
                         @SourcePath = @sourcePath, 
