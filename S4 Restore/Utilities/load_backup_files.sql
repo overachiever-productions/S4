@@ -366,7 +366,7 @@ AS
 	*/
 	IF UPPER(@Mode) IN (N'LOG') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
 		/* This is a fairly nasty hack... */
-		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] <= @LastAppliedFinishTime)
+		SELECT @LastAppliedFile = [output] FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] <= @LastAppliedFinishTime)
 	END;
 
 	IF @LastAppliedFile LIKE N'FULL%' OR @LastAppliedFile LIKE N'DIFF%' BEGIN
