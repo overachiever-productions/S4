@@ -319,7 +319,7 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 
 	IF @UpdateStatistics = 1 BEGIN 
 		IF @PrintOnly = 0 BEGIN
-			SELECT N'STARTING STATS UPDATES' [status];
+			SELECT N'STARTING STATS UPDATES' [stats_status];
 		END; 
 
 		DECLARE [updater] CURSOR LOCAL FAST_FORWARD FOR 
@@ -341,7 +341,7 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 				EXEC sys.sp_executesql 
 					@sql;
 
-				SELECT N'	Stats updates for [' + @currentDb + N'] complete.' [status];
+				SELECT N'	Stats updates for [' + @currentDb + N'] complete.' [stats_status];
 			  END;
 			ELSE BEGIN
 				PRINT N'';
