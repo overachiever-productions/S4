@@ -174,8 +174,8 @@ END;';
 		END;
 
 		SET @sql = N'USE [master]; 
-ALTER DATABASE [' + @currentDb + N'] SET COMPATIBILITY_LEVEL = ' + @TargetCompatLevel + N';
 ALTER DATABASE [' + @currentDb + N'] SET MULTI_USER; 
+ALTER DATABASE [' + @currentDb + N'] SET COMPATIBILITY_LEVEL = ' + @TargetCompatLevel + N';
 ALTER DATABASE [' + @currentDb + N'] SET PAGE_VERIFY CHECKSUM;
 ALTER AUTHORIZATION ON DATABASE::[' + @currentDb + N'] TO [sa];';
 
@@ -344,9 +344,6 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 		
 		CLOSE [updater];
 		DEALLOCATE [updater];
-
-
-
 
 	END;
 GO
