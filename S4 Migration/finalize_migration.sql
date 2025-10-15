@@ -299,48 +299,6 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 			END CATCH
 		END;
 
-		--IF @UpdateStatistics = 1 BEGIN 
-		--	SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
-
-		--	BEGIN TRY 
-		--		IF @PrintOnly = 0 BEGIN 
-		--			EXEC sys.[sp_executesql] 
-		--				@sql;
-		--		  END; 
-		--		ELSE BEGIN 
-		--			PRINT N'';
-		--			PRINT @sql;
-		--			PRINT N'GO';
-		--		END;
-		--	END TRY
-		--	BEGIN CATCH
-		--		SELECT 
-		--			@errorLine = ERROR_LINE(), 
-		--			@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
-			
-		--		INSERT INTO @errors ([database_name], [timestamp], [operation], [exception])
-		--		VALUES (@currentDb, GETDATE(), N'STATS_UPDATE', @errorMessage);
-
-		--		IF @@TRANCOUNT > 0 
-		--			ROLLBACK;
-		--	END CATCH
-
-		--END;
-
--- see https://overachieverllc.atlassian.net/browse/S4-697
-		--PRINT N'';
-		--PRINT N'/*------------------------------------------------------------------------';
-		--PRINT N'-- Sanity Marker Cleanup: ';
-		--PRINT N'------------------------------------------------------------------------*/';		
-		--PRINT N'USE [' + @currentDb + N'];';
-		--PRINT N'GO'; 
-
-		--PRINT N'IF OBJECT_ID(N''dbo.[___migrationMarker]'', N''U'') IS NOT NULL BEGIN ';
-		--PRINT N'	DROP TABLE dbo.[___migrationMarker];';
-		--PRINT N'END; ';
-		--PRINT N'GO'; 
-		--PRINT N'';
-
 		IF EXISTS (SELECT NULL FROM @errors WHERE [database_name] = @currentDb) BEGIN
 			SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome] FROM @errors WHERE [database_name] = @currentDb;
 		  END; 
