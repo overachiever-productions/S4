@@ -18,7 +18,7 @@ CREATE PROC dbo.[finalize_migration]
 	@TargetCompatLevel				sysname				= N'{LATEST}', 
 	@CheckSanityMarker				bit					= 1, 
 	@Directives						sysname				= NULL, 
-	@UpdateStatistics				bit					= 0,				-- While sp_updatestats is NON-blocking, execution IS a serial operation - and, ironically, as such: blocks. 
+	@UpdateStatistics				bit					= 1,				-- NOTE: StatsUpdates are handled AFTER ALL @Databases have been restored, updated, brought-online, etc. - to avoid serialization/blocking. 
 	@IndirectCheckpointSeconds		int					= 60,				-- if 0/NULL ... then won't be set. 
 	@EnableADR						bit					= 1, 
 	@CheckForOrphans				bit					= 1, 
@@ -252,7 +252,7 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 		END;
 
 		IF @CheckSanityMarker = 1 BEGIN 
-			SET @sql = N'SELECT * FROM [' + @currentDb + N']..[___migrationMarker];'
+			SET @sql = N'SELECT @@SERVER [server], N''' + @currentDb + N''' [database], * FROM [' + @currentDb + N']..[___migrationMarker];'
 
 			BEGIN TRY 
 				IF @PrintOnly = 0 BEGIN 
@@ -299,46 +299,54 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 			END CATCH
 		END;
 
-		IF @UpdateStatistics = 1 BEGIN 
-			SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
+		--IF @UpdateStatistics = 1 BEGIN 
+		--	SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
 
-			BEGIN TRY 
-				IF @PrintOnly = 0 BEGIN 
-					EXEC sys.[sp_executesql] 
-						@sql;
-				  END; 
-				ELSE BEGIN 
-					PRINT N'';
-					PRINT @sql;
-					PRINT N'GO';
-				END;
-			END TRY
-			BEGIN CATCH
-				SELECT 
-					@errorLine = ERROR_LINE(), 
-					@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+		--	BEGIN TRY 
+		--		IF @PrintOnly = 0 BEGIN 
+		--			EXEC sys.[sp_executesql] 
+		--				@sql;
+		--		  END; 
+		--		ELSE BEGIN 
+		--			PRINT N'';
+		--			PRINT @sql;
+		--			PRINT N'GO';
+		--		END;
+		--	END TRY
+		--	BEGIN CATCH
+		--		SELECT 
+		--			@errorLine = ERROR_LINE(), 
+		--			@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
 			
-				INSERT INTO @errors ([database_name], [timestamp], [operation], [exception])
-				VALUES (@currentDb, GETDATE(), N'STATS_UPDATE', @errorMessage);
+		--		INSERT INTO @errors ([database_name], [timestamp], [operation], [exception])
+		--		VALUES (@currentDb, GETDATE(), N'STATS_UPDATE', @errorMessage);
 
-				IF @@TRANCOUNT > 0 
-					ROLLBACK;
-			END CATCH
+		--		IF @@TRANCOUNT > 0 
+		--			ROLLBACK;
+		--	END CATCH
 
+		--END;
+
+-- see https://overachieverllc.atlassian.net/browse/S4-697
+		--PRINT N'';
+		--PRINT N'/*------------------------------------------------------------------------';
+		--PRINT N'-- Sanity Marker Cleanup: ';
+		--PRINT N'------------------------------------------------------------------------*/';		
+		--PRINT N'USE [' + @currentDb + N'];';
+		--PRINT N'GO'; 
+
+		--PRINT N'IF OBJECT_ID(N''dbo.[___migrationMarker]'', N''U'') IS NOT NULL BEGIN ';
+		--PRINT N'	DROP TABLE dbo.[___migrationMarker];';
+		--PRINT N'END; ';
+		--PRINT N'GO'; 
+		--PRINT N'';
+
+		IF EXISTS (SELECT NULL FROM @errors WHERE [database_name] = @currentDb) BEGIN
+			SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome] FROM @errors WHERE [database_name] = @currentDb;
+		  END; 
+		ELSE BEGIN 
+			SELECT N'Operations for [' + @currentDb + N'] are complete.' [outcome];
 		END;
-
-		PRINT N'';
-		PRINT N'/*------------------------------------------------------------------------';
-		PRINT N'-- Sanity Marker Cleanup: ';
-		PRINT N'------------------------------------------------------------------------*/';		
-		PRINT N'USE [' + @currentDb + N'];';
-		PRINT N'GO'; 
-
-		PRINT N'IF OBJECT_ID(N''dbo.[___migrationMarker]'', N''U'') IS NOT NULL BEGIN ';
-		PRINT N'	DROP TABLE dbo.[___migrationMarker];';
-		PRINT N'END; ';
-		PRINT N'GO'; 
-		PRINT N'';
 
 		FETCH NEXT FROM [walker] INTO @currentDb;
 	END;
@@ -348,5 +356,39 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN 
 		SELECT * FROM @errors ORDER BY [error_id];
+	END;
+
+	IF @UpdateStatistics = 1 BEGIN 
+		SELECT N'STARTING STATS UPDATES' [status];
+
+		DECLARE [updater] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			REPLACE(REPLACE([database_name], N'[', N''), N']', N'')
+		FROM 
+			@targetDatabases 
+		ORDER BY 
+			[row_id];			
+		
+		OPEN [updater];
+		FETCH NEXT FROM [updater] INTO @currentDb;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
+
+			EXEC sys.sp_executesql 
+				@sql;
+
+			SELECT N'	Stats updates for [' + @currentDb + N'] complete.' [status];
+		
+			FETCH NEXT FROM [updater] INTO @currentDb;
+		END;
+		
+		CLOSE [updater];
+		DEALLOCATE [updater];
+
+
+
+
 	END;
 GO
