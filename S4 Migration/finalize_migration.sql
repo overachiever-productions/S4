@@ -18,7 +18,7 @@ CREATE PROC dbo.[finalize_migration]
 	@TargetCompatLevel				sysname				= N'{LATEST}', 
 	@CheckSanityMarker				bit					= 1, 
 	@Directives						sysname				= NULL, 
-	@UpdateStatistics				bit					= 1, 
+	@UpdateStatistics				bit					= 0,				-- While sp_updatestats is NON-blocking, execution IS a serial operation - and, ironically, as such: blocks. 
 	@IndirectCheckpointSeconds		int					= 60,				-- if 0/NULL ... then won't be set. 
 	@EnableADR						bit					= 1, 
 	@CheckForOrphans				bit					= 1, 
