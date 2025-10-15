@@ -300,10 +300,10 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 
 		IF @PrintOnly = 0 BEGIN
 			IF EXISTS (SELECT NULL FROM @errors WHERE [database_name] = @currentDb) BEGIN
-				SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome] FROM @errors WHERE [database_name] = @currentDb;
+				SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome], GETDATE() [timestamp] FROM @errors WHERE [database_name] = @currentDb;
 			  END; 
 			ELSE BEGIN 
-				SELECT N'Operations for [' + @currentDb + N'] are complete.' [outcome];
+				SELECT N'Operations for [' + @currentDb + N'] are complete.' [outcome], GETDATE() [timestamp];
 			END;
 		END;
 
