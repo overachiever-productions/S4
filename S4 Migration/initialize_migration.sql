@@ -11,7 +11,7 @@ IF OBJECT_ID('dbo.[initialize_migration]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[initialize_migration]
-	@Databases						nvarchar(MAX)		= NULL,				-- NULL (currently executing DB unless master (has to be explicitly specified)), {TOKEN}, N'list, of, dbs', or N'single-db-name'. 
+	@Databases						nvarchar(MAX),							-- Must be EXPLICITLY defined. 
 	@Priorities						nvarchar(MAX)		= NULL,
 	@FinalBackupType				sysname				= N'LOG',			-- { FULL | DIFF | LOG }
 	@IncludeSanityMarker			bit					= 1, 
@@ -55,15 +55,14 @@ AS
 	SET @PrintOnly = ISNULL(@PrintOnly, 0);
 
 	IF @Databases IS NULL BEGIN 
-		EXEC dbo.[get_executing_dbname] @ExecutingDBName = @Databases OUTPUT;
-
-		IF @Databases = N'master' BEGIN 
-			RAISERROR(N'Execution against [master] database is NOT permitted. Specify an explicit value for @Databases, or execute procedure from WITHIN target database.', 16, 1);
+		IF @Databases IS NULL BEGIN 
+			RAISERROR(N'Invalid Input. Value for @Databases cannot be null or empty.', 16, 1);
 			RETURN -1;
 		END;
-
-		IF @Databases IS NULL BEGIN 
-			RAISERROR(N'Unable to establish calling-db-context. Please specify explicit value(s) for %s.', 16, 1, N'@Databases');
+	  END
+	ELSE BEGIN
+		IF @Databases IN (N'master', N'msdb', N'tempdb') BEGIN 
+			RAISERROR(N'Migration can only be initiated against USER databases.', 16, 1);
 			RETURN -1;
 		END;
 	END;
@@ -165,8 +164,8 @@ IF OBJECT_ID(N''dbo.[___migrationMarker]'', N''U'') IS NOT NULL DROP TABLE dbo.[
 CREATE TABLE dbo.[___migrationMarker] (
 	[data] sysname NULL
 ); 
-INSERT INTO [___migrationMarker] ([data]) VALUES(N''Timestamp: '' + CONVERT(sysname, GETDATE(), 113));
-SELECT * FROM [___migrationMarker];';
+INSERT INTO [___migrationMarker] ([data]) VALUES(N''Timestamp: '' + CONVERT(sysname, GETDATE(), 121));
+SELECT @@SERVERNAME [server], DB_NAME() [database], * FROM [___migrationMarker];';
 			
 			BEGIN TRY 
 				IF @PrintOnly = 0 BEGIN 
@@ -290,3 +289,11 @@ EXEC [admindb].dbo.[backup_databases]
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN 
 		SELECT * FROM @errors ORDER BY [error_id];
 	END;
+
+	IF NOT EXISTS (SELECT NULL FROM @errors) BEGIN
+		SELECT N'operation_complete' [outcome];
+	END;
+
+	RETURN 0;
+
+GO
