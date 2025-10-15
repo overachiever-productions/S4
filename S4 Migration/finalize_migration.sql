@@ -12,13 +12,13 @@ IF OBJECT_ID('dbo.[finalize_migration]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[finalize_migration]
-	@Databases						nvarchar(MAX)		= NULL,				-- NULL (currently executing DB unless master (has to be explicitly specified)), {TOKEN}, N'list, of, dbs', or N'single-db-name'. 
+	@Databases						nvarchar(MAX),				
 	@Priorities						nvarchar(MAX)		= NULL,
-	@ExecuteRecovery				bit					= 0,
+	@ExecuteRecovery				bit					= 1,				
 	@TargetCompatLevel				sysname				= N'{LATEST}', 
 	@CheckSanityMarker				bit					= 1, 
 	@Directives						sysname				= NULL, 
-	@UpdateStatistics				bit					= 1, 
+	@UpdateStatistics				bit					= 1,				-- NOTE: StatsUpdates are handled AFTER ALL @Databases have been restored, updated, brought-online, etc. - to avoid serialization/blocking. 
 	@IndirectCheckpointSeconds		int					= 60,				-- if 0/NULL ... then won't be set. 
 	@EnableADR						bit					= 1, 
 	@CheckForOrphans				bit					= 1, 
@@ -44,15 +44,14 @@ AS
 	SET @PrintOnly = ISNULL(@PrintOnly, 0);
 
 	IF @Databases IS NULL BEGIN 
-		EXEC dbo.[get_executing_dbname] @ExecutingDBName = @Databases OUTPUT;
-
-		IF @Databases = N'master' BEGIN 
-			RAISERROR(N'Execution against [master] database is NOT permitted. Specify an explicit value for @Databases, or execute procedure from WITHIN target database.', 16, 1);
+		IF @Databases IS NULL BEGIN 
+			RAISERROR(N'Invalid Input. Value for @Databases cannot be null or empty.', 16, 1);
 			RETURN -1;
 		END;
-
-		IF @Databases IS NULL BEGIN 
-			RAISERROR(N'Unable to establish calling-db-context. Please specify explicit value(s) for %s.', 16, 1, N'@Databases');
+	  END
+	ELSE BEGIN
+		IF @Databases IN (N'master', N'msdb', N'tempdb') BEGIN 
+			RAISERROR(N'Migration can only be initiated against USER databases.', 16, 1);
 			RETURN -1;
 		END;
 	END;
@@ -174,8 +173,8 @@ END;';
 		END;
 
 		SET @sql = N'USE [master]; 
-ALTER DATABASE [' + @currentDb + N'] SET COMPATIBILITY_LEVEL = ' + @TargetCompatLevel + N';
 ALTER DATABASE [' + @currentDb + N'] SET MULTI_USER; 
+ALTER DATABASE [' + @currentDb + N'] SET COMPATIBILITY_LEVEL = ' + @TargetCompatLevel + N';
 ALTER DATABASE [' + @currentDb + N'] SET PAGE_VERIFY CHECKSUM;
 ALTER AUTHORIZATION ON DATABASE::[' + @currentDb + N'] TO [sa];';
 
@@ -252,7 +251,7 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 		END;
 
 		IF @CheckSanityMarker = 1 BEGIN 
-			SET @sql = N'SELECT * FROM [' + @currentDb + N']..[___migrationMarker];'
+			SET @sql = N'SELECT @@SERVER [server], N''' + @currentDb + N''' [database], * FROM [' + @currentDb + N']..[___migrationMarker];'
 
 			BEGIN TRY 
 				IF @PrintOnly = 0 BEGIN 
@@ -299,46 +298,14 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 			END CATCH
 		END;
 
-		IF @UpdateStatistics = 1 BEGIN 
-			SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
-
-			BEGIN TRY 
-				IF @PrintOnly = 0 BEGIN 
-					EXEC sys.[sp_executesql] 
-						@sql;
-				  END; 
-				ELSE BEGIN 
-					PRINT N'';
-					PRINT @sql;
-					PRINT N'GO';
-				END;
-			END TRY
-			BEGIN CATCH
-				SELECT 
-					@errorLine = ERROR_LINE(), 
-					@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
-			
-				INSERT INTO @errors ([database_name], [timestamp], [operation], [exception])
-				VALUES (@currentDb, GETDATE(), N'STATS_UPDATE', @errorMessage);
-
-				IF @@TRANCOUNT > 0 
-					ROLLBACK;
-			END CATCH
-
+		IF @PrintOnly = 0 BEGIN
+			IF EXISTS (SELECT NULL FROM @errors WHERE [database_name] = @currentDb) BEGIN
+				SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome], GETDATE() [timestamp] FROM @errors WHERE [database_name] = @currentDb;
+			  END; 
+			ELSE BEGIN 
+				SELECT N'Operations for [' + @currentDb + N'] are complete.' [outcome], GETDATE() [timestamp];
+			END;
 		END;
-
-		PRINT N'';
-		PRINT N'/*------------------------------------------------------------------------';
-		PRINT N'-- Sanity Marker Cleanup: ';
-		PRINT N'------------------------------------------------------------------------*/';		
-		PRINT N'USE [' + @currentDb + N'];';
-		PRINT N'GO'; 
-
-		PRINT N'IF OBJECT_ID(N''dbo.[___migrationMarker]'', N''U'') IS NOT NULL BEGIN ';
-		PRINT N'	DROP TABLE dbo.[___migrationMarker];';
-		PRINT N'END; ';
-		PRINT N'GO'; 
-		PRINT N'';
 
 		FETCH NEXT FROM [walker] INTO @currentDb;
 	END;
@@ -348,5 +315,45 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 
 	IF EXISTS (SELECT NULL FROM @errors) BEGIN 
 		SELECT * FROM @errors ORDER BY [error_id];
+	END;
+
+	IF @UpdateStatistics = 1 BEGIN 
+		IF @PrintOnly = 0 BEGIN
+			SELECT N'STARTING STATS UPDATES' [stats_status];
+		END; 
+
+		DECLARE [updater] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT 
+			REPLACE(REPLACE([database_name], N'[', N''), N']', N'')
+		FROM 
+			@targetDatabases 
+		ORDER BY 
+			[row_id];			
+		
+		OPEN [updater];
+		FETCH NEXT FROM [updater] INTO @currentDb;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
+			
+			IF @PrintOnly = 0 BEGIN 
+				EXEC sys.sp_executesql 
+					@sql;
+
+				SELECT N'	Stats updates for [' + @currentDb + N'] complete.' [stats_status];
+			  END;
+			ELSE BEGIN
+				PRINT N'';
+				PRINT @sql;
+				PRINT N'GO';
+			END;
+		
+			FETCH NEXT FROM [updater] INTO @currentDb;
+		END;
+		
+		CLOSE [updater];
+		DEALLOCATE [updater];
+
 	END;
 GO
