@@ -12,7 +12,7 @@ IF OBJECT_ID('dbo.[finalize_migration]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[finalize_migration]
-	@Databases						nvarchar(MAX)		= NULL,				-- NULL (currently executing DB unless master (has to be explicitly specified)), {TOKEN}, N'list, of, dbs', or N'single-db-name'. 
+	@Databases						nvarchar(MAX),				
 	@Priorities						nvarchar(MAX)		= NULL,
 	@ExecuteRecovery				bit					= 1,				
 	@TargetCompatLevel				sysname				= N'{LATEST}', 
@@ -44,15 +44,14 @@ AS
 	SET @PrintOnly = ISNULL(@PrintOnly, 0);
 
 	IF @Databases IS NULL BEGIN 
-		EXEC dbo.[get_executing_dbname] @ExecutingDBName = @Databases OUTPUT;
-
-		IF @Databases = N'master' BEGIN 
-			RAISERROR(N'Execution against [master] database is NOT permitted. Specify an explicit value for @Databases, or execute procedure from WITHIN target database.', 16, 1);
+		IF @Databases IS NULL BEGIN 
+			RAISERROR(N'Invalid Input. Value for @Databases cannot be null or empty.', 16, 1);
 			RETURN -1;
 		END;
-
-		IF @Databases IS NULL BEGIN 
-			RAISERROR(N'Unable to establish calling-db-context. Please specify explicit value(s) for %s.', 16, 1, N'@Databases');
+	  END
+	ELSE BEGIN
+		IF @Databases IN (N'master', N'msdb', N'tempdb') BEGIN 
+			RAISERROR(N'Migration can only be initiated against USER databases.', 16, 1);
 			RETURN -1;
 		END;
 	END;
