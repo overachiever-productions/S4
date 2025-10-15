@@ -14,7 +14,7 @@ GO
 CREATE PROC dbo.[finalize_migration]
 	@Databases						nvarchar(MAX)		= NULL,				-- NULL (currently executing DB unless master (has to be explicitly specified)), {TOKEN}, N'list, of, dbs', or N'single-db-name'. 
 	@Priorities						nvarchar(MAX)		= NULL,
-	@ExecuteRecovery				bit					= 0,
+	@ExecuteRecovery				bit					= 1,				
 	@TargetCompatLevel				sysname				= N'{LATEST}', 
 	@CheckSanityMarker				bit					= 1, 
 	@Directives						sysname				= NULL, 
@@ -299,11 +299,13 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 			END CATCH
 		END;
 
-		IF EXISTS (SELECT NULL FROM @errors WHERE [database_name] = @currentDb) BEGIN
-			SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome] FROM @errors WHERE [database_name] = @currentDb;
-		  END; 
-		ELSE BEGIN 
-			SELECT N'Operations for [' + @currentDb + N'] are complete.' [outcome];
+		IF @PrintOnly = 0 BEGIN
+			IF EXISTS (SELECT NULL FROM @errors WHERE [database_name] = @currentDb) BEGIN
+				SELECT N'Encountered ' + CAST(COUNT(*) AS sysname) + N' errors within [' + @currentDb + N'.' [outcome] FROM @errors WHERE [database_name] = @currentDb;
+			  END; 
+			ELSE BEGIN 
+				SELECT N'Operations for [' + @currentDb + N'] are complete.' [outcome];
+			END;
 		END;
 
 		FETCH NEXT FROM [walker] INTO @currentDb;
@@ -317,7 +319,9 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 	END;
 
 	IF @UpdateStatistics = 1 BEGIN 
-		SELECT N'STARTING STATS UPDATES' [status];
+		IF @PrintOnly = 0 BEGIN
+			SELECT N'STARTING STATS UPDATES' [status];
+		END; 
 
 		DECLARE [updater] CURSOR LOCAL FAST_FORWARD FOR 
 		SELECT 
@@ -333,11 +337,18 @@ ALTER DATABASE [' + @currentDb + N'] SET ACCELERATED_DATABASE_RECOVERY = ON;';
 		WHILE @@FETCH_STATUS = 0 BEGIN
 		
 			SET @sql = N'EXEC [' + @currentDb + N']..[sp_updatestats];';
+			
+			IF @PrintOnly = 0 BEGIN 
+				EXEC sys.sp_executesql 
+					@sql;
 
-			EXEC sys.sp_executesql 
-				@sql;
-
-			SELECT N'	Stats updates for [' + @currentDb + N'] complete.' [status];
+				SELECT N'	Stats updates for [' + @currentDb + N'] complete.' [status];
+			  END;
+			ELSE BEGIN
+				PRINT N'';
+				PRINT @sql;
+				PRINT N'GO';
+			END;
 		
 			FETCH NEXT FROM [updater] INTO @currentDb;
 		END;
