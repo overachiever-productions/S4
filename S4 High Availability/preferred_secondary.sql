@@ -1,5 +1,12 @@
 /*
+
     
+    SELECT admindb.dbo.preferred_secondary(N'master')
+
+
+    NOTE: 
+        This UDF doesn't work with SYSTEM databases.
+        See comments here: https://overachieverllc.atlassian.net/browse/S4-703
 
 */
 
@@ -32,4 +39,3 @@ AS
     
     END;
 GO
-
