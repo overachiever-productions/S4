@@ -1078,6 +1078,9 @@ END;
 --##INCLUDE: S4 High Availability\is_primary_database.sql
 
 -----------------------------------
+--##INCLUDE: S4 High Availability\preferred_secondary.sql
+
+-----------------------------------
 --##INCLUDE: S4 High Availability\compare_jobs.sql
 
 -----------------------------------
