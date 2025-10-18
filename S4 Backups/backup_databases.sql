@@ -204,19 +204,21 @@ AS
 	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
 		DECLARE @partnerName sysname; 
 
-		IF dbo.[get_engine_version]() > 16.0 BEGIN 
-			IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
-				IF EXISTS (SELECT NULL FROM sys.[availability_groups] WHERE [is_contained] = 1) BEGIN
-					-- BUG: this code (currently) assumes that there are only TWO members in the AG: 
-					SELECT
-						@partnerName = [rs].[replica_server_name]
-					FROM
-						[sys].[availability_replicas] [rs]
-						INNER JOIN [sys].[availability_groups] [ags] ON [rs].[group_id] = [ags].[group_id]
-					WHERE
-						[ags].[is_contained] = 1 AND [rs].[replica_server_name] NOT IN (@@SERVERNAME);
-				END;
-			END;
+		-- NOTE: There's an arguable logic bug here for some edge-cases: https://overachieverllc.atlassian.net/browse/S4-703
+		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
+			DECLARE @check nvarchar(MAX) = N'IF EXISTS (SELECT NULL FROM sys.[availability_groups]) BEGIN
+				SET @partnerName = (
+					SELECT TOP (1) [replica_server_name] 
+					FROM sys.[availability_replicas]
+					WHERE [replica_server_name] <> @@SERVERNAME
+					ORDER BY [backup_priority] DESC
+				); 
+			END;';
+
+			EXEC sys.sp_executesql 
+				@check, 
+				N'@partnerName sysname OUTPUT', 
+				@partnerName = @partnerName OUTPUT; 
 		END;
 
 		IF @partnerName IS NULL BEGIN
