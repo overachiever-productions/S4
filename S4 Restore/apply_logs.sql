@@ -391,7 +391,7 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 				END;
 
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
-					PRINT N'-- Checking for additional (newly created) T-LOG Backups created since operation start.';
+					--PRINT N'-- Checking for additional (newly created) T-LOG Backups created since operation start.';
 
                     SET @backupFilesList = NULL;
 					EXEC dbo.load_backup_files 
