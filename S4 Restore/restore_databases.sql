@@ -828,7 +828,7 @@ Apply_Diff:
 				AND [restored_files].value(N'count(/files/file)', N'int') = 1;
 			
 			IF @previousFullRestoreId IS NOT NULL BEGIN
-				SET @backupDate = (SELECT [restored_files].value(N'(/files/file[@id = 1]/created)[1]', N'datetime') FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId);
+				SET @backupName = (SELECT [restored_files].value(N'(/files/file[@id = 1]/name)[1]', N'sysname') FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId);
 			  END;
 			ELSE BEGIN 
 				SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error with attempt to execute APPLY_DIFF. No previous restore for database [' + @restoredName + N'] from backups for database: ['+ @databaseToRestore + N'] found in non-error + non-recovered state.';
