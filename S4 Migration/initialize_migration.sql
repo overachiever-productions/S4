@@ -291,9 +291,10 @@ EXEC [admindb].dbo.[backup_databases]
 	END;
 
 	IF NOT EXISTS (SELECT NULL FROM @errors) BEGIN
-		SELECT N'operation_complete' [outcome];
+		IF @PrintOnly = 0 BEGIN
+			SELECT N'operation complete' [outcome];
+		END;
 	END;
 
 	RETURN 0;
-
 GO
