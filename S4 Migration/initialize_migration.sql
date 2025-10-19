@@ -14,6 +14,7 @@ CREATE PROC dbo.[initialize_migration]
 	@Databases						nvarchar(MAX),							-- Must be EXPLICITLY defined. 
 	@Priorities						nvarchar(MAX)		= NULL,
 	@FinalBackupType				sysname				= N'LOG',			-- { FULL | DIFF | LOG }
+	@MigrationType					sysname				= N'OFFLINE',		-- { OFFLINE | ONLINE }  -- Offline = SINGLE_USER + FINAL BACKUP + OFFLINE, ONLINE = MARKER for final backup and NO offline.
 	@IncludeSanityMarker			bit					= 1, 
 	@SingleUserRollbackSeconds		int					= 5,
 	@BackupDirectory				nvarchar(2000)		= N'{DEFAULT}', 
@@ -35,6 +36,7 @@ AS
 	
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @FinalBackupType = ISNULL(NULLIF(@FinalBackupType, N''), N'LOG');
+	SET @MigrationType = ISNULL(NULLIF(@MigrationType, N''), N'OFFLINE');
 	SET @IncludeSanityMarker = ISNULL(@IncludeSanityMarker, 1);
 	SET @SingleUserRollbackSeconds = ISNULL(@SingleUserRollbackSeconds, 5);
 	SET @BackupDirectory = ISNULL(@BackupDirectory, N'{DEFAULT}');
@@ -75,6 +77,11 @@ AS
 	IF UPPER(@FinalBackupType) NOT IN (N'FULL', N'DIFF', N'LOG') BEGIN 
 		RAISERROR('Allowed values for @FinalBackupType are { FULL | DIFF | LOG }.', 16, 1);
 		RETURN -5;
+	END;
+
+	IF UPPER(@MigrationType) NOT IN (N'OFFLINE', N'ONLINE') BEGIN
+		RAISERROR(N'Allowe values for @MigrationType are { OFFLINE | ONLINE }.', 16, 1);
+		RETURN -16;
 	END;
 
 	IF UPPER(@BackupDirectory) = N'{DEFAULT}' BEGIN
@@ -199,7 +206,7 @@ EXEC [admindb].dbo.[backup_databases]
 	@BackupDirectory = N''{backup_directory}'',{copy_to}{offsite_to}
 	@BackupRetention = N''{backup_retention}'',{copy_to_retention}{offsite_retention}
 	@RemoveFilesBeforeBackup = 0,{encryption}
-	@Directives = N''{directives}'',  -- FINAL (backup) : <file_name_marker> : <set_single_user_rollback_seconds>
+	@Directives = N''{directives}'',  -- {directiveDesc}
 	@LogSuccessfulOutcomes = 1,{operator}{profile}{subject}
 	@PrintOnly = 0; ';
 
@@ -208,7 +215,16 @@ EXEC [admindb].dbo.[backup_databases]
 		SET @sql = REPLACE(@sql, N'{backup_directory}', @BackupDirectory);
 		SET @sql = REPLACE(@sql, N'{backup_retention}', @BackupRetention);
 		SET @sql = REPLACE(@sql, N'{marker}', @FileMarker);
-		SET @sql = REPLACE(@sql, N'{directives}', N'FINAL:' + @FileMarker + N':' + CAST(@SingleUserRollbackSeconds AS sysname));
+
+		IF @MigrationType = N'OFFLINE' BEGIN
+			SET @sql = REPLACE(@sql, N'{directives}', N'FINAL:' + @FileMarker + N':' + CAST(@SingleUserRollbackSeconds AS sysname));
+			SET @sql = REPLACE(@sql, N'{directiveDesc}', N'-- FINAL (backup) : <file_name_marker> : <set_single_user_rollback_seconds>');
+			
+		  END;
+		ELSE BEGIN 
+			SET @sql = REPLACE(@sql, N'{directives}', N'MARKER:' + @FileMarker);
+			SET @sql = REPLACE(@sql, N'{directiveDesc}', N'MARKER: <file_name_marker>');
+		END;
 
 		IF @CopyToBackupDirectory IS NOT NULL BEGIN 
 			SET @sql = REPLACE(@sql, N'{copy_to}',  @crlf + @tab + N'@CopyToBackupDirectory = N''' + @CopyToBackupDirectory + N''', ');
