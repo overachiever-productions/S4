@@ -2,16 +2,14 @@
 		
 		admindb successor to S4's dbo.list_databases. 
 			a. @Databases
-			b. refactored name. (MKC: really - with 'load' in the name? think this should just be "dbo.database_names" ... or ... maybe something like "selected_databases" where i replace "selected" with a better name - e.g. dbo.specified_databases
-				YEAH: refactor to soemthing like dbo.specified_databases
-				maybe ... dbo.filtered_databases, dbo.target_databases, -dbo.selected_databases(nah)-
+			b. refactored name. (i.e., doesn't need/use a verb)
 			c. @SerializedOutput (xml) to help avoid nested insert / insert-exec
 
 
 
 		SIGNATURES: 
 						DECLARE @SerializedOutput xml;
-						EXEC [admindb]..[load_database_names] 
+						EXEC [admindb]..[targeted_databases] 
 							@Databases = N'{ALL}, -admindb_%, -af%',
 							@Priorities = N'IdentityDb, NoMerge, PointInTime, *, SSVDev, Sniffles', 
 							@SerializedOutput = @SerializedOutput OUTPUT; 
@@ -20,7 +18,7 @@
 
 
 						-- man... this is DREAMY:
-						EXEC [admindb]..[load_database_names] 
+						EXEC [admindb]..[targeted_databases] 
 							@Databases = N'admin%, PSP%', 
 							@Priorities = N'admin%, *, PSP%'
 
@@ -29,11 +27,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[load_database_names]','P') IS NOT NULL
-	DROP PROC dbo.[load_database_names];
+IF OBJECT_ID('dbo.[targeted_databases]','P') IS NOT NULL
+	DROP PROC dbo.[targeted_databases];
 GO
 
-CREATE PROC dbo.[load_database_names]
+CREATE PROC dbo.[targeted_databases]
 	@Databases								nvarchar(MAX)	= N'{ALL}',
 	@Priorities								nvarchar(MAX)	= NULL, 
 	@ExcludeClones							bit				= 1, 
