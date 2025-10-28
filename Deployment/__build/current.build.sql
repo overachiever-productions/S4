@@ -426,7 +426,7 @@ GO
 --##INCLUDE: Common\Internal\generate_bounding_times.sql
 
 -----------------------------------
---##INCLUDE: Common\load_database_names.sql
+--##INCLUDE: Common\targeted_databases.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases.sql
