@@ -140,7 +140,7 @@ AS
 	);
 
 	DECLARE @xmlOutput xml;
-	EXEC dbo.[load_database_names]
+	EXEC dbo.[targeted_databases]
 		@Databases = @Databases,
 		@Priorities = @Priorities,
 		@ExcludeClones = 1,
