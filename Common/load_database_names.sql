@@ -2,7 +2,9 @@
 		
 		admindb successor to S4's dbo.list_databases. 
 			a. @Databases
-			b. refactored name. 
+			b. refactored name. (MKC: really - with 'load' in the name? think this should just be "dbo.database_names" ... or ... maybe something like "selected_databases" where i replace "selected" with a better name - e.g. dbo.specified_databases
+				YEAH: refactor to soemthing like dbo.specified_databases
+				maybe ... dbo.filtered_databases, dbo.target_databases, -dbo.selected_databases(nah)-
 			c. @SerializedOutput (xml) to help avoid nested insert / insert-exec
 
 
@@ -365,7 +367,7 @@ AS
 			@targetDatabases
 		ORDER BY 
 			[row_id] 
-		FOR XML PATH(''), ROOT('databases'));		
+		FOR XML PATH(N''), ROOT(N'databases'));		
 
 		RETURN 0;
 	END;
