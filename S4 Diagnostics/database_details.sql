@@ -108,7 +108,16 @@ AS
 	GROUP BY 
 		[database_id];
 	
-	WITH core AS ( 
+	WITH files_on_c AS ( 
+		SELECT 
+			[name],
+			MAX(CASE WHEN [physical_name] LIKE N'C:\%' THEN 1 ELSE 0 END) [files_on_c]
+		FROM 
+			sys.[master_files]
+		GROUP BY 
+			[name]
+	), 
+	core AS ( 
 		SELECT 
 			[d].[name] [name],
 			[d].[compatibility_level] [level], 
@@ -139,23 +148,33 @@ AS
 			[d].page_verify_option_desc [page_verify],
 			[d].[is_trustworthy_on] [trustworthy],
 			[d].[is_read_committed_snapshot_on] [rcsi], 
-			CASE WHEN [d].[snapshot_isolation_state] = 1 THEN N'SNAPSHOT_ISOLATION; ' ELSE N'' END
-				+ CASE WHEN [d].[is_broker_enabled] = 1 THEN N'BROKER; ' ELSE N'' END
-				+ CASE WHEN [d].[is_cdc_enabled] = 1 THEN N'CDC' ELSE N'' END
-				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N'TARGET_RECOVERY_SECs: ' + CAST([d].[target_recovery_time_in_seconds] AS sysname) ELSE N'' END
-				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N'DELAYED_DURABILITY: ' + CAST([d].[delayed_durability] AS sysname) ELSE N'' END
-				+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N'ACCELERATED_RECOVERY' ELSE N'' END
-				+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N'STALE_PAGE_DETECTION' ELSE N'' END
+			[d].[is_query_store_on] [query_store],
+			CASE WHEN [d].[snapshot_isolation_state] = 1 THEN N' SNAPSHOT_ISOLATION; ' ELSE N'' END
+				+ CASE WHEN [d].[is_broker_enabled] = 1 THEN N' BROKER; ' ELSE N'' END
+				--+ CASE WHEN [d].[is_fulltext_enabled] = 1 THEN N' FTI; ' ELSE N'' END   -- this is true on any ... server with FTI installed. 
+				+ CASE WHEN [d].[is_cdc_enabled] = 1 THEN N' CDC; ' ELSE N'' END
+				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N' TARGET_RECOVERY_SECs: ' + CAST([d].[target_recovery_time_in_seconds] AS sysname) + N'; ' ELSE N'' END
+				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N' DELAYED_DURABILITY: ' + CAST([d].[delayed_durability] AS sysname) + N'; ' ELSE N'' END
+				+ CASE WHEN [d].[containment_desc] <> N'NONE' THEN N' CONTAINMENT: ' + [d].[containment_desc] + N'; ' ELSE N'' END
+				+ CASE WHEN [d].[is_encrypted] = 1 THEN N' ENCRYPTED; ' ELSE N'' END
+				+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N' ACCELERATED_RECOVERY; ' ELSE N'' END
+				+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N' STALE_PAGE_DETECTION; ' ELSE N'' END
+				+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N' RESULT_SET_CACHING; ' ELSE N'' END
+				+ CASE WHEN [d].[is_ledger_on] = 1 THEN N' LEDGER; ' ELSE N'' END
 				-- TODO: add in any other options here that make sense... 
 			[advanced_options],
 			CASE WHEN [d].[owner_sid] = 0x01 THEN 0 ELSE 1 END [non_sa_owner],
-			CASE WHEN [d].[is_auto_close_on] = 1 THEN N'Auto-Close; ' ELSE N'' END
-				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N'Auto-Shrink; ' ELSE N'' END
-				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N'Parameterization-Forced; ' ELSE N'' END
-				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN 'Auto-Async-Stats; ' ELSE N'' END 
+			CASE WHEN [d].[is_auto_close_on] = 1 THEN N' Auto-Close; ' ELSE N'' END
+				+ CASE WHEN [fc].[files_on_c] = 1 THEN N' Files on C:\; ' ELSE N'' END
+				+ CASE WHEN [d].[is_trustworthy_on] = 1 THEN N' TRUSTHWORTHY; ' ELSE N'' END
+				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N' Auto-Shrink; ' ELSE N'' END
+				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N' Parameterization-Forced; ' ELSE N'' END
+				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N' Auto-Async-Stats; ' ELSE N'' END 
+				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 THEN N' MIXED-PAGE-ALLOCATION; ' ELSE N'' END
 			[smells]
 		FROM 
 			sys.databases [d]
+			LEFT OUTER JOIN [files_on_c] [fc] ON [d].[name] = [fc].[name]
 			LEFT OUTER JOIN [#fileCount] [c] ON [d].[database_id] = [c].[database_id]
 			LEFT OUTER JOIN (
 				SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
@@ -169,7 +188,8 @@ AS
 			[data].[row].value(N'(vlf_count)[1]', N'int') [vlf_count]
 		FROM 
 			@vlfCounts.nodes(N'//database') [data]([row])		
-	) 
+	)
+
 
 	SELECT 
 		[c].[name],
@@ -186,9 +206,10 @@ AS
 		[c].[page_verify],
 		[c].[trustworthy],
 		[c].[rcsi],
-		[c].[advanced_options],
+		[c].[query_store],
+		REPLACE([c].[advanced_options], N'  ', N' ') [advanced_options],
 		[c].[non_sa_owner],
-		[c].[smells] 
+		REPLACE([c].[smells], N'  ', N' ') [smells]
 	INTO #intermediate
 	FROM 
 		core [c]
@@ -215,6 +236,7 @@ AS
 				[page_verify],
 				[trustworthy],
 				[rcsi],
+				[query_store] [qs],
 				[advanced_options],
 				[non_sa_owner],
 				[smells]
@@ -243,6 +265,7 @@ AS
 		[page_verify],
 		[trustworthy],
 		[rcsi],
+		[query_store] [qs],
 		[advanced_options],
 		[non_sa_owner],
 		[smells] 
