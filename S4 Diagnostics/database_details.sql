@@ -12,26 +12,10 @@
 			accelerated_database_recovery... ... which is a 150? feature. If the SERVER is 150, 160, 170 ... great. BUT what if the DB is COMPAT 100? or something odd? 
 				does that 'hide'/remove the column in question? (Again, i don't think so. but I really need to test for this.)
 
-	vNEXT:
-		I really need to know what % of the DB is FREE (the same way I do with logs - but vs data/ix/etc).
-		https://overachieverllc.atlassian.net/browse/S4-615
-
 
 	vNEXT:
 		https://overachieverllc.atlassian.net/browse/S4-482
 
-	vNEXT:
-		add change-tracking as an additional 'advanced_option' via ... SELECT * FROM sys.change_tracking_databases; (join)
-
-	vNEXT:
-		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
-
-	vNEXT:
-		I should ALSO report on 'secondary'/sync info - i.e., if a DB is in an AG (or, bletch: mirrored) ... then I want to know about this - including partner info, etc. 
-
-	vNEXT:
-		Need to add a smell / problem for any DBs on the C:\ drive. 
-		Also need to NOTE / point-out if/when TDE or AlwaysEncrypted is in play. 
 
 	vNEXT:
 		- Option to dump output as XML 
