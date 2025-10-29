@@ -40,7 +40,7 @@ GO
 
 CREATE PROC dbo.[database_details]
     @Databases						nvarchar(MAX)   = N'{ALL}', 
-    --@Priorities                     nvarchar(MAX)   = NULL,		-- I don't think need this for this sproc... 
+    @Priorities                     nvarchar(MAX)   = NULL,						
 	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
 AS 
     SET NOCOUNT ON; 
@@ -48,6 +48,7 @@ AS
     -- {copyright}
 
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
+	SET @Priorities = NULLIF(@Priorities, N'');
 
 	CREATE TABLE #freeSpace (
 		[row_id] int IDENTITY(1,1) NOT NULL,
@@ -68,11 +69,10 @@ AS
 	FROM
 		[sys].[database_files]; ';
 
-	-- TODO: extract VLFs using dbo.execute_per_database... 
-
 	DECLARE @errors xml;
 	EXEC dbo.[execute_per_database]
 		@Databases = @Databases,
+		@Priorities = @Priorities,
 		@Statement = @sql,
 		@Errors = @errors OUTPUT;
 
@@ -81,6 +81,18 @@ AS
 		-- TODO: I need to shred this vs just selecting it. 
 		SELECT @errors;
 		RETURN -22;
+	END;
+
+	DECLARE @vlfCounts xml; 
+	DECLARE @outcome int = 0;
+	EXEC @outcome = dbo.[vlf_counts]
+		@Databases = @Databases,
+		@Priorities = @Priorities,
+		@SerializedOutput = @vlfCounts OUTPUT;
+
+	IF @outcome <> 0 BEGIN
+		RAISERROR(N'Exception during retrieval of VLF Counts.', 16, 1);
+		RETURN -10;
 	END;
 
 	SELECT 
@@ -150,28 +162,37 @@ AS
 			) [s] ON [d].database_id = [s].database_id
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_size] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Size %') [logsize] ON [d].[name] = [logsize].[db_name]
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_used] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Used %') [logused] ON [d].[name] = [logused].[db_name]
-	)
+	), 
+	vlfs AS ( 
+		SELECT 
+			[data].[row].value(N'(database_name)[1]', N'sysname') [database_name], 
+			[data].[row].value(N'(vlf_count)[1]', N'int') [vlf_count]
+		FROM 
+			@vlfCounts.nodes(N'//database') [data]([row])		
+	) 
 
 	SELECT 
-		[name],
-		[level],
-		[state],
-		[collation],
-		[db_size_gb],
-		CASE WHEN [free_space_mb] IS NULL THEN NULL ELSE CAST([free_space_mb] / 1024. AS decimal(24,2)) END [free_space_gb],
-		[log_size_gb],
-		[%_log_used] [log_used_pct],
-		[recovery],
-		[file_counts (d:l:fs:fti)],
-		[page_verify],
-		[trustworthy],
-		[rcsi],
-		[advanced_options],
-		[non_sa_owner],
-		[smells] 
+		[c].[name],
+		[c].[level],
+		[c].[state],
+		[c].[collation],
+		[c].[db_size_gb],
+		CASE WHEN [free_space_mb] IS NULL THEN NULL ELSE CAST([c].[free_space_mb] / 1024. AS decimal(24,2)) END [free_space_gb],
+		[c].[log_size_gb],
+		[c].[%_log_used] [log_used_pct],
+		[c].[recovery],
+		[v].[vlf_count],
+		[c].[file_counts (d:l:fs:fti)],
+		[c].[page_verify],
+		[c].[trustworthy],
+		[c].[rcsi],
+		[c].[advanced_options],
+		[c].[non_sa_owner],
+		[c].[smells] 
 	INTO #intermediate
 	FROM 
-		core
+		core [c]
+		LEFT OUTER JOIN [vlfs] [v] ON [c].[name] = [v].[database_name]
 	ORDER BY 
 		[db_size_gb] DESC;
 
@@ -189,6 +210,7 @@ AS
 				[log_size_gb] [log_gb],
 				[log_used_pct],
 				[recovery],
+				[vlf_count] [vlfs],
 				[file_counts (d:l:fs:fti)] [file_counts_d_l_fs_fti],
 				[page_verify],
 				[trustworthy],
@@ -216,6 +238,7 @@ AS
 		[log_size_gb] [log_gb],
 		[log_used_pct],
 		[recovery],
+		[vlf_count] [vlfs],
 		[file_counts (d:l:fs:fti)] [file_counts (d:l:fs:ft)],
 		[page_verify],
 		[trustworthy],
