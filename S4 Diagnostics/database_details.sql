@@ -12,26 +12,10 @@
 			accelerated_database_recovery... ... which is a 150? feature. If the SERVER is 150, 160, 170 ... great. BUT what if the DB is COMPAT 100? or something odd? 
 				does that 'hide'/remove the column in question? (Again, i don't think so. but I really need to test for this.)
 
-	vNEXT:
-		I really need to know what % of the DB is FREE (the same way I do with logs - but vs data/ix/etc).
-		https://overachieverllc.atlassian.net/browse/S4-615
-
 
 	vNEXT:
 		https://overachieverllc.atlassian.net/browse/S4-482
 
-	vNEXT:
-		add change-tracking as an additional 'advanced_option' via ... SELECT * FROM sys.change_tracking_databases; (join)
-
-	vNEXT:
-		Need to report on whether QueryStore is enabled or not (and maybe the size-used vs allowed-size?)
-
-	vNEXT:
-		I should ALSO report on 'secondary'/sync info - i.e., if a DB is in an AG (or, bletch: mirrored) ... then I want to know about this - including partner info, etc. 
-
-	vNEXT:
-		Need to add a smell / problem for any DBs on the C:\ drive. 
-		Also need to NOTE / point-out if/when TDE or AlwaysEncrypted is in play. 
 
 	vNEXT:
 		- Option to dump output as XML 
@@ -56,7 +40,7 @@ GO
 
 CREATE PROC dbo.[database_details]
     @Databases						nvarchar(MAX)   = N'{ALL}', 
-    --@Priorities                     nvarchar(MAX)   = NULL,		-- I don't think need this for this sproc... 
+    @Priorities                     nvarchar(MAX)   = NULL,						
 	@SerializedOutput				xml				= N'<default/>'	    OUTPUT
 AS 
     SET NOCOUNT ON; 
@@ -64,6 +48,7 @@ AS
     -- {copyright}
 
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
+	SET @Priorities = NULLIF(@Priorities, N'');
 
 	CREATE TABLE #freeSpace (
 		[row_id] int IDENTITY(1,1) NOT NULL,
@@ -84,11 +69,10 @@ AS
 	FROM
 		[sys].[database_files]; ';
 
-	-- TODO: extract VLFs using dbo.execute_per_database... 
-
 	DECLARE @errors xml;
 	EXEC dbo.[execute_per_database]
 		@Databases = @Databases,
+		@Priorities = @Priorities,
 		@Statement = @sql,
 		@Errors = @errors OUTPUT;
 
@@ -97,6 +81,18 @@ AS
 		-- TODO: I need to shred this vs just selecting it. 
 		SELECT @errors;
 		RETURN -22;
+	END;
+
+	DECLARE @vlfCounts xml; 
+	DECLARE @outcome int = 0;
+	EXEC @outcome = dbo.[vlf_counts]
+		@Databases = @Databases,
+		@Priorities = @Priorities,
+		@SerializedOutput = @vlfCounts OUTPUT;
+
+	IF @outcome <> 0 BEGIN
+		RAISERROR(N'Exception during retrieval of VLF Counts.', 16, 1);
+		RETURN -10;
 	END;
 
 	SELECT 
@@ -112,7 +108,16 @@ AS
 	GROUP BY 
 		[database_id];
 	
-	WITH core AS ( 
+	WITH files_on_c AS ( 
+		SELECT 
+			[name],
+			MAX(CASE WHEN [physical_name] LIKE N'C:\%' THEN 1 ELSE 0 END) [files_on_c]
+		FROM 
+			sys.[master_files]
+		GROUP BY 
+			[name]
+	), 
+	core AS ( 
 		SELECT 
 			[d].[name] [name],
 			[d].[compatibility_level] [level], 
@@ -143,51 +148,72 @@ AS
 			[d].page_verify_option_desc [page_verify],
 			[d].[is_trustworthy_on] [trustworthy],
 			[d].[is_read_committed_snapshot_on] [rcsi], 
-			CASE WHEN [d].[snapshot_isolation_state] = 1 THEN N'SNAPSHOT_ISOLATION; ' ELSE N'' END
-				+ CASE WHEN [d].[is_broker_enabled] = 1 THEN N'BROKER; ' ELSE N'' END
-				+ CASE WHEN [d].[is_cdc_enabled] = 1 THEN N'CDC' ELSE N'' END
-				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N'TARGET_RECOVERY_SECs: ' + CAST([d].[target_recovery_time_in_seconds] AS sysname) ELSE N'' END
-				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N'DELAYED_DURABILITY: ' + CAST([d].[delayed_durability] AS sysname) ELSE N'' END
-				+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N'ACCELERATED_RECOVERY' ELSE N'' END
-				+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N'STALE_PAGE_DETECTION' ELSE N'' END
+			[d].[is_query_store_on] [query_store],
+			CASE WHEN [d].[snapshot_isolation_state] = 1 THEN N' SNAPSHOT_ISOLATION; ' ELSE N'' END
+				+ CASE WHEN [d].[is_broker_enabled] = 1 THEN N' BROKER; ' ELSE N'' END
+				--+ CASE WHEN [d].[is_fulltext_enabled] = 1 THEN N' FTI; ' ELSE N'' END   -- this is true on any ... server with FTI installed. 
+				+ CASE WHEN [d].[is_cdc_enabled] = 1 THEN N' CDC; ' ELSE N'' END
+				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N' TARGET_RECOVERY_SECs: ' + CAST([d].[target_recovery_time_in_seconds] AS sysname) + N'; ' ELSE N'' END
+				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N' DELAYED_DURABILITY: ' + CAST([d].[delayed_durability] AS sysname) + N'; ' ELSE N'' END
+				+ CASE WHEN [d].[containment_desc] <> N'NONE' THEN N' CONTAINMENT: ' + [d].[containment_desc] + N'; ' ELSE N'' END
+				+ CASE WHEN [d].[is_encrypted] = 1 THEN N' ENCRYPTED; ' ELSE N'' END
+				+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N' ACCELERATED_RECOVERY; ' ELSE N'' END
+				+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N' STALE_PAGE_DETECTION; ' ELSE N'' END
+				+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N' RESULT_SET_CACHING; ' ELSE N'' END
+				+ CASE WHEN [d].[is_ledger_on] = 1 THEN N' LEDGER; ' ELSE N'' END
 				-- TODO: add in any other options here that make sense... 
 			[advanced_options],
 			CASE WHEN [d].[owner_sid] = 0x01 THEN 0 ELSE 1 END [non_sa_owner],
-			CASE WHEN [d].[is_auto_close_on] = 1 THEN N'Auto-Close; ' ELSE N'' END
-				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N'Auto-Shrink; ' ELSE N'' END
-				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N'Parameterization-Forced; ' ELSE N'' END
-				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN 'Auto-Async-Stats; ' ELSE N'' END 
+			CASE WHEN [d].[is_auto_close_on] = 1 THEN N' Auto-Close; ' ELSE N'' END
+				+ CASE WHEN [fc].[files_on_c] = 1 THEN N' Files on C:\; ' ELSE N'' END
+				+ CASE WHEN [d].[is_trustworthy_on] = 1 THEN N' TRUSTHWORTHY; ' ELSE N'' END
+				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N' Auto-Shrink; ' ELSE N'' END
+				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N' Parameterization-Forced; ' ELSE N'' END
+				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N' Auto-Async-Stats; ' ELSE N'' END 
+				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 THEN N' MIXED-PAGE-ALLOCATION; ' ELSE N'' END
 			[smells]
 		FROM 
 			sys.databases [d]
+			LEFT OUTER JOIN [files_on_c] [fc] ON [d].[name] = [fc].[name]
 			LEFT OUTER JOIN [#fileCount] [c] ON [d].[database_id] = [c].[database_id]
 			LEFT OUTER JOIN (
 				SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
 			) [s] ON [d].database_id = [s].database_id
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_size] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Size %') [logsize] ON [d].[name] = [logsize].[db_name]
 			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_used] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Used %') [logused] ON [d].[name] = [logused].[db_name]
+	), 
+	vlfs AS ( 
+		SELECT 
+			[data].[row].value(N'(database_name)[1]', N'sysname') [database_name], 
+			[data].[row].value(N'(vlf_count)[1]', N'int') [vlf_count]
+		FROM 
+			@vlfCounts.nodes(N'//database') [data]([row])		
 	)
 
+
 	SELECT 
-		[name],
-		[level],
-		[state],
-		[collation],
-		[db_size_gb],
-		CASE WHEN [free_space_mb] IS NULL THEN NULL ELSE CAST([free_space_mb] / 1024. AS decimal(24,2)) END [free_space_gb],
-		[log_size_gb],
-		[%_log_used] [log_used_pct],
-		[recovery],
-		[file_counts (d:l:fs:fti)],
-		[page_verify],
-		[trustworthy],
-		[rcsi],
-		[advanced_options],
-		[non_sa_owner],
-		[smells] 
+		[c].[name],
+		[c].[level],
+		[c].[state],
+		[c].[collation],
+		[c].[db_size_gb],
+		CASE WHEN [free_space_mb] IS NULL THEN NULL ELSE CAST([c].[free_space_mb] / 1024. AS decimal(24,2)) END [free_space_gb],
+		[c].[log_size_gb],
+		[c].[%_log_used] [log_used_pct],
+		[c].[recovery],
+		[v].[vlf_count],
+		[c].[file_counts (d:l:fs:fti)],
+		[c].[page_verify],
+		[c].[trustworthy],
+		[c].[rcsi],
+		[c].[query_store],
+		REPLACE([c].[advanced_options], N'  ', N' ') [advanced_options],
+		[c].[non_sa_owner],
+		REPLACE([c].[smells], N'  ', N' ') [smells]
 	INTO #intermediate
 	FROM 
-		core
+		core [c]
+		LEFT OUTER JOIN [vlfs] [v] ON [c].[name] = [v].[database_name]
 	ORDER BY 
 		[db_size_gb] DESC;
 
@@ -205,10 +231,12 @@ AS
 				[log_size_gb] [log_gb],
 				[log_used_pct],
 				[recovery],
+				[vlf_count] [vlfs],
 				[file_counts (d:l:fs:fti)] [file_counts_d_l_fs_fti],
 				[page_verify],
 				[trustworthy],
 				[rcsi],
+				[query_store] [qs],
 				[advanced_options],
 				[non_sa_owner],
 				[smells]
@@ -232,10 +260,12 @@ AS
 		[log_size_gb] [log_gb],
 		[log_used_pct],
 		[recovery],
+		[vlf_count] [vlfs],
 		[file_counts (d:l:fs:fti)] [file_counts (d:l:fs:ft)],
 		[page_verify],
 		[trustworthy],
 		[rcsi],
+		[query_store] [qs],
 		[advanced_options],
 		[non_sa_owner],
 		[smells] 
