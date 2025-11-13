@@ -6,6 +6,11 @@
 			c. @SerializedOutput (xml) to help avoid nested insert / insert-exec
 
 
+		SERIALIZED XML 
+			Can be re-hydrated via dbo.expanded_targetdatabases. 
+
+
+
 
 		SIGNATURES: 
 						DECLARE @SerializedOutput xml;
@@ -15,6 +20,10 @@
 							@SerializedOutput = @SerializedOutput OUTPUT; 
 
 						SELECT @SerializedOutput;
+						-- or: 
+							SELECT * FROM dbo.[expanded_targetdatabases](@SerializedOutput) ORDER BY [row_id];
+
+
 
 
 						-- man... this is DREAMY:
