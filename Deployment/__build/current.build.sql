@@ -741,6 +741,9 @@ GO
 --##INCLUDE: S4 Diagnostics\vlf_counts.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\compute_details.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\database_details.sql
 
 -----------------------------------

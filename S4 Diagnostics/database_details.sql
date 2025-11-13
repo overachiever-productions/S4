@@ -217,7 +217,6 @@ AS
 	ORDER BY 
 		[db_size_gb] DESC;
 
-
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		
 		SET @SerializedOutput = (
@@ -245,7 +244,7 @@ AS
 			ORDER BY 
 				[name]
 			FOR XML PATH(N'database'), ROOT(N'databases'), ELEMENTS XSINIL
-		)
+		);
 
 		RETURN 0;
 	END;
