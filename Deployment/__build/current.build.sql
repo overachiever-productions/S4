@@ -783,6 +783,9 @@ GO
 --##INCLUDE: S4 Diagnostics\Security\list_login_permissions.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_details.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_consumers.sql
 
 -----------------------------------
