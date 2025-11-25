@@ -70,10 +70,10 @@ DELETE FROM #LogInfo;';
 		@Statement = @sql,
 		@Errors = @Errors OUTPUT;
 
-
 	IF @Errors IS NOT NULL BEGIN 
 		RAISERROR(N'Unexpected Errors during Execution. See (Printed) @Errors for additional details.', 16, 1);
-		EXEC dbo.[print_long_string] @Errors;
+		--EXEC dbo.[print_long_string] @Errors;  -- https://overachieverllc.atlassian.net/browse/S4-728
+		PRINT CAST(@Errors AS nvarchar(MAX));
 		RETURN -3; 
 	END;
 

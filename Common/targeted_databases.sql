@@ -1,5 +1,10 @@
 /*
 		
+		TODO: 
+			- https://overachieverllc.atlassian.net/browse/S4-727
+			And ... note the problem/warning/detail there about QUOTED IDENTS. SIGH. 
+
+
 		admindb successor to S4's dbo.list_databases. 
 			a. @Databases
 			b. refactored name. (i.e., doesn't need/use a verb)
