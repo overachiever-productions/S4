@@ -744,6 +744,9 @@ GO
 --##INCLUDE: S4 Diagnostics\compute_details.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\disabled_constraints.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\database_details.sql
 
 -----------------------------------

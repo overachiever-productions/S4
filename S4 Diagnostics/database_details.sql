@@ -207,9 +207,9 @@ AS
 		[c].[trustworthy],
 		[c].[rcsi],
 		[c].[query_store],
-		REPLACE([c].[advanced_options], N'  ', N' ') [advanced_options],
+		LTRIM(REPLACE([c].[advanced_options], N'  ', N' ')) [advanced_options],
 		[c].[non_sa_owner],
-		REPLACE([c].[smells], N'  ', N' ') [smells]
+		LTRIM(REPLACE([c].[smells], N'  ', N' ')) [smells]
 	INTO #intermediate
 	FROM 
 		core [c]
