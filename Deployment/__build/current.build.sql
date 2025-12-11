@@ -747,6 +747,9 @@ GO
 --##INCLUDE: S4 Diagnostics\database_details.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\filtered_index_obstacles.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
 
 -----------------------------------
