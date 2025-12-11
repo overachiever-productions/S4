@@ -1,5 +1,12 @@
 /*
+	
+	-- EXAMPLE: 
 
+				DECLARE @serialized_output xml;
+				EXEC [dbo].[escalated_server_permissions]
+					@serialized_output = @serialized_output OUTPUT
+
+				SELECT @serialized_output;
 
 */
 
