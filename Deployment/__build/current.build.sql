@@ -777,6 +777,9 @@ GO
 --##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_statistics_by_table.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Security\escalated_server_permissions.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
 
 -----------------------------------
