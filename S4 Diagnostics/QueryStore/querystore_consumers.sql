@@ -497,7 +497,7 @@ FROM
 			[max_dop],
 			CASE 
 				WHEN [plan_count] > 1 THEN [plan_id]
-				WHEN [plan_id] = -1 AND [plan_count] = 1 THEN (SELECT [plan_id] FROM [#planAggregatedStats] [p] WHERE [p].[row_id] = [rolledup].[row_id]) 
+				WHEN [plan_id] = -1 AND [plan_count] = 1 THEN (SELECT [plan_id] FROM [#planAggregatedStats] [p] WHERE [p].[row_id] = [rolledup].[row_id] AND [p].[plan_id] = [rolledup].[plan_id]) 
 				ELSE NULL 
 			END [actual_plan_id]
 		FROM 
