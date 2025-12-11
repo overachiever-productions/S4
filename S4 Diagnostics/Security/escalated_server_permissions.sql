@@ -11,8 +11,7 @@ IF OBJECT_ID('dbo.[escalated_server_permissions]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[escalated_server_permissions]
-
-
+	@serialized_output				xml			= N'<default/>'	    OUTPUT	
 AS
     SET NOCOUNT ON; 
 
@@ -56,6 +55,25 @@ AS
 	WHERE 
 		x.[permission] IS NOT NULL;
 	
+	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
+		SELECT @serialized_output = ( 
+			SELECT 
+				[principal],
+				[type],
+				[is_disabled],
+				[permissions_state],
+				[permission_name] 
+			FROM 
+				[#escalatedPerms]
+			ORDER BY 
+				[principal]
+			FOR XML PATH(N''), ROOT(N'databases'), TYPE
+		);		
+		
+		RETURN 0;	
+	END;
+
+
 	SELECT 
 		[principal],
 		[type],
