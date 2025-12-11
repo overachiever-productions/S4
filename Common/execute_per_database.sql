@@ -152,7 +152,7 @@ AS
 		@ExcludeOffline = 1,
 		@SerializedOutput = @xmlOutput OUTPUT;
 
-		WITH shredded AS ( 
+	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value('@id[1]', 'int') [row_id], 
 			[data].[row].value('.[1]', 'sysname') [database_name]
