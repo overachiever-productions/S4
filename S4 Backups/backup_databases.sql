@@ -202,17 +202,36 @@ AS
 	END;
 
 	IF (SELECT dbo.[count_matches](@CopyToBackupDirectory, N'{PARTNER}')) > 0 BEGIN 
+		DECLARE @partnerName sysname; 
 
+		-- NOTE: There's an arguable logic bug here for some edge-cases: https://overachieverllc.atlassian.net/browse/S4-703
 		IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
-			RAISERROR('THe {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
-			RETURN -20;
+			DECLARE @check nvarchar(MAX) = N'IF EXISTS (SELECT NULL FROM sys.[availability_groups]) BEGIN
+				SET @partnerName = (
+					SELECT TOP (1) [replica_server_name] 
+					FROM sys.[availability_replicas]
+					WHERE [replica_server_name] <> @@SERVERNAME
+					ORDER BY [backup_priority] DESC
+				); 
+			END;';
+
+			EXEC sys.sp_executesql 
+				@check, 
+				N'@partnerName sysname OUTPUT', 
+				@partnerName = @partnerName OUTPUT; 
 		END;
 
-		DECLARE @partnerName sysname; 
-		EXEC sys.[sp_executesql]
-			N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
-			N'@partnerName sysname OUTPUT', 
-			@partnerName = @partnerName OUTPUT;
+		IF @partnerName IS NULL BEGIN
+			IF NOT EXISTS (SELECT NULL FROM sys.servers WHERE [name] = N'PARTNER') BEGIN
+				RAISERROR('The {PARTNER} token can only be used in the @CopyToBackupDirectory if/when a PARTNER server has been registered as a linked server.', 16, 1);
+				RETURN -20;
+			END;
+
+			EXEC sys.[sp_executesql]
+				N'SET @partnerName = (SELECT TOP 1 [name] FROM PARTNER.master.sys.servers WHERE [is_linked] = 0 ORDER BY [server_id]);', 
+				N'@partnerName sysname OUTPUT', 
+				@partnerName = @partnerName OUTPUT;
+		END;
 
 		SET @CopyToBackupDirectory = REPLACE(@CopyToBackupDirectory, N'{PARTNER}', @partnerName);
 	END;

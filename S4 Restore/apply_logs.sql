@@ -1,16 +1,10 @@
 /*
-	TODO: 
-		- this piglet needs a MAJOR refactor... i wrote it over a period of days (calendar-wise) so ideas/concepts are 'all over the place' and i've got lots of REDUNDANCIES in error checking, evaluation/logic, etc. 
-		
 
-	vNEXT: 
-		- implement @RestoreBufferDelay	... 
 
 	FODDER: 
 		Info on .tuf files (in short, they're to keep any 'in flight' transactions that would NORMALLY have to be rolled-back IF we were recovering (whereas, if we specify NORECOVERY, there's no worry about these TXs until WITH RECOVERY is fired). 
 			- https://sqlserver-help.com/2014/07/24/sql-server-internals-what-is-tuf-file-in-sql-server/
 			- https://support.microsoft.com/en-us/help/962008/fix-error-message-when-you-use-log-shipping-in-sql-server-2008-during
-
 
 
 	EXEC admindb.dbo.apply_logs
@@ -133,9 +127,9 @@ AS
 
     -----------------------------------------------------------------------------
 	-- If the {READ_FROM_FILESYSTEM} token is specified, replace {READ_FROM_FILESYSTEM} in @DatabasesToRestore with a serialized list of db-names pulled from @BackupRootPath:
+	DECLARE @serialized nvarchar(MAX) = '';
 	IF ((SELECT dbo.[count_matches](@SourceDatabases, N'{READ_FROM_FILESYSTEM}')) > 0) BEGIN
 		DECLARE @databases xml = NULL;
-		DECLARE @serialized nvarchar(MAX) = '';
 
 		EXEC dbo.[load_backup_database_names]
 		    @TargetDirectory = @BackupsRootPath,
@@ -234,9 +228,6 @@ AS
         GOTO FINALIZE;
     END;
 	
-	-- Begin application of logs:
-    PRINT '-- Databases To Attempt Log Application Against: ' + @serialized;
-
 	DECLARE @logFilesToRestore table ( 
 		id int IDENTITY(1,1) NOT NULL, 
 		log_file sysname NOT NULL
@@ -257,7 +248,7 @@ AS
 		warning_id int IDENTITY(1,1) NOT NULL, 
 		warning nvarchar(MAX) NOT NULL 
 	);
-
+	
     DECLARE restorer CURSOR LOCAL FAST_FORWARD FOR 
     SELECT 
         [source_database_name],
@@ -276,6 +267,7 @@ AS
 		SET @restoreStart = GETDATE();
 		SET @noFilesApplied = 0;  
 		DELETE FROM @appliedFiles;
+		DELETE FROM @logFilesToRestore;
 
 		-- determine last successfully applied t-log:
 		SELECT @fileList = [restored_files] FROM dbo.[restore_log] WHERE [restore_id] = (SELECT MAX(restore_id) FROM [dbo].[restore_log] WHERE [database] = @sourceDbName AND [restored_as] = @targetDbName AND [restore_succeeded] = 1);
@@ -285,7 +277,7 @@ AS
 			GOTO NextDatabase;
 		END; 
 
-		SELECT @latestPreviousFileRestored = @fileList.value('(/files/file[@id = max(/files/file/@id)]/name)[1]', 'sysname');
+		SELECT @latestPreviousFileRestored = @fileList.value(N'(/files/file[@id = max(/files/file/@id)]/name)[1]', N'sysname');
 
 		IF @latestPreviousFileRestored IS NULL BEGIN 
 			SET @statusDetail = N'Attempt to apply logs from ' + QUOTENAME(@sourceDbName) + N' to ' + QUOTENAME(@targetDbName) + N' could not be completed. The column: restored_files in dbo.restore_log is missing data on the last file applied to ' + QUOTENAME(@targetDbName) + N'. Please use dbo.restore_databases to ''seed'' databases.';
@@ -293,7 +285,7 @@ AS
 		END; 
 
 		SET @sourcePath = @BackupsRootPath + N'\' + @sourceDbName;
-
+		
 		SET @backupFilesList = NULL;
 		EXEC dbo.load_backup_files 
 			@DatabaseToRestore = @sourceDbName, 
@@ -302,9 +294,6 @@ AS
 			@LastAppliedFile = @latestPreviousFileRestored, 
 			@Output = @backupFilesList OUTPUT;
 		
-		-- reset values per every 'loop' of main processing body:
-		DELETE FROM @logFilesToRestore;
-
 		WITH shredded AS ( 
 			SELECT 
 				[data].[row].value('@id[1]', 'int') [id], 
@@ -378,15 +367,13 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					ELSE BEGIN
 						SET @outcome = NULL;
 						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
-						SET @statusDetail = @outcome;
+						SET @statusDetail = @outcome + @crlf + @tab + N'Exception occurred while attempting to apply: [' + @pathToTLogBackup + N'].';
 					END;
 				END TRY
 				BEGIN CATCH
 					SELECT @statusDetail = N'Unexpected Exception while executing LOG Restore from File: "' + @backupName + N'". Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
-					-- don't go to NextDatabase - we need to record meta data FIRST... 
 				END CATCH
 
-				-- Update MetaData: 
 				EXEC dbo.load_header_details @BackupPath = @pathToTLogBackup, @BackupDate = @backupDate OUTPUT, @BackupSize = @backupSize OUTPUT, @Compressed = @compressed OUTPUT, @Encrypted = @encrypted OUTPUT;
 
 				UPDATE @appliedFiles 
@@ -398,21 +385,20 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 					[Encrypted] = @encrypted
 				WHERE 
 					[FileName] = @backupName;
-
+				
 				IF @statusDetail IS NOT NULL BEGIN
 					GOTO NextDatabase;
 				END;
 
-				-- Check for any new files if we're now 'out' of files to process: 
 				IF @currentLogFileID = (SELECT MAX(id) FROM @logFilesToRestore) BEGIN
+					--PRINT N'-- Checking for additional (newly created) T-LOG Backups created since operation start.';
 
                     SET @backupFilesList = NULL;
-					-- if there are any new log files, we'll get those... and they'll be added to the list of files to process (along with newer (higher) ids)... 
 					EXEC dbo.load_backup_files 
                         @DatabaseToRestore = @sourceDbName, 
                         @SourcePath = @sourcePath, 
                         @Mode = N'LOG', 
-						@LastAppliedFinishTime = @backupDate,
+						@LastAppliedFile = @backupName,
                         @Output = @backupFilesList OUTPUT;
 
 					WITH shredded AS ( 
@@ -534,10 +520,7 @@ NextDatabase:
 			FOR XML PATH('file'), ROOT('files')
 		);
 
-		IF @PrintOnly = 1
-			PRINT @appliedFileList; 
-		ELSE BEGIN
-			
+		IF @PrintOnly = 0 BEGIN
 			IF @logsWereApplied = 0
 				SET @operationSuccess = 0 
 			ELSE 
@@ -545,25 +528,32 @@ NextDatabase:
 
 			IF @noFilesApplied = 0 BEGIN
 				INSERT INTO dbo.[restore_log] ([execution_id], [operation_date], [operation_type], [database], [restored_as], [restore_start], [restore_end], [restore_succeeded], [restored_files], [recovery], [dropped], [error_details])
-				VALUES (@executionID, GETDATE(), 'APPLY-LOGS', @sourceDbName, @targetDbName, @restoreStart, GETDATE(), @operationSuccess, @appliedFileList, @RecoveryType, 'LEFT-ONLINE', NULLIF(@statusDetail, ''));
+				VALUES (@executionID, GETDATE(), 'APPLY-LOGS', @sourceDbName, @targetDbName, @restoreStart, GETDATE(), @operationSuccess, @appliedFileList, @RecoveryType, 'LEFT ONLINE', NULLIF(@statusDetail, ''));
 			END;
 		END;
 
 		-- Report on outcome for manual operations/interactions: 
 		IF @logsWereApplied = 1 BEGIN
-			SET @outputSummary = N'Applied the following Logs: ' + @crlf;
+			IF @PrintOnly = 0 BEGIN
+				SET @outputSummary = N'Applied the following Logs: ' + @crlf;
 
-			SELECT 
-				@outputSummary = @outputSummary + @tab + [FileName] + @crlf
-			FROM 
-				@appliedFiles 
-			ORDER BY 
-				ID;
+				SELECT 
+					@outputSummary = @outputSummary + @tab + [FileName] + @crlf
+				FROM 
+					@appliedFiles 
+				ORDER BY 
+					ID;
 
-			EXEC [dbo].[print_long_string] @outputSummary;
+				EXEC [dbo].[print_long_string] @outputSummary;
+			END;
 		END; ELSE BEGIN
 			IF NULLIF(@statusDetail,'') IS NULL
-				PRINT N'Success. No new/applicable logs found.';
+				IF @PrintOnly = 0 BEGIN
+					PRINT N'Success. No new/applicable logs found.';
+				  END;
+				ELSE BEGIN
+					PRINT N'No new/applicable logs found.';
+				END;
 		END;
 
 		FETCH NEXT FROM [restorer] INTO @sourceDbName, @targetDbName;

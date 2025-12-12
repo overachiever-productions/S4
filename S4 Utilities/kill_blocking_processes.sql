@@ -28,7 +28,7 @@
 	When set, any lead-blocker that has been blocking >= @BlockingCountThresholds where one (or more) of the blocked processes has been running (not
 	necessarily blocked) for > @KillThreshold, will be targeted for an automated KILL operation (unless the process in question is a SYSTEM process/spid). 
 
-	.PARAMTER @ExcludeBackupsAndRestores
+	.PARAMETER @ExcludeBackupsAndRestores
 	REQUIRED
 	DEFAULT = 1
 	When set to true (1), prevents attempts to KILL or ALERT against any lead-blockers that are either BACKUP or RESTORE operations. 
@@ -518,7 +518,7 @@ ORDER BY
 
 	UPDATE [l] 
 	SET 
-		[l].[action] = N'ALREAD_IN_KILL_STATE'
+		[l].[action] = N'ALREADY_IN_KILL_STATE'
 	FROM 
 		[#leads] [l] 
 		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]

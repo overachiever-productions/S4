@@ -426,7 +426,7 @@ GO
 --##INCLUDE: Common\Internal\generate_bounding_times.sql
 
 -----------------------------------
---##INCLUDE: Common\load_database_names.sql
+--##INCLUDE: Common\targeted_databases.sql
 
 -----------------------------------
 --##INCLUDE: Common\list_databases.sql
@@ -515,13 +515,13 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Tools\CodeLibrary\create_code_formatfile.sql
+--##INCLUDE: Code Library\create_code_formatfile.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\CodeLibrary\load_library_code.sql
+--##INCLUDE: Code Library\load_library_code.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\CodeLibrary\deploy_library_code.sql
+--##INCLUDE: Code Library\deploy_library_code.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Configuration:
@@ -663,10 +663,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Migration\script_sourcedb_migration_template.sql
+--##INCLUDE: S4 Migration\initialize_migration.sql
 
 -----------------------------------
---##INCLUDE: S4 Migration\script_targetdb_migration_template.sql
+--##INCLUDE: S4 Migration\finalize_migration.sql
 
 -----------------------------------
 --##INCLUDE: S4 Migration\disable_jobs.sql
@@ -738,7 +738,19 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\vlf_counts.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\compute_details.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\disabled_constraints.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\database_details.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Indexes\filtered_index_obstacles.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\script_indexes.sql
@@ -768,6 +780,9 @@ GO
 --##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_statistics_by_table.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Security\escalated_server_permissions.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_sysadmins_and_owners.sql
 
 -----------------------------------
@@ -775,6 +790,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_login_permissions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_details.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_consumers.sql
@@ -1076,6 +1094,9 @@ END;
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\is_primary_database.sql
+
+-----------------------------------
+--##INCLUDE: S4 High Availability\preferred_secondary.sql
 
 -----------------------------------
 --##INCLUDE: S4 High Availability\compare_jobs.sql
