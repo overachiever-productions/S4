@@ -515,13 +515,13 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Tools\CodeLibrary\create_code_formatfile.sql
+--##INCLUDE: Code Library\create_code_formatfile.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\CodeLibrary\load_library_code.sql
+--##INCLUDE: Code Library\load_library_code.sql
 
 -----------------------------------
---##INCLUDE: S4 Tools\CodeLibrary\deploy_library_code.sql
+--##INCLUDE: Code Library\deploy_library_code.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Configuration:
