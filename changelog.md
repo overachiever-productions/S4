@@ -2,6 +2,37 @@
 
 # Change Log
 
+## [12.8] - 2025-12-11 
+xxxx
+
+### Fixed
+- Full overhaul of logic within `dbo.apply_logs`; fixed issues with erroneous 'duplicates' reported and generally fixed overall processing so that this sproc is now quite solid/dependable. 
+
+### Added
+- Addition of `dbo.execute_per_database` - which does what it says and will eventually be used (backhauled) into gobs of existing diagnostics that can/will run per database. 
+- Major changes and underlying code/logic for `Code Library` 'framework' (allowing easy and simplified execution of known/trusted PowerShell functions via T-SQL) - including serialized code in the form of `dbo.code_library` (table).
+- New `APPLY_DIFF` functionality now supported for `dbo.restore_databases` - which allows a DIFF to be applied to a restored FULL which hasn't, yet (obviously), had a DIFF applied. (Primarily designed to simplify DR scenarios (allows RESTORE of FULLs as soon as they're downloaded to a DR/smoke-&-rubble box without having to 'wait' for DIFFs - which can be applied later; but works EQUALLY well for migrations). 
+- Along with the above, there's now a new `EXCLUDE_DIFF` directive option for `@Directives` within `dbo.restore_databases` (allowing option to SKIP/EXCLUDE diffs). 
+- Added `dbo.preferred_secondary` (UDF) for use in helping EXTERNAL applications know which secondary to pull backups from when backups are being used for non-prod needs. 
+- Addition of `dbo.targetted_databases` as new 'filter' sproc (will eventually replace `dbo.list_databases`). Importantly, this NEW sproc allows WILDCARDs in target DB names - i.e., patterns vs just-hard-coded names (while still allowing `{tokens}` as well). NOTE: This also replaces `dbo.load_databases` - in fact, ti's effectively just a rename + some tweaks. 
+- A smattering of new diagnostics sprocs including: 
+    - `dbo.vlf_counts`
+    - `dbo.compute_details`
+    - `dbo.querystore_details`
+    - `dbo.filtered_index_obstacles`
+    - `dbo.escalated_server_permissions`
+    - `dbo.disabled_constraints`
+- Addition of additional 'smells' identification within `dbo.database_details`.
+
+### Changed
+- Full overhaul of Per-DB Migrations 'Scripts' - into 2x sprocs (Initialize (on 'old' server) and Finalize (on new server)) to simplify migration of databases between servers. 
+- Removed the `@AllowReplace` parameter for `dbo.restore_databases`. The parameter is now called `@IfTargetExists` and allows values in the form of `{ THROW | APPLY_DIFF | REPLACE }` (where `THROW` is the DEFAULT behavior and `REPLACE` still 100% has to be correctly typed, and then 'replaces' just as `@AllowReplace` used to).
+- `dbo.backup_databases` is now better able to address 'contained' (AG) system databases.
+
+### Known Issues
+- Code Library functionality mostly works. Consider it to be an alpha or early beta. Needs documentation and some additional testing. Biggest issue is that granting permissions to SQL Server to interact with PLA roles requires a RESTART of SQL Server / SQL Server Agent (which needs some guidance), etc. 
+- `dbo.filtered_index_obstacles` needs some hefty documentation - consider it an alpha/eary-beta release. 
+
 ## [12.6] - 2025-09-30
 Incremental updates and mods; Initial Introduction of Code Library Framework.
 
