@@ -663,10 +663,10 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Migration\script_sourcedb_migration_template.sql
+--##INCLUDE: S4 Migration\initialize_migration.sql
 
 -----------------------------------
---##INCLUDE: S4 Migration\script_targetdb_migration_template.sql
+--##INCLUDE: S4 Migration\finalize_migration.sql
 
 -----------------------------------
 --##INCLUDE: S4 Migration\disable_jobs.sql
