@@ -162,3 +162,5 @@ END; ';
 	ORDER BY 
 		[row_id];
 
+	RETURN 0;
+GO
