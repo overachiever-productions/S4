@@ -24,6 +24,11 @@ AS
 		sys.[dm_os_wait_stats]
 	OPTION (RECOMPILE);
 
+	-- processor type: 
+	DECLARE @RegInfo table ([value] sysname, [data] sysname);
+	INSERT INTO @RegInfo ([value],[data]) 
+	EXEC sys.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'HARDWARE\DESCRIPTION\System\CentralProcessor\0', N'ProcessorNameString';
+
 	WITH core AS ( 
 		SELECT
 			[virtual_machine_type_desc] [host],
@@ -60,6 +65,7 @@ AS
 		[sockets],
 		[cpu_count],
 		[ht_ratio],
+		(SELECT [data] FROM @RegInfo) [processor_type],
 		[memory_model],
 		[memory_gb (c / t)],
 		[days_up],
@@ -82,6 +88,7 @@ AS
 				[sockets],
 				[cpu_count],
 				[ht_ratio],
+				[processor_type],
 				[memory_model],
 				[memory_gb (c / t)] [memory],
 				[days_up],
@@ -105,6 +112,7 @@ AS
 		[sockets],
 		[cpu_count],
 		[ht_ratio],
+		[processor_type],
 		[memory_model],
 		[memory_gb (c / t)],
 		[days_up],
