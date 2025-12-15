@@ -792,6 +792,9 @@ GO
 --##INCLUDE: S4 Diagnostics\Security\list_login_permissions.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Security\nonsafe_clr_assemblies.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_details.sql
 
 -----------------------------------
