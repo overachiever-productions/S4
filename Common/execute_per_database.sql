@@ -225,7 +225,8 @@ AS
 			FROM 
 				@errorDetails
 			FOR XML PATH(N'error'), ROOT(N'errors'), TYPE);
-		RETURN 0;
+		
+		RETURN -99;
 	END;
 
 	IF EXISTS (SELECT NULL FROM @errorDetails) BEGIN 
@@ -238,6 +239,8 @@ AS
 			@errorDetails
 		ORDER BY 
 			[row_id];
+
+		RETURN -98;
 	END;
 
 	RETURN 0;

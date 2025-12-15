@@ -2,8 +2,18 @@
 
 # Change Log
 
+## [12.9] - 2025-12-15
+Minor changes and diagnostic additions. 
+
+### Fixed 
+- Overhaul of error handling in 'consumers' of `dbo.execute_per_database`. Addressed issue where previous code was attempting, naively, to output @xml via `dbo.print_long_string` (which would never work) and associated hack/work-around. New approach is to levarge an Inline-Function to rehydrate + serialize THEN print details. 
+
+### Added 
+- Formal addition of `dbo.table_sizes` - which dumps table sizes per (targeted) database(s) and also lists potential problems as 'smells'. 
+- Addition of `dbo.nonsafe_clr_assemblies` - new diagnostic to list unsafe and external CLR assemblies. 
+
 ## [12.8] - 2025-12-11 
-xxxx
+Multiple additional diagnostics; migration and restoration logic improvements.
 
 ### Fixed
 - Full overhaul of logic within `dbo.apply_logs`; fixed issues with erroneous 'duplicates' reported and generally fixed overall processing so that this sproc is now quite solid/dependable. 

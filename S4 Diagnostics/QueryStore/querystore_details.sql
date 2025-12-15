@@ -97,6 +97,7 @@ ELSE BEGIN
 END; ';
 
 	DECLARE @Errors xml;
+	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
 		@Databases = @Databases,
 		@Priorities = @Priorities,
@@ -104,10 +105,8 @@ END; ';
 		@Errors = @Errors OUTPUT;	
 
 	IF @Errors IS NOT NULL BEGIN 
-		RAISERROR(N'Unexpected Errors during Execution. See (Printed) @Errors for additional details.', 16, 1);
-		--EXEC dbo.[print_long_string] @Errors;  -- https://overachieverllc.atlassian.net/browse/S4-728
-		PRINT CAST(@Errors AS nvarchar(MAX));
-		RETURN -3; 
+		SET @errorContext = N'Unexpected error extracting per-database Query Store details: ';
+		GOTO ErrorDetails;
 	END;
 
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
@@ -163,4 +162,23 @@ END; ';
 		[row_id];
 
 	RETURN 0;
+
+ErrorDetails:
+	DECLARE @errorDetails nvarchar(MAX) = N'';
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
+	SELECT 
+		@errorDetails = @errorDetails + N'DATABASE: ' + QUOTENAME([database_name]) 
+		+ @crlftab + N'ERROR_MESSAGE: ' + REPLACE([error_message], @crlf, @crlftab)
+		+ @crlftab + [statement] 
+		+ @crlf
+	FROM 
+		dbo.[execute_per_database_errors](@errors)
+	ORDER BY 
+		[error_id];
+
+	RAISERROR(@errorContext, 16, 1);
+	EXEC dbo.[print_long_string] @errorDetails;	
+	RETURN -100;
+
 GO

@@ -200,6 +200,7 @@ AS
 	DECLARE @sql nvarchar(MAX) = REPLACE(@template, N'{top}', @Top);
 
 	DECLARE @Errors xml;
+	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
 		@Databases = @Databases,
 		@Priorities = @Priorities,
@@ -207,9 +208,8 @@ AS
 		@Errors = @Errors OUTPUT; 
 
 	IF @Errors IS NOT NULL BEGIN 
-		RAISERROR(N'Unexpected error. See [Errors] XML for more details.', 16, 1);
-		SELECT @Errors;
-		RETURN -100;
+		SET @errorContext = N'Unexpected error while extracting table details (per database): ';
+		GOTO ErrorDetails;
 	END;
 
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN
@@ -262,6 +262,23 @@ AS
 	ORDER BY 
 		[row_id];
 
-
 	RETURN 0;
+
+ErrorDetails:
+	DECLARE @errorDetails nvarchar(MAX) = N'';
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
+	SELECT 
+		@errorDetails = @errorDetails + N'DATABASE: ' + QUOTENAME([database_name]) 
+		+ @crlftab + N'ERROR_MESSAGE: ' + REPLACE([error_message], @crlf, @crlftab)
+		+ @crlftab + [statement] 
+		+ @crlf
+	FROM 
+		dbo.[execute_per_database_errors](@errors)
+	ORDER BY 
+		[error_id];
+
+	RAISERROR(@errorContext, 16, 1);
+	EXEC dbo.[print_long_string] @errorDetails;	
+	RETURN -100;
 GO	

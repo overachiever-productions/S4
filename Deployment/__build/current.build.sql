@@ -471,6 +471,9 @@ GO
 --##INCLUDE: Common\execute_per_database.sql
 
 -----------------------------------
+--##INCLUDE: Common\execute_per_database_errors.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\establish_directory.sql
 
 -----------------------------------
@@ -750,6 +753,9 @@ GO
 --##INCLUDE: S4 Diagnostics\database_details.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\table_sizes.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\filtered_index_obstacles.sql
 
 -----------------------------------
@@ -790,6 +796,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\list_login_permissions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Security\nonsafe_clr_assemblies.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_details.sql
