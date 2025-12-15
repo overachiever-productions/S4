@@ -471,6 +471,9 @@ GO
 --##INCLUDE: Common\execute_per_database.sql
 
 -----------------------------------
+--##INCLUDE: Common\execute_per_database_errors.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\establish_directory.sql
 
 -----------------------------------
