@@ -416,7 +416,7 @@ AS
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
 	DECLARE @serializedFileList xml = NULL; 
-	DECLARE @backupName sysname;
+	DECLARE @backupName nvarchar(500);
 	DECLARE @fileListXml nvarchar(MAX);
 	DECLARE @stopAtLog int = NULL;
 	DECLARE @consistencyErrorsDetected bit = 0;
