@@ -110,7 +110,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(20)	= NULL,				-- Only evaluated if non-NULL. CAN be specified as 'vector' or ... as 'vector, vector' - in which case apply as FULL + SIMPLE recovery RPOs.
+	@RpoWarningThreshold			sysname			= NULL,				-- Only evaluated if non-NULL. CAN be specified as 'vector' or ... as 'vector, vector' - in which case apply as FULL + SIMPLE recovery RPOs.
 	@SkipSanityChecks				bit				= 0,				-- ONLY evaluated if @RpoChecks are NULL. Similar to RPO tests - if restore is > 26 hours old, sends alerts about possible config error. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
