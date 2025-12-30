@@ -1,5 +1,16 @@
 /*
 
+	TODO:
+		Pretty sure I REALLY need this IX (i've created it on DEV ... and it does help reduce the COST of pulling info from dbo.job_histories()
+
+					USE [msdb];
+					GO
+					CREATE NONCLUSTERED INDEX [COVIX_sysjobhistory_Details_By_JobId]
+					ON [dbo].[sysjobhistory] ([job_id])
+					INCLUDE ([step_id],[step_name],[run_date],[run_time],[run_duration], [run_status], [sql_message_id], [sql_severity], [message]);
+					GO
+
+
 
 */
 
@@ -72,6 +83,8 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Processing Logic:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	SELECT @job_id = job_id FROM msdb..[sysjobs] WHERE [name] = @job_name;
+	
 	SELECT 
 		[step_id],
 		[step_name]
@@ -84,26 +97,60 @@ AS
 	ORDER BY 
 		[step_id];
 
+	WITH translated AS ( 
+		SELECT 
+			[h].[job_name],
+			ISNULL(NULLIF([h].[step_id], 0), 1000) [step_id],
+			[h].[step_name],
+			CASE 
+				WHEN [h].[step_id] = 0 THEN DATEADD(SECOND, [h].[run_seconds], [h].[run_time]) 
+				ELSE [h].[run_time]
+			END [run_time],
+			[h].[weekday],
+			[h].[run_seconds],
+			[h].[run_status]
+		FROM 
+			dbo.[job_histories]() [h]
+		WHERE 
+			[h].[job_name] = @job_name
+			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- HMM... but what if ... @history_start < this? ... ditto: what if start/end are < this? 
+	), 
+	lagged AS ( 
+		SELECT
+			ROW_NUMBER() OVER (ORDER BY [run_time], [step_id]) [row_number],
+			[job_name],
+			CASE WHEN LAG([step_id], 1, 1000) OVER (ORDER BY [run_time], [step_id]) = 1000 THEN ROW_NUMBER() OVER (ORDER BY [run_time], [step_id]) ELSE NULL END [instance],
+			[step_id], 
+			[step_name],
+			[run_time], 
+			[weekday], 
+			[run_seconds], 
+			[run_status]
+		FROM 
+			[translated]
+	)
+
 	SELECT 
-		[h].[job_name],
-		[h].[step_id],
-		[h].[step_name],
-		[h].[run_time],
-		[h].[weekday],
-		[h].[run_seconds],
-		[h].[run_status]
-	INTO 
+		[row_number],
+		[job_name],
+		[instance],
+		[step_id],
+		[step_name],
+		[run_time],
+		[weekday],
+		[run_seconds],
+		[run_status] 
+	INTO
 		#jobHistory
 	FROM 
-		dbo.[job_histories]() [h]
-	WHERE 
-		[h].[job_name] = @job_name
-		AND [h].[run_time] >= @history_start
-		AND [h].[run_time] <= @history_end;
+		[lagged]
+	ORDER BY 
+		[row_number];
 
 	SELECT 
 		[job_name], 
 		[step_id], 
+		COUNT([job_name]) [count],
 		AVG([run_seconds]) [avg_seconds], 
 		MAX([run_seconds]) [max_seconds], 
 		MIN([run_seconds]) [min_seconds]
@@ -115,38 +162,8 @@ AS
 		[job_name], 
 		[step_id];
 
-	WITH translated AS ( 
-		SELECT 
-			CASE 
-				WHEN [step_id] = 0 THEN DATEADD(SECOND, [run_seconds], [run_time]) 
-				ELSE [run_time]
-			END [run_time],
-			ISNULL(NULLIF([step_id], 0), 1000) [step_id]
-		FROM 
-			[#jobHistory]
-	), 
-	lagged AS ( 
-		SELECT
-			ROW_NUMBER() OVER (ORDER BY [run_time], [step_id]) [row_number],
-			[step_id], 
-			--CASE WHEN LAG([step_id], 1, 1000) OVER (ORDER BY [run_time], [step_id]) = 1000 THEN N'NEW' ELSE N'' END [instance],
-			CASE WHEN LAG([step_id], 1, 1000) OVER (ORDER BY [run_time], [step_id]) = 1000 THEN ROW_NUMBER() OVER (ORDER BY [run_time], [step_id]) ELSE NULL END [instance],
-			[run_time]
-		FROM 
-			[translated]
-	), 
-	ordered AS ( 
-		SELECT 
-			[lagged].[row_number], 
-			[lagged].[step_id], 
-			[lagged].[run_time], 
-			[lagged].[instance]
-		FROM 
-			[lagged]
-	) 
 
-
-	SELECT * FROM [ordered];
+	
 
 
 
