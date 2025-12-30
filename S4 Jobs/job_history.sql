@@ -12,6 +12,11 @@
 
 
 
+	EXAMPLE: 
+
+			EXEC [admindb]..job_history NULL, N'Regular History Cleanup';
+
+
 */
 
 USE [admindb];
@@ -97,6 +102,7 @@ AS
 	ORDER BY 
 		[step_id];
 
+	-- BUG: https://overachieverllc.atlassian.net/browse/S4-762
 	WITH translated AS ( 
 		SELECT 
 			[h].[job_name],
@@ -113,7 +119,7 @@ AS
 			dbo.[job_histories]() [h]
 		WHERE 
 			[h].[job_name] = @job_name
-			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- HMM... but what if ... @history_start < this? ... ditto: what if start/end are < this? 
+			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- MKC: BUG -> https://overachieverllc.atlassian.net/browse/S4-761
 	), 
 	lagged AS ( 
 		SELECT
