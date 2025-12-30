@@ -162,7 +162,38 @@ AS
 		[job_name], 
 		[step_id];
 
+	IF @latest_only = 1 BEGIN
+		DELETE FROM [#jobHistory] WHERE [row_number] < (SELECT MAX([instance]) FROM [#jobHistory]);
+	  END;
+	ELSE BEGIN
+		DELETE FROM [#jobHistory] 
+		WHERE 
+			[row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [run_time] < @history_start)
+			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end);
+	END;
 
+	SELECT 
+		CASE WHEN [h].[instance] IS NOT NULL THEN [h].[job_name] ELSE N'' END [job_name],
+		ISNULL(NULLIF(CAST([h].[step_id] AS sysname), N'1000'), N'--') [step_id],
+		[h].[step_name],
+
+		CASE 
+			WHEN [s].[step_id] IS NULL AND [s].[step_id] <> 0 THEN N'SKIPPED'
+			ELSE CASE 
+				WHEN [h].[run_status] = 0 THEN 'FAILURE'  -- message and/or error_id/status? 
+				WHEN [h].[run_status] = 1 THEN N'SUCCESS'
+				WHEN [h].[run_status] = 3 THEN N'CANCELLED'
+				WHEN [h].[run_status] = 2 THEN N'RETRYING'
+				WHEN [h].[run_status] = 4 THEN N'RUNNING'
+			END
+		END [outcome],
+		[h].[run_time],
+		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
+	FROM 
+		[#jobHistory] [h]
+		LEFT OUTER JOIN [#jobSteps] [s] ON [h].[step_id] = [s].[step_id]
+	ORDER BY 
+		[row_number];
 	
 
 
