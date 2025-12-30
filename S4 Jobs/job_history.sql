@@ -6,21 +6,21 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[job_details]','P') IS NOT NULL
-	DROP PROC dbo.[job_details];
+IF OBJECT_ID('dbo.[job_history]','P') IS NOT NULL
+	DROP PROC dbo.[job_history];
 GO
 
-CREATE PROC dbo.[job_details]
+CREATE PROC dbo.[job_history]
 	@job_id						uniqueidentifier, 
 	@job_name					sysname, 
-	@mode						sysname					= N'LAST'
+	@mode						sysname					= N'LAST'   -- @span
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Validation:
+	-- Validation + Input Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @job_name = NULLIF(@job_name, N'');
 	SET @mode = ISNULL(NULLIF(@mode, N''), N'LAST');
@@ -30,13 +30,13 @@ AS
 		RETURN -1;
 	END;
 
-	IF @job_name IS NOT NULL BEGIN
-		SELECT @job_id = job_id FROM msdb..[sysjobs] WHERE [name] = @job_name
+	IF @job_id IS NOT NULL BEGIN 
+		SELECT @job_name = [name] FROM msdb..[sysjobs] WHERE [job_id] = @job_id;
 	END;
 
-	SELECT @job_id = job_id FROM [msdb]..[sysjobs] WHERE [job_id] = @job_id;
+	SELECT @job_name = [name] FROM [msdb]..[sysjobs] WHERE [name] = @job_name
 
-	IF @job_id IS NULL BEGIN 
+	IF @job_name IS NULL BEGIN 
 		DECLARE @detailString sysname;
 		IF @job_name IS NOT NULL 
 			SET @detailString = N'@job_name = N''' + @job_name + N'''.';
@@ -50,7 +50,6 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Processing Logic:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-
 	SELECT 
 		[step_id],
 		[step_name]
@@ -64,20 +63,17 @@ AS
 		[step_id];
 
 	SELECT 
-		[job_name],
-		[step_id],
-		[step_name],
-		[run_time],
-		[weekday],
-		[run_seconds],
-		[run_status],
-		[sql_message_id],
-		[sql_severity],
-		[message]
+		[h].[job_name],
+		[h].[step_id],
+		[h].[step_name],
+		[h].[run_time],
+		[h].[weekday],
+		[h].[run_seconds],
+		[h].[run_status]
 	FROM 
-		dbo.[job_histories]() 
+		dbo.[job_histories]() [h]
 	WHERE 
-		job_name = @job_name;
+		[h].[job_name] = @job_name;
 
 
 
