@@ -69,9 +69,7 @@ AS
 		SELECT @job_name = [name] FROM msdb..[sysjobs] WHERE [job_id] = @job_id;
 	END;
 
-	SELECT @job_name = [name] FROM [msdb]..[sysjobs] WHERE [name] = @job_name
-
-	IF @job_name IS NULL BEGIN 
+	IF NOT EXISTS(SELECT NULL FROM msdb..[sysjobs] WHERE [name] = @job_name) BEGIN 
 		DECLARE @detailString sysname;
 		IF @job_name IS NOT NULL 
 			SET @detailString = N'@job_name = N''' + @job_name + N'''.';
