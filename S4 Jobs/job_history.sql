@@ -1,5 +1,22 @@
 /*
 
+	NOTE:
+		This code might, superficially, seem fairly simple. 
+		It's actually not. 
+			msdb..jobhistory does NOT account for: 
+				- instances of job execution. 
+				- skipped steps - which 1000000% can/will happen based upon on-success/on-failure directives
+					very much an edge case, but ... still. 
+				- jobs still RUNNING at the time of execution (of this sproc/query)
+					because the step_id for a job (vs it's individual steps) is ... 0
+						and may NOT be present at execution time. 
+		The logic in this sproc leverages some semi-complex logic to address ALL of the above. 
+				In order to create an ACCURATE 'picture' of all selected and/or the CURRENTLY-executing outcome (progress) of an executing job. 
+
+
+
+
+
 	TODO:
 		Pretty sure I REALLY need this IX (i've created it on DEV ... and it does help reduce the COST of pulling info from dbo.job_histories()
 
@@ -102,16 +119,17 @@ AS
 	ORDER BY 
 		[step_id];
 
+	-- Job instance may NOT be complete ... 
+	INSERT INTO [#jobSteps] ([step_id], [step_name])
+	VALUES (0, N'(Job outcome)'); 
+
 	-- BUG: https://overachieverllc.atlassian.net/browse/S4-762
 	WITH translated AS ( 
 		SELECT 
 			[h].[job_name],
-			ISNULL(NULLIF([h].[step_id], 0), 1000) [step_id],
+			[h].[step_id],
 			[h].[step_name],
-			CASE 
-				WHEN [h].[step_id] = 0 THEN DATEADD(SECOND, [h].[run_seconds], [h].[run_time]) 
-				ELSE [h].[run_time]
-			END [run_time],
+			[h].[run_time],
 			[h].[weekday],
 			[h].[run_seconds],
 			[h].[run_status]
@@ -120,12 +138,14 @@ AS
 		WHERE 
 			[h].[job_name] = @job_name
 			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- MKC: BUG -> https://overachieverllc.atlassian.net/browse/S4-761
+
+--AND NOT ([h].[step_id] = 0 AND [h].[run_time] = '2025-12-28 09:45:00.000')
 	), 
 	lagged AS ( 
 		SELECT
 			ROW_NUMBER() OVER (ORDER BY [run_time], [step_id]) [row_number],
 			[job_name],
-			CASE WHEN LAG([step_id], 1, 1000) OVER (ORDER BY [run_time], [step_id]) = 1000 THEN ROW_NUMBER() OVER (ORDER BY [run_time], [step_id]) ELSE NULL END [instance],
+			CASE WHEN LAG([step_id], 1, 1000) OVER (ORDER BY [run_time], [step_id]) > [step_id] THEN ROW_NUMBER() OVER (ORDER BY [translated].[run_time], [translated].[step_id]) ELSE NULL END [instance],
 			[step_id], 
 			[step_name],
 			[run_time], 
@@ -139,6 +159,7 @@ AS
 	SELECT 
 		[row_number],
 		[job_name],
+		[instance] [lead],
 		[instance],
 		[step_id],
 		[step_name],
@@ -178,14 +199,57 @@ AS
 			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end);
 	END;
 
-	SELECT 
-		CASE WHEN [h].[instance] IS NOT NULL THEN [h].[job_name] ELSE N'' END [job_name],
-		ISNULL(NULLIF(CAST([h].[step_id] AS sysname), N'1000'), N'--') [step_id],
-		[h].[step_name],
+	WITH instance_starts AS ( 
+		SELECT 
+			[row_number],
+			[job_name],
+			[instance],
+			0 [step_id]
+		FROM 
+			[#jobHistory] 
+		WHERE 
+			[instance] IS NOT NULL
+	) 
 
+	SELECT 
+		[i].[instance],
+		[x].[step_id], 
+		[x].[step_name]
+	INTO 
+		#frame
+	FROM 
+		[instance_starts] [i]
+		CROSS APPLY (SELECT [step_id], [step_name] FROM [#jobSteps]) x
+	ORDER BY 
+		[i].[instance], x.[step_id];
+
+	WITH correlated AS ( 
+		SELECT 
+			[h].[row_number],
+			CASE WHEN [h].[instance] IS NOT NULL THEN [h].[instance] ELSE (SELECT MAX([x].[instance]) FROM [#jobHistory] [x] WHERE [x].[row_number] <= [h].[row_number]) END [instance]
+		FROM 
+			[#jobHistory] [h]
+	) 
+
+	UPDATE [x]
+	SET 
+		[x].[instance] = [c].[instance]
+	FROM 
+		[correlated] [c] 
+		INNER JOIN #jobHistory [x] ON [c].[row_number] = [x].[row_number]
+	WHERE 
+		x.[instance] IS NULL;
+
+--DELETE FROM [#jobHistory] WHERE [instance] = 43 AND [step_id] IN (3,4,6);
+
+	SELECT 
+		--[x].[instance],
+		CASE WHEN [x].[step_id] = 0 THEN @job_name ELSE N'' END [job_name],
+		[x].[step_id], 
+		[x].[step_name],
 		CASE 
-			WHEN [s].[step_id] IS NULL AND [s].[step_id] <> 0 THEN N'SKIPPED'
-			ELSE CASE 
+			WHEN [h].[step_id] IS NULL THEN CASE WHEN [x].[step_id] = 0 THEN N'RUNNING' ELSE N'SKIPPED' END 
+			ELSE CASE
 				WHEN [h].[run_status] = 0 THEN 'FAILURE'  -- message and/or error_id/status? 
 				WHEN [h].[run_status] = 1 THEN N'SUCCESS'
 				WHEN [h].[run_status] = 3 THEN N'CANCELLED'
@@ -196,13 +260,10 @@ AS
 		[h].[run_time],
 		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
 	FROM 
-		[#jobHistory] [h]
-		LEFT OUTER JOIN [#jobSteps] [s] ON [h].[step_id] = [s].[step_id]
+		[#frame] [x]
+		LEFT OUTER JOIN [#jobHistory] [h] ON [x].[instance] = [h].[instance] AND [x].[step_id] = [h].[step_id]
 	ORDER BY 
-		[row_number];
-	
+		[x].[instance], [x].[step_id];
 
-
-
-	
-	
+	RETURN 0;
+GO
