@@ -44,11 +44,12 @@ IF OBJECT_ID('dbo.[job_history]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[job_history]
-	@job_id						uniqueidentifier, 
-	@job_name					sysname, 
+	@job_id						uniqueidentifier		= NULL,	
+	@job_name					sysname					= NULL, 
 	@latest_only				bit						= 1,
 	@history_start				datetime				= NULL, 
-	@history_end				datetime				= NULL
+	@history_end				datetime				= NULL, 
+	@serialized_output			xml						= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -239,6 +240,33 @@ AS
 		x.[instance] IS NULL;
 
 --DELETE FROM [#jobHistory] WHERE [instance] = 43 AND [step_id] IN (3,4,6);
+
+	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
+		SELECT @serialized_output = (SELECT 
+			CASE WHEN [x].[step_id] = 0 THEN @job_name ELSE N'' END [job_name],
+			[x].[step_id], 
+			[x].[step_name],
+			CASE 
+				WHEN [h].[step_id] IS NULL THEN CASE WHEN [x].[step_id] = 0 THEN N'RUNNING' ELSE N'SKIPPED' END 
+				ELSE CASE
+					WHEN [h].[run_status] = 0 THEN 'FAILURE'  -- message and/or error_id/status? 
+					WHEN [h].[run_status] = 1 THEN N'SUCCESS'
+					WHEN [h].[run_status] = 3 THEN N'CANCELLED'
+					WHEN [h].[run_status] = 2 THEN N'RETRYING'
+					WHEN [h].[run_status] = 4 THEN N'RUNNING'
+				END
+			END [outcome],
+			[h].[run_time],
+			dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
+		FROM 
+			[#frame] [x]
+			LEFT OUTER JOIN [#jobHistory] [h] ON [x].[instance] = [h].[instance] AND [x].[step_id] = [h].[step_id]
+		ORDER BY 
+			[x].[instance], [x].[step_id]
+		FOR XML PATH(N'job_step'), ROOT(N'job_instance'), TYPE);		
+		
+		RETURN 0;	
+	END;	
 
 	SELECT 
 		--[x].[instance],
