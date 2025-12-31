@@ -197,7 +197,7 @@ AS
 			[row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [run_time] < @history_start)
 			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end);
 	END;
-
+	
 	WITH instance_starts AS ( 
 		SELECT 
 			[row_number],
@@ -241,6 +241,9 @@ AS
 
 --DELETE FROM [#jobHistory] WHERE [instance] = 43 AND [step_id] IN (3,4,6);
 
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Project or RETURN:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		SELECT @serialized_output = (SELECT 
 			CASE WHEN [x].[step_id] = 0 THEN @job_name ELSE N'' END [job_name],

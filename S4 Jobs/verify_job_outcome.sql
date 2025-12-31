@@ -27,8 +27,8 @@ AS
 	-- Validation + Input Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @job_name = NULLIF(@job_name, N'');
-	SET @alert_on_step_failures = NULLIF(@alert_on_step_failures, N'');
-	SET @alert_on_skipped_steps = NULLIF(@alert_on_skipped_steps, N'');
+	SET @alert_on_step_failures = UPPER(NULLIF(@alert_on_step_failures, N''));
+	SET @alert_on_skipped_steps = UPPER(NULLIF(@alert_on_skipped_steps, N''));
 
 	IF @alert_on_step_failures = NULL AND @alert_on_skipped_steps = NULL BEGIN
 		-- nothing to verify/check
@@ -62,14 +62,89 @@ AS
 		RETURN -20;
 	END;
 
-	-- TODO: 
-	--	translate ... NONE, ANY, and N+, as well as M, N, O ... options into something actionable
-	--		for both failed and skipped. 
+	SELECT @job_name = [name] FROM msdb..sysjobs WHERE [job_id] = @job_id;
 
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Processing Logic:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @serializedHistory xml;
 	EXEC dbo.[job_history]
 		@job_id = @job_id,
-		@job_name = NULL,
-		@latest_only = 1;
+		@latest_only = 1, 
+		@serialized_output = @serializedHistory OUTPUT;
+
+	-- NOTE: Skipping ROOT node and going direct to children.
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value(N'(job_name)[1]', N'sysname') [job_name],
+			[data].[row].value(N'(step_id)[1]', N'int') [step_id],
+			[data].[row].value(N'(step_name)[1]', N'sysname') [step_name],
+			[data].[row].value(N'(outcome)[1]', N'sysname') [outcome],
+			[data].[row].value(N'(duration)[1]', N'sysname') [duration]
+		FROM 
+			@serializedHistory.nodes(N'//job_step') [data]([row])
+	) 
+
+	SELECT 
+		[job_name],
+		[step_id],
+		[step_name],
+		[outcome],
+		[duration] 
+	INTO 
+		#jobHistory
+	FROM 
+		[shredded];
+
+UPDATE [#jobHistory] SET [outcome] = N'FAILURE' WHERE [step_id] = 3;
+UPDATE [#jobHistory] SET [outcome] = N'RUNNING' WHERE [step_id] = 0;
+
+	DECLARE @alertsNeeded bit = 0;
+	IF @alert_on_step_failures LIKE N'%ANY%' BEGIN
+		IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED'))
+			SET @alertsNeeded = 1;
+	END;
+
+	IF @alert_on_step_failures LIKE N'%+%' BEGIN
+		DECLARE @minStep int = CAST(REPLACE(REPLACE(@alert_on_step_failures, N'+', N''), N' ', N'') AS int);
+
+		IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED') AND step_id >= @minStep)
+			SET @alertsNeeded = 1;
+	END;
+
+	IF @alert_on_step_failures LIKE N'%,%' BEGIN
+		DECLARE @jobSteps table (
+			[row_id] int IDENTITY(1,1) NOT NULL,
+			[failure_step] int NOT NULL
+		); 
+
+		INSERT INTO @jobSteps ([failure_step])
+		SELECT [result] FROM dbo.[split_string](@alert_on_step_failures, N',', 1) ORDER BY [row_id];
+
+		IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED') AND [step_id] IN (SELECT failure_step FROM @jobSteps))
+			SET @alertsNeeded = 1;
+	END;
+
+	IF @alertsNeeded = 1 BEGIN
+		DECLARE @historyString nvarchar(MAX) = N'';
+
+		SELECT
+			@historyString = @historyString + 
+			CASE WHEN [job_name] = N'' THEN REPLICATE(N' ', LEN(@job_name)) ELSE [job_name] END + N'  ' + 
+			RIGHT(N'   ' + CAST([step_id] AS sysname), 3) + N' - ' +
+			LEFT([step_name] + REPLICATE(N' ', 40), 30) + N' - ' +
+			[outcome] + N' - ' +
+			CAST([duration] AS sysname) + 
+			NCHAR(13) + NCHAR(10)
+		FROM
+			[#jobHistory] 
+		ORDER BY 
+			[step_id];
+	
+
+		PRINT @historyString;
+
+	END;
 
 
 	RETURN 0;
