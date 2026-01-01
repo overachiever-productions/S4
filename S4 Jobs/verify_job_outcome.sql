@@ -62,6 +62,12 @@ AS
 		RETURN -20;
 	END;
 
+	-- SLIGHT hacks to avoid SKIPPING/non-processing of N'x' vs N'x, y' inputs/values. 
+	IF @alert_on_step_failures IS NOT NULL AND @alert_on_step_failures NOT LIKE N'%+%' AND @alert_on_step_failures NOT LIKE N'%ANY%' AND @alert_on_step_failures NOT LIKE N'%,%'
+		SET @alert_on_step_failures = @alert_on_step_failures + N','; 
+	IF @alert_on_skipped_steps IS NOT NULL AND @alert_on_skipped_steps NOT LIKE N'%+%' AND @alert_on_skipped_steps NOT LIKE N'%ANY%' AND @alert_on_skipped_steps NOT LIKE N'%,%'
+		SET @alert_on_skipped_steps = @alert_on_skipped_steps + N','; 
+
 	SELECT @job_name = [name] FROM msdb..sysjobs WHERE [job_id] = @job_id;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -99,34 +105,68 @@ AS
 UPDATE [#jobHistory] SET [outcome] = N'FAILURE' WHERE [step_id] = 3;
 UPDATE [#jobHistory] SET [outcome] = N'RUNNING' WHERE [step_id] = 0;
 
-	DECLARE @alertsNeeded bit = 0;
-	IF @alert_on_step_failures LIKE N'%ANY%' BEGIN
-		IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED'))
-			SET @alertsNeeded = 1;
+	DECLARE @failureAlertsNeeded bit = 0;
+	DECLARE @skipAlertsNeeded bit = 0;
+	DECLARE @minStep int;
+	IF @alert_on_step_failures IS NOT NULL AND EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', 'CANCELLED')) BEGIN
+	
+		IF @alert_on_step_failures LIKE N'%ANY%'
+			SET @failureAlertsNeeded = 1;
+
+		IF @alert_on_step_failures LIKE N'%+%' BEGIN
+			SET @minStep = CAST(REPLACE(REPLACE(@alert_on_step_failures, N'+', N''), N' ', N'') AS int);
+
+			IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED') AND step_id >= @minStep)
+				SET @failureAlertsNeeded = 1;
+		END;
+
+		IF @alert_on_step_failures LIKE N'%,%' BEGIN
+			DECLARE @jobSteps table (
+				[row_id] int IDENTITY(1,1) NOT NULL,
+				[failure_step] int NOT NULL
+			); 
+
+			INSERT INTO @jobSteps ([failure_step])
+			SELECT [result] FROM dbo.[split_string](@alert_on_step_failures, N',', 1) ORDER BY [row_id];
+
+			IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED') AND [step_id] IN (SELECT failure_step FROM @jobSteps))
+				SET @failureAlertsNeeded = 1;
+		END;
 	END;
 
-	IF @alert_on_step_failures LIKE N'%+%' BEGIN
-		DECLARE @minStep int = CAST(REPLACE(REPLACE(@alert_on_step_failures, N'+', N''), N' ', N'') AS int);
+	IF @alert_on_skipped_steps IS NOT NULL AND EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] = N'SKIPPED') BEGIN
+		IF @alert_on_skipped_steps LIKE N'%ANY%'
+			SET @skipAlertsNeeded = 1;
+		
+		IF @alert_on_skipped_steps LIKE N'%+%' BEGIN
+			SET @minStep = CAST(REPLACE(REPLACE(@alert_on_step_failures, N'+', N''), N' ', N'') AS int);
 
-		IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED') AND step_id >= @minStep)
-			SET @alertsNeeded = 1;
+			IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] = N'SKIPPED' AND step_id >= @minStep)
+				SET @skipAlertsNeeded = 1;
+		END;
+
+		IF @alert_on_skipped_steps LIKE N'%,%' BEGIN
+			DELETE FROM @jobSteps; 
+			
+			INSERT INTO @jobSteps ([failure_step])
+			SELECT [result] FROM dbo.[split_string](@alert_on_skipped_steps, N',', 1) ORDER BY [row_id];
+
+			IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] = N'SKIPPED' AND [step_id] IN (SELECT failure_step FROM @jobSteps))
+				SET @skipAlertsNeeded = 1;
+		END;
 	END;
 
-	IF @alert_on_step_failures LIKE N'%,%' BEGIN
-		DECLARE @jobSteps table (
-			[row_id] int IDENTITY(1,1) NOT NULL,
-			[failure_step] int NOT NULL
-		); 
-
-		INSERT INTO @jobSteps ([failure_step])
-		SELECT [result] FROM dbo.[split_string](@alert_on_step_failures, N',', 1) ORDER BY [row_id];
-
-		IF EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED') AND [step_id] IN (SELECT failure_step FROM @jobSteps))
-			SET @alertsNeeded = 1;
-	END;
-
-	IF @alertsNeeded = 1 BEGIN
+	IF @failureAlertsNeeded = 1 OR @skipAlertsNeeded = 1 BEGIN
 		DECLARE @historyString nvarchar(MAX) = N'';
+
+
+-- PICKUP / NEXT: 
+		-- need to report on what/which problems we ran into: failures? skips, or both? 
+		--		and... don't need any details-ish - other than to say: "trigger was for x (or y) and we hit ... z" 
+		--		cuz the SUMMARY itself will show what the problem was. 
+
+-- then... once the above is done... 
+--		tackle ... 'variance'. 
 
 		SELECT
 			@historyString = @historyString + 
@@ -141,11 +181,9 @@ UPDATE [#jobHistory] SET [outcome] = N'RUNNING' WHERE [step_id] = 0;
 		ORDER BY 
 			[step_id];
 	
-
 		PRINT @historyString;
 
 	END;
-
 
 	RETURN 0;
 GO
