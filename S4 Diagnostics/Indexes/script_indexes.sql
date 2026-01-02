@@ -382,7 +382,7 @@ AS
 				[#projected_indexes] 
 			ORDER BY 
 				[row_id]
-			FOR XML PATH(N'object'), ROOT(N'objects'), TYPE
+			FOR XML PATH(N'object'), ROOT(N'objects'), TYPE, ELEMENTS XSINIL
 		);
 
 		RETURN 0;
@@ -391,7 +391,7 @@ AS
 	-- otherwise: 
 	DECLARE @output nvarchar(MAX) = N'';
 	SELECT 
-		@output = @output + [definition] 
+		@output = @output + ISNULL([definition], N'[ERROR: definition is NULL]' + NCHAR(13) + NCHAR(10) + NCHAR(13) + NCHAR(10)) 
 	FROM 
 		[#projected_indexes] 
 	ORDER BY 
