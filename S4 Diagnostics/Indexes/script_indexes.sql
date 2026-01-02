@@ -355,9 +355,8 @@ AS
 			+ CASE WHEN [i].[included_columns] IS NOT NULL THEN @crlf + N'INCLUDE (' + LTRIM([i].[included_columns]) + N')' ELSE N'' END
 			+ CASE WHEN [i].[filter_definition] IS NOT NULL THEN @crlf + N'WHERE ' + [i].[filter_definition] + N' ' ELSE N'' END
 			+ CASE WHEN NULLIF(ISNULL([o].[options], N''), N'') IS NULL THEN N'' ELSE @crlf + N'WITH (' + LTRIM(LEFT([o].[options], LEN([o].[options]) - 1)) + N')' END
-			+ @crlf + CASE WHEN [i].[partition_scheme_name] IS NULL THEN N'ON ' + QUOTENAME([i].[dataspace_name]) + N'' ELSE N'<partition_scheme_column_here>' END
+			+ @crlf + CASE WHEN [i].[partition_scheme_name] IS NULL THEN CASE WHEN [i].[dataspace_name] IS NULL THEN N'WITH STATISTICS_ONLY = -1' ELSE N'ON ' + QUOTENAME([i].[dataspace_name]) END ELSE N'<partition_scheme_column_here>' END			
 			+ N';' + @crlf 
-			
 		END + @crlf [definition]
 	INTO 
 		#projected_indexes
