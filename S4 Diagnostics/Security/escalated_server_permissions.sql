@@ -65,7 +65,7 @@ AS
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		SELECT @serialized_output = ( 
 			SELECT 
-				[principal],
+				[principal] [principal_name],
 				[type],
 				[is_disabled],
 				[permissions_state],
@@ -74,7 +74,7 @@ AS
 				[#escalatedPerms]
 			ORDER BY 
 				[principal]
-			FOR XML PATH(N''), ROOT(N'databases'), TYPE
+			FOR XML PATH(N'principal'), ROOT(N'databases'), TYPE
 		);		
 		
 		RETURN 0;	
