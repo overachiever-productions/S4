@@ -13,6 +13,7 @@ GO
 CREATE PROC dbo.[nonsafe_clr_assemblies]
 	@databases						nvarchar(MAX)		= N'{USER}', 
 	@priorities						nvarchar(MAX)		= NULL, 
+	@exclude_ssis_assemblies		bit					= 1,
 	@serialized_output				xml					= N'<default/>'	    OUTPUT	
 AS
     SET NOCOUNT ON; 
@@ -48,6 +49,12 @@ AS
 	DELETE FROM [#assemblies]
 	WHERE 
 		[clr_name] LIKE N'microsoft.sqlserver.types, version=%.0.0.0, culture=neutral, publickeytoken=%, processorarchitecture=msil' AND [name] = N'Microsoft.SqlServer.Types';
+
+	IF @exclude_ssis_assemblies = 1 BEGIN
+		DELETE FROM [#assemblies] 
+		WHERE [clr_name] LIKE N'microsoft.sqlserver.integrationservices.server, version=%' AND [name] = N'ISSERVER'
+
+	END;
 
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		
