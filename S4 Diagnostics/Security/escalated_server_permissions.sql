@@ -18,6 +18,7 @@ IF OBJECT_ID('dbo.[escalated_server_permissions]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[escalated_server_permissions]
+	@exclude_deny_state				bit			= 0,				-- these are documented/included in output by DEFAULT.
 	@serialized_output				xml			= N'<default/>'	    OUTPUT	
 AS
     SET NOCOUNT ON; 
@@ -61,11 +62,15 @@ AS
 			AND [p].[name] NOT IN (SELECT [result] FROM dbo.split_string([x].[allowed_principals], N',', 1))
 	WHERE 
 		x.[permission] IS NOT NULL;
+
+	IF @exclude_deny_state = 1 BEGIN
+		DELETE FROM [#escalatedPerms] WHERE UPPER([permissions_state]) = N'DENY';
+	END;
 	
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		SELECT @serialized_output = ( 
 			SELECT 
-				[principal],
+				[principal] [principal_name],
 				[type],
 				[is_disabled],
 				[permissions_state],
@@ -74,12 +79,11 @@ AS
 				[#escalatedPerms]
 			ORDER BY 
 				[principal]
-			FOR XML PATH(N''), ROOT(N'databases'), TYPE
+			FOR XML PATH(N'principal'), ROOT(N'databases'), TYPE
 		);		
 		
 		RETURN 0;	
 	END;
-
 
 	SELECT 
 		[principal],
