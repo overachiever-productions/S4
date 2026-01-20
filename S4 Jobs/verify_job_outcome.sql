@@ -56,6 +56,10 @@ AS
 		END;
 	END;
 
+	IF @job_id IS NULL AND @job_name IS NOT NULL BEGIN 
+		SELECT @job_id = [job_id] FROM msdb..[sysjobs] WHERE [name] = @job_name;
+	END;
+
 	IF NOT EXISTS (SELECT NULL FROM msdb..[sysjobs] WHERE job_id = @job_id) BEGIN
 		DECLARE @jobString sysname = CAST(@job_id AS sysname);
 		RAISERROR(N'Parameter @job_id with value: [%s] does NOT match a SQL Server Agent Job.', 16, 1, @jobString);
