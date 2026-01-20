@@ -13,11 +13,11 @@ GO
 CREATE PROC dbo.[verify_job_outcome]
 	@job_id							uniqueidentifier		= NULL, 
 	@job_name						sysname					= NULL, 
-	@alert_on_step_failures			sysname					= NULL,		-- { NONE | ANY (same as all) | N+ | N, O, Q }
-	@alert_on_skipped_steps			sysname					= NULL, 
+	@alert_on_step_failures			sysname					= N'{ANY}',		-- { NONE | ANY (same as all) | N+ | N, O, Q }
+	@alert_on_skipped_steps			sysname					= N'{NONE}', 
 	@operator						sysname					= NULL, 
 	@subject						sysname					= NULL, 
-	@print_only						bit						= 0
+	@print_only						bit						= 0				-- Does NOT send email alerts, prints them instead.
 AS
     SET NOCOUNT ON; 
 
@@ -27,8 +27,8 @@ AS
 	-- Validation + Input Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @job_name = NULLIF(@job_name, N'');
-	SET @alert_on_step_failures = UPPER(NULLIF(@alert_on_step_failures, N''));
-	SET @alert_on_skipped_steps = UPPER(NULLIF(@alert_on_skipped_steps, N''));
+	SET @alert_on_step_failures = UPPER(NULLIF(@alert_on_step_failures, N'{ANY}'));
+	SET @alert_on_skipped_steps = UPPER(NULLIF(@alert_on_skipped_steps, N'{NONE}'));
 
 	IF @alert_on_step_failures = NULL AND @alert_on_skipped_steps = NULL BEGIN
 		-- nothing to verify/check
@@ -77,12 +77,13 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Processing Logic:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	
 	DECLARE @serializedHistory xml;
 	EXEC dbo.[job_history]
 		@job_id = @job_id,
 		@latest_only = 1, 
 		@serialized_output = @serializedHistory OUTPUT;
-
+	
 	-- NOTE: Skipping ROOT node and going direct to children.
 	WITH shredded AS ( 
 		SELECT 
@@ -106,6 +107,7 @@ AS
 	FROM 
 		[shredded];
 
+-- Really crappy testing seams:
 UPDATE [#jobHistory] SET [outcome] = N'FAILURE' WHERE [step_id] = 3;
 UPDATE [#jobHistory] SET [outcome] = N'RUNNING' WHERE [step_id] = 0;
 

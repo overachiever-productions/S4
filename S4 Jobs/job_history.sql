@@ -137,8 +137,6 @@ AS
 		WHERE 
 			[h].[job_name] = @job_name
 			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- MKC: BUG -> https://overachieverllc.atlassian.net/browse/S4-761
-
---AND NOT ([h].[step_id] = 0 AND [h].[run_time] = '2025-12-28 09:45:00.000')
 	), 
 	lagged AS ( 
 		SELECT
@@ -239,8 +237,6 @@ AS
 		INNER JOIN #jobHistory [x] ON [c].[row_number] = [x].[row_number]
 	WHERE 
 		x.[instance] IS NULL;
-
---DELETE FROM [#jobHistory] WHERE [instance] = 43 AND [step_id] IN (3,4,6);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Project or RETURN:
