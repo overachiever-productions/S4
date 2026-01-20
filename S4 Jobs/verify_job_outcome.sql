@@ -27,11 +27,10 @@ AS
 	-- Validation + Input Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @job_name = NULLIF(@job_name, N'');
-	SET @alert_on_step_failures = UPPER(NULLIF(@alert_on_step_failures, N'{ANY}'));
-	SET @alert_on_skipped_steps = UPPER(NULLIF(@alert_on_skipped_steps, N'{NONE}'));
+	SET @alert_on_step_failures = UPPER(ISNULL(NULLIF(@alert_on_step_failures, N''), N'{ANY}'));
+	SET @alert_on_skipped_steps = UPPER(ISNULL(NULLIF(@alert_on_skipped_steps, N''), N'{NONE}'));
 
 	IF @alert_on_step_failures = NULL AND @alert_on_skipped_steps = NULL BEGIN
-		-- nothing to verify/check
 		RETURN 0;
 	END;
 
@@ -107,15 +106,14 @@ AS
 	FROM 
 		[shredded];
 
--- Really crappy testing seams:
-UPDATE [#jobHistory] SET [outcome] = N'FAILURE' WHERE [step_id] = 3;
-UPDATE [#jobHistory] SET [outcome] = N'RUNNING' WHERE [step_id] = 0;
+SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED', N'RETRYING');
+SELECT @alert_on_step_failures;
 
 	DECLARE @failureAlertsNeeded bit = 0;
 	DECLARE @skipAlertsNeeded bit = 0;
 	DECLARE @minStep int;
-	IF @alert_on_step_failures IS NOT NULL AND EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', 'CANCELLED')) BEGIN
-	
+	IF @alert_on_step_failures IS NOT NULL AND EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED', N'RETRYING')) BEGIN
+PRINT 'got here'	
 		IF @alert_on_step_failures LIKE N'%ANY%'
 			SET @failureAlertsNeeded = 1;
 
@@ -186,9 +184,14 @@ UPDATE [#jobHistory] SET [outcome] = N'RUNNING' WHERE [step_id] = 0;
 			[#jobHistory] 
 		ORDER BY 
 			[step_id];
-	
-		PRINT @historyString;
+		
+		IF @print_only = 1 BEGIN 
+			PRINT @historyString;
+		  END;
+		ELSE BEGIN 
 
+			PRINT 'send an email with: ' + @historyString;
+		END;
 	END;
 
 	RETURN 0;
