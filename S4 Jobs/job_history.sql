@@ -60,7 +60,7 @@ AS
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @job_name = NULLIF(@job_name, N'');
 	SET @latest_only = ISNULL(@latest_only, 1);
-
+	
 	IF @job_id IS NULL AND @job_name IS NULL BEGIN 
 		RAISERROR(N'Please specify inputs for either @job_id OR @job_name.', 16, 1);
 		RETURN -1;
@@ -173,6 +173,7 @@ AS
 	ORDER BY 
 		[row_number];
 
+
 	SELECT 
 		[job_name], 
 		[step_id], 
@@ -187,17 +188,17 @@ AS
 	GROUP BY 
 		[job_name], 
 		[step_id];
-
+	
 	IF @latest_only = 1 BEGIN
-		DELETE FROM [#jobHistory] WHERE [row_number] < (SELECT MAX([instance]) FROM [#jobHistory]);
+		DELETE FROM [#jobHistory] WHERE [row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [instance] IS NOT NULL);
 	  END;
 	ELSE BEGIN
 		DELETE FROM [#jobHistory] 
 		WHERE 
-			[row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [run_time] < @history_start)
-			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end);
+			[row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [run_time] < @history_start AND [instance] IS NOT NULL)
+			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end AND [instance] IS NOT NULL);
 	END;
-	
+
 	WITH instance_starts AS ( 
 		SELECT 
 			[row_number],
@@ -225,7 +226,7 @@ AS
 	WITH correlated AS ( 
 		SELECT 
 			[h].[row_number],
-			CASE WHEN [h].[instance] IS NOT NULL THEN [h].[instance] ELSE (SELECT MAX([x].[instance]) FROM [#jobHistory] [x] WHERE [x].[row_number] <= [h].[row_number]) END [instance]
+			CASE WHEN [h].[instance] IS NOT NULL THEN [h].[instance] ELSE (SELECT MAX([x].[instance]) FROM [#jobHistory] [x] WHERE [x].[row_number] <= [h].[row_number] AND [x].[instance] IS NOT NULL) END [instance]
 		FROM 
 			[#jobHistory] [h]
 	) 
