@@ -83,8 +83,6 @@ AS
 		@latest_only = 1, 
 		@serialized_output = @serializedHistory OUTPUT;
 	
-SELECT @serializedHistory;
-
 	-- NOTE: Skipping ROOT node and going direct to children.
 	WITH shredded AS ( 
 		SELECT 
@@ -92,21 +90,49 @@ SELECT @serializedHistory;
 			[data].[row].value(N'(step_id)[1]', N'int') [step_id],
 			[data].[row].value(N'(step_name)[1]', N'sysname') [step_name],
 			[data].[row].value(N'(outcome)[1]', N'sysname') [outcome],
-			[data].[row].value(N'(duration)[1]', N'sysname') [duration]
+			[data].[row].value(N'(duration)[1]', N'sysname') [duration], 
+			[data].[row].value(N'(sql_message_id)[1]', N'int') [sql_message_id],
+			[data].[row].value(N'(sql_severity)[1]', N'int') [sql_severity],
+			[data].[row].value(N'(message)[1]', N'nvarchar(MAX)') [message]
 		FROM 
 			@serializedHistory.nodes(N'//job_step') [data]([row])
 	) 
 
 	SELECT 
+		IDENTITY(int, 1, 1) [row_id],
 		[job_name],
 		[step_id],
 		[step_name],
 		[outcome],
-		[duration] 
+		[duration], 
+		[sql_message_id], 
+		[sql_severity], 
+		[message], 
+		CASE WHEN [outcome] = N'SUCCESS' THEN NULL ELSE 1 END [is_error]
 	INTO 
 		#jobHistory
 	FROM 
-		[shredded];
+		[shredded]
+	ORDER BY 
+		[step_id];
+
+	WITH ordered AS ( 
+
+		SELECT 
+			[row_id],
+			ROW_NUMBER() OVER (PARTITION BY ISNULL([is_error], -1) ORDER BY [row_id]) [error_id]
+		FROM 
+			[#jobHistory] 
+	) 
+
+	UPDATE [x]
+	SET 
+		[x].[is_error] = [o].[error_id]
+	FROM 
+		[#jobHistory] [x]
+		INNER JOIN [ordered] [o] ON [x].[row_id] = [o].[row_id] 
+	WHERE 
+		[x].[is_error] IS NOT NULL;
 
 	DECLARE @failureAlertsNeeded bit = 0;
 	DECLARE @skipAlertsNeeded bit = 0;
@@ -173,20 +199,32 @@ SELECT @serializedHistory;
 		SELECT
 			@historyString = @historyString + 
 			CASE WHEN [job_name] = N'' THEN REPLICATE(N' ', LEN(@job_name)) ELSE [job_name] END + N'  ' + 
-			RIGHT(N'   ' + CAST([step_id] AS sysname), 3) + N' - ' +
-			LEFT([step_name] + REPLICATE(N' ', 40), 30) + N' - ' +
-			[outcome] + N' - ' +
+			dbo.[format_text_width]([step_id], 3, N'RIGHT') + N' - ' +
+			--RIGHT(N'   ' + CAST([step_id] AS sysname), 3) + N' - ' +
+			--LEFT([step_name] + REPLICATE(N' ', 40), 30) + N' - ' +
+			dbo.[format_text_width]([step_name], 44, N'LEFT') + N' - ' + 
+			dbo.[format_text_width]([outcome], 8, N'LEFT')  + N' - ' +
 			CAST([duration] AS sysname) + 
+			CASE WHEN [is_error] IS NOT NULL THEN N'  [*' + CAST(CHAR(64 + [is_error]) AS sysname) + N']' ELSE N'' END +
 			NCHAR(13) + NCHAR(10)
 		FROM
 			[#jobHistory] 
 		ORDER BY 
-			[step_id];
+			[row_id];
 		
+		SET @historyString = @historyString + NCHAR(13) + NCHAR(10) + N'----------------------------------------------------------------------' + NCHAR(13) + NCHAR(10);
 
-		SELECT * FROM [#jobHistory];
-
-
+		SELECT 
+			@historyString = @historyString + 
+			N'- [*' + CAST(CHAR(64 + [is_error]) AS sysname) + N'] - ' + N'ERROR_ID: ' + CAST([sql_message_id] AS sysname) + N'SEVERITY: ' + CAST([sql_severity] AS sysname) + N' - '  + [message] +
+			NCHAR(13) + NCHAR(10)
+		FROM 
+			[#jobHistory]
+		WHERE 
+			[is_error] IS NOT NULL 
+		ORDER BY 
+			[row_id];
+		
 		IF @print_only = 1 BEGIN 
 			PRINT @historyString;
 		  END;
