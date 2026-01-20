@@ -131,7 +131,10 @@ AS
 			[h].[run_time],
 			[h].[weekday],
 			[h].[run_seconds],
-			[h].[run_status]
+			[h].[run_status], 
+			[h].[sql_message_id], 
+			[h].[sql_severity], 
+			[h].[message]
 		FROM 
 			dbo.[job_histories]() [h]
 		WHERE 
@@ -148,7 +151,10 @@ AS
 			[run_time], 
 			[weekday], 
 			[run_seconds], 
-			[run_status]
+			[run_status], 
+			[sql_message_id], 
+			[sql_severity],
+			[message]
 		FROM 
 			[translated]
 	)
@@ -163,14 +169,16 @@ AS
 		[run_time],
 		[weekday],
 		[run_seconds],
-		[run_status] 
+		[run_status], 
+		[sql_message_id], 
+		[sql_severity], 
+		[message]
 	INTO
 		#jobHistory
 	FROM 
 		[lagged]
 	ORDER BY 
 		[row_number];
-
 
 	SELECT 
 		[job_name], 
@@ -257,7 +265,10 @@ AS
 				END
 			END [outcome],
 			[h].[run_time],
-			dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
+			dbo.[format_timespan](1000 * [h].[run_seconds]) [duration], 
+			[h].[sql_message_id], 
+			[h].[sql_severity], 
+			[h].[message]
 		FROM 
 			[#frame] [x]
 			LEFT OUTER JOIN [#jobHistory] [h] ON [x].[instance] = [h].[instance] AND [x].[step_id] = [h].[step_id]
@@ -269,7 +280,6 @@ AS
 	END;	
 
 	SELECT 
-		--[x].[instance],
 		CASE WHEN [x].[step_id] = 0 THEN @job_name ELSE N'' END [job_name],
 		[x].[step_id], 
 		[x].[step_name],
@@ -284,7 +294,10 @@ AS
 			END
 		END [outcome],
 		[h].[run_time],
-		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
+		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration], 
+		[h].[sql_message_id], 
+		[h].[sql_severity], 
+		[h].[message]
 	FROM 
 		[#frame] [x]
 		LEFT OUTER JOIN [#jobHistory] [h] ON [x].[instance] = [h].[instance] AND [x].[step_id] = [h].[step_id]

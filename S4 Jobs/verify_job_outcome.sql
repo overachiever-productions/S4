@@ -83,6 +83,8 @@ AS
 		@latest_only = 1, 
 		@serialized_output = @serializedHistory OUTPUT;
 	
+SELECT @serializedHistory;
+
 	-- NOTE: Skipping ROOT node and going direct to children.
 	WITH shredded AS ( 
 		SELECT 
@@ -106,14 +108,11 @@ AS
 	FROM 
 		[shredded];
 
-SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED', N'RETRYING');
-SELECT @alert_on_step_failures;
-
 	DECLARE @failureAlertsNeeded bit = 0;
 	DECLARE @skipAlertsNeeded bit = 0;
 	DECLARE @minStep int;
 	IF @alert_on_step_failures IS NOT NULL AND EXISTS (SELECT NULL FROM [#jobHistory] WHERE [outcome] IN (N'FAILURE', N'CANCELLED', N'RETRYING')) BEGIN
-PRINT 'got here'	
+			
 		IF @alert_on_step_failures LIKE N'%ANY%'
 			SET @failureAlertsNeeded = 1;
 
@@ -163,7 +162,6 @@ PRINT 'got here'
 	IF @failureAlertsNeeded = 1 OR @skipAlertsNeeded = 1 BEGIN
 		DECLARE @historyString nvarchar(MAX) = N'';
 
-
 -- PICKUP / NEXT: 
 		-- need to report on what/which problems we ran into: failures? skips, or both? 
 		--		and... don't need any details-ish - other than to say: "trigger was for x (or y) and we hit ... z" 
@@ -185,6 +183,10 @@ PRINT 'got here'
 		ORDER BY 
 			[step_id];
 		
+
+		SELECT * FROM [#jobHistory];
+
+
 		IF @print_only = 1 BEGIN 
 			PRINT @historyString;
 		  END;
