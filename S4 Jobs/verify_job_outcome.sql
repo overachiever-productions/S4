@@ -14,9 +14,10 @@ CREATE PROC dbo.[verify_job_outcome]
 	@job_id							uniqueidentifier		= NULL, 
 	@job_name						sysname					= NULL, 
 	@alert_on_step_failures			sysname					= N'{ANY}',		-- { NONE | ANY (same as all) | N+ | N, O, Q }
-	@alert_on_skipped_steps			sysname					= N'{NONE}', 
-	@operator						sysname					= NULL, 
-	@subject						sysname					= NULL, 
+	@alert_on_skipped_steps			sysname					= N'{NONE}',
+	@profile						sysname					= N'General',
+	@operator						sysname					= N'Alerts', 
+	@subject_prefix					sysname					= N'SQL Server Agent Job Failure: ', 
 	@print_only						bit						= 0				-- Does NOT send email alerts, prints them instead.
 AS
     SET NOCOUNT ON; 
@@ -216,7 +217,7 @@ AS
 
 		SELECT 
 			@historyString = @historyString + 
-			N'- [*' + CAST(CHAR(64 + [is_error]) AS sysname) + N'] - ' + N'ERROR_ID: ' + CAST([sql_message_id] AS sysname) + N'SEVERITY: ' + CAST([sql_severity] AS sysname) + N' - '  + [message] +
+			N'- [*' + CAST(CHAR(64 + [is_error]) AS sysname) + N'] - ' + N'SEVERITY: ' + CAST([sql_severity] AS sysname) + N' - '  + [message] +
 			NCHAR(13) + NCHAR(10)
 		FROM 
 			[#jobHistory]
@@ -225,12 +226,22 @@ AS
 		ORDER BY 
 			[row_id];
 		
+		DECLARE @subject sysname = @subject_prefix + N' ' + QUOTENAME(@job_name);
+
 		IF @print_only = 1 BEGIN 
+			PRINT N'SUBJECT: ' + @subject;
+			PRINT N'----------------------------------------------------------------------------------------------';
+			PRINT N'BODY:';
+			PRINT N'';
 			PRINT @historyString;
 		  END;
 		ELSE BEGIN 
-
-			PRINT 'send an email with: ' + @historyString;
+			EXEC msdb..[sp_notify_operator]
+				@profile_name = @profile,
+				@name = @operator,
+				@subject = @subject,
+				@body = @historyString;
+			
 		END;
 	END;
 
