@@ -138,50 +138,6 @@ GO
 --##INCLUDE: Common\internal\drop_obsolete_objects.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
--- master db objects:
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
-DECLARE @obsoleteObjects xml = CONVERT(xml, N'
-<list>
-    <entry schema="dbo" name="dba_DatabaseBackups_Log" type="U" comment="older table" />
-    <entry schema="dbo" name="dba_DatabaseRestore_Log" type="U" comment="older table" />
-    <entry schema="dbo" name="dba_SplitString" type="TF" comment="older UDF" />
-    <entry schema="dbo" name="dba_CheckPaths" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_ExecuteAndFilterNonCatchableCommand" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_LoadDatabaseNames" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_RemoveBackupFiles" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_BackupDatabases" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_RestoreDatabases" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_VerifyBackupExecution" type="P" comment="older sproc" />
-
-    <entry schema="dbo" name="dba_DatabaseBackups" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
-    <entry schema="dbo" name="dba_ExecuteNonCatchableCommand" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
-    <entry schema="dbo" name="dba_RestoreDatabases" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
-    <entry schema="dbo" name="dba_DatabaseRestore_CheckPaths" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-    
-    <entry schema="dbo" name="dba_AvailabilityGroups_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-    <entry schema="dbo" name="dba_Mirroring_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-
-    <entry schema="dbo" name="dba_FilterAndSendAlerts" type="P" comment="FORMER version of alert filtering.">
-        <notification>
-            <content>NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.</content>
-            <heading>WARNING - Potential Configuration Changes Required (alert filtering)</heading>
-        </notification>
-    </entry>
-    <entry schema="dbo" name="dba_drivespace_checks" type="P" comment="FORMER disk monitoring alerts.">
-        <notification>
-            <content>NOTE: dbo.dba_drivespace_checks was dropped from master database - make sure to change job steps/names as needed.</content>
-            <heading>WARNING - Potential Configuration Changes Required (disk-space checks)</heading>
-        </notification>
-    </entry>
-    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
-	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
-</list>');
-
-EXEC dbo.drop_obsolete_objects @obsoleteObjects, N'master';
-GO
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
 -- admindb objects:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -232,6 +188,9 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 
 	<entry schema="dbo" name="disable_and_script_logins" type="P" comment="v13.0 refactoring." />
 	<entry schema="dbo" name="disable_and_script_job_states" type="P" comment="v13.0 refactoring." />
+    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
+	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
+	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
