@@ -161,7 +161,7 @@ AS
 	SET @IgnoredResults = NULLIF(@IgnoredResults, N'');
 	SET @SafeResults = NULLIF(@SafeResults, N'');
 	SET @DotIncludeFile = NULLIF(@DotIncludeFile, N'');
-
+	
 	IF @ExecutionAttemptsCount <= 0 SET @ExecutionAttemptsCount = 1;
 
     IF @ExecutionAttemptsCount > 0 
