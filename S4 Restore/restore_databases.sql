@@ -783,10 +783,17 @@ AS
                 PRINT @command;
               END;
             ELSE BEGIN
-                SET @outcome = NULL;
-                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+                SET @execResults = NULL;
+				SET @errorMessage = NULL;
+				EXEC [dbo].[execute_command] 
+					@Command = @command,
+					@IgnoredResults = N'{RESTORE}', 
+					@Outcome = @execResults OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-                SET @statusDetail = @outcome;
+				IF @errorMessage IS NOT NULL BEGIN 
+					SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+				END;
             END;
         END TRY 
         BEGIN CATCH
@@ -873,10 +880,18 @@ Apply_Diff:
 						PRINT @command;
 					  END;
 					ELSE BEGIN
-						SET @outcome = NULL;
-						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+						SET @execResults = NULL;
+						SET @errorMessage = NULL;
 
-						SET @statusDetail = @outcome;
+						EXEC [dbo].[execute_command] 
+							@Command = @command,
+							@IgnoredResults = N'{RESTORE}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
+
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 					END;
 				END TRY
 				BEGIN CATCH
@@ -960,10 +975,18 @@ Apply_Diff:
                         PRINT @command;
                       END;
                     ELSE BEGIN
-                        SET @outcome = NULL;
-                        EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+						SET @execResults = NULL;
+						SET @errorMessage = NULL;
 
-                        SET @statusDetail = @outcome;
+						EXEC [dbo].[execute_command] 
+							@Command = @command,
+							@IgnoredResults = N'{RESTORE}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
+
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
                     END;
                 END TRY
                 BEGIN CATCH
@@ -1046,12 +1069,19 @@ Apply_Diff:
 					PRINT @command;
 				  END;
 				ELSE BEGIN
-					SET @outcome = NULL;
-
                     -- TODO: do I want to specify a DIFFERENT (subset/set) of 'filters' for RESTORE and RECOVERY? (don't really think so, unless there are ever problems with 'overlap' and/or confusion.
-					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+					SET @execResults = NULL;
+					SET @errorMessage = NULL;
 
-					SET @statusDetail = @outcome;
+					EXEC [dbo].[execute_command] 
+						@Command = @command,
+						@IgnoredResults = N'{RESTORE}', 
+						@Outcome = @execResults OUTPUT, 
+						@ErrorMessage = @errorMessage OUTPUT;
+
+					IF @errorMessage IS NOT NULL BEGIN 
+						SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+					END;
 				END;
 			END TRY	
 			BEGIN CATCH
