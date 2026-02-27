@@ -33,16 +33,22 @@ AS
 	SET @principals = NULLIF(@principals, N'');
 
 	DECLARE @startTime datetime;
-	DECLARE @error nvarchar(MAX);
-	EXEC dbo.[translate_vector_datetime]
-		@Vector = @start,
-		@Operation = N'SUBTRACT',
-		@Output = @startTime OUTPUT,
-		@Error = @error OUTPUT
+	IF TRY_PARSE(@start AS datetime) IS NOT NULL BEGIN
+		SET @startTime = TRY_PARSE(@start AS datetime);
+	  END;
+	ELSE BEGIN
+	
+		DECLARE @error nvarchar(MAX);
+		EXEC dbo.[translate_vector_datetime]
+			@Vector = @start,
+			@Operation = N'SUBTRACT',
+			@Output = @startTime OUTPUT,
+			@Error = @error OUTPUT
 
-	IF @error IS NOT NULL BEGIN
-		RAISERROR(@error, 16, 1);
-		RETURN 1;
+		IF @error IS NOT NULL BEGIN
+			RAISERROR(@error, 16, 1);
+			RETURN 1;
+		END;
 	END;
 
 -- TODO: extract vectors... 
@@ -240,4 +246,5 @@ FROM
 	ORDER BY 
 		COUNT(*) DESC;
 	
-	
+	RETURN 0;
+GO
