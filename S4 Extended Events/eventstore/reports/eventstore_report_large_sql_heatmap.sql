@@ -406,9 +406,9 @@ WHERE
 			FORMAT([a].[total_rows], N'N0') [total_rows]
 		FROM 
 			[#times] [t]
-			LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id]
-		WHERE 
-			[a].[block_id] < 24;  -- slight hack... 
+			LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id];
+		--WHERE 
+		--	[a].[block_id] < 24;  -- slight hack... 
 
 		RETURN 0;
 	END;
@@ -439,8 +439,8 @@ WHERE
 	SELECT 
 		[t].[block_id], 
 		[m].[execution_end_time], 
-		[m].[cpu_milliseconds], 
-		[m].[duration_milliseconds]
+		[m].[cpu_milliseconds] / 1000. / 1000. [cpu_ksecs], 
+		[m].[duration_milliseconds] / 1000. / 1000. [duration_ksecs]
 	FROM 
 		[#times] [t]
 		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[execution_end_time]) = @currentDayID
@@ -451,7 +451,7 @@ WHERE
 currentDayMetrics AS (
 	SELECT 
 		[block_id],
-		CAST(COUNT(*) as sysname) + N'' ('' + FORMAT(SUM([cpu_milliseconds]), ''N0'') + N'' - '' + FORMAT(SUM([duration_milliseconds]), ''N0'') + N'')'' [data]
+		RIGHT(REPLICATE(NCHAR(160), 4) + CAST(COUNT(*) as sysname), 4) + NCHAR(160) + NCHAR(160) + N''|'' + RIGHT(REPLICATE(NCHAR(160), 6) + FORMAT(SUM([cpu_ksecs]), ''N1''), 6) + NCHAR(160) + NCHAR(160) + N''| '' + RIGHT(REPLICATE(NCHAR(160), 6) + FORMAT(SUM([duration_ksecs]), ''N1''), 4) [data]
 	FROM 
 		[correlated]
 	GROUP BY 
@@ -511,11 +511,10 @@ FROM
 		ISNULL([Saturday], N'-') [Saturday]
 	FROM 
 		[#times]
-	WHERE 
-		[block_id] < 24 -- again ... odd hack.
+	--WHERE 
+	--	[block_id] < 24 -- again ... odd hack.
 	ORDER BY 
 		[block_id];
-
 
 	RETURN 0;
 GO
