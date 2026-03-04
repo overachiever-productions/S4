@@ -1,17 +1,48 @@
 /*
 
 
+	PICKUP/NEXT:
+		I ... thought I had figured out a solid/clean way to address time-zone conversion in the OUTPUTS. 
+		And... yeah, I'm sure I did. But it was PROBABLY for non-heatmap reports. 
+			So... I need to 'marry' that logic IN TO my heatmap projections. 
+		WITH the 'rub' being  that ... time-boundaries then ... cross DAYS... ugh. 
+
+
+	EXAMPLE: 
+
+			EXEC [admindb]..[eventstore_report_large_sql_heatmap]
+				@Mode = N'TIME_OF_WEEK',
+				@Granularity = N'HOUR',
+				@StartUTC = '2026-01-16',
+				@EndUTC = '2026-03-02',
+				@TimeZone = N'Central Standard Time',
+				@UseDefaults = 1,
+				@EventStoreTarget = N'admindb_DT.dbo.eventstore_large_sql',
+				@ExcludeSqlAgentJobs = 1,
+				@ExcludeSqlCmd = 1,
+				--@MinCpuMilliseconds = -1,
+				--@MinDurationMilliseconds = -1,
+				--@MinRowsModifiedCount = -1,
+				--@Databases = N'-Anal%',
+				--@Applications = N'python',
+				@Hosts = NULL,
+				@Principals = NULL,
+				@Statements = NULL;		
+
+
+
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[eventstore_report_large_sql_counts]','P') IS NOT NULL
-	DROP PROC dbo.[eventstore_report_large_sql_counts];
+IF OBJECT_ID('dbo.[eventstore_report_large_sql_heatmap]','P') IS NOT NULL
+	DROP PROC dbo.[eventstore_report_large_sql_heatmap];
 GO
 
-CREATE PROC dbo.[eventstore_report_large_sql_counts]
-	@Granularity				sysname			= N'HOUR', 
+CREATE PROC dbo.[eventstore_report_large_sql_heatmap]
+	@Mode						sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | TIME_OF_WEEK } 
+	@Granularity				sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
 	@StartUTC					datetime		= NULL, 
 	@EndUTC						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
@@ -27,11 +58,12 @@ CREATE PROC dbo.[eventstore_report_large_sql_counts]
 	@Hosts						nvarchar(MAX)	= NULL, 
 	@Principals					nvarchar(MAX)	= NULL,
 	@Statements					nvarchar(MAX)	= NULL
+
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
-
+	
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
@@ -48,12 +80,12 @@ AS
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');
-
+	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'LARGE_SQL';
-	DECLARE @reportType sysname = N'COUNT';
+	DECLARE @reportType sysname = N'HEATMAP';
 	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0, @outputID int;
 
 	IF @EventStoreTarget IS NULL BEGIN
@@ -74,7 +106,7 @@ AS
 		IF @outcome <> 0 
 			RETURN @outcome;
 	END;
-	
+
 	IF @UseDefaults = 1 BEGIN
 		PRINT 'Loading Defaults...';
 
@@ -142,17 +174,16 @@ AS
 	-- Predicate Validation:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Bounding
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @outcome = 0;
-	DECLARE @times xml;
-	EXEC @outcome = dbo.[eventstore_timebounded_counts]
+	DECLARE @map xml;
+	
+	EXEC @outcome = dbo.[eventstore_heatmap_frame]
 		@Granularity = @Granularity,
-		@Start = @StartUTC,
-		@End = @EndUTC,
-		@SerializedOutput = @times OUTPUT;
+		--@TimeZone = @TimeZone,
+		@SerializedOutput = @map OUTPUT;
 
 	IF @outcome <> 0 
 		RETURN @outcome;
@@ -163,7 +194,7 @@ AS
 			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
 			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
 		FROM 
-			@times.nodes(N'//time') [data]([row])
+			@map.nodes(N'//time') [data]([row])
 	) 
 
 	SELECT 
@@ -184,7 +215,7 @@ AS
 		FROM 
 			[#times];
 	END;
-	
+
 	IF @EndUTC IS NULL SET @EndUTC = GETUTCDATE();
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -258,14 +289,9 @@ AS
 		[duration_milliseconds] bigint NOT NULL,
 		[reads] bigint NOT NULL,
 		[writes] bigint NOT NULL, 
-		[row_count] bigint NOT NULL, 
-		[database] sysname NOT NULL, 
-		[application_name] sysname NOT NULL, 
-		[host_name] sysname NOT NULL, 
-		[principal] sysname NOT NULL, 
-		[statement] nvarchar(MAX) NOT NULL
+		[row_count] bigint NOT NULL
 	); 
-	
+
 	DECLARE @exclusions nvarchar(MAX) = N'';
 	IF @ExcludeSqlAgentJobs = 1 BEGIN 
 		SET @exclusions = @exclusions + @crlftab + N'AND [x].[application_name] NOT LIKE N''SQLAgent%''';
@@ -293,12 +319,7 @@ AS
 	[x].[duration_ms] [duration_milliseconds], 
 	[x].[physical_reads] [reads], 
 	[x].[writes], 
-	[x].[row_count], 
-	[x].[database], 
-	[x].[application_name], 
-	[x].[host_name], 
-	[x].[user_name] [principal], 
-	[x].[statement]
+	[x].[row_count]
 FROM 
 	{SourceTable} [x]{joins}
 WHERE 
@@ -329,86 +350,171 @@ WHERE
 		[duration_milliseconds],
 		[reads],
 		[writes], 
-		[row_count],
-		[database], 
-		[application_name],
-		[host_name],
-		[principal],
-		[statement]
+		[row_count]
 	)
 	EXEC sys.sp_executesql 
 		@sql, 
 		N'@StartUTC datetime, @EndUTC datetime', 
 		@StartUTC = @StartUTC, 
 		@EndUTC = @EndUTC;
-
+	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Correlate + Project:
+	-- Correlate + Project
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	SET @sql = N'WITH times AS ( 
+	IF @Mode = N'TIME_OF_DAY' BEGIN 
+		
+		WITH correlated AS ( 
+			SELECT 
+				[t].[block_id], 
+				[t].[start_time], 
+				[t].[end_time], 
+				[m].[execution_end_time], 
+				[m].[cpu_milliseconds], 
+				[m].[duration_milliseconds], 
+				[m].[reads], 
+				[m].[writes], 
+				[m].[row_count]
+			FROM 
+				#times [t]
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[execution_end_time] AS time) < CAST([t].[end_time] AS time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] AS time)
+		), 
+		aggregated AS (
+			SELECT 
+				[block_id],
+				COUNT(*) [events],
+				SUM([cpu_milliseconds]) [total_cpu],
+				SUM([duration_milliseconds]) [total_duration],
+				SUM([reads]) [total_reads],
+				SUM([writes]) [total_writes],
+				SUM([row_count]) [total_rows]
+			FROM 
+				correlated 
+			WHERE 
+				[execution_end_time] IS NOT NULL
+			GROUP BY
+				[block_id]
+		) 
+
 		SELECT 
-			[t].[block_id], 
-			[t].[start_time], 
-			[t].[end_time]
+			CONVERT(sysname, [t].[start_time], 24) [start_time],
+			CONVERT(sysname, [t].[end_time], 24) [end_time],
+			[a].[events],
+			FORMAT([a].[total_cpu], N'N0') [total_cpu],
+			FORMAT([a].[total_duration], N'N0') [total_duration],
+			FORMAT([a].[total_reads], N'N0') [total_reads],
+			FORMAT([a].[total_writes], N'N0') [total_writes],
+			FORMAT([a].[total_rows], N'N0') [total_rows]
 		FROM 
 			[#times] [t]
-	), 
-	correlated AS ( 
-		SELECT 
-			[t].[block_id],
-			[t].[start_time],
-			[t].[end_time],
-			[m].[execution_end_time],
-			[m].[cpu_milliseconds],
-			[m].[duration_milliseconds],
-			[m].[reads],
-			[m].[writes], 
-			[m].[row_count]
-		FROM 
-			[times] [t]
-			LEFT OUTER JOIN [#metrics] [m] ON [m].[execution_end_time] < [t].[end_time] AND [m].[execution_end_time] > [t].[start_time] -- anchors ''up'' - i.e., for an event that STARTS at 12:59:59.33 and ENDs 2 seconds later, the entry will ''show up'' in hour 13:00... 
-	), 
-	aggregated AS ( 
-		SELECT 
-			[block_id], 
-			COUNT(*) [events],
-			SUM([cpu_milliseconds]) [total_cpu],
-			SUM([duration_milliseconds]) [total_duration], 
-			SUM(CAST(([reads] * 8.0 / 1024.0) AS decimal(24,2))) [total_reads], 
-			SUM(CAST(([writes] * 8.0 / 1024.0) AS decimal(24,2))) [total_writes], 
-			SUM([row_count]) [total_rows]
-		FROM 
-			[correlated]
-		WHERE 
-			[execution_end_time] IS NOT NULL  -- without this, then ''empty'' time slots (block_ids) end up with COUNT(*) = 1 ... 
-		GROUP BY 
-			[block_id]
-	)
+			LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id];
+		--WHERE 
+		--	[a].[block_id] < 24;  -- slight hack... 
 
+		RETURN 0;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- TIME_OF_WEEK
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	ALTER TABLE [#times] ADD [Sunday] sysname NULL;
+	ALTER TABLE [#times] ADD [Monday] sysname NULL;
+	ALTER TABLE [#times] ADD [Tuesday] sysname NULL;
+	ALTER TABLE [#times] ADD [Wednesday] sysname NULL;
+	ALTER TABLE [#times] ADD [Thursday] sysname NULL;
+	ALTER TABLE [#times] ADD [Friday] sysname NULL;
+	ALTER TABLE [#times] ADD [Saturday] sysname NULL;
+
+	CREATE TABLE #days ( 
+		[day_id] int IDENTITY(1,1), 
+		[day_name] sysname 
+	); 
+
+	INSERT INTO [#days] ([day_name])
+	VALUES (N'Sunday'), (N'Monday'), (N'Tuesday'), (N'Wednesday'), (N'Thursday'), (N'Friday'), (N'Saturday');
+
+	DECLARE @currentDayID int;
+	DECLARE @currentDayName sysname;
+
+	DECLARE @select nvarchar(MAX) = N'WITH correlated AS ( 
 	SELECT 
-		[t].[end_time] [utc_end_time],{local_zone}
-		ISNULL([a].[events], 0) [events],
-		ISNULL([a].[total_cpu], 0) [total_cpu_ms],
-		dbo.[format_timespan](ISNULL([a].[total_duration], 0)) [total_duration],
-		ISNULL([a].[total_reads], 0) [total_reads_MB],
-		ISNULL([a].[total_writes], 0) [total_writes_MB], 
-		ISNULL([a].[total_rows], 0) [total_rows]
+		[t].[block_id], 
+		[m].[execution_end_time], 
+		[m].[cpu_milliseconds] / 1000. / 1000. [cpu_ksecs], 
+		[m].[duration_milliseconds] / 1000. / 1000. [duration_ksecs]
 	FROM 
 		[#times] [t]
-		LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id]
+		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[execution_end_time]) = @currentDayID
+			AND (CAST([m].[execution_end_time] AS time) < CAST([t].[end_time] as time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] as time))
+	WHERE 
+		[m].[execution_end_time] IS NOT NULL
+), 
+currentDayMetrics AS (
+	SELECT 
+		[block_id],
+		RIGHT(REPLICATE(NCHAR(160), 4) + CAST(COUNT(*) as sysname), 4) + NCHAR(160) + NCHAR(160) + N''|'' + RIGHT(REPLICATE(NCHAR(160), 6) + FORMAT(SUM([cpu_ksecs]), ''N1''), 6) + NCHAR(160) + NCHAR(160) + N''| '' + RIGHT(REPLICATE(NCHAR(160), 6) + FORMAT(SUM([duration_ksecs]), ''N1''), 4) [data]
+	FROM 
+		[correlated]
+	GROUP BY 
+		[block_id]
+)';
+
+	DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+	SELECT 
+		[day_id], 
+		[day_name]
+	FROM 
+		[#days]
 	ORDER BY 
-		[t].[block_id]; ';
+		[day_id];
+	
+	OPEN [walker];
+	FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
+	
+	WHILE @@FETCH_STATUS = 0 BEGIN
+	
+		SET @sql = N'{select}
 
-	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN 
-		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + NCHAR(9) + N'CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime) [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_time', N'') + N'_end_time],');
-	  END;
-	ELSE 
-		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+UPDATE [t]
+SET 
+	[t].[{currentDayName}] = [m].[data]
+FROM 
+	[#times] [t]
+	INNER JOIN [currentDayMetrics] [m] ON [t].[block_id] = [m].[block_id];';
+	
+		SET @sql = REPLACE(@sql, N'{select}', @select);
+		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
+			
+		--EXEC dbo.[print_long_string] @sql;
+		EXEC sys.sp_executesql 
+			@sql, 
+			N'@currentDayID int', 
+			@currentDayID = @currentDayID;
+	
+		FETCH NEXT FROM [walker] INTO @currentDayID, @currentDayName;
+	END;
+	
+	CLOSE [walker];
+	DEALLOCATE [walker];
 
-	EXEC sys.[sp_executesql] 
-		@sql;
+	PRINT 'CELL LEGEND: [E (C - D)] - Where E is [total_events], C is [total_cpu_ms], and D is [total_duration_ms].';
+
+	SELECT 
+		CONVERT(sysname, [start_time], 24) [start_time],
+		CONVERT(sysname, [end_time], 24) [end_time],
+		N' ' [ ],
+		ISNULL([Sunday], N'-') [Sunday],  
+		ISNULL([Monday], N'-') [Monday],
+		ISNULL([Tuesday], N'-') [Tuesday],
+		ISNULL([Wednesday], N'-') [Wednesday],
+		ISNULL([Thursday], N'-') [Thursday],
+		ISNULL([Friday], N'-') [Friday],
+		ISNULL([Saturday], N'-') [Saturday]
+	FROM 
+		[#times]
+	--WHERE 
+	--	[block_id] < 24 -- again ... odd hack.
+	ORDER BY 
+		[block_id];
 
 	RETURN 0;
 GO
-	
-	
