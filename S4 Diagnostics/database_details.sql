@@ -82,6 +82,36 @@ AS
 		GOTO ErrorDetails;
 	END;
 
+	SET @sql = N'USE [{CURRENT_DB}];
+	INSERT INTO [#logSpace] ([database_name], [reserved_mb], [used_mb], [used_percent])
+	SELECT 
+		DB_NAME([database_id]) [database_name],
+		CAST(ROUND([total_log_size_in_bytes] / (1024. * 1024.), 1) AS decimal(20, 1)) [reserved_mb],
+		CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024.), 1) AS decimal(20, 1)) [used_mb],
+		CAST([used_log_space_in_percent] AS decimal(5,1)) [used_percent]
+	FROM 
+		sys.[dm_db_log_space_usage]; ';
+
+	CREATE TABLE #logSpace (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[database_name] sysname NOT NULL,
+		[reserved_mb] decimal(20,1) NOT NULL, 
+		[used_mb] decimal(20,1) NOT NULL,
+		[used_percent] decimal(5,1) NOT NULL
+	);
+
+	SET @errors = NULL;
+	EXEC dbo.[execute_per_database]
+		@Databases = @Databases,
+		@Priorities = @Priorities,
+		@Statement = @sql,
+		@Errors = @errors OUTPUT;
+	
+	IF @errors IS NOT NULL BEGIN 
+		SET @errorContext = N'Unexected error extracting log-space: ';
+		GOTO ErrorDetails;
+	END;
+
 	DECLARE @vlfCounts xml; 
 	DECLARE @outcome int = 0;
 	EXEC @outcome = dbo.[vlf_counts]
@@ -103,7 +133,7 @@ AS
 	INTO 
 		#fileCount
 	FROM 
-		sys.master_files 
+		[sys].[master_files] 
 	GROUP BY 
 		[database_id];
 	
@@ -134,13 +164,8 @@ AS
 			[d].[collation_name] [collation],
 			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,1)) [db_size_gb],
 			(SELECT SUM([free_space_mb]) FROM [#freeSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
-			CAST(([logsize].[log_size] / 1024.0) AS decimal(24,1)) [log_size_gb],
-			CASE 
-				WHEN [logsize].[log_size] = 0 THEN -1.0
-				WHEN [logused].[log_used] = 0 THEN 0.0
-				ELSE CAST((([logused].[log_used] / [logsize].[log_size]) * 100.0) AS decimal(5,1))
-			END [%_log_used],
-
+			CAST(([log_space].[reserved_mb] / 1024.0) AS decimal(24,1)) [log_size_gb],
+			[log_space].[used_percent] [%_log_used],
 			[d].recovery_model_desc [recovery],
 			
 			CAST([c].[data_files_count] AS sysname) + N':' + CAST([c].[log_files_count] AS sysname) + N':' + CAST([c].[fs_files_count] AS sysname) + N':' + CAST([c].[fti_files_count] AS sysname) AS [file_counts (d:l:fs:fti)],
@@ -178,8 +203,7 @@ AS
 			LEFT OUTER JOIN (
 				SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
 			) [s] ON [d].database_id = [s].database_id
-			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_size] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Size %') [logsize] ON [d].[name] = [logsize].[db_name]
-			LEFT OUTER JOIN (SELECT instance_name [db_name], CAST((cntr_value / 1024.0) AS decimal(24,1)) [log_used] FROM sys.dm_os_performance_counters WHERE counter_name LIKE 'Log File(s) Used %') [logused] ON [d].[name] = [logused].[db_name]
+			LEFT OUTER JOIN [#logSpace] [log_space] ON [d].[name] = [log_space].[database_name]
 	), 
 	vlfs AS ( 
 		SELECT 
