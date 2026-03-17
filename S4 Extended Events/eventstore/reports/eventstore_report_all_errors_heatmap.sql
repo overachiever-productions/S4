@@ -106,6 +106,7 @@ AS
 			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
 			IF @MinimumSeverity IS NULL SELECT @MinimumSeverity = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinimumSeverity';
 			IF @ErrorIds IS NULL SELECT @ErrorIds = [value] FROM @predicates WHERE [key] = N'@ErrorIds';
+
 			IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
  			IF @Applications IS NULL SELECT @Applications = [value] FROM @predicates WHERE [key] = N'@Applications';
 			IF @Hosts IS NULL SELECT @Hosts = [value] FROM @predicates WHERE [key] = N'@Hosts';
@@ -153,7 +154,6 @@ AS
 	
 	EXEC @outcome = dbo.[eventstore_heatmap_frame]
 		@Granularity = @Granularity,
-		--@TimeZone = @TimeZone,
 		@SerializedOutput = @map OUTPUT;
 
 	IF @outcome <> 0 
@@ -163,7 +163,7 @@ AS
 		SELECT 
 			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
 			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
+			[data].[row].value(N'(end_time)[1]', N'datetime2(7)') [end_time] 
 		FROM 
 			@map.nodes(N'//time') [data]([row])
 	) 
@@ -171,7 +171,8 @@ AS
 	SELECT 
 		[block_id],
 		[start_time],
-		[end_time]
+		DATEADD(HOUR, 1, [start_time]) [projection_end_time],
+		[end_time] [predicate_end_time]
 	INTO 
 		#times
 	FROM 
@@ -182,7 +183,7 @@ AS
 	IF @Start IS NULL BEGIN 
 		SELECT 
 			@Start = MIN([start_time]), 
-			@End = MAX([end_time]) 
+			@End = MAX([predicate_end_time]) 
 		FROM 
 			[#times];
 	END;
