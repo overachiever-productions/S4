@@ -191,11 +191,69 @@ AS
 	IF @End IS NULL SET @End = GETUTCDATE();
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Predicate Mapping and Extraction:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @filters nvarchar(MAX) = N'';
+	DECLARE @joins nvarchar(MAX) = N'';
+
+	IF @Databases IS NOT NULL BEGIN
+		CREATE TABLE #expandedDatabases (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[database] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [database])
+		);
+	END; 
+
+	IF @Applications IS NOT NULL BEGIN
+		CREATE TABLE #applications (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[application_name] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [application_name]) 
+		);
+	END;
+
+	IF @Hosts IS NOT NULL BEGIN 
+		CREATE TABLE #hosts (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[host_name] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [host_name])
+		); 
+	END;
+
+	IF @Principals IS NOT NULL BEGIN
+		CREATE TABLE #principals (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[principal] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [principal])
+		); 
+	END;
+
+	IF @Statements IS NOT NULL BEGIN 
+		CREATE TABLE #statements (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[statement] nvarchar(MAX) NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude]) 
+		);
+	END;
+
+	EXEC [admindb].dbo.[eventstore_report_predicates]
+		@Databases = @Databases,
+		@Applications = @Applications,
+		@Hosts = @Hosts,
+		@Principals = @Principals,
+		@Statements = @Statements,
+		@JoinPredicates = @joins OUTPUT,
+		@FilterPredicates = @filters OUTPUT;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metrics Extraction:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
-	DECLARE @filters nvarchar(MAX) = N'';
-	DECLARE @joins nvarchar(MAX) = N'';
 
 	CREATE TABLE #metrics ( 
 		[error_timestamp] datetime NOT NULL,  
@@ -273,197 +331,6 @@ AS
 		IF EXISTS (SELECT NULL FROM [#expandedErrorIds] WHERE [is_exclude] = 1) BEGIN 
 			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#expandedErrorIds] [x] ON [x].[is_exclude] = 1 AND [e].[error_number] = [x].[error_number]';
 			SET @filters = @filters + @crlftab + N'AND [x].[error_number] IS NULL';
-		END;
-	END;
-
-
-	IF @Databases IS NOT NULL BEGIN 
-		DECLARE @databasesValues table (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[databases_value] sysname NOT NULL 
-		); 
-
-		CREATE TABLE #expandedDatabases (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[database_name] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [database_name])
-		);
-
-		INSERT INTO @databasesValues ([databases_value])
-		SELECT [result] FROM dbo.[split_string](@Databases, N',', 1);
-
-		INSERT INTO [#expandedDatabases] ([database_name], [is_exclude])
-		SELECT 
-			CASE WHEN [databases_value] LIKE N'-%' THEN RIGHT([databases_value], LEN([databases_value]) -1) ELSE [databases_value] END [database_name],
-			CASE WHEN [databases_value] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM 
-			@databasesValues 
-		WHERE 
-			[databases_value] NOT LIKE N'%{%';
-
-		IF EXISTS (SELECT NULL FROM @databasesValues WHERE [databases_value] LIKE N'%{%') BEGIN 
-			DECLARE @databasesToken sysname, @dbTokenAbsolute sysname;
-			DECLARE @databasesXml xml;
-
-			DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT 
-				[row_id], 
-				[databases_value]
-			FROM 
-				@databasesValues 
-			WHERE 
-				[databases_value] LIKE N'%{%';
-			
-			OPEN [walker];
-			FETCH NEXT FROM [walker] INTO @rowId, @databasesToken;
-			
-			WHILE @@FETCH_STATUS = 0 BEGIN
-				
-				SET @outcome = 0;
-				SET @databasesXml = NULL;
-				SELECT @dbTokenAbsolute = CASE WHEN @databasesToken LIKE N'-%' THEN RIGHT(@databasesToken, LEN(@databasesToken) -1) ELSE @databasesToken END;
-
-				EXEC @outcome = dbo.[list_databases_matching_token]
-					@Token = @dbTokenAbsolute,
-					@SerializedOutput = @databasesXml OUTPUT;
-
-				IF @outcome <> 0 
-					RETURN @outcome; 
-
-				WITH shredded AS ( 
-					SELECT
-						[data].[row].value('@id[1]', 'int') [row_id], 
-						[data].[row].value('.[1]', 'sysname') [database_name]
-					FROM 
-						@databasesXml.nodes('//database') [data]([row])
-				) 
-				
-				INSERT INTO [#expandedDatabases] ([database_name], [is_exclude])
-				SELECT 
-					[database_name], 
-					CASE WHEN @databasesToken LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-				FROM 
-					shredded
-				WHERE 
-					[database_name] NOT IN (SELECT [database_name] FROM [#expandedDatabases])
-				ORDER BY 
-					[row_id];
-				
-				FETCH NEXT FROM [walker] INTO @rowId, @databasesToken;
-			END;
-			
-			CLOSE [walker];
-			DEALLOCATE [walker];
-		END;
-
-		IF EXISTS (SELECT NULL FROM [#expandedDatabases] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#expandedDatabases] [d] ON [d].[is_exclude] = 0 AND [e].[database] LIKE [d].[database_name]';
-		END; 
-
-		IF EXISTS (SELECT NULL FROM [#expandedDatabases] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#expandedDatabases] [dx] ON [dx].[is_exclude] = 1 AND [e].[database] LIKE [dx].[database_name]';
-			SET @filters = @filters + @crlftab + N'AND [dx].[database_name] IS NULL';
-		END; 
-	END;
-
-	IF @Applications IS NOT NULL BEGIN 
-		CREATE TABLE #applications (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[application_name] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [application_name]) 
-		);
-
-		INSERT INTO [#applications] ([application_name], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [application_name], 
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM 
-			[dbo].[split_string](@Applications, N',', 1);
-
-		IF EXISTS (SELECT NULL FROM [#applications] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#applications] [a] ON [a].[is_exclude] = 0 AND [e].[application_name] LIKE [a].[application_name]';
-		END; 
-
-		IF EXISTS (SELECT NULL FROM [#applications] WHERE [is_exclude] = 1) BEGIN
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#applications] [ax] ON [ax].[is_exclude] = 1 AND [e].[application_name] LIKE [ax].[application_name]';
-			SET @filters = @filters + @crlftab + N'AND [ax].[application_name] IS NULL';
-		END;
-	END;
-
-	IF @Hosts IS NOT NULL BEGIN 
-		CREATE TABLE #hosts (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[host_name] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [host_name])
-		); 
-
-		INSERT INTO [#hosts] ([host_name], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [host], 
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM	
-			dbo.[split_string](@Hosts, N',', 1);
-
-		IF EXISTS (SELECT NULL FROM [#hosts] WHERE [is_exclude] = 0) BEGIN
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#hosts] [h] ON [h].[is_exclude] = 0 AND [e].[host_name] LIKE [h].[host_name]';
-		END;
-		
-		IF EXISTS (SELECT NULL FROM [#hosts] WHERE [is_exclude] = 1) BEGIN
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#hosts] [hx] ON [hx].[is_exclude] = 1 AND [e].[host_name] LIKE [hx].[host_name]';
-			SET @filters = @filters + @crlftab + N'AND [hx].[host_name] IS NULL';
-		END;
-	END;
-
-	IF @Principals IS NOT NULL BEGIN
-		CREATE TABLE #principals (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[principal] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [principal])
-		); 
-
-		INSERT INTO [#principals] ([principal], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [principal],
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM 
-			[dbo].[split_string](@Principals, N',', 1);
-
-		IF EXISTS (SELECT NULL FROM [#principals] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#principals] [p] ON [p].[is_exclude] = 0 AND [p].[principal] LIKE [e].[user_name]';
-		END; 
-
-		IF EXISTS (SELECT NULL FROM [#principals] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#principals] [px] ON [p].[is_exclude] = 1 AND [e].[user_name] LIKE [px].[principal]';
-			SET @filters = @filters + @crlftab + N'AND [px].[principal] IS NULL';
-		END; 
-	END;
-
-	IF @Statements IS NOT NULL BEGIN 
-		CREATE TABLE #statements (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[statement] nvarchar(MAX) NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude]) 
-		);
-
-		INSERT INTO [#statements] ([statement], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [statement],
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]			
-		FROM 
-			dbo.[split_string](@Statements, N', ', 1);
-
-		IF EXISTS (SELECT NULL FROM [#statements] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#statements] [s] ON [s].[is_exclude] = 0 AND [e].[statement] LIKE [s].[statement]';
-		END;
-
-		IF EXISTS (SELECT NULL FROM [#statements] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins  + @crlftab + N'LEFT OUTER JOIN [#statements] [sx] ON [sx].[is_exclude] = 1 AND [e].[statement] LIKE [sx].[statement]';
-			SET @filters = @filters + @crlftab + N'AND [sx].[statement] IS NULL';
 		END;
 	END;
 
