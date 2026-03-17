@@ -68,14 +68,26 @@ AS
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'ALL_ERRORS';
 	DECLARE @reportType sysname = N'HEATMAP';
-	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
+	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0, @outputID int;
 
-	EXEC @outcome = dbo.[eventstore_get_target_by_key]
-		@EventStoreKey = @eventStoreKey,
-		@TargetTable = @fullyQualifiedTargetTable OUTPUT;
+	IF @EventStoreTarget IS NULL BEGIN
+		EXEC @outcome = dbo.[eventstore_get_target_by_key]
+			@EventStoreKey = @eventStoreKey,
+			@TargetTable = @fullyQualifiedTargetTable OUTPUT;
 
-	IF @outcome <> 0 
-		RETURN @outcome;
+		IF @outcome <> 0 
+			RETURN @outcome;
+	  END; 
+	ELSE BEGIN 
+		EXEC @outcome = dbo.[load_id_for_normalized_name]
+			@TargetName = @EventStoreTarget,
+			@ParameterNameForTarget = N'@EventStoreTarget',
+			@NormalizedName = @fullyQualifiedTargetTable OUTPUT, 
+			@ObjectID = @outputID OUTPUT;
+
+		IF @outcome <> 0 
+			RETURN @outcome;
+	END;
 	
 	IF @UseDefaults = 1 BEGIN
 		DECLARE @defaultTimeZone sysname, @defaultStartTime datetime, @defaultPredicates nvarchar(MAX);
@@ -374,6 +386,8 @@ WHERE
 		@Start = @Start, 
 		@End = @End;
 
+SELECT * FROM [#metrics];
+RETURN 0;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project:
