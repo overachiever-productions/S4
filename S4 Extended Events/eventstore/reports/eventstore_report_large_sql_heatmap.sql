@@ -192,7 +192,7 @@ AS
 		SELECT 
 			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
 			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
+			[data].[row].value(N'(end_time)[1]', N'datetime2(7)') [end_time] 
 		FROM 
 			@map.nodes(N'//time') [data]([row])
 	) 
@@ -200,7 +200,8 @@ AS
 	SELECT 
 		[block_id],
 		[start_time],
-		[end_time]
+		DATEADD(HOUR, 1, [start_time]) [projection_end_time],
+		[end_time] [predicate_end_time]
 	INTO 
 		#times
 	FROM 
@@ -211,7 +212,7 @@ AS
 	IF @StartUTC IS NULL BEGIN 
 		SELECT 
 			@StartUTC = MIN([start_time]), 
-			@EndUTC = MAX([end_time]) 
+			@EndUTC = MAX([predicate_end_time]) 
 		FROM 
 			[#times];
 	END;
@@ -357,7 +358,7 @@ WHERE
 		N'@StartUTC datetime, @EndUTC datetime', 
 		@StartUTC = @StartUTC, 
 		@EndUTC = @EndUTC;
-	
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -367,7 +368,7 @@ WHERE
 			SELECT 
 				[t].[block_id], 
 				[t].[start_time], 
-				[t].[end_time], 
+				[t].[projection_end_time] [end_time], 
 				[m].[execution_end_time], 
 				[m].[cpu_milliseconds], 
 				[m].[duration_milliseconds], 
@@ -376,8 +377,8 @@ WHERE
 				[m].[row_count]
 			FROM 
 				#times [t]
-				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[execution_end_time] AS time) < CAST([t].[end_time] AS time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] AS time)
-		), 
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[execution_end_time] AS time) <= CAST([t].[predicate_end_time] AS time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] AS time)
+		),
 		aggregated AS (
 			SELECT 
 				[block_id],
@@ -397,7 +398,7 @@ WHERE
 
 		SELECT 
 			CONVERT(sysname, [t].[start_time], 24) [start_time],
-			CONVERT(sysname, [t].[end_time], 24) [end_time],
+			CONVERT(sysname, [t].[projection_end_time], 24) [end_time],
 			[a].[events],
 			FORMAT([a].[total_cpu], N'N0') [total_cpu],
 			FORMAT([a].[total_duration], N'N0') [total_duration],
@@ -407,8 +408,6 @@ WHERE
 		FROM 
 			[#times] [t]
 			LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id];
-		--WHERE 
-		--	[a].[block_id] < 24;  -- slight hack... 
 
 		RETURN 0;
 	END;
@@ -444,7 +443,7 @@ WHERE
 	FROM 
 		[#times] [t]
 		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[execution_end_time]) = @currentDayID
-			AND (CAST([m].[execution_end_time] AS time) < CAST([t].[end_time] as time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] as time))
+			AND (CAST([m].[execution_end_time] AS time) <= CAST([t].[predicate_end_time] as time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] as time))
 	WHERE 
 		[m].[execution_end_time] IS NOT NULL
 ), 
@@ -500,7 +499,7 @@ FROM
 
 	SELECT 
 		CONVERT(sysname, [start_time], 24) [start_time],
-		CONVERT(sysname, [end_time], 24) [end_time],
+		CONVERT(sysname, [projection_end_time], 24) [end_time],
 		N' ' [ ],
 		ISNULL([Sunday], N'-') [Sunday],  
 		ISNULL([Monday], N'-') [Monday],
@@ -511,8 +510,6 @@ FROM
 		ISNULL([Saturday], N'-') [Saturday]
 	FROM 
 		[#times]
-	--WHERE 
-	--	[block_id] < 24 -- again ... odd hack.
 	ORDER BY 
 		[block_id];
 
