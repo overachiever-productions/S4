@@ -25,9 +25,6 @@ AS
 	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'HOUR'));
 	IF @Granularity LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
 
-
-SELECT @Granularity;
-
 	IF UPPER(@Granularity) NOT IN (N'HOUR', N'MINUTE') BEGIN 
 		RAISERROR(N'Allowed values for @Granularity are HOUR(S) or MINUTE(S).', 16, 1);
 		RETURN -8;
