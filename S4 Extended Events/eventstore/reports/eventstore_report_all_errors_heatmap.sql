@@ -34,6 +34,7 @@ CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
 	@UseDefaults				bit				= 1, 
+	@EventStoreTarget			sysname			= NULL,	
 	@MinimumSeverity			int				= -1, 
 	@ErrorIds					nvarchar(MAX)	= NULL, 
 	@Databases					nvarchar(MAX)	= NULL,
@@ -47,18 +48,20 @@ AS
 
 	-- {copyright}
 
-	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
+	SET @UseDefaults = ISNULL(@UseDefaults, 1);
 
 	SET @MinimumSeverity = ISNULL(NULLIF(@MinimumSeverity, 0), -1);
 	SET @ErrorIds = NULLIF(@ErrorIds, N'');
+	SET @ExcludeSystemErrors = ISNULL(@ExcludeSystemErrors, 1);
+
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @Applications = NULLIF(@Applications, N'');
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');
-	SET @ExcludeSystemErrors = ISNULL(@ExcludeSystemErrors, 1);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
