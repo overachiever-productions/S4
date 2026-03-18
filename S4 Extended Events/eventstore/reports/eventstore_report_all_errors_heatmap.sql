@@ -7,6 +7,14 @@
 				i mean... i don't want someone specifying a start of 2 years ago... and no end date, right? 
 					or, if they do... it should have to be explicit? 
 
+	BUG / PROBLEM: 
+		dbo.[eventstore_heatmap_frame] is focused on TIMES and 'ignores' (effectively) ...dates.
+			which means that the datetimes that it throws out ... are 1900-01-01 <time> 
+			which made me spend ~40 minutes trying to figure out WHY THE F I could clearly see that GETDATE() AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific Standard Time' 100% correctly
+				showed -7:00 (2026-03-18) but my "heatmap_frame" calculations of t.[start_time] AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific....' were 100000% showing as -8:00 always. 
+				cuz ... duh, 1900-01-01 is ... january and ... apparently governed by non-DST - i.e., -8 hours. 
+				SIGH.
+
 
 	EXAMPLE:
 			EXEC [admindb].dbo.[eventstore_report_all_errors_heatmap]
@@ -362,6 +370,7 @@ WHERE
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @fullyQualifiedTargetTable);
 	SET @sql = REPLACE(@sql, N'{joins}', @joins);
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
+	--SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
 	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
 
@@ -386,26 +395,24 @@ WHERE
 		@Start = @Start, 
 		@End = @End;
 
-SELECT * FROM [#metrics];
-RETURN 0;
-
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF @Mode = N'TIME_OF_DAY' BEGIN
-	
-		SET @sql = N'WITH correlated AS ( 
+
+		WITH correlated AS ( 
 			SELECT 
 				[t].[block_id], 
-				[m].[error_number]				
+				[m].[error_number]	
 			FROM 
 				[#times] [t] 
-				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) <= CAST([t].[predicate_end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
 		), 
 		aggregated AS ( 
 			SELECT 
 				[block_id], 
 				COUNT(*) [errors], 
+				-- TODO: possibly look at adding MAX([severity])? 
 				COUNT(DISTINCT [error_number]) [distinct_errors]
 			FROM 
 				[correlated] 
@@ -416,20 +423,63 @@ RETURN 0;
 		)
 		
 		SELECT 
-			FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
+			FORMAT([t].[start_time], N'HH:mm') + N':00 - ' + FORMAT([t].[predicate_end_time], N'HH:mm') + N':59' [utc_time],
+			FORMAT(([t].[start_time] AT TIME ZONE 'UTC' AT TIME ZONE @TimeZone), N'HH:mm') [local_start],
+			t.[start_time] at TIME ZONE 'UTC' at TIME ZONE @TimeZone [local_simple],
 			ISNULL([a].[errors], 0) [total_errors], 
 			ISNULL([a].[distinct_errors], 0) [distinct_errors]
+			, t.*
 		FROM 
 			[#times] [t]
 			LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
 		ORDER BY
-			[t].[block_id]; ';
+			[t].[block_id]; 
+
+RETURN 0;
+
+
+--		SET @sql = N'WITH correlated AS ( 
+--	SELECT 
+--		[t].[block_id], 
+--		[m].[error_number]	
+--	FROM 
+--		[#times] [t] 
+--		LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) <= CAST([t].[predicate_end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
+--), 
+--aggregated AS ( 
+--	SELECT 
+--		[block_id], 
+--		COUNT(*) [errors], 
+--		-- TODO: possibly look at adding MAX([severity])? 
+--		COUNT(DISTINCT [error_number]) [distinct_errors]
+--	FROM 
+--		[correlated] 
+--	WHERE 
+--		[error_number] IS NOT NULL 
+--	GROUP BY 
+--		[block_id]
+--)
+		
+--SELECT 
+--	FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT([t].[predicate_end_time], N''HH:mm'') + N'':59'' [utc_time_of_day],{local_zone}
+--	ISNULL([a].[errors], 0) [total_errors], 
+--	ISNULL([a].[distinct_errors], 0) [distinct_errors]
+--	, t.*
+--FROM 
+--	[#times] [t]
+--	LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
+--ORDER BY
+--	[t].[block_id]; ';
 
 		IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N'''), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[projection_end_time], N''HH:mm'') + N'':00'' - N''<end-time>'' [xxxx],');
+			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[start_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':00 - '' + FORMAT([t].[predicate_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':59'' [xxxx_time_of_day],');
 		  END; 
 		ELSE 
 			SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+
+	EXEC dbo.[print_long_string] @sql;
 
 		EXEC sys.[sp_executesql] 
 			@sql;
