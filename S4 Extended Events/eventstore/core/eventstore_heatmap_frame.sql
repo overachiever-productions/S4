@@ -1,9 +1,19 @@
 /*
 	NOTE: This does NOT adhere to PROJECT or RETURN... (it ONLY does RETURN)
 
+	REFACTOR:
+		remove "eventstore" from the name. 
 
-	REFACTOR: 
-		dbo.eventstore_frame_heatmap (where 'frame' is a verb). I could also use a ... verby-very like dbo.eventstore_build|generate|create_heatmap.
+
+	SAMPLE / SIGNATURE: 
+
+			DECLARE @SerializedOutput xml;
+			EXEC [dbo].[eventstore_heatmap_frame]
+				@Granularity = N'MINUTE',
+				@SerializedOutput = @SerializedOutput OUTPUT; 
+
+			SELECT @SerializedOutput;
+
 
 */
 
@@ -45,8 +55,8 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- HeatMap Creation:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @startTime datetime2 = '2017-01-01 00:00:00.000';
-	DECLARE @endTime datetime2 = '2017-01-01 23:59:59.999';
+	DECLARE @startTime datetime2(7) = '2017-01-01 00:00:00.000';
+	DECLARE @endTime datetime2(7) = '2017-01-01 23:59:59.9999999';
 
 	CREATE TABLE #times (
 		[row_id] int IDENTITY(1, 1) NOT NULL, 
@@ -79,8 +89,8 @@ AS
 	SELECT @SerializedOutput = (
 		SELECT 
 			[row_id] [block_id],
-			CAST([utc_start] AS time) [start_time],
-			CAST([utc_end] AS time) [end_time]
+			CAST(FORMAT([utc_start], N'hh\:mm\:ss') + N'.0000000' AS time) [start_time],
+			CAST(FORMAT([utc_end], N'hh\:mm\:ss') + N'.9999999' AS time) [end_time]
 		FROM 
 			[#times]
 		ORDER BY 
