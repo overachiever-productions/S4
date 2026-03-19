@@ -41,6 +41,7 @@ CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
+	@ExcludeUTCHeader			bit				= 0,			-- TODO: make this a 'default'/preference... 
 	@UseDefaults				bit				= 1, 
 	@EventStoreTarget			sysname			= NULL,	
 	@MinimumSeverity			int				= -1, 
@@ -58,6 +59,7 @@ AS
 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @ExcludeUTCHeader = ISNULL(@ExcludeUTCHeader, 0);
 	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
 	SET @UseDefaults = ISNULL(@UseDefaults, 1);
 
@@ -135,6 +137,8 @@ AS
 		END;
 	END;
 
+	-- TODO: @ExcludeUTCHeader can only be 1 IF there's a VALID @TimeZone specified 
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Zone Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -174,6 +178,9 @@ AS
 	
 	EXEC @outcome = dbo.[eventstore_heatmap_frame]
 		@Granularity = @Granularity,
+        @TimeZone = @TimeZone,
+		@Start = @Start, 
+		@End = @End,
 		@SerializedOutput = @map OUTPUT;
 
 	IF @outcome <> 0 
@@ -182,8 +189,10 @@ AS
 	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
-			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[data].[row].value(N'(end_time)[1]', N'datetime2(7)') [end_time] 
+			[data].[row].value(N'(start_time)[1]', N'time') [start_time],
+			[data].[row].value(N'(end_time)[1]', N'time') [end_time], 
+			[data].[row].value(N'(local_start)[1]', N'datetime2(4)') [zone_start], 
+			[data].[row].value(N'(local_end)[1]', N'datetime2(4)') [zone_end]
 		FROM 
 			@map.nodes(N'//time') [data]([row])
 	) 
@@ -191,8 +200,9 @@ AS
 	SELECT 
 		[block_id],
 		[start_time],
-		DATEADD(HOUR, 1, [start_time]) [projection_end_time],
-		[end_time] [predicate_end_time]
+		[end_time],
+		[zone_start], 
+		[zone_end]
 	INTO 
 		#times
 	FROM 
@@ -203,7 +213,7 @@ AS
 	IF @Start IS NULL BEGIN 
 		SELECT 
 			@Start = MIN([start_time]), 
-			@End = MAX([predicate_end_time]) 
+			@End = MAX([end_time]) 
 		FROM 
 			[#times];
 	END;
@@ -372,6 +382,14 @@ WHERE
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 	--SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
+
+-- TODO: 
+--		don't think these time-range strings are correct. think i need to start with @Start/@End as UTC. '
+--			then explain what they've been CONVERTED to ... via the conversion. 
+-- TODO: 
+--		need to warn/output IF we cross a DST boundary - e.g., assume @Start is October 28, and @End is Nov, XXX - that's a DST boundary crossing. 
+--			AND ... I'll always use the @End as the REPORTING time 'zone/thingy'. e.g., if we cross a DST boundary in spring, we'll be on the new, spring-summer DST time, whereas if we cross in fall, we'll be on the non-DST fall/winter time.
+--		AND... i guess I could put a column or notifier into the PROJECTION that specifies DT or ST... 
 	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
 
 	IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
@@ -406,7 +424,7 @@ WHERE
 				[m].[error_number]	
 			FROM 
 				[#times] [t] 
-				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) <= CAST([t].[predicate_end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) <= CAST([t].[end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
 		), 
 		aggregated AS ( 
 			SELECT 
@@ -423,63 +441,58 @@ WHERE
 		)
 		
 		SELECT 
-			FORMAT([t].[start_time], N'HH:mm') + N':00 - ' + FORMAT([t].[predicate_end_time], N'HH:mm') + N':59' [utc_time],
-			FORMAT(([t].[start_time] AT TIME ZONE 'UTC' AT TIME ZONE @TimeZone), N'HH:mm') [local_start],
-			t.[start_time] at TIME ZONE 'UTC' at TIME ZONE @TimeZone [local_simple],
+			FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
+			FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
 			ISNULL([a].[errors], 0) [total_errors], 
 			ISNULL([a].[distinct_errors], 0) [distinct_errors]
-			, t.*
+		INTO 
+			#tod_projection  -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
 		FROM 
 			[#times] [t]
 			LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
 		ORDER BY
 			[t].[block_id]; 
 
-RETURN 0;
-
-
---		SET @sql = N'WITH correlated AS ( 
---	SELECT 
---		[t].[block_id], 
---		[m].[error_number]	
---	FROM 
---		[#times] [t] 
---		LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) <= CAST([t].[predicate_end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
---), 
---aggregated AS ( 
---	SELECT 
---		[block_id], 
---		COUNT(*) [errors], 
---		-- TODO: possibly look at adding MAX([severity])? 
---		COUNT(DISTINCT [error_number]) [distinct_errors]
---	FROM 
---		[correlated] 
---	WHERE 
---		[error_number] IS NOT NULL 
---	GROUP BY 
---		[block_id]
---)
+		SET @sql = N'SELECT 
+	{time_bounds}
+	[total_errors],
+	[distinct_errors] 
+FROM 
+	[#tod_projection]
+ORDER BY 
+	{order_by}; ';
 		
---SELECT 
---	FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT([t].[predicate_end_time], N''HH:mm'') + N'':59'' [utc_time_of_day],{local_zone}
---	ISNULL([a].[errors], 0) [total_errors], 
---	ISNULL([a].[distinct_errors], 0) [distinct_errors]
---	, t.*
---FROM 
---	[#times] [t]
---	LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
---ORDER BY
---	[t].[block_id]; ';
+		DECLARE @timeBounds nvarchar(MAX) = N'';
+		DECLARE @orderBy nvarchar(MAX) = N'[utc_time]';
+		DECLARE @renamed nvarchar(MAX) = N'zone_time';
+		IF @TimeZone = N'UTC' BEGIN
+			SET @timeBounds = N'[utc_time],'
+		  END;
+		ELSE BEGIN 
+			SET @renamed = REPLACE(LOWER(@TimeZone), N' ', N'_');
+
+			IF @ExcludeUTCHeader = 1 BEGIN 
+				SET @timeBounds = N'[zone_time] [{renamed}],';
+				SET @orderBy = N'[zone_time]';
+			  END;
+			ELSE BEGIN
+				SET @timeBounds = N'[utc_time],' + @crlftab + N'[zone_time] [{renamed}], ';
+			END;
+		END;
+
+		SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
+		SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
+		SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
 
 		IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N'''), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N'''), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + ,');
 			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[projection_end_time], N''HH:mm'') + N'':00'' - N''<end-time>'' [xxxx],');
-			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[start_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':00 - '' + FORMAT([t].[predicate_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':59'' [xxxx_time_of_day],');
+			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[start_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':00 - '' + FORMAT([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':59'' [xxxx_time_of_day],');
 		  END; 
 		ELSE 
 			SET @sql = REPLACE(@sql, N'{local_zone}', N'');
 
-	EXEC dbo.[print_long_string] @sql;
+		--EXEC dbo.[print_long_string] @sql;
 
 		EXEC sys.[sp_executesql] 
 			@sql;
