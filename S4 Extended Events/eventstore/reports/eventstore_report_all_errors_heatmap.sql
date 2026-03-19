@@ -142,7 +142,7 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Zone Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @timeZoneTransformType sysname = N'NONE';
+--	DECLARE @timeZoneTransformType sysname = N'NONE';
 	IF @TimeZone IS NOT NULL BEGIN 
 		IF (SELECT [dbo].[get_engine_version]()) < 13.00 BEGIN
 			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
@@ -154,10 +154,10 @@ AS
 
 		DECLARE @timeZoneOffsetMinutes int = (dbo.[get_timezone_offset_minutes](@TimeZone));
 
-		IF @TimeZone IS NULL
-			SET @timeZoneTransformType = N'OUTPUT-ONLY';
-		ELSE 
-			SET @timeZoneTransformType = N'ALL';
+		--IF @TimeZone IS NULL
+		--	SET @timeZoneTransformType = N'OUTPUT-ONLY';
+		--ELSE 
+		--	SET @timeZoneTransformType = N'ALL';
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -392,13 +392,13 @@ WHERE
 --		AND... i guess I could put a column or notifier into the PROJECTION that specifies DT or ST... 
 	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
 
-	IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
-		SELECT 
-			@Start = CAST((@Start AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
-			@End   = CAST((@End   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
+	--IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
+	--	SELECT 
+	--		@Start = CAST((@Start AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
+	--		@End   = CAST((@End   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
 
-		SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (UTC).';
-	END;
+	--	SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (UTC).';
+	--END;
 
 	PRINT @timeRangeString;
 	PRINT N'';
@@ -483,14 +483,6 @@ ORDER BY
 		SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
 		SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
 		SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
-
-		IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N'''), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[projection_end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + ,');
-			--SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[projection_end_time], N''HH:mm'') + N'':00'' - N''<end-time>'' [xxxx],');
-			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT([t].[start_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':00 - '' + FORMAT([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''', N''HH:mm'') + N'':59'' [xxxx_time_of_day],');
-		  END; 
-		ELSE 
-			SET @sql = REPLACE(@sql, N'{local_zone}', N'');
 
 		--EXEC dbo.[print_long_string] @sql;
 
@@ -598,11 +590,11 @@ FROM
 ORDER BY 
 	[block_id];';
 
-	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
-	  END; 
-	ELSE 
-		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+	--IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
+	--	SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
+	--  END; 
+	--ELSE 
+	--	SET @sql = REPLACE(@sql, N'{local_zone}', N'');
 
 	EXEC sys.[sp_executesql] 
 		@sql;	
