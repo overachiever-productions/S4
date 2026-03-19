@@ -80,6 +80,8 @@ AS
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');
+
+	-- TODO: validate @Mode
 	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
