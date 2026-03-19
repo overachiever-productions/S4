@@ -36,8 +36,8 @@ IF OBJECT_ID('dbo.[eventstore_report_all_errors_heatmap]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
-	@Mode						sysname			= N'TIME_OF_DAY',
-	@Granularity				sysname			= N'HOUR', 
+	@Mode						sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | TIME_OF_WEEK } 
+	@Granularity				sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
 	@TimeZone					sysname			= NULL, 
@@ -72,6 +72,8 @@ AS
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');
+
+	-- TODO: validate @Mode
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
@@ -382,7 +384,6 @@ WHERE
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 	--SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
-
 -- TODO: 
 --		don't think these time-range strings are correct. think i need to start with @Start/@End as UTC. '
 --			then explain what they've been CONVERTED to ... via the conversion. 
@@ -416,6 +417,25 @@ WHERE
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @timeBounds nvarchar(MAX) = N'';
+	DECLARE @orderBy nvarchar(MAX) = N'[utc_time]';
+	DECLARE @renamed nvarchar(MAX) = N'zone_time';	
+
+	IF @TimeZone = N'UTC' BEGIN
+		SET @timeBounds = N'[utc_time],'
+		END;
+	ELSE BEGIN 
+		SET @renamed = REPLACE(LOWER(@TimeZone), N' ', N'_');
+
+		IF @ExcludeUTCHeader = 1 BEGIN 
+			SET @timeBounds = N'[zone_time] [{renamed}],';
+			SET @orderBy = N'[zone_time]';
+			END;
+		ELSE BEGIN
+			SET @timeBounds = N'[utc_time],' + @crlftab + N'[zone_time] [{renamed}], ';
+		END;
+	END;
+	
 	IF @Mode = N'TIME_OF_DAY' BEGIN
 
 		WITH correlated AS ( 
@@ -461,30 +481,10 @@ FROM
 	[#tod_projection]
 ORDER BY 
 	{order_by}; ';
-		
-		DECLARE @timeBounds nvarchar(MAX) = N'';
-		DECLARE @orderBy nvarchar(MAX) = N'[utc_time]';
-		DECLARE @renamed nvarchar(MAX) = N'zone_time';
-		IF @TimeZone = N'UTC' BEGIN
-			SET @timeBounds = N'[utc_time],'
-		  END;
-		ELSE BEGIN 
-			SET @renamed = REPLACE(LOWER(@TimeZone), N' ', N'_');
-
-			IF @ExcludeUTCHeader = 1 BEGIN 
-				SET @timeBounds = N'[zone_time] [{renamed}],';
-				SET @orderBy = N'[zone_time]';
-			  END;
-			ELSE BEGIN
-				SET @timeBounds = N'[utc_time],' + @crlftab + N'[zone_time] [{renamed}], ';
-			END;
-		END;
 
 		SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
 		SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
 		SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
-
-		--EXEC dbo.[print_long_string] @sql;
 
 		EXEC sys.[sp_executesql] 
 			@sql;
@@ -523,7 +523,7 @@ ORDER BY
 	FROM 
 		[#times] [t]
 		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[error_timestamp]) = @currentDayID
-			AND (CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] as time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] as time))
+			AND (CAST([m].[error_timestamp] AS time) <= CAST([t].[end_time] as time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] as time))
 	WHERE 
 		[m].[error_timestamp] IS NOT NULL
 ), 
@@ -563,7 +563,6 @@ FROM
 		SET @sql = REPLACE(@sql, N'{select}', @select);
 		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
 			
-		--EXEC dbo.[print_long_string] @sql;
 		EXEC sys.sp_executesql 
 			@sql, 
 			N'@currentDayID int', 
@@ -575,29 +574,44 @@ FROM
 	CLOSE [walker];
 	DEALLOCATE [walker];
 
-	SET @sql = N'SELECT 
-	FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
-	N'' '' [ ],
-	ISNULL([Sunday], N''-'') [Sunday],  
-	ISNULL([Monday], N''-'') [Monday],
-	ISNULL([Tuesday], N''-'') [Tuesday],
-	ISNULL([Wednesday], N''-'') [Wednesday],
-	ISNULL([Thursday], N''-'') [Thursday],
-	ISNULL([Friday], N''-'') [Friday],
-	ISNULL([Saturday], N''-'') [Saturday]
-FROM 
-	[#times] [t]
-ORDER BY 
-	[block_id];';
+	SELECT 
+		FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
+		FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
+		ISNULL([Sunday], N'-') [Sunday],  
+		ISNULL([Monday], N'-') [Monday],
+		ISNULL([Tuesday], N'-') [Tuesday],
+		ISNULL([Wednesday], N'-') [Wednesday],
+		ISNULL([Thursday], N'-') [Thursday],
+		ISNULL([Friday], N'-') [Friday],
+		ISNULL([Saturday], N'-') [Saturday]
+	INTO 
+		#tow_projection -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
+	FROM 
+		[#times] [t]
+	ORDER BY 
+		[block_id];
 
-	--IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-	--	SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
-	--  END; 
-	--ELSE 
-	--	SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+	SET @sql = N'SELECT 
+	{time_bounds}
+	N'' '' [ ],
+	[Sunday],
+	[Monday],
+	[Tuesday],
+	[Wednesday],
+	[Thursday],
+	[Friday],
+	[Saturday] 
+FROM 
+	[#tow_projection]
+ORDER BY 
+	{order_by}; ';
+
+	SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
+	SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
+	SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
 
 	EXEC sys.[sp_executesql] 
-		@sql;	
+		@sql;
 
 	RETURN 0;
 GO
