@@ -40,8 +40,8 @@ CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
 	@Granularity				sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
-	@TimeZone					sysname			= NULL, 
-	@ExcludeUTCHeader			bit				= 0,			-- TODO: make this a 'default'/preference... 
+	@TimeZone					sysname			= N'UTC', 
+	@ExcludeUTCHeader			bit				= 0,					-- TODO: make this a 'default'/preference... 
 	@UseDefaults				bit				= 1, 
 	@EventStoreTarget			sysname			= NULL,	
 	@MinimumSeverity			int				= -1, 
@@ -58,7 +58,7 @@ AS
 	-- {copyright}
 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
-	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @TimeZone = ISNULL(NULLIF(@TimeZone, N''), N'UTC');
 	SET @ExcludeUTCHeader = ISNULL(@ExcludeUTCHeader, 0);
 	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
 	SET @UseDefaults = ISNULL(@UseDefaults, 1);
@@ -144,7 +144,6 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Zone Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
---	DECLARE @timeZoneTransformType sysname = N'NONE';
 	IF @TimeZone IS NOT NULL BEGIN 
 		IF (SELECT [dbo].[get_engine_version]()) < 13.00 BEGIN
 			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
@@ -153,13 +152,6 @@ AS
 
 		IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
 			SET @TimeZone = dbo.[get_local_timezone]();
-
-		DECLARE @timeZoneOffsetMinutes int = (dbo.[get_timezone_offset_minutes](@TimeZone));
-
-		--IF @TimeZone IS NULL
-		--	SET @timeZoneTransformType = N'OUTPUT-ONLY';
-		--ELSE 
-		--	SET @timeZoneTransformType = N'ALL';
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -384,26 +376,6 @@ WHERE
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 	--SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
--- TODO: 
---		don't think these time-range strings are correct. think i need to start with @Start/@End as UTC. '
---			then explain what they've been CONVERTED to ... via the conversion. 
--- TODO: 
---		need to warn/output IF we cross a DST boundary - e.g., assume @Start is October 28, and @End is Nov, XXX - that's a DST boundary crossing. 
---			AND ... I'll always use the @End as the REPORTING time 'zone/thingy'. e.g., if we cross a DST boundary in spring, we'll be on the new, spring-summer DST time, whereas if we cross in fall, we'll be on the non-DST fall/winter time.
---		AND... i guess I could put a column or notifier into the PROJECTION that specifies DT or ST... 
-	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
-
-	--IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
-	--	SELECT 
-	--		@Start = CAST((@Start AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
-	--		@End   = CAST((@End   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
-
-	--	SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (UTC).';
-	--END;
-
-	PRINT @timeRangeString;
-	PRINT N'';
-
 	INSERT INTO [#metrics] (
 		[error_timestamp],
 		[error_number]
@@ -577,13 +549,13 @@ FROM
 	SELECT 
 		FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
 		FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
-		ISNULL([Sunday], N'-') [Sunday],  
-		ISNULL([Monday], N'-') [Monday],
-		ISNULL([Tuesday], N'-') [Tuesday],
-		ISNULL([Wednesday], N'-') [Wednesday],
-		ISNULL([Thursday], N'-') [Thursday],
-		ISNULL([Friday], N'-') [Friday],
-		ISNULL([Saturday], N'-') [Saturday]
+		ISNULL([t].[Sunday], N'-') [Sunday],  
+		ISNULL([t].[Monday], N'-') [Monday],
+		ISNULL([t].[Tuesday], N'-') [Tuesday],
+		ISNULL([t].[Wednesday], N'-') [Wednesday],
+		ISNULL([t].[Thursday], N'-') [Thursday],
+		ISNULL([t].[Friday], N'-') [Friday],
+		ISNULL([t].[Saturday], N'-') [Saturday]
 	INTO 
 		#tow_projection -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
 	FROM 
