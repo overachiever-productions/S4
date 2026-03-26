@@ -7,6 +7,14 @@
 				i mean... i don't want someone specifying a start of 2 years ago... and no end date, right? 
 					or, if they do... it should have to be explicit? 
 
+	BUG / PROBLEM: 
+		dbo.[eventstore_heatmap_frame] is focused on TIMES and 'ignores' (effectively) ...dates.
+			which means that the datetimes that it throws out ... are 1900-01-01 <time> 
+			which made me spend ~40 minutes trying to figure out WHY THE F I could clearly see that GETDATE() AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific Standard Time' 100% correctly
+				showed -7:00 (2026-03-18) but my "heatmap_frame" calculations of t.[start_time] AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific....' were 100000% showing as -8:00 always. 
+				cuz ... duh, 1900-01-01 is ... january and ... apparently governed by non-DST - i.e., -8 hours. 
+				SIGH.
+
 
 	EXAMPLE:
 			EXEC [admindb].dbo.[eventstore_report_all_errors_heatmap]
@@ -28,12 +36,14 @@ IF OBJECT_ID('dbo.[eventstore_report_all_errors_heatmap]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
-	@Mode						sysname			= N'TIME_OF_DAY',
-	@Granularity				sysname			= N'HOUR', 
+	@Mode						sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | TIME_OF_WEEK } 
+	@Granularity				sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
 	@Start						datetime		= NULL, 
 	@End						datetime		= NULL, 
-	@TimeZone					sysname			= NULL, 
+	@TimeZone					sysname			= N'UTC', 
+	@ExcludeUTCHeader			bit				= 0,					-- TODO: make this a 'default'/preference... 
 	@UseDefaults				bit				= 1, 
+	@EventStoreTarget			sysname			= NULL,	
 	@MinimumSeverity			int				= -1, 
 	@ErrorIds					nvarchar(MAX)	= NULL, 
 	@Databases					nvarchar(MAX)	= NULL,
@@ -47,32 +57,49 @@ AS
 
 	-- {copyright}
 
-	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'TIME_OF_DAY'));
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
-	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @TimeZone = ISNULL(NULLIF(@TimeZone, N''), N'UTC');
+	SET @ExcludeUTCHeader = ISNULL(@ExcludeUTCHeader, 0);
+	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
+	SET @UseDefaults = ISNULL(@UseDefaults, 1);
 
 	SET @MinimumSeverity = ISNULL(NULLIF(@MinimumSeverity, 0), -1);
 	SET @ErrorIds = NULLIF(@ErrorIds, N'');
+	SET @ExcludeSystemErrors = ISNULL(@ExcludeSystemErrors, 1);
+
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @Applications = NULLIF(@Applications, N'');
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');
-	SET @ExcludeSystemErrors = ISNULL(@ExcludeSystemErrors, 1);
+
+	-- TODO: validate @Mode
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @eventStoreKey sysname = N'ALL_ERRORS';
 	DECLARE @reportType sysname = N'HEATMAP';
-	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0;
+	DECLARE @fullyQualifiedTargetTable sysname, @outcome int = 0, @outputID int;
 
-	EXEC @outcome = dbo.[eventstore_get_target_by_key]
-		@EventStoreKey = @eventStoreKey,
-		@TargetTable = @fullyQualifiedTargetTable OUTPUT;
+	IF @EventStoreTarget IS NULL BEGIN
+		EXEC @outcome = dbo.[eventstore_get_target_by_key]
+			@EventStoreKey = @eventStoreKey,
+			@TargetTable = @fullyQualifiedTargetTable OUTPUT;
 
-	IF @outcome <> 0 
-		RETURN @outcome;
+		IF @outcome <> 0 
+			RETURN @outcome;
+	  END; 
+	ELSE BEGIN 
+		EXEC @outcome = dbo.[load_id_for_normalized_name]
+			@TargetName = @EventStoreTarget,
+			@ParameterNameForTarget = N'@EventStoreTarget',
+			@NormalizedName = @fullyQualifiedTargetTable OUTPUT, 
+			@ObjectID = @outputID OUTPUT;
+
+		IF @outcome <> 0 
+			RETURN @outcome;
+	END;
 	
 	IF @UseDefaults = 1 BEGIN
 		DECLARE @defaultTimeZone sysname, @defaultStartTime datetime, @defaultPredicates nvarchar(MAX);
@@ -103,6 +130,7 @@ AS
 			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
 			IF @MinimumSeverity IS NULL SELECT @MinimumSeverity = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinimumSeverity';
 			IF @ErrorIds IS NULL SELECT @ErrorIds = [value] FROM @predicates WHERE [key] = N'@ErrorIds';
+
 			IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
  			IF @Applications IS NULL SELECT @Applications = [value] FROM @predicates WHERE [key] = N'@Applications';
 			IF @Hosts IS NULL SELECT @Hosts = [value] FROM @predicates WHERE [key] = N'@Hosts';
@@ -111,10 +139,11 @@ AS
 		END;
 	END;
 
+	-- TODO: @ExcludeUTCHeader can only be 1 IF there's a VALID @TimeZone specified 
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Zone Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @timeZoneTransformType sysname = N'NONE';
 	IF @TimeZone IS NOT NULL BEGIN 
 		IF (SELECT [dbo].[get_engine_version]()) < 13.00 BEGIN
 			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
@@ -123,13 +152,6 @@ AS
 
 		IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
 			SET @TimeZone = dbo.[get_local_timezone]();
-
-		DECLARE @timeZoneOffsetMinutes int = (dbo.[get_timezone_offset_minutes](@TimeZone));
-
-		IF @TimeZone IS NULL
-			SET @timeZoneTransformType = N'OUTPUT-ONLY';
-		ELSE 
-			SET @timeZoneTransformType = N'ALL';
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -150,7 +172,9 @@ AS
 	
 	EXEC @outcome = dbo.[eventstore_heatmap_frame]
 		@Granularity = @Granularity,
-		--@TimeZone = @TimeZone,
+        @TimeZone = @TimeZone,
+		@Start = @Start, 
+		@End = @End,
 		@SerializedOutput = @map OUTPUT;
 
 	IF @outcome <> 0 
@@ -159,8 +183,10 @@ AS
 	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
-			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[data].[row].value(N'(end_time)[1]', N'datetime') [end_time] 
+			[data].[row].value(N'(start_time)[1]', N'time') [start_time],
+			[data].[row].value(N'(end_time)[1]', N'time') [end_time], 
+			[data].[row].value(N'(local_start)[1]', N'datetime2(4)') [zone_start], 
+			[data].[row].value(N'(local_end)[1]', N'datetime2(4)') [zone_end]
 		FROM 
 			@map.nodes(N'//time') [data]([row])
 	) 
@@ -168,7 +194,9 @@ AS
 	SELECT 
 		[block_id],
 		[start_time],
-		[end_time]
+		[end_time],
+		[zone_start], 
+		[zone_end]
 	INTO 
 		#times
 	FROM 
@@ -187,11 +215,69 @@ AS
 	IF @End IS NULL SET @End = GETUTCDATE();
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Predicate Mapping and Extraction:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @filters nvarchar(MAX) = N'';
+	DECLARE @joins nvarchar(MAX) = N'';
+
+	IF @Databases IS NOT NULL BEGIN
+		CREATE TABLE #expandedDatabases (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[database] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [database])
+		);
+	END; 
+
+	IF @Applications IS NOT NULL BEGIN
+		CREATE TABLE #applications (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[application_name] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [application_name]) 
+		);
+	END;
+
+	IF @Hosts IS NOT NULL BEGIN 
+		CREATE TABLE #hosts (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[host_name] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [host_name])
+		); 
+	END;
+
+	IF @Principals IS NOT NULL BEGIN
+		CREATE TABLE #principals (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[principal] sysname NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude], [principal])
+		); 
+	END;
+
+	IF @Statements IS NOT NULL BEGIN 
+		CREATE TABLE #statements (
+			[row_id] int IDENTITY(1,1) NOT NULL, 
+			[statement] nvarchar(MAX) NOT NULL, 
+			[is_exclude] bit DEFAULT(0), 
+			PRIMARY KEY CLUSTERED ([is_exclude]) 
+		);
+	END;
+
+	EXEC [admindb].dbo.[eventstore_report_predicates]
+		@Databases = @Databases,
+		@Applications = @Applications,
+		@Hosts = @Hosts,
+		@Principals = @Principals,
+		@Statements = @Statements,
+		@JoinPredicates = @joins OUTPUT,
+		@FilterPredicates = @filters OUTPUT;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metrics Extraction:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @crlftab nchar(3) = NCHAR(13) + NCHAR(10) + NCHAR(9);
-	DECLARE @filters nvarchar(MAX) = N'';
-	DECLARE @joins nvarchar(MAX) = N'';
 
 	CREATE TABLE #metrics ( 
 		[error_timestamp] datetime NOT NULL,  
@@ -272,197 +358,6 @@ AS
 		END;
 	END;
 
-
-	IF @Databases IS NOT NULL BEGIN 
-		DECLARE @databasesValues table (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[databases_value] sysname NOT NULL 
-		); 
-
-		CREATE TABLE #expandedDatabases (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[database_name] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [database_name])
-		);
-
-		INSERT INTO @databasesValues ([databases_value])
-		SELECT [result] FROM dbo.[split_string](@Databases, N',', 1);
-
-		INSERT INTO [#expandedDatabases] ([database_name], [is_exclude])
-		SELECT 
-			CASE WHEN [databases_value] LIKE N'-%' THEN RIGHT([databases_value], LEN([databases_value]) -1) ELSE [databases_value] END [database_name],
-			CASE WHEN [databases_value] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM 
-			@databasesValues 
-		WHERE 
-			[databases_value] NOT LIKE N'%{%';
-
-		IF EXISTS (SELECT NULL FROM @databasesValues WHERE [databases_value] LIKE N'%{%') BEGIN 
-			DECLARE @databasesToken sysname, @dbTokenAbsolute sysname;
-			DECLARE @databasesXml xml;
-
-			DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT 
-				[row_id], 
-				[databases_value]
-			FROM 
-				@databasesValues 
-			WHERE 
-				[databases_value] LIKE N'%{%';
-			
-			OPEN [walker];
-			FETCH NEXT FROM [walker] INTO @rowId, @databasesToken;
-			
-			WHILE @@FETCH_STATUS = 0 BEGIN
-				
-				SET @outcome = 0;
-				SET @databasesXml = NULL;
-				SELECT @dbTokenAbsolute = CASE WHEN @databasesToken LIKE N'-%' THEN RIGHT(@databasesToken, LEN(@databasesToken) -1) ELSE @databasesToken END;
-
-				EXEC @outcome = dbo.[list_databases_matching_token]
-					@Token = @dbTokenAbsolute,
-					@SerializedOutput = @databasesXml OUTPUT;
-
-				IF @outcome <> 0 
-					RETURN @outcome; 
-
-				WITH shredded AS ( 
-					SELECT
-						[data].[row].value('@id[1]', 'int') [row_id], 
-						[data].[row].value('.[1]', 'sysname') [database_name]
-					FROM 
-						@databasesXml.nodes('//database') [data]([row])
-				) 
-				
-				INSERT INTO [#expandedDatabases] ([database_name], [is_exclude])
-				SELECT 
-					[database_name], 
-					CASE WHEN @databasesToken LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-				FROM 
-					shredded
-				WHERE 
-					[database_name] NOT IN (SELECT [database_name] FROM [#expandedDatabases])
-				ORDER BY 
-					[row_id];
-				
-				FETCH NEXT FROM [walker] INTO @rowId, @databasesToken;
-			END;
-			
-			CLOSE [walker];
-			DEALLOCATE [walker];
-		END;
-
-		IF EXISTS (SELECT NULL FROM [#expandedDatabases] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#expandedDatabases] [d] ON [d].[is_exclude] = 0 AND [e].[database] LIKE [d].[database_name]';
-		END; 
-
-		IF EXISTS (SELECT NULL FROM [#expandedDatabases] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#expandedDatabases] [dx] ON [dx].[is_exclude] = 1 AND [e].[database] LIKE [dx].[database_name]';
-			SET @filters = @filters + @crlftab + N'AND [dx].[database_name] IS NULL';
-		END; 
-	END;
-
-	IF @Applications IS NOT NULL BEGIN 
-		CREATE TABLE #applications (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[application_name] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [application_name]) 
-		);
-
-		INSERT INTO [#applications] ([application_name], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [application_name], 
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM 
-			[dbo].[split_string](@Applications, N',', 1);
-
-		IF EXISTS (SELECT NULL FROM [#applications] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#applications] [a] ON [a].[is_exclude] = 0 AND [e].[application_name] LIKE [a].[application_name]';
-		END; 
-
-		IF EXISTS (SELECT NULL FROM [#applications] WHERE [is_exclude] = 1) BEGIN
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#applications] [ax] ON [ax].[is_exclude] = 1 AND [e].[application_name] LIKE [ax].[application_name]';
-			SET @filters = @filters + @crlftab + N'AND [ax].[application_name] IS NULL';
-		END;
-	END;
-
-	IF @Hosts IS NOT NULL BEGIN 
-		CREATE TABLE #hosts (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[host_name] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [host_name])
-		); 
-
-		INSERT INTO [#hosts] ([host_name], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [host], 
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM	
-			dbo.[split_string](@Hosts, N',', 1);
-
-		IF EXISTS (SELECT NULL FROM [#hosts] WHERE [is_exclude] = 0) BEGIN
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#hosts] [h] ON [h].[is_exclude] = 0 AND [e].[host_name] LIKE [h].[host_name]';
-		END;
-		
-		IF EXISTS (SELECT NULL FROM [#hosts] WHERE [is_exclude] = 1) BEGIN
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#hosts] [hx] ON [hx].[is_exclude] = 1 AND [e].[host_name] LIKE [hx].[host_name]';
-			SET @filters = @filters + @crlftab + N'AND [hx].[host_name] IS NULL';
-		END;
-	END;
-
-	IF @Principals IS NOT NULL BEGIN
-		CREATE TABLE #principals (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[principal] sysname NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude], [principal])
-		); 
-
-		INSERT INTO [#principals] ([principal], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [principal],
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]
-		FROM 
-			[dbo].[split_string](@Principals, N',', 1);
-
-		IF EXISTS (SELECT NULL FROM [#principals] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#principals] [p] ON [p].[is_exclude] = 0 AND [p].[principal] LIKE [e].[user_name]';
-		END; 
-
-		IF EXISTS (SELECT NULL FROM [#principals] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins + @crlftab + N'LEFT OUTER JOIN [#principals] [px] ON [p].[is_exclude] = 1 AND [e].[user_name] LIKE [px].[principal]';
-			SET @filters = @filters + @crlftab + N'AND [px].[principal] IS NULL';
-		END; 
-	END;
-
-	IF @Statements IS NOT NULL BEGIN 
-		CREATE TABLE #statements (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[statement] nvarchar(MAX) NOT NULL, 
-			[is_exclude] bit DEFAULT(0), 
-			PRIMARY KEY CLUSTERED ([is_exclude]) 
-		);
-
-		INSERT INTO [#statements] ([statement], [is_exclude])
-		SELECT 
-			CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) - 1) ELSE [result] END [statement],
-			CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [is_exclude]			
-		FROM 
-			dbo.[split_string](@Statements, N', ', 1);
-
-		IF EXISTS (SELECT NULL FROM [#statements] WHERE [is_exclude] = 0) BEGIN 
-			SET @joins = @joins + @crlftab + N'INNER JOIN [#statements] [s] ON [s].[is_exclude] = 0 AND [e].[statement] LIKE [s].[statement]';
-		END;
-
-		IF EXISTS (SELECT NULL FROM [#statements] WHERE [is_exclude] = 1) BEGIN 
-			SET @joins = @joins  + @crlftab + N'LEFT OUTER JOIN [#statements] [sx] ON [sx].[is_exclude] = 1 AND [e].[statement] LIKE [sx].[statement]';
-			SET @filters = @filters + @crlftab + N'AND [sx].[statement] IS NULL';
-		END;
-	END;
-
 	IF @ExcludeSystemErrors = 1 BEGIN 
 		SET @filters = @filters + @crlftab + N'AND [e].[is_system] = 0';
 	END;
@@ -479,19 +374,7 @@ WHERE
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @fullyQualifiedTargetTable);
 	SET @sql = REPLACE(@sql, N'{joins}', @joins);
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
-
-	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
-
-	IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
-		SELECT 
-			@Start = CAST((@Start AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
-			@End   = CAST((@End   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
-
-		SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (UTC).';
-	END;
-
-	PRINT @timeRangeString;
-	PRINT N'';
+	--SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
 	INSERT INTO [#metrics] (
 		[error_timestamp],
@@ -503,24 +386,43 @@ WHERE
 		@Start = @Start, 
 		@End = @End;
 
-
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @Mode = N'TIME_OF_DAY' BEGIN
+	DECLARE @timeBounds nvarchar(MAX) = N'';
+	DECLARE @orderBy nvarchar(MAX) = N'[utc_time]';
+	DECLARE @renamed nvarchar(MAX) = N'zone_time';	
+
+	IF @TimeZone = N'UTC' BEGIN
+		SET @timeBounds = N'[utc_time],'
+		END;
+	ELSE BEGIN 
+		SET @renamed = REPLACE(LOWER(@TimeZone), N' ', N'_');
+
+		IF @ExcludeUTCHeader = 1 BEGIN 
+			SET @timeBounds = N'[zone_time] [{renamed}],';
+			SET @orderBy = N'[zone_time]';
+			END;
+		ELSE BEGIN
+			SET @timeBounds = N'[utc_time],' + @crlftab + N'[zone_time] [{renamed}], ';
+		END;
+	END;
 	
-		SET @sql = N'WITH correlated AS ( 
+	IF @Mode = N'TIME_OF_DAY' BEGIN
+
+		WITH correlated AS ( 
 			SELECT 
 				[t].[block_id], 
-				[m].[error_number]				
+				[m].[error_number]	
 			FROM 
 				[#times] [t] 
-				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[error_timestamp] AS time) <= CAST([t].[end_time] AS time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] AS time)
 		), 
 		aggregated AS ( 
 			SELECT 
 				[block_id], 
 				COUNT(*) [errors], 
+				-- TODO: possibly look at adding MAX([severity])? 
 				COUNT(DISTINCT [error_number]) [distinct_errors]
 			FROM 
 				[correlated] 
@@ -531,20 +433,30 @@ WHERE
 		)
 		
 		SELECT 
-			FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
+			FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
+			FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
 			ISNULL([a].[errors], 0) [total_errors], 
 			ISNULL([a].[distinct_errors], 0) [distinct_errors]
+		INTO 
+			#tod_projection  -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
 		FROM 
 			[#times] [t]
 			LEFT OUTER JOIN [aggregated] [a] ON	[t].[block_id] = [a].[block_id]
 		ORDER BY
-			[t].[block_id]; ';
+			[t].[block_id]; 
 
-		IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-			SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
-		  END; 
-		ELSE 
-			SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+		SET @sql = N'SELECT 
+	{time_bounds}
+	[total_errors],
+	[distinct_errors] 
+FROM 
+	[#tod_projection]
+ORDER BY 
+	{order_by}; ';
+
+		SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
+		SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
+		SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
 
 		EXEC sys.[sp_executesql] 
 			@sql;
@@ -583,7 +495,7 @@ WHERE
 	FROM 
 		[#times] [t]
 		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[error_timestamp]) = @currentDayID
-			AND (CAST([m].[error_timestamp] AS time) < CAST([t].[end_time] as time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] as time))
+			AND (CAST([m].[error_timestamp] AS time) <= CAST([t].[end_time] as time) AND CAST([m].[error_timestamp] AS time) > CAST([t].[start_time] as time))
 	WHERE 
 		[m].[error_timestamp] IS NOT NULL
 ), 
@@ -623,7 +535,6 @@ FROM
 		SET @sql = REPLACE(@sql, N'{select}', @select);
 		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
 			
-		--EXEC dbo.[print_long_string] @sql;
 		EXEC sys.sp_executesql 
 			@sql, 
 			N'@currentDayID int', 
@@ -635,29 +546,44 @@ FROM
 	CLOSE [walker];
 	DEALLOCATE [walker];
 
-	SET @sql = N'SELECT 
-	FORMAT([t].[start_time], N''HH:mm'') + N'':00 - '' + FORMAT(DATEADD(MINUTE, -1, [t].[end_time]), N''HH:mm'') + N'':59''  [utc_time_of_day],{local_zone}
-	N'' '' [ ],
-	ISNULL([Sunday], N''-'') [Sunday],  
-	ISNULL([Monday], N''-'') [Monday],
-	ISNULL([Tuesday], N''-'') [Tuesday],
-	ISNULL([Wednesday], N''-'') [Wednesday],
-	ISNULL([Thursday], N''-'') [Thursday],
-	ISNULL([Friday], N''-'') [Friday],
-	ISNULL([Saturday], N''-'') [Saturday]
-FROM 
-	[#times] [t]
-ORDER BY 
-	[block_id];';
+	SELECT 
+		FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
+		FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
+		ISNULL([t].[Sunday], N'-') [Sunday],  
+		ISNULL([t].[Monday], N'-') [Monday],
+		ISNULL([t].[Tuesday], N'-') [Tuesday],
+		ISNULL([t].[Wednesday], N'-') [Wednesday],
+		ISNULL([t].[Thursday], N'-') [Thursday],
+		ISNULL([t].[Friday], N'-') [Friday],
+		ISNULL([t].[Saturday], N'-') [Saturday]
+	INTO 
+		#tow_projection -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
+	FROM 
+		[#times] [t]
+	ORDER BY 
+		[block_id];
 
-	IF UPPER(@timeZoneTransformType) <> N'NONE' BEGIN
-		SET @sql = REPLACE(@sql, N'{local_zone}', @crlftab + N'FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':00 - '' + FORMAT(CAST(([t].[end_time] AT TIME ZONE ''UTC'' AT TIME ZONE ''' + @TimeZone + N''') as datetime), N''HH:mm'') + N'':59'' [' + REPLACE(REPLACE(LOWER(@TimeZone), N' ', N'_'), N'_standard_time', N'') + N'_time_of_day],');
-	  END; 
-	ELSE 
-		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
+	SET @sql = N'SELECT 
+	{time_bounds}
+	N'' '' [ ],
+	[Sunday],
+	[Monday],
+	[Tuesday],
+	[Wednesday],
+	[Thursday],
+	[Friday],
+	[Saturday] 
+FROM 
+	[#tow_projection]
+ORDER BY 
+	{order_by}; ';
+
+	SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
+	SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
+	SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
 
 	EXEC sys.[sp_executesql] 
-		@sql;	
+		@sql;
 
 	RETURN 0;
 GO
