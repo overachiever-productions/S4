@@ -56,7 +56,32 @@ AS
 
 	-- {copyright}
 
-	DECLARE @sql nvarchar(2000) = N'
+	DECLARE @name sysname, @is_encrypted bit;
+	DECLARE @sql nvarchar(MAX) = N'USE [{TargetDatabase}];
+SELECT 
+	@name = OBJECT_NAME([object_id]), 
+	@is_encrypted = OBJECTPROPERTY([object_id], ''IsEncrypted'') 
+FROM 
+	sys.[sql_modules] 
+WHERE 
+	object_id = @ObjectID; ';
+
+	SET @sql = REPLACE(@sql, N'{TargetDatabase}', @TargetDatabase);
+
+	EXEC sys.[sp_executesql]
+		@sql, 
+		N'@ObjectID int, @name sysname OUTPUT, @is_encrypted bit OUTPUT',
+		@ObjectID = @ObjectID, 
+		@name = @name OUTPUT, 
+		@is_encrypted = @is_encrypted OUTPUT;
+
+	IF @is_encrypted = 1 BEGIN
+		SET @Statement = N'!!ENCRYPTED: <proc_name: ' + @name + N' >';
+
+		RETURN 0;
+	END;
+
+	SET @sql = N'
 SELECT 
 	@Statement = SUBSTRING([definition], (@offsetStart / 2) + 1, (CASE WHEN @offsetEnd < 1 THEN DATALENGTH([definition]) ELSE (@offsetEnd - @offsetStart)/2 END) + 1) 
 FROM 
