@@ -53,7 +53,6 @@ AS
 	IF @exclude_ssis_assemblies = 1 BEGIN
 		DELETE FROM [#assemblies] 
 		WHERE [clr_name] LIKE N'microsoft.sqlserver.integrationservices.server, version=%' AND [name] = N'ISSERVER'
-
 	END;
 
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
