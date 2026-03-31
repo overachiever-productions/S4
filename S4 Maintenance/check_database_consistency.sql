@@ -104,6 +104,8 @@ AS
         @ExcludeRecovering = 1,
         @ExcludeOffline = 1;
     
+	DELETE FROM @DatabasesToCheck WHERE [database_name] = N'tempdb';
+
     DECLARE @errorMessage nvarchar(MAX); 
 	DECLARE @errors table ( 
 		[row_id] int IDENTITY(1,1) NOT NULL, 

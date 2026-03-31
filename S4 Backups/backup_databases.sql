@@ -392,6 +392,8 @@ AS
 		@ExcludeReadOnly = 0, 
 		@ExcludeSimpleRecovery = @excludeSimple;
 
+	DELETE FROM @targetDatabases WHERE [database_name] = N'tempdb';
+
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN
 		IF @AllowNonAccessibleSecondaries = 1 BEGIN

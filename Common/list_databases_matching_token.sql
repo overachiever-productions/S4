@@ -1,5 +1,10 @@
 /*
-    NOTE: 
+    
+	REFACTOR:
+		=> databases_by_token
+	
+	
+	NOTE: 
         - This sproc adheres to the PROJECT/RETURN usage convention.
 
 		
@@ -78,7 +83,11 @@ AS
 		); 	
 	
 		INSERT INTO @system_databases ([database_name])
-		SELECT N'master' UNION SELECT N'msdb' UNION SELECT N'model';		
+		VALUES 
+			(N'master'), 
+			(N'tempdb'), 
+			(N'msdb'), 
+			(N'model');
 
 		-- Treat admindb as {SYSTEM} if defined as system... : 
 		IF (SELECT dbo.is_system_database('admindb')) = 1 BEGIN
@@ -102,8 +111,7 @@ AS
 		IF UPPER(@Token) IN (N'{ALL}', N'{USER}') BEGIN 
 			INSERT INTO @tokenMatches ([database_name])
 			SELECT [name] FROM sys.databases
-			WHERE [name] NOT IN (SELECT [database_name] COLLATE SQL_Latin1_General_CP1_CI_AS  FROM @system_databases)
-				AND LOWER([name]) <> N'tempdb'
+			WHERE [name] NOT IN (SELECT [database_name] COLLATE SQL_Latin1_General_CP1_CI_AS FROM @system_databases)
 			ORDER BY [name];
 		 END; 
 
