@@ -124,6 +124,28 @@ AS
 		RETURN -10;
 	END;
 
+	CREATE TABLE [#intermediate] (
+		[name] [sysname] NOT NULL,
+		[level] [tinyint] NOT NULL,
+		[state] [nvarchar](60) NULL,
+		[collation] [sysname] NULL,
+		[db_size_gb] [decimal](24, 1) NULL,
+		[free_space_gb] [decimal](24, 2) NULL,
+		[log_size_gb] [decimal](24, 1) NULL,
+		[log_used_pct] [decimal](5, 1) NULL,
+		[recovery] [nvarchar](60) NULL,
+		[vlf_count] [int] NULL,
+		[file_counts (d:l:fs:fti)] [nvarchar](515) NULL,
+		[page_verify] [nvarchar](60) NULL,
+		[trustworthy] [bit] NULL,
+		[rcsi] [bit] NULL,
+		[query_store] [bit] NULL,
+		[advanced_options] [nvarchar](4000) NULL,
+		[non_sa_owner] [int] NOT NULL,
+		[smells] [nvarchar](4000) NULL
+	);
+
+	SET @sql = N'
 	SELECT 
 		database_id, 
 		SUM(CASE WHEN [type] = 0 THEN 1 ELSE 0 END) [data_files_count], 
@@ -140,7 +162,7 @@ AS
 	WITH files_on_c AS ( 
 		SELECT 
 			[name],
-			MAX(CASE WHEN [physical_name] LIKE N'C:\%' THEN 1 ELSE 0 END) [files_on_c]
+			MAX(CASE WHEN [physical_name] LIKE N''C:\%'' THEN 1 ELSE 0 END) [files_on_c]
 		FROM 
 			sys.[master_files]
 		GROUP BY 
@@ -151,15 +173,15 @@ AS
 			[d].[name] [name],
 			[d].[compatibility_level] [level], 
 			CASE 
-				WHEN [d].[state_desc] = N'ONLINE' AND [d].[user_access_desc] = N'MULTI_USER' THEN N'ONLINE'
+				WHEN [d].[state_desc] = N''ONLINE'' AND [d].[user_access_desc] = N''MULTI_USER'' THEN N''ONLINE''
 				ELSE CASE 
-					WHEN [d].[state_desc] = N'ONLINE' THEN d.[user_access_desc] 
+					WHEN [d].[state_desc] = N''ONLINE'' THEN d.[user_access_desc] 
 					ELSE [d].[state_desc]
 				END 
 			END [state],
 
 			-- TODO: add in MIRROR / REPLICA - based on whether the DB is mirrored or in an AG. 
-			--		ideally, there's some way to communicate if we're primary, secondary, RO, distributed, etc. 
+			--		ideally, there''s some way to communicate if we''re primary, secondary, RO, distributed, etc. 
 
 			[d].[collation_name] [collation],
 			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,1)) [db_size_gb],
@@ -168,34 +190,30 @@ AS
 			[log_space].[used_percent] [%_log_used],
 			[d].recovery_model_desc [recovery],
 			
-			CAST([c].[data_files_count] AS sysname) + N':' + CAST([c].[log_files_count] AS sysname) + N':' + CAST([c].[fs_files_count] AS sysname) + N':' + CAST([c].[fti_files_count] AS sysname) AS [file_counts (d:l:fs:fti)],
+			CAST([c].[data_files_count] AS sysname) + N'':'' + CAST([c].[log_files_count] AS sysname) + N'':'' + CAST([c].[fs_files_count] AS sysname) + N'':'' + CAST([c].[fti_files_count] AS sysname) AS [file_counts (d:l:fs:fti)],
 			[d].page_verify_option_desc [page_verify],
 			[d].[is_trustworthy_on] [trustworthy],
 			[d].[is_read_committed_snapshot_on] [rcsi], 
 			[d].[is_query_store_on] [query_store],
-			CASE WHEN [d].[snapshot_isolation_state] = 1 THEN N' SNAPSHOT_ISOLATION; ' ELSE N'' END
-				+ CASE WHEN [d].[is_broker_enabled] = 1 THEN N' BROKER; ' ELSE N'' END
-				--+ CASE WHEN [d].[is_fulltext_enabled] = 1 THEN N' FTI; ' ELSE N'' END   -- this is true on any ... server with FTI installed. 
-				+ CASE WHEN [d].[is_cdc_enabled] = 1 THEN N' CDC; ' ELSE N'' END
-				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N' TARGET_RECOVERY_SECs: ' + CAST([d].[target_recovery_time_in_seconds] AS sysname) + N'; ' ELSE N'' END
-				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N' DELAYED_DURABILITY: ' + CAST([d].[delayed_durability] AS sysname) + N'; ' ELSE N'' END
-				+ CASE WHEN [d].[containment_desc] <> N'NONE' THEN N' CONTAINMENT: ' + [d].[containment_desc] + N'; ' ELSE N'' END
-				+ CASE WHEN [d].[is_encrypted] = 1 THEN N' ENCRYPTED; ' ELSE N'' END
-				+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N' ACCELERATED_RECOVERY; ' ELSE N'' END
-				+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N' STALE_PAGE_DETECTION; ' ELSE N'' END
-				+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N' RESULT_SET_CACHING; ' ELSE N'' END
-				+ CASE WHEN [d].[is_ledger_on] = 1 THEN N' LEDGER; ' ELSE N'' END
+			CASE WHEN [d].[snapshot_isolation_state] = 1 THEN N'' SNAPSHOT_ISOLATION; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_broker_enabled] = 1 THEN N'' BROKER; '' ELSE N'''' END
+				--+ CASE WHEN [d].[is_fulltext_enabled] = 1 THEN N'' FTI; '' ELSE N'''' END   -- this is true on any ... server with FTI installed. 
+				+ CASE WHEN [d].[is_cdc_enabled] = 1 THEN N'' CDC; '' ELSE N'''' END
+				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N'' TARGET_RECOVERY_SECs: '' + CAST([d].[target_recovery_time_in_seconds] AS sysname) + N''; '' ELSE N'''' END
+				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N'' DELAYED_DURABILITY: '' + CAST([d].[delayed_durability] AS sysname) + N''; '' ELSE N'''' END
+				+ CASE WHEN [d].[containment_desc] <> N''NONE'' THEN N'' CONTAINMENT: '' + [d].[containment_desc] + N''; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_encrypted] = 1 THEN N'' ENCRYPTED; '' ELSE N'''' END{version_smells}
 				-- TODO: add in any other options here that make sense... 
 			[advanced_options],
 			CASE WHEN [d].[owner_sid] = 0x01 THEN 0 ELSE 1 END [non_sa_owner],
-			CASE WHEN [d].[is_auto_close_on] = 1 THEN N' Auto-Close; ' ELSE N'' END
-				+ CASE WHEN [fc].[files_on_c] = 1 THEN N' Files on C:\; ' ELSE N'' END
-				+ CASE WHEN [d].[is_trustworthy_on] = 1 AND [d].[name] NOT IN (N'msdb') THEN N' TRUSTHWORTHY; ' ELSE N'' END
-				+ CASE WHEN [d].[is_trustworthy_on] = 0 AND [d].[name] IN (N'msdb') THEN N' NOT-TRUSTWORTHY-msdb; ' ELSE N'' END
-				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N' Auto-Shrink; ' ELSE N'' END
-				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N' Parameterization-Forced; ' ELSE N'' END
-				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N' Auto-Async-Stats; ' ELSE N'' END 
-				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 AND [d].[name] NOT IN (N'master', N'msdb', N'model') THEN N' MIXED-PAGE-ALLOCATION; ' ELSE N'' END  -- CAN'T be set to OFF in these DBs. 
+			CASE WHEN [d].[is_auto_close_on] = 1 THEN N'' Auto-Close; '' ELSE N'''' END
+				+ CASE WHEN [fc].[files_on_c] = 1 THEN N'' Files on C:\; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_trustworthy_on] = 1 AND [d].[name] NOT IN (N''msdb'') THEN N'' TRUSTHWORTHY; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_trustworthy_on] = 0 AND [d].[name] IN (N''msdb'') THEN N'' NOT-TRUSTWORTHY-msdb; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N'' Auto-Shrink; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N'' Parameterization-Forced; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N'' Auto-Async-Stats; '' ELSE N'''' END 
+				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 AND [d].[name] NOT IN (N''master'', N''msdb'', N''model'') THEN N'' MIXED-PAGE-ALLOCATION; '' ELSE N'''' END  -- CAN''T be set to OFF in these DBs. 
 			[smells]
 		FROM 
 			sys.databases [d]
@@ -208,12 +226,32 @@ AS
 	), 
 	vlfs AS ( 
 		SELECT 
-			[data].[row].value(N'(database_name)[1]', N'sysname') [database_name], 
-			[data].[row].value(N'(vlf_count)[1]', N'int') [vlf_count]
+			[data].[row].value(N''(database_name)[1]'', N''sysname'') [database_name], 
+			[data].[row].value(N''(vlf_count)[1]'', N''int'') [vlf_count]
 		FROM 
-			@vlfCounts.nodes(N'//database') [data]([row])		
+			@vlfCounts.nodes(N''//database'') [data]([row])		
 	)
 
+	INSERT INTO [#intermediate] (
+		[name],
+		[level],
+		[state],
+		[collation],
+		[db_size_gb],
+		[free_space_gb],
+		[log_size_gb],
+		[log_used_pct],
+		[recovery],
+		[vlf_count],
+		[file_counts (d:l:fs:fti)],
+		[page_verify],
+		[trustworthy],
+		[rcsi],
+		[query_store],
+		[advanced_options],
+		[non_sa_owner],
+		[smells]
+	)
 	SELECT 
 		[c].[name],
 		[c].[level],
@@ -230,15 +268,34 @@ AS
 		[c].[trustworthy],
 		[c].[rcsi],
 		[c].[query_store],
-		LTRIM(REPLACE([c].[advanced_options], N'  ', N' ')) [advanced_options],
+		LTRIM(REPLACE([c].[advanced_options], N''  '', N'' '')) [advanced_options],
 		[c].[non_sa_owner],
-		LTRIM(REPLACE([c].[smells], N'  ', N' ')) [smells]
-	INTO #intermediate
+		LTRIM(REPLACE([c].[smells], N''  '', N'' '')) [smells]
 	FROM 
 		core [c]
 		LEFT OUTER JOIN [vlfs] [v] ON [c].[name] = [v].[database_name]
 	ORDER BY 
-		[db_size_gb] DESC;
+		[db_size_gb] DESC; ';
+
+	DECLARE @crlf4Tabs nchar(6) = NCHAR(13) + NCHAR(10) + REPLICATE(NCHAR(9), 4);
+	DECLARE @v140Smells nvarchar(MAX) = @crlf4Tabs + N'+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N'' ACCELERATED_RECOVERY; '' ELSE N'''' END'
+		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N'' STALE_PAGE_DETECTION; '' ELSE N'''' END'
+		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N'' RESULT_SET_CACHING; '' ELSE N'''' END'
+	DECLARE @v150Smells nvarchar(MAX) = @v140Smells + @crlf4Tabs + N'+ CASE WHEN [d].[is_ledger_on] = 1 THEN N'' LEDGER; '' ELSE N'''' END'
+
+	DECLARE @version decimal(4,2) = dbo.[get_engine_version]();
+	SET @sql = REPLACE(@sql, N'{version_smells}', 
+		CASE 
+			WHEN @version < 14.00 THEN N''
+			WHEN @version >= 14.00 AND @version < 15.00 THEN @v140Smells
+			WHEN @version >= 15.00 THEN @v150Smells
+		END
+	);
+
+	EXEC sys.sp_executesql 
+		@sql, 
+		N'@vlfCounts xml', 
+		@vlfCounts = @vlfCounts;
 
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		
