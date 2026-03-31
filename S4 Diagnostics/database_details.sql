@@ -190,11 +190,12 @@ AS
 			CASE WHEN [d].[owner_sid] = 0x01 THEN 0 ELSE 1 END [non_sa_owner],
 			CASE WHEN [d].[is_auto_close_on] = 1 THEN N' Auto-Close; ' ELSE N'' END
 				+ CASE WHEN [fc].[files_on_c] = 1 THEN N' Files on C:\; ' ELSE N'' END
-				+ CASE WHEN [d].[is_trustworthy_on] = 1 THEN N' TRUSTHWORTHY; ' ELSE N'' END
+				+ CASE WHEN [d].[is_trustworthy_on] = 1 AND [d].[name] NOT IN (N'msdb') THEN N' TRUSTHWORTHY; ' ELSE N'' END
+				+ CASE WHEN [d].[is_trustworthy_on] = 0 AND [d].[name] IN (N'msdb') THEN N' NOT-TRUSTWORTHY-msdb; ' ELSE N'' END
 				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N' Auto-Shrink; ' ELSE N'' END
 				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N' Parameterization-Forced; ' ELSE N'' END
 				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N' Auto-Async-Stats; ' ELSE N'' END 
-				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 THEN N' MIXED-PAGE-ALLOCATION; ' ELSE N'' END
+				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 AND [d].[name] NOT IN (N'master', N'msdb', N'model') THEN N' MIXED-PAGE-ALLOCATION; ' ELSE N'' END  -- CAN'T be set to OFF in these DBs. 
 			[smells]
 		FROM 
 			sys.databases [d]
@@ -212,7 +213,6 @@ AS
 		FROM 
 			@vlfCounts.nodes(N'//database') [data]([row])		
 	)
-
 
 	SELECT 
 		[c].[name],
