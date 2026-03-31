@@ -188,10 +188,9 @@ AS
 			(SELECT SUM([free_space_mb]) FROM [#freeSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
 			CAST(([log_space].[reserved_mb] / 1024.0) AS decimal(24,1)) [log_size_gb],
 			[log_space].[used_percent] [%_log_used],
-			[d].recovery_model_desc [recovery],
-			
+			[d].[recovery_model_desc] [recovery],
 			CAST([c].[data_files_count] AS sysname) + N'':'' + CAST([c].[log_files_count] AS sysname) + N'':'' + CAST([c].[fs_files_count] AS sysname) + N'':'' + CAST([c].[fti_files_count] AS sysname) AS [file_counts (d:l:fs:fti)],
-			[d].page_verify_option_desc [page_verify],
+			[d].[page_verify_option_desc] [page_verify],
 			[d].[is_trustworthy_on] [trustworthy],
 			[d].[is_read_committed_snapshot_on] [rcsi], 
 			[d].[is_query_store_on] [query_store],
@@ -202,18 +201,20 @@ AS
 				+ CASE WHEN [d].[target_recovery_time_in_seconds] <> 0 THEN N'' TARGET_RECOVERY_SECs: '' + CAST([d].[target_recovery_time_in_seconds] AS sysname) + N''; '' ELSE N'''' END
 				+ CASE WHEN [d].[delayed_durability] <> 0 THEN N'' DELAYED_DURABILITY: '' + CAST([d].[delayed_durability] AS sysname) + N''; '' ELSE N'''' END
 				+ CASE WHEN [d].[containment_desc] <> N''NONE'' THEN N'' CONTAINMENT: '' + [d].[containment_desc] + N''; '' ELSE N'''' END
-				+ CASE WHEN [d].[is_encrypted] = 1 THEN N'' ENCRYPTED; '' ELSE N'''' END{version_smells}
+				+ CASE WHEN [d].[is_encrypted] = 1 THEN N'' ENCRYPTED; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N'' ACCELERATED_RECOVERY; '' ELSE N'''' END
 				-- TODO: add in any other options here that make sense... 
 			[advanced_options],
 			CASE WHEN [d].[owner_sid] = 0x01 THEN 0 ELSE 1 END [non_sa_owner],
-			CASE WHEN [d].[is_auto_close_on] = 1 THEN N'' Auto-Close; '' ELSE N'''' END
-				+ CASE WHEN [fc].[files_on_c] = 1 THEN N'' Files on C:\; '' ELSE N'''' END
+			CASE WHEN [d].[is_auto_close_on] = 1 THEN N'' AUTO_CLOSE; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N'' AUTO_SHRINK; '' ELSE N'''' END
+				+ CASE WHEN [d].[page_verify_option_desc] <> N''CHECKSUM'' THEN N'' NON_CHECKSUM; '' ELSE N'''' END
+				+ CASE WHEN [fc].[files_on_c] = 1 THEN N'' FILES_ON_C; '' ELSE N'''' END
 				+ CASE WHEN [d].[is_trustworthy_on] = 1 AND [d].[name] NOT IN (N''msdb'') THEN N'' TRUSTHWORTHY; '' ELSE N'''' END
 				+ CASE WHEN [d].[is_trustworthy_on] = 0 AND [d].[name] IN (N''msdb'') THEN N'' NOT-TRUSTWORTHY-msdb; '' ELSE N'''' END
-				+ CASE WHEN [d].[is_auto_shrink_on] = 1 THEN N'' Auto-Shrink; '' ELSE N'''' END
-				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N'' Parameterization-Forced; '' ELSE N'''' END
-				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N'' Auto-Async-Stats; '' ELSE N'''' END 
-				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 AND [d].[name] NOT IN (N''master'', N''msdb'', N''model'') THEN N'' MIXED-PAGE-ALLOCATION; '' ELSE N'''' END  -- CAN''T be set to OFF in these DBs. 
+				+ CASE WHEN [d].[is_parameterization_forced] = 1 THEN N'' PARAMETERIZATION_FORCED; '' ELSE N'''' END
+				+ CASE WHEN [d].[is_auto_update_stats_async_on] = 1 THEN N'' AUTO_ASYNC_STATS; '' ELSE N'''' END 
+				+ CASE WHEN [d].[is_mixed_page_allocation_on] = 1 AND [d].[name] NOT IN (N''master'', N''msdb'', N''model'') THEN N'' MIXED-PAGE-ALLOCATION; '' ELSE N'''' END{version_smells}
 			[smells]
 		FROM 
 			sys.databases [d]
@@ -278,7 +279,7 @@ AS
 		[db_size_gb] DESC; ';
 
 	DECLARE @crlf4Tabs nchar(6) = NCHAR(13) + NCHAR(10) + REPLICATE(NCHAR(9), 4);
-	DECLARE @v140Smells nvarchar(MAX) = @crlf4Tabs + N'+ CASE WHEN [d].[is_accelerated_database_recovery_on] = 1 THEN N'' ACCELERATED_RECOVERY; '' ELSE N'''' END'
+	DECLARE @v140Smells nvarchar(MAX) = @crlf4Tabs + N''
 		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N'' STALE_PAGE_DETECTION; '' ELSE N'''' END'
 		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N'' RESULT_SET_CACHING; '' ELSE N'''' END'
 	DECLARE @v150Smells nvarchar(MAX) = @v140Smells + @crlf4Tabs + N'+ CASE WHEN [d].[is_ledger_on] = 1 THEN N'' LEDGER; '' ELSE N'''' END'
