@@ -11,7 +11,8 @@
 					- max size
 					- min size 
 					- avg size. 
-
+		SEE: 
+			https://overachieverllc.atlassian.net/browse/S4-822
 */
 
 USE [admindb];

@@ -1,5 +1,8 @@
 /*
 
+	DRY VIOLATIONS: 
+		https://overachieverllc.atlassian.net/browse/S4-822 
+	
 	TODO: (low priority) 
 		implement @Databases ... NOT 'honored' at all at this point. 
 		AND... I THINK the logical place to do this is AFTER pulling results for ALL dbs. 
