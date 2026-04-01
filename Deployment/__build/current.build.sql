@@ -197,6 +197,7 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
     <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
 	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
 	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
+	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -419,9 +420,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\count_matches.sql
-
------------------------------------
---##INCLUDE: Common\execute_uncatchable_command.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\transient_error_occurred.sql
@@ -854,7 +852,7 @@ GO
 --##INCLUDE: Event Store\etl\eventstore_etl_large_sql.sql
 
 -----------------------------------
---##INCLUDE: Event Store\core\eventstore_get_report_predicates.sql
+--##INCLUDE: Event Store\core\eventstore_report_predicates.sql
 
 -----------------------------------
 --##INCLUDE: Event Store\reports\eventstore_get_report_preferences.sql
