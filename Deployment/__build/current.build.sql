@@ -322,13 +322,13 @@ GO
 --##INCLUDE: Common\base64_encode.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\check_paths.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\verify_directory_access.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\normalize_file_path.sql
-
------------------------------------
---##INCLUDE: Common\Internal\check_paths.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_default_path.sql
@@ -361,13 +361,13 @@ GO
 --##INCLUDE: Common\Internal\verify_directory_access.sql
 
 -----------------------------------
+--##INCLUDE: Common\list_databases_matching_token.sql
+
+-----------------------------------
 --##INCLUDE: Common\core_predicates.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\extract_waitresource.sql
-
------------------------------------
---##INCLUDE: Common\list_databases_matching_token.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\replace_dbname_tokens.sql
@@ -442,6 +442,9 @@ GO
 --##INCLUDE: Common\Internal\establish_directory.sql
 
 -----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_header_details.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\load_backup_database_names.sql
 
 -----------------------------------
@@ -459,9 +462,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
-
------------------------------------
---##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\Utilities\log_backup_history_detail.sql
@@ -852,6 +852,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
+
+-----------------------------------
+--##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_report_predicates.sql
 
 -----------------------------------
 --##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_get_report_preferences.sql
