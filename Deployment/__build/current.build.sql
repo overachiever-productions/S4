@@ -125,7 +125,7 @@ GO
 --##INCLUDE: Common\tables\eventstore_report_preferences.sql
 
 -----------------------------------
---##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
+--##INCLUDE: Common\tables\killed_processes.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\code_library.sql
