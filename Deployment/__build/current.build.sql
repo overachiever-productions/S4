@@ -23,6 +23,7 @@
 -- 1. Create admindb if/as needed: 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 SET NOCOUNT ON;
+SET QUOTED_IDENTIFIER ON; -- SQLCMD defaults to OFF. 
 
 USE [master];
 GO
@@ -1148,6 +1149,10 @@ IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @Cu
 	VALUES (@CurrentVersion, @VersionDescription, GETDATE());
 END;
 GO
+
+IF EXISTS (SELECT NULL FROM sys.sql_modules WHERE [uses_quoted_identifier] = 0) BEGIN
+	SELECT N'WARNING: One or more modules has [uses_quoted_identifier] = 0. Installation FAILED' [failed_installation];
+END;
 
 -----------------------------------
 SELECT * FROM dbo.version_history;
