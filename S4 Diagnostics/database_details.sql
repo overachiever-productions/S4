@@ -67,8 +67,8 @@ AS
 		N''{CURRENT_DB}'' [database_name], 
 		[name] AS [file_name],
 		[type],
-		CAST(([size] / 128.0) AS decimal(22,2)) AS [file_size_mb],
-		CAST(([size] / 128.0 - CAST(FILEPROPERTY([name], ''SpaceUsed'') AS int) / 128.0) AS decimal(22,2)) AS [free_space_mb]
+		CAST(([size] / 128.0) AS decimal(24,2)) AS [file_size_mb],
+		CAST(([size] / 128.0 - CAST(FILEPROPERTY([name], ''SpaceUsed'') AS int) / 128.0) AS decimal(24,2)) AS [free_space_mb]
 	FROM
 		[sys].[database_files]; ';
 
@@ -89,8 +89,8 @@ AS
 	INSERT INTO [#logSpace] ([database_name], [reserved_mb], [used_mb], [used_percent])
 	SELECT 
 		DB_NAME([database_id]) [database_name],
-		CAST(ROUND([total_log_size_in_bytes] / (1024. * 1024.), 1) AS decimal(20, 1)) [reserved_mb],
-		CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024.), 1) AS decimal(20, 1)) [used_mb],
+		CAST(ROUND([total_log_size_in_bytes] / (1024. * 1024.), 1) AS decimal(24, 2)) [reserved_mb],
+		CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024.), 1) AS decimal(24, 2)) [used_mb],
 		CAST([used_log_space_in_percent] AS decimal(5,1)) [used_percent]
 	FROM 
 		sys.[dm_db_log_space_usage]; ';
@@ -98,8 +98,8 @@ AS
 	CREATE TABLE #logSpace (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[database_name] sysname NOT NULL,
-		[reserved_mb] decimal(20,1) NOT NULL, 
-		[used_mb] decimal(20,1) NOT NULL,
+		[reserved_mb] decimal(24,2) NOT NULL, 
+		[used_mb] decimal(24,2) NOT NULL,
 		[used_percent] decimal(5,1) NOT NULL
 	);
 
@@ -127,14 +127,33 @@ AS
 		RETURN -10;
 	END;
 
+	CREATE TABLE [#target_databases] (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[database_name] sysname NOT NULL
+	);
+
+	SET @sql = N'INSERT INTO [#target_databases] ([database_name]) SELECT N''{CURRENT_DB}'' [database_name]';
+
+	SET @errors = NULL;
+	EXEC dbo.[execute_per_database]
+		@Databases = @Databases,
+		@Priorities = @Priorities,
+		@Statement = @sql,
+		@Errors = @errors OUTPUT;
+	
+	IF @errors IS NOT NULL BEGIN 
+		SET @errorContext = N'Unexected error enumerating databases (for predication): ';
+		GOTO ErrorDetails;
+	END;
+
 	CREATE TABLE [#intermediate] (
 		[name] [sysname] NOT NULL,
 		[level] [tinyint] NOT NULL,
 		[state] [nvarchar](60) NULL,
 		[collation] [sysname] NULL,
-		[db_size_gb] [decimal](24, 1) NULL,
+		[db_size_gb] [decimal](24, 2) NULL,
 		[free_space_gb] [decimal](24, 2) NULL,
-		[log_size_gb] [decimal](24, 1) NULL,
+		[log_size_gb] [decimal](24, 2) NULL,
 		[log_used_pct] [decimal](5, 1) NULL,
 		[recovery] [nvarchar](60) NULL,
 		[vlf_count] [int] NULL,
@@ -187,9 +206,9 @@ AS
 			--		ideally, there''s some way to communicate if we''re primary, secondary, RO, distributed, etc. 
 
 			[d].[collation_name] [collation],
-			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,1)) [db_size_gb],
+			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,2)) [db_size_gb],
 			(SELECT SUM([free_space_mb]) FROM [#freeSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
-			CAST(([log_space].[reserved_mb] / 1024.0) AS decimal(24,1)) [log_size_gb],
+			CAST(([log_space].[reserved_mb] / 1024.0) AS decimal(24,2)) [log_size_gb],
 			[log_space].[used_percent] [%_log_used],
 			[d].[recovery_model_desc] [recovery],
 			CAST([c].[data_files_count] AS sysname) + N'':'' + CAST([c].[log_files_count] AS sysname) + N'':'' + CAST([c].[fs_files_count] AS sysname) + N'':'' + CAST([c].[fti_files_count] AS sysname) AS [file_counts (d:l:fs:fti)],
@@ -300,6 +319,11 @@ AS
 		@sql, 
 		N'@vlfCounts xml', 
 		@vlfCounts = @vlfCounts;
+
+
+SELECT * FROM #intermediate; 
+RETURN 0;
+
 
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		
