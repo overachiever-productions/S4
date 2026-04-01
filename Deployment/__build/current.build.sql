@@ -791,100 +791,100 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\utilities\list_xe_sessions.sql
+--##INCLUDE: Event Store\utilities\list_xe_sessions.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_target_by_key.sql
+--##INCLUDE: Event Store\core\eventstore_get_target_by_key.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_translate_error_token.sql
+--##INCLUDE: Event Store\core\eventstore_translate_error_token.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_initialize_extraction.sql
+--##INCLUDE: Event Store\core\eventstore_initialize_extraction.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_finalize_extraction.sql
+--##INCLUDE: Event Store\core\eventstore_finalize_extraction.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_extract_session_xml.sql
+--##INCLUDE: Event Store\core\eventstore_extract_session_xml.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_etl_session.sql
+--##INCLUDE: Event Store\core\eventstore_etl_session.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_etl_processor.sql
+--##INCLUDE: Event Store\core\eventstore_etl_processor.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_verify_jobs.sql
+--##INCLUDE: Event Store\core\eventstore_verify_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_setup_session.sql
+--##INCLUDE: Event Store\core\eventstore_setup_session.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_data_cleanup.sql
+--##INCLUDE: Event Store\core\eventstore_data_cleanup.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_timebounded_counts.sql
+--##INCLUDE: Event Store\core\eventstore_timebounded_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_heatmap_frame.sql
+--##INCLUDE: Event Store\core\eventstore_heatmap_frame.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_all_errors.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_all_errors.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_blocked_processes.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_blocked_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_deadlocks.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_deadlocks.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_large_sql.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_large_sql.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_all_errors.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_all_errors.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_blocked_processes.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_blocked_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_deadlocks.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_deadlocks.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_large_sql.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_report_predicates.sql
+--##INCLUDE: Event Store\core\eventstore_get_report_predicates.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_get_report_preferences.sql
+--##INCLUDE: Event Store\reports\eventstore_get_report_preferences.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_chronology.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_chronology.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_heatmap.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_heatmap.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_problems.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_problems.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronology.sql
+--##INCLUDE: Event Store\reports\eventstore_report_blocked_processes_chronology.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_blocked_processes_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_deadlock_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_deadlock_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_chronology.sql
+--##INCLUDE: Event Store\reports\eventstore_report_large_sql_chronology.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_large_sql_counts.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
