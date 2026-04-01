@@ -28,14 +28,14 @@
 						-- or: 
 							SELECT * FROM dbo.[expanded_targetdatabases](@SerializedOutput) ORDER BY [row_id];
 
-
-
-
-						-- man... this is DREAMY:
+						-- Multiple Wildcards: 
 						EXEC [admindb]..[targeted_databases] 
-							@Databases = N'admin%, PSP%', 
-							@Priorities = N'admin%, *, PSP%'
+							@Databases = N'admin%, SSD%', 
+							@Priorities = N'admin%, *, SSD%'
 
+						-- static db-names, wildcards, tokens, and exclusion wildcards all together:
+						EXEC [admindb]..[targeted_databases]
+							@Databases = N'sniffles, admin%, {SYSTEM}, -%_dev';
 */
 
 USE [admindb];
@@ -161,16 +161,71 @@ AS
 	FROM 
 		dbo.[split_string](@exclusions, N',', 1);
 
+	DECLARE @allDatabases table	( 
+		[row_id] int IDENTITY(1,1) NOT NULL, 
+		[database_name] sysname NOT NULL 
+	);
+
+	SET @xmlOutput = '';
+	EXEC dbo.[list_databases_matching_token]
+	    @Token = N'{ALL}',
+	    @SerializedOutput = @xmlOutput OUTPUT;
+
+	WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('@id[1]', 'int') [row_id], 
+			[data].[row].value('.[1]', 'sysname') [database_name]
+		FROM 
+			@xmlOutput.nodes('//database') [data]([row])
+	)
+	 
+	INSERT INTO @allDatabases ([database_name])
+	SELECT [database_name] FROM [shredded] ORDER BY [row_id];
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Token Processing / Replacement:
-	-		AND. Start with an 'odd' business rule/implementation detail which is that IF there are any wildcards (e.g., @Databases = N'PSPData%') 
-	-			BUT there aren't any TOKENs (e.g., {ALL} or {USER}, etc) then ... the ONLY way for a wildcard to be matched is IF {ALL} is also
-	-			part of the @Databases input. i.e., counter-intuitive for end-users (hell even for me) ... but an ... implementation detail.
+	-- Wilcard processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @Databases LIKE N'%`%%' ESCAPE N'`' AND @Databases NOT LIKE N'%{%' BEGIN 
-		INSERT INTO @targetDatabases ([database_name]) VALUES (N'{ALL}');
+	DECLARE @currentFilter sysname;
+	IF EXISTS (SELECT NULL FROM @targetDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`') BEGIN
+		
+		WHILE EXISTS (SELECT NULL FROM @targetDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`') BEGIN
+			SET @currentFilter = (SELECT TOP (1) [database_name] FROM @targetDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`');
+			
+			INSERT INTO @targetDatabases ([database_name])
+			SELECT 
+				--CASE WHEN @currentFilter LIKE N'-%' THEN N'-' ELSE N'' END  + 
+				[database_name] 
+			FROM 
+				@allDatabases 
+			WHERE 
+				[database_name] LIKE @currentFilter
+				AND [database_name] NOT IN (SELECT [database_name] FROM @system_databases);
+
+			DELETE FROM @targetDatabases WHERE [database_name] = @currentFilter;
+		END;
 	END;
 
+	IF EXISTS (SELECT NULL FROM @excludedDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`') BEGIN
+		WHILE EXISTS (SELECT NULL FROM @excludedDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`') BEGIN
+			SET @currentFilter = (SELECT TOP (1) [database_name] FROM @excludedDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`');
+
+			INSERT INTO @excludedDatabases ([database_name])
+			SELECT 
+				--CASE WHEN @currentFilter LIKE N'-%' THEN N'-' ELSE N'' END  + 
+				[database_name] 
+			FROM 
+				@allDatabases 
+			WHERE 
+				[database_name] LIKE @currentFilter
+				AND [database_name] NOT IN (SELECT [database_name] FROM @system_databases);
+
+			DELETE FROM @excludedDatabases WHERE [database_name] = @currentFilter;
+		END;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- TOKEN replacement:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @currentToken sysname;
 	WHILE EXISTS (SELECT NULL FROM @targetDatabases WHERE [database_name] LIKE N'%{%}%') BEGIN
 		SET @currentToken = (SELECT TOP (1) [database_name] FROM @targetDatabases WHERE [database_name] LIKE N'%{%}%');
@@ -214,43 +269,6 @@ AS
 		SELECT [database_name] FROM [shredded] ORDER BY [shredded].[row_id];
 
 		DELETE FROM @excludedDatabases WHERE [database_name] = @currentToken;		
-	END;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Filters (not QUITE the same thing as exclusions):
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF EXISTS (SELECT NULL FROM @targetDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`') BEGIN
-		DECLARE @filteredDatabases table (
-			[row_id] int IDENTITY(1,1) NOT NULL, 
-			[database_name] sysname NOT NULL 
-		);
-
-		INSERT INTO @filteredDatabases ([database_name])
-		SELECT 
-			[database_name]
-		FROM 
-			@targetDatabases 
-		WHERE 
-			[database_name] LIKE N'%`%%' ESCAPE N'`'; 
-
-		DECLARE @currentFilter sysname;
-		WHILE EXISTS (SELECT NULL FROM @filteredDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`') BEGIN
-			SET @currentFilter = (SELECT TOP (1) [database_name] FROM @filteredDatabases WHERE [database_name] LIKE N'%`%%' ESCAPE N'`');
-
-			INSERT INTO @filteredDatabases ([database_name])
-			SELECT 
-				[database_name]
-			FROM 
-				@targetDatabases 
-			WHERE 
-				[database_name] LIKE @currentFilter;
-
-			DELETE FROM @filteredDatabases WHERE [database_name] = @currentFilter;
-		END;
-
-		DELETE FROM @targetDatabases;
-		INSERT INTO @targetDatabases ([database_name])
-		SELECT [database_name] FROM @filteredDatabases;
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
