@@ -285,7 +285,7 @@ ErrorDetails:
 		+ @crlftab + [statement] 
 		+ @crlf
 	FROM 
-		dbo.[execute_per_database_errors](@errors)
+		dbo.[execute_per_database_errors](@Errors)
 	ORDER BY 
 		[error_id];
 
