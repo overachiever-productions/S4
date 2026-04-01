@@ -23,6 +23,7 @@
 -- 1. Create admindb if/as needed: 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 SET NOCOUNT ON;
+SET QUOTED_IDENTIFIER ON; -- SQLCMD defaults to OFF. 
 
 USE [master];
 GO
@@ -40,7 +41,12 @@ USE [master];
 GO
 
 IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = N'admindb' AND [is_broker_enabled] = 1) BEGIN
-	ALTER DATABASE [admindb] SET DISABLE_BROKER; -- not needed, so no sense having it enabled (whereas, the model db on most systems has broker enabled). 
+	
+	IF EXISTS (SELECT NULL FROM sys.[dm_exec_requests] WHERE [database_id] = DB_ID(N'admindb') AND [command] LIKE N'%PIPEOPS%') BEGIN
+		RAISERROR(N'Cannot disable Service Broker for admindb because there are active requests using it. Please investigate and resolve before re-running this script.', 21, 1) WITH LOG;
+	END;
+
+	ALTER DATABASE [admindb] SET DISABLE_BROKER WITH ROLLBACK AFTER 2 SECONDS; -- not needed, so no sense having it enabled (whereas, the model db on most systems has broker enabled). 
 END;
 GO
 
@@ -125,7 +131,7 @@ GO
 --##INCLUDE: Common\tables\eventstore_report_preferences.sql
 
 -----------------------------------
---##INCLUDE: Common\tables\kill_blocking_processes_snapshots.sql
+--##INCLUDE: Common\tables\killed_processes.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\code_library.sql
@@ -136,50 +142,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\internal\drop_obsolete_objects.sql
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
--- master db objects:
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
-DECLARE @obsoleteObjects xml = CONVERT(xml, N'
-<list>
-    <entry schema="dbo" name="dba_DatabaseBackups_Log" type="U" comment="older table" />
-    <entry schema="dbo" name="dba_DatabaseRestore_Log" type="U" comment="older table" />
-    <entry schema="dbo" name="dba_SplitString" type="TF" comment="older UDF" />
-    <entry schema="dbo" name="dba_CheckPaths" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_ExecuteAndFilterNonCatchableCommand" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_LoadDatabaseNames" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_RemoveBackupFiles" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_BackupDatabases" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_RestoreDatabases" type="P" comment="older sproc" />
-    <entry schema="dbo" name="dba_VerifyBackupExecution" type="P" comment="older sproc" />
-
-    <entry schema="dbo" name="dba_DatabaseBackups" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
-    <entry schema="dbo" name="dba_ExecuteNonCatchableCommand" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
-    <entry schema="dbo" name="dba_RestoreDatabases" type="P" comment="Potential FORMER versions of basic code (pre 1.0)." />
-    <entry schema="dbo" name="dba_DatabaseRestore_CheckPaths" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-    
-    <entry schema="dbo" name="dba_AvailabilityGroups_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-    <entry schema="dbo" name="dba_Mirroring_HealthCheck" type="P" comment="Potential FORMER versions of HA monitoring (pre 1.0)." />
-
-    <entry schema="dbo" name="dba_FilterAndSendAlerts" type="P" comment="FORMER version of alert filtering.">
-        <notification>
-            <content>NOTE: dbo.dba_FilterAndSendAlerts was dropped from master database - make sure to change job steps/names as needed.</content>
-            <heading>WARNING - Potential Configuration Changes Required (alert filtering)</heading>
-        </notification>
-    </entry>
-    <entry schema="dbo" name="dba_drivespace_checks" type="P" comment="FORMER disk monitoring alerts.">
-        <notification>
-            <content>NOTE: dbo.dba_drivespace_checks was dropped from master database - make sure to change job steps/names as needed.</content>
-            <heading>WARNING - Potential Configuration Changes Required (disk-space checks)</heading>
-        </notification>
-    </entry>
-    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
-	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
-</list>');
-
-EXEC dbo.drop_obsolete_objects @obsoleteObjects, N'master';
-GO
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- admindb objects:
@@ -232,6 +194,10 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 
 	<entry schema="dbo" name="disable_and_script_logins" type="P" comment="v13.0 refactoring." />
 	<entry schema="dbo" name="disable_and_script_job_states" type="P" comment="v13.0 refactoring." />
+    <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
+	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
+	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
+	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -357,13 +323,13 @@ GO
 --##INCLUDE: Common\base64_encode.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\check_paths.sql
+
+-----------------------------------
 --##INCLUDE: Common\Internal\verify_directory_access.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\normalize_file_path.sql
-
------------------------------------
---##INCLUDE: Common\Internal\check_paths.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_default_path.sql
@@ -396,13 +362,13 @@ GO
 --##INCLUDE: Common\Internal\verify_directory_access.sql
 
 -----------------------------------
+--##INCLUDE: Common\list_databases_matching_token.sql
+
+-----------------------------------
 --##INCLUDE: Common\core_predicates.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\extract_waitresource.sql
-
------------------------------------
---##INCLUDE: Common\list_databases_matching_token.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\replace_dbname_tokens.sql
@@ -456,9 +422,6 @@ GO
 --##INCLUDE: S4 Utilities\count_matches.sql
 
 -----------------------------------
---##INCLUDE: Common\execute_uncatchable_command.sql
-
------------------------------------
 --##INCLUDE: Common\Internal\transient_error_occurred.sql
 
 -----------------------------------
@@ -475,6 +438,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\establish_directory.sql
+
+-----------------------------------
+--##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_backup_database_names.sql
@@ -494,9 +460,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Restore\Utilities\load_backup_files.sql
-
------------------------------------
---##INCLUDE: S4 Restore\Utilities\load_header_details.sql
 
 -----------------------------------
 --##INCLUDE: S4 Backups\Utilities\log_backup_history_detail.sql
@@ -826,97 +789,100 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\utilities\list_xe_sessions.sql
+--##INCLUDE: Event Store\utilities\list_xe_sessions.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_get_target_by_key.sql
+--##INCLUDE: Event Store\core\eventstore_get_target_by_key.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_translate_error_token.sql
+--##INCLUDE: Event Store\core\eventstore_translate_error_token.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_initialize_extraction.sql
+--##INCLUDE: Event Store\core\eventstore_initialize_extraction.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_finalize_extraction.sql
+--##INCLUDE: Event Store\core\eventstore_finalize_extraction.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_extract_session_xml.sql
+--##INCLUDE: Event Store\core\eventstore_extract_session_xml.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_etl_session.sql
+--##INCLUDE: Event Store\core\eventstore_etl_session.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_etl_processor.sql
+--##INCLUDE: Event Store\core\eventstore_etl_processor.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_verify_jobs.sql
+--##INCLUDE: Event Store\core\eventstore_verify_jobs.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_setup_session.sql
+--##INCLUDE: Event Store\core\eventstore_setup_session.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_data_cleanup.sql
+--##INCLUDE: Event Store\core\eventstore_data_cleanup.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_timebounded_counts.sql
+--##INCLUDE: Event Store\core\eventstore_timebounded_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\core\eventstore_heatmap_frame.sql
+--##INCLUDE: Event Store\core\eventstore_heatmap_frame.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_all_errors.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_all_errors.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_blocked_processes.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_blocked_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_deadlocks.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_deadlocks.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\setup\eventstore_enable_large_sql.sql
+--##INCLUDE: Event Store\setup\eventstore_enable_large_sql.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_all_errors.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_all_errors.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_blocked_processes.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_blocked_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_deadlocks.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_deadlocks.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\etl\eventstore_etl_large_sql.sql
+--##INCLUDE: Event Store\etl\eventstore_etl_large_sql.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_get_report_preferences.sql
+--##INCLUDE: Event Store\core\eventstore_report_predicates.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_get_report_preferences.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_chronology.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_heatmap.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_chronology.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_all_errors_problems.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_heatmap.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_chronology.sql
+--##INCLUDE: Event Store\reports\eventstore_report_all_errors_problems.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_blocked_processes_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_blocked_processes_chronology.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_deadlock_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_blocked_processes_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_chronology.sql
+--##INCLUDE: Event Store\reports\eventstore_report_deadlock_counts.sql
 
 -----------------------------------
---##INCLUDE: S4 Extended Events\eventstore\reports\eventstore_report_large_sql_counts.sql
+--##INCLUDE: Event Store\reports\eventstore_report_large_sql_chronology.sql
+
+-----------------------------------
+--##INCLUDE: Event Store\reports\eventstore_report_large_sql_counts.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Maintenance
@@ -1189,6 +1155,10 @@ IF NOT EXISTS (SELECT NULL FROM dbo.version_history WHERE [version_number] = @Cu
 	VALUES (@CurrentVersion, @VersionDescription, GETDATE());
 END;
 GO
+
+IF EXISTS (SELECT NULL FROM sys.sql_modules WHERE [uses_quoted_identifier] = 0) BEGIN
+	SELECT N'WARNING: One or more modules has [uses_quoted_identifier] = 0. Installation FAILED' [failed_installation];
+END;
 
 -----------------------------------
 SELECT * FROM dbo.version_history;

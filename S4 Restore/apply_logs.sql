@@ -173,7 +173,10 @@ AS
 	DECLARE @backupName sysname;
 	DECLARE @pathToTLogBackup sysname;
 	DECLARE @command nvarchar(2000);
-	DECLARE @outcome varchar(4000);
+	--DECLARE @outcome varchar(4000);
+	DECLARE @execResults xml;
+	DECLARE @errorMessage nvarchar(MAX);
+-----
 	DECLARE @statusDetail nvarchar(500);
 	DECLARE @appliedFileList nvarchar(MAX);
 	DECLARE @restoreStart datetime;
@@ -322,12 +325,17 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 				ELSE BEGIN 
 
 					BEGIN TRY 
-						SET @outcome = NULL; 
-						DECLARE @result varchar(4000);
-						EXEC dbo.[execute_uncatchable_command] @command, N'UN-STANDBY', @Result = @outcome OUTPUT;
+						SET @execResults = NULL;
+						SET @errorMessage = NULL;
+						EXEC [dbo].[execute_command] 
+							@Command = @command,
+							@IgnoredResults = N'{UN-STANDBY}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
 
-						SET @statusDetail = @outcome;
-
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error MOVING DATABASE OUT OF STANDBY::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 					END TRY	
 					BEGIN CATCH
 						SELECT @statusDetail = N'Unexpected Exception while attempting to remove database ' + QUOTENAME(@targetDbName) + N' from STANDBY mode. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
@@ -365,9 +373,17 @@ RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH NORECOVERY;';
 						PRINT @command;
 					  END;
 					ELSE BEGIN
-						SET @outcome = NULL;
-						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
-						SET @statusDetail = @outcome + @crlf + @tab + N'Exception occurred while attempting to apply: [' + @pathToTLogBackup + N'].';
+						SET @execResults = NULL;
+						SET @errorMessage = NULL;
+						EXEC [dbo].[execute_command] 
+							@Command = @command,
+							@IgnoredResults = N'{RESTORE}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
+
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error with RESTORE LOG operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 					END;
 				END TRY
 				BEGIN CATCH
@@ -443,10 +459,17 @@ ALTER DATABASE ' + QUOTENAME(@targetDbName) + N' SET MULTI_USER;';
 			  END;
 			ELSE BEGIN
 				BEGIN TRY
-					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+					SET @execResults = NULL;
+					SET @errorMessage = NULL;
+					EXEC [dbo].[execute_command] 
+						@Command = @command,
+						@IgnoredResults = N'{RESTORE}', 
+						@Outcome = @execResults OUTPUT, 
+						@ErrorMessage = @errorMessage OUTPUT;
 
-					SET @statusDetail = @outcome;
+					IF @errorMessage IS NOT NULL BEGIN 
+						SET @statusDetail = N'Error with RESTORE DATABASE WITH STANDBY operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+					END;
 				END TRY
 				BEGIN CATCH
 					SET @statusDetail = N'Exception when attempting to put database ' + QUOTENAME(@targetDbName) + N' into STANDBY mode. [Command: ' + @command + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();
@@ -456,17 +479,24 @@ ALTER DATABASE ' + QUOTENAME(@targetDbName) + N' SET MULTI_USER;';
 
 		IF UPPER(@RecoveryType) = N'RECOVERY' AND @logsWereApplied = 1 BEGIN
 
-			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH RECCOVERY;';
+			SET @command = N'RESTORE DATABASE ' + QUOTENAME(@targetDbName) + N' WITH RECOVERY;';
 
 			IF @PrintOnly = 1 BEGIN 
 				PRINT @command;
 			  END;
 			ELSE BEGIN
 				BEGIN TRY
-					SET @outcome = NULL;
-					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @result = @outcome OUTPUT;
+					SET @execResults = NULL;
+					SET @errorMessage = NULL;
+					EXEC [dbo].[execute_command] 
+						@Command = @command,
+						@IgnoredResults = N'{RESTORE}', 
+						@Outcome = @execResults OUTPUT, 
+						@ErrorMessage = @errorMessage OUTPUT;
 
-					SET @statusDetail = @outcome;
+					IF @errorMessage IS NOT NULL BEGIN 
+						SET @statusDetail = N'Error executing RECOVERY::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+					END;
 				END TRY
 				BEGIN CATCH
 					SET @statusDetail = N'Exception when attempting to RECOVER database ' + QUOTENAME(@targetDbName) + N'. [Command: ' + @command + N']. Error: ' + CAST(ERROR_NUMBER() AS nvarchar(30)) + N' - ' + ERROR_MESSAGE();

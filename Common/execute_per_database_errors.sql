@@ -1,5 +1,9 @@
 /*
 
+	REFACTOR: => dbo.[per_database_errors]. 
+					confusing AF to have a function named "execute_per_database_errors" that doesn't actually execute anything.
+					(original idea was to have these TVFs ... use the same-ish name as the 'invoker' ... but ... too confusing. 
+
 
 */
 

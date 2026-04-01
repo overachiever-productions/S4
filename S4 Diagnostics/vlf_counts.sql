@@ -11,7 +11,8 @@
 					- max size
 					- min size 
 					- avg size. 
-
+		SEE: 
+			https://overachieverllc.atlassian.net/browse/S4-822
 */
 
 USE [admindb];
@@ -138,7 +139,7 @@ ErrorDetails:
 		+ @crlftab + [statement] 
 		+ @crlf
 	FROM 
-		dbo.[execute_per_database_errors](@errors)
+		dbo.[execute_per_database_errors](@Errors)
 	ORDER BY 
 		[error_id];
 

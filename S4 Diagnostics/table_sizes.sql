@@ -215,27 +215,38 @@ AS
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN
 		SET @SerializedOutput = (
 			SELECT 
-				[database_name],
-				[table_name],
-				[row_count],
-				[reserved_gb],
-				[data_gb],
-				[indexes_gb],
-				[indexes],
-				[columns],
-				[triggers],
-				[fks],
-				[dfs],
-				[cs],
-				[uqs],
-				[structure],
-				LTRIM(REPLACE([smells], N'  ', N' ')) [smells],
-				[last_modified]
+				[outer].[database_name] [@name], 
+				(
+					SELECT
+						[table_name],
+						[row_count],
+						[reserved_gb],
+						[data_gb],
+						[indexes_gb],
+						[indexes],
+						[columns],
+						[triggers],
+						[fks],
+						[dfs],
+						[cs],
+						[uqs],
+						[structure],
+						LTRIM(REPLACE([smells], N'  ', N' ')) [smells],
+						[last_modified]
+					FROM 
+						[#results] [inner]
+					WHERE 
+						[inner].[database_name] = [outer].[database_name]
+					ORDER BY 
+						[inner].[row_id]
+					FOR XML PATH(N'table'), TYPE
+				)
+
 			FROM 
-				[#results]
+				(SELECT [database_name] FROM [#results] GROUP BY [database_name]) [outer]
 			ORDER BY 
-				[row_id]
-			FOR XML PATH(N'table'), ROOT(N'tables'), TYPE
+				[outer].[database_name]
+			FOR XML PATH(N'database'), ROOT(N'databases'), TYPE
 		);
 		RETURN 0;
 	END;
@@ -274,7 +285,7 @@ ErrorDetails:
 		+ @crlftab + [statement] 
 		+ @crlf
 	FROM 
-		dbo.[execute_per_database_errors](@errors)
+		dbo.[execute_per_database_errors](@Errors)
 	ORDER BY 
 		[error_id];
 

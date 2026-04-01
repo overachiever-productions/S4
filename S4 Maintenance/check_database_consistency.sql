@@ -55,7 +55,7 @@ CREATE PROC dbo.[check_database_consistency]
 	@Exclusions								nvarchar(MAX)	                        = NULL,			-- comma, delimited, list, of, db, names, %wildcards_allowed%
 	@Priorities								nvarchar(MAX)	                        = NULL,			-- higher,priority,dbs,*,lower,priority, dbs  (where * is an ALPHABETIZED list of all dbs that don't match a priority (positive or negative)). If * is NOT specified, the following is assumed: high, priority, dbs, [*]
 	@IncludeExtendedLogicalChecks           bit                                     = 0,
-	@MaxDOP									int										= 1,
+	@MaxDOP									int										= NULL,			-- NULL = current system value (e.g., sys.configurations/sp_configure) for `max degree of parallelism`. 
     @OperatorName						    sysname									= N'Alerts',
 	@MailProfileName					    sysname									= N'General',
 	@EmailSubjectPrefix					    nvarchar(50)							= N'[Database Corruption Checks] ',	
@@ -64,6 +64,8 @@ AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+	IF @MaxDOP <= 0 SET @MaxDOP = NULL;
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -102,6 +104,8 @@ AS
         @ExcludeRecovering = 1,
         @ExcludeOffline = 1;
     
+	DELETE FROM @DatabasesToCheck WHERE [database_name] = N'tempdb';
+
     DECLARE @errorMessage nvarchar(MAX); 
 	DECLARE @errors table ( 
 		[row_id] int IDENTITY(1,1) NOT NULL, 
@@ -125,12 +129,14 @@ AS
     ELSE 
         SET @template = REPLACE(@template, N'{ExtendedChecks}', N'');
 
-	IF @MaxDOP > 1 BEGIN 
+	IF @MaxDOP IS NOT NULL BEGIN 
 		SET @template = REPLACE(@template, N'{DOP}', N', MAXDOP = ' + CAST(@MaxDOP AS sysname));	
 	  END;
 	ELSE BEGIN 
 		SET @template = REPLACE(@template, N'{DOP}', N'');
 	END;
+
+	DECLARE @defaultDop int = (SELECT CAST([value] AS int) FROM sys.[configurations] WHERE [name] = N'max degree of parallelism');
 
 	DECLARE @outcome xml;
     DECLARE walker CURSOR LOCAL FAST_FORWARD FOR 
@@ -207,7 +213,7 @@ AS
 			@executionId,
 			@executionDate, 
 			@currentDbName,
-			@MaxDOP,
+			ISNULL(@MaxDOP, @defaultDop),
 			@startTime,
 			GETDATE(),
 			@succeeded,

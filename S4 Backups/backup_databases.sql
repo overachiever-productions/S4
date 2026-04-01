@@ -112,7 +112,7 @@ AS
 	SET @CopyToBackupDirectory = NULLIF(@CopyToBackupDirectory, N'');
 	SET @OffSiteBackupPath = NULLIF(@OffSiteBackupPath, N'');
 	SET @CopyToRetention = NULLIF(@CopyToRetention, N'');
-	SET @OffSiteRetention = NULLIF(@OffSiteRetention, N'');
+	SET @OffSiteRetention = ISNULL(NULLIF(@OffSiteRetention, N''), N'{INFINITE}');
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -391,6 +391,8 @@ AS
 		-- NOTE: @ExcludeSecondaries, @ExcludeRecovering, @ExcludeRestoring, @ExcludeOffline ALL default to 1 - meaning that, for backups, we want the default (we CAN'T back those databases up no matter how much we want). (Well, except for secondaries...hmm).
 		@ExcludeReadOnly = 0, 
 		@ExcludeSimpleRecovery = @excludeSimple;
+
+	DELETE FROM @targetDatabases WHERE [database_name] = N'tempdb';
 
 	-- verify that we've got something: 
 	IF (SELECT COUNT(*) FROM @targetDatabases) <= 0 BEGIN

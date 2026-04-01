@@ -99,7 +99,7 @@ END; ';
 	DECLARE @Errors xml;
 	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
-		@Databases = @Databases,
+		@Databases = @databases,
 		@Priorities = @Priorities,
 		@Statement = @sql,
 		@Errors = @Errors OUTPUT;	
@@ -173,7 +173,7 @@ ErrorDetails:
 		+ @crlftab + [statement] 
 		+ @crlf
 	FROM 
-		dbo.[execute_per_database_errors](@errors)
+		dbo.[execute_per_database_errors](@Errors)
 	ORDER BY 
 		[error_id];
 

@@ -110,7 +110,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			nvarchar(20)	= NULL,				-- Only evaluated if non-NULL. CAN be specified as 'vector' or ... as 'vector, vector' - in which case apply as FULL + SIMPLE recovery RPOs.
+	@RpoWarningThreshold			sysname			= NULL,				-- Only evaluated if non-NULL. CAN be specified as 'vector' or ... as 'vector, vector' - in which case apply as FULL + SIMPLE recovery RPOs.
 	@SkipSanityChecks				bit				= 0,				-- ONLY evaluated if @RpoChecks are NULL. Similar to RPO tests - if restore is > 26 hours old, sends alerts about possible config error. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
@@ -416,7 +416,7 @@ AS
     DECLARE @pathToDatabaseBackup nvarchar(600);
     DECLARE @outcome varchar(4000);
 	DECLARE @serializedFileList xml = NULL; 
-	DECLARE @backupName sysname;
+	DECLARE @backupName nvarchar(500);
 	DECLARE @fileListXml nvarchar(MAX);
 	DECLARE @stopAtLog int = NULL;
 	DECLARE @consistencyErrorsDetected bit = 0;
@@ -433,7 +433,7 @@ AS
 
 	CREATE TABLE #logFilesToRestore ( 
 		id int IDENTITY(1,1) NOT NULL, 
-		log_file sysname NOT NULL
+		log_file nvarchar(400) NOT NULL
 	);
 	DECLARE @currentLogFileID int = 0;
 
@@ -783,10 +783,17 @@ AS
                 PRINT @command;
               END;
             ELSE BEGIN
-                SET @outcome = NULL;
-                EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+                SET @execResults = NULL;
+				SET @errorMessage = NULL;
+				EXEC [dbo].[execute_command] 
+					@Command = @command,
+					@IgnoredResults = N'{RESTORE}', 
+					@Outcome = @execResults OUTPUT, 
+					@ErrorMessage = @errorMessage OUTPUT;
 
-                SET @statusDetail = @outcome;
+				IF @errorMessage IS NOT NULL BEGIN 
+					SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+				END;
             END;
         END TRY 
         BEGIN CATCH
@@ -828,7 +835,7 @@ Apply_Diff:
 				AND [restored_files].value(N'count(/files/file)', N'int') = 1;
 			
 			IF @previousFullRestoreId IS NOT NULL BEGIN
-				SET @backupName = (SELECT [restored_files].value(N'(/files/file[@id = 1]/name)[1]', N'sysname') FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId);
+				SET @backupName = (SELECT [restored_files].value(N'(/files/file[@id = 1]/name)[1]', N'nvarchar(500)') FROM dbo.[restore_log] WHERE [restore_id] = @previousFullRestoreId);
 			  END;
 			ELSE BEGIN 
 				SELECT @statusDetail = ISNULL(@statusDetail, N'') + N'Error with attempt to execute APPLY_DIFF. No previous restore for database [' + @restoredName + N'] from backups for database: ['+ @databaseToRestore + N'] found in non-error + non-recovered state.';
@@ -873,10 +880,18 @@ Apply_Diff:
 						PRINT @command;
 					  END;
 					ELSE BEGIN
-						SET @outcome = NULL;
-						EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+						SET @execResults = NULL;
+						SET @errorMessage = NULL;
 
-						SET @statusDetail = @outcome;
+						EXEC [dbo].[execute_command] 
+							@Command = @command,
+							@IgnoredResults = N'{RESTORE}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
+
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
 					END;
 				END TRY
 				BEGIN CATCH
@@ -960,10 +975,18 @@ Apply_Diff:
                         PRINT @command;
                       END;
                     ELSE BEGIN
-                        SET @outcome = NULL;
-                        EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+						SET @execResults = NULL;
+						SET @errorMessage = NULL;
 
-                        SET @statusDetail = @outcome;
+						EXEC [dbo].[execute_command] 
+							@Command = @command,
+							@IgnoredResults = N'{RESTORE}', 
+							@Outcome = @execResults OUTPUT, 
+							@ErrorMessage = @errorMessage OUTPUT;
+
+						IF @errorMessage IS NOT NULL BEGIN 
+							SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+						END;
                     END;
                 END TRY
                 BEGIN CATCH
@@ -1046,12 +1069,19 @@ Apply_Diff:
 					PRINT @command;
 				  END;
 				ELSE BEGIN
-					SET @outcome = NULL;
-
                     -- TODO: do I want to specify a DIFFERENT (subset/set) of 'filters' for RESTORE and RECOVERY? (don't really think so, unless there are ever problems with 'overlap' and/or confusion.
-					EXEC dbo.execute_uncatchable_command @command, 'RESTORE', @Result = @outcome OUTPUT;
+					SET @execResults = NULL;
+					SET @errorMessage = NULL;
 
-					SET @statusDetail = @outcome;
+					EXEC [dbo].[execute_command] 
+						@Command = @command,
+						@IgnoredResults = N'{RESTORE}', 
+						@Outcome = @execResults OUTPUT, 
+						@ErrorMessage = @errorMessage OUTPUT;
+
+					IF @errorMessage IS NOT NULL BEGIN 
+						SET @statusDetail = N'Error with RESTORE DATABASE operation::> Error(s): ' + @errorMessage + N' ExecutionDetails: ' + CAST(@execResults AS nvarchar(MAX));
+					END;
 				END;
 			END TRY	
 			BEGIN CATCH
