@@ -112,7 +112,7 @@ AS
 	SET @CopyToBackupDirectory = NULLIF(@CopyToBackupDirectory, N'');
 	SET @OffSiteBackupPath = NULLIF(@OffSiteBackupPath, N'');
 	SET @CopyToRetention = NULLIF(@CopyToRetention, N'');
-	SET @OffSiteRetention = NULLIF(@OffSiteRetention, N'');
+	SET @OffSiteRetention = ISNULL(NULLIF(@OffSiteRetention, N''), N'{INFINITE}');
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
