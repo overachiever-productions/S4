@@ -109,7 +109,7 @@ AS
 	DECLARE @partnerName sysname = (SELECT TOP (1) [server_name] FROM @servers);
 
     -- TODO: account for named instances... 
-    DECLARE @remoteHostName sysname = N'tcp:' + @PartnerName;
+    DECLARE @remoteHostName sysname = N'tcp:' + @partnerName;
     DECLARE @errorMessage nvarchar(MAX);
     DECLARE @serverName sysname = @@SERVERNAME;
 
@@ -152,7 +152,7 @@ AS
 	        @optname = N'rpc out', 
 	        @optvalue = N'true';
         
-        PRINT 'Definition for PARTNER server (pointing to ' + @PartnerName + N') successfully registered on ' + @serverName + N'.';
+        PRINT 'Definition for PARTNER server (pointing to ' + @partnerName + N') successfully registered on ' + @serverName + N'.';
 
     END TRY 
     BEGIN CATCH 
