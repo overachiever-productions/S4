@@ -1,5 +1,101 @@
-﻿filter Get-DataCollectorSetStatus {
+﻿#Requires -RunAsAdministrator;
+
+# ==============================================================================================================================================
+# 'Public':
+# ==============================================================================================================================================	
+function New-DataCollectorSet {
+	[CmdletBinding()]
 	param (
+		[Parameter(Mandatory)]
+		[string]$Name,
+		[Parameter(Mandatory)]
+		[string]$ConfigFilePath,
+		[Parameter(Mandatory)]
+		[int]$RetentionDays,
+		[Switch]$SkipAutoStart = $false,
+		[Switch]$Force = $false
+	);
+	
+	begin {
+		
+	};
+	
+	process {
+		
+		if (-not (Test-Path -Path $ConfigFilePath)) {
+			throw "Invalid Path or File Not Found for -ConfigFilePath value of [$ConfigFilePath].";
+		}
+		
+		$status = Get-DataCollectorSetStatus $Name;
+		
+		if ($status -ne "<EMPTY>") {
+			if (-not ($Force)) {
+				throw "A Data Collector Set with the name of: [$Name] already exists. Use a different -Name or use the -Force option to overwrite.";
+			}
+			else {
+				Write-Verbose "-Force Enabled. Data Collector Set [$Name] has a Status of: [$status].";
+				Write-Verbose "`tAttempting to stop (if needed) + DELETE Data Collector Set: [$Name].";
+				
+				if ($status -eq "Running") {
+					Invoke-Expression "logman.exe stop `"$Name`"" | Out-Null;
+				}
+				
+				Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;				
+			}
+		}
+		
+		try {
+			New-LogManDataCollectorSetFromConfigFile -Name $Name -ConfigFilePath $ConfigFilePath;
+			$status = Get-DataCollectorSetStatus -Name $Name;
+			
+			if ($status -notin @("running", "stopped")) {
+				Write-Verbose "Failed to create Data Collector Set: [$Name]. Code executed WITHOUT any error/Exception, but collector NOT found.";
+				Write-Verbose "`tAttempting to create Data Collector Set via COM.";
+				
+				New-ComPlaDataCollectorSetFromConfigFile -Name $Name -ConfigFilePath $ConfigFilePath;
+			}
+		}
+		catch {
+			Write-Error "Failed to create Data Collector Set via logman or COM: $_" -ErrorAction Stop;
+		}
+		
+		if ($status -notin @("running", "stopped")) {
+			throw "Failed to create. attempted via logman and via COM - with NO EXCEPTIONS but ... still not created";
+		}
+		
+		# otherwise, the DCS exists and ... we can move on to next steps: 
+		try {
+			New-DataCollectorSetFileCleanupJob -Name $Name -RetentionDays $RetentionDays;
+		}
+		catch {
+			Write-Error "Failed to create cleanup job for Data Collector Set [$Name]: $_" -ErrorAction Stop;
+		}
+		
+		
+		if (-not $SkipAutoStart) {
+			Enable-DataCollectorSetForAutoStart -Name $Name;
+		}
+		else {
+			Write-Verbose "Skipping auto-start config.";
+		}
+		
+		try {
+			Start-DataCollector -Name $Name;
+		}
+		catch {
+			Write-Error "Failed to start Data Collector Set [$Name]: $_" -ErrorAction Stop;
+		}
+	};
+	
+	end {
+		
+	};
+}
+
+function Get-DataCollectorSetStatus {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
 		[string]$Name
 	);
 	
@@ -13,26 +109,25 @@
 		}
 		
 		$regex = New-Object System.Text.RegularExpressions.Regex("Status:\s+(?<status>[^\r]+){1}", [System.Text.RegularExpressions.RegexOptions]::Multiline);
-		$matches = $regex.Match($query);
+		$regexMatches = $regex.Match($query);
+		
 		$status = "<EMPTY>";
-		if ($matches) {
-			$hack = $matches.Groups[1].Value;
-			# not sure why... and... don't care at this point ... but instead of getting "Running" as the named capture... I'm getting EVERYTHING from "running" to the END of the stupid text... 
-			#  I've tried multi-line, single-line, etc. ... 
-			# so... this is a hack and ... meh. 
+		if ($regexMatches) {
+			$hack = $regexMatches.Groups[1].Value;
+			Write-Verbose "Raw Status - via logman.exe: $hack";
 			$status = $hack.Substring(0, $hack.IndexOf(" ")).Trim();
 		}
 		
 		return $status;
 	}
 	catch {
-		$state = "<EMPTY>";
+		Write-Error "Failed to retrieve Data Collector Set status for [$Name]: $_" -ErrorAction Stop;
 	}
 	
 	return $state;
 }
 
-filter Start-DataCollector {
+function Start-DataCollector {
 	param (
 		[string]$Name
 	);
@@ -46,6 +141,21 @@ filter Start-DataCollector {
 	}
 }
 
+function Remove-DataCollector {
+	param (
+		[string]$Name
+	);
+	
+	# remove DCS ... 
+	
+	# remove auto-start if it still somehow exists (task should )
+	
+	# remove CLEANUP job which won't have been deleted. 
+}
+
+# ==============================================================================================================================================
+# Internal:
+# ==============================================================================================================================================	
 filter Get-WindowsServerVersion {
 	<#
 			# https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions#Server_versions
@@ -92,40 +202,65 @@ filter Get-WindowsServerVersion {
 	}
 }
 
-filter New-DataCollectorSetFromConfigFile {
+filter New-LogManDataCollectorSetFromConfigFile {
 	param (
 		[string]$Name,
 		[string]$ConfigFilePath
 	);
 	
-	$status = Get-DataCollectorSetStatus $Name;
-	
-	if ($status -ne "<EMPTY>") {
-		if ($status -eq "Running") {
-			Invoke-Expression "logman.exe stop `"$Name`"" | Out-Null;
-		}
-		
-		Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
+	try {
+		Invoke-Expression "logman.exe import `"$Name`" -xml `"$ConfigFilePath`"" | Out-Null;
 	}
-	
-	Invoke-Expression "logman.exe import `"$Name`" -xml `"$ConfigFilePath`"" | Out-Null;
-	
-	# TODO: need to check and see if this thing was created. 
-	# if not ... maybe look at trying to create with the Posh5.1 methods? 
-	# more importantly, probably need this particular function to be an ORCHESTRATOR. 
-	
+	catch {
+		Write-Error "Failed to import Data Collector Set via logman for [$Name]: $_" -ErrorAction Stop;
+	}
 }
+
+filter New-ComPlaDataCollectorSetFromConfigFile {
+	param (
+		[string]$Name,
+		[string]$ConfigFilePath
+	);
+	
+	try {
+		# Sources - via Gemini: 
+		# - https://www.jonathanmedd.net/2010/11/managing-perfmon-data-collector-sets-with-powershell.html/
+		# - https://github.com/Skatterbrainz/Garage/blob/master/New-DataCollectorSet.ps1
+		$newDcs = New-Object -ComObject PLA.DataCollectorSet;
+		$newDcs.SetXml($ConfigFilePath);
+		$newDcs.Commit($Name, $null, 0x0003) | Out-Null;
+		$newDcs.Start($false);
+	}
+	catch {
+		Write-Error "Failed to create Data Collector Set via COM for [$Name] using config [$ConfigFilePath]: $_" -ErrorAction Stop;
+	}
+}
+
+#filter New-SmtDataCollectorSetFromConfigFile {
+#	param (
+#		[string]$Name,
+#		[string]$ConfigFilePath
+#	);
+#	
+#	# Honestly. Kind of amazed at how much PowerShell sucks when it comes to BASIC windows Tasks. 
+#	# There's a SeverManagerTasks module for WindowsPowershell: 
+#	# 	https://learn.microsoft.com/en-us/powershell/module/servermanagertasks/?view=windowsserver2025-ps
+#	
+#	# which ... we COULD try to load via the following approach: 
+#	# i.e., if we're in PowerShell vs Windows PowerShell, we could: 
+#	Install-Module -Name WindowsCompatibility -Force;
+#	Import-WinModule -Name ServerManagerTasks;
+#	
+#	# only... when we're all said and done? 
+#	# ServerManagerTasks' cmdlets ... don't have a single method/func for CREATING a new Data Collector Set - only for state and ... extraction. 
+#	# seriously. fail. 
+#}
 
 filter Enable-DataCollectorSetForAutoStart {
 	param (
-		#[Parameter(Mandatory)]  -- it is mandatory... but this causes problems for older powershell.
-		[string]$Name,
-		[switch]$Disable
+		[Parameter(Mandatory)]
+		[string]$Name
 	);
-	
-	if ($Disable) {
-		throw "Proviso Framework Error. Disabling DataCollectorSets for AutoStart (with OS) is not YET supported.";
-	}
 	
 	## assumes same convention used by Data Collector Setup - i.e., a task with the name of the data collector will be found in the \Microsoft\Windows\PLA\ folder. 
 	$task = Get-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\";
