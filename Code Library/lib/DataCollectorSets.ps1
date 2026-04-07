@@ -23,7 +23,8 @@ function New-DataCollector {
 	process {
 		
 		if (-not (Test-Path -Path $ConfigFilePath)) {
-			throw "Invalid Path or File Not Found for -ConfigFilePath value of [$ConfigFilePath].";
+			Write-Host "Invalid Path or File Not Found for -ConfigFilePath value of [$ConfigFilePath]." -ForegroundColor Red;
+			return;
 		}
 		
 		$status = Get-DataCollectorStatus $Name;
@@ -298,9 +299,7 @@ filter Enable-DataCollectorSetAutoStart {
 		[string]$Name
 	);
 	
-	## assumes same convention used by Data Collector Setup - i.e., a task with the name of the data collector will be found in the \Microsoft\Windows\PLA\ folder. 
-	$task = Get-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\";
-	$trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay 00:00:05;
+	$trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay 00:00:04;
 	
 	if ((Get-WindowsServerVersion) -in @("Windows2019", "Windows2022")) {
 		## Implementation of work-around listed here: https://docs.microsoft.com/en-us/troubleshoot/windows-server/performance/user-defined-dcs-doesnt-run-as-scheduled
@@ -328,7 +327,7 @@ filter New-DataCollectorSetFileCleanupJob {
 	$jobName = "$Name - Cleanup Older Files";
 	$task = Get-ScheduledTask -TaskName $jobName -ErrorAction SilentlyContinue;
 	
-	if ($task -eq $null) {
+	if ($null -eq $task) {
 		$trigger = New-ScheduledTaskTrigger -At 2am -Daily;
 		$runAsUser = "NT AUTHORITY\SYSTEM";
 		$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5);
