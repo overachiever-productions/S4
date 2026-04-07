@@ -3,7 +3,7 @@
 # ==============================================================================================================================================
 # 'Public':
 # ==============================================================================================================================================	
-function New-DataCollectorSet {
+function New-DataCollector {
 	[CmdletBinding()]
 	param (
 		[Parameter(Mandatory)]
@@ -26,7 +26,7 @@ function New-DataCollectorSet {
 			throw "Invalid Path or File Not Found for -ConfigFilePath value of [$ConfigFilePath].";
 		}
 		
-		$status = Get-DataCollectorSetStatus $Name;
+		$status = Get-DataCollectorStatus $Name;
 		
 		if ($status -ne "<EMPTY>") {
 			if (-not ($Force)) {
@@ -34,19 +34,13 @@ function New-DataCollectorSet {
 			}
 			else {
 				Write-Verbose "-Force Enabled. Data Collector Set [$Name] has a Status of: [$status].";
-				Write-Verbose "`tAttempting to stop (if needed) + DELETE Data Collector Set: [$Name].";
-				
-				if ($status -eq "Running") {
-					Invoke-Expression "logman.exe stop `"$Name`"" | Out-Null;
-				}
-				
-				Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;				
+				Remove-DataCollector -Name $Name;
 			}
 		}
 		
 		try {
 			New-LogManDataCollectorSetFromConfigFile -Name $Name -ConfigFilePath $ConfigFilePath;
-			$status = Get-DataCollectorSetStatus -Name $Name;
+			$status = Get-DataCollectorStatus -Name $Name;
 			
 			if ($status -notin @("running", "stopped")) {
 				Write-Verbose "Failed to create Data Collector Set: [$Name]. Code executed WITHOUT any error/Exception, but collector NOT found.";
@@ -71,9 +65,8 @@ function New-DataCollectorSet {
 			Write-Error "Failed to create cleanup job for Data Collector Set [$Name]: $_" -ErrorAction Stop;
 		}
 		
-		
 		if (-not $SkipAutoStart) {
-			Enable-DataCollectorSetForAutoStart -Name $Name;
+			Enable-DataCollectorSetAutoStart -Name $Name;
 		}
 		else {
 			Write-Verbose "Skipping auto-start config.";
@@ -92,7 +85,7 @@ function New-DataCollectorSet {
 	};
 }
 
-function Get-DataCollectorSetStatus {
+function Get-DataCollectorStatus {
 	[CmdletBinding()]
 	param (
 		[Parameter(Mandatory)]
@@ -132,7 +125,7 @@ function Start-DataCollector {
 		[string]$Name
 	);
 	
-	$status = Get-DataCollectorSetStatus -Name $Name;
+	$status = Get-DataCollectorStatus -Name $Name;
 	if ("Running" -ne $status) {
 		$results = Invoke-Expression "logman.exe start `"$Name`"";
 		if ("The command completed successfully." -ne $results) {
@@ -142,15 +135,56 @@ function Start-DataCollector {
 }
 
 function Remove-DataCollector {
+	[CmdletBinding()]
 	param (
 		[string]$Name
+		# TODO: add a -CleanupFiles switch? that defaults (obviously) to $false
 	);
 	
-	# remove DCS ... 
+	$status = Get-DataCollectorStatus $Name;
+	if ($status -eq "<EMPTY>") {
+		Write-Verbose "A Data Collector Set with the name: [$Name] does not exist. Terminating";
+		return;
+	}
 	
-	# remove auto-start if it still somehow exists (task should )
+	try {
+		Write-Verbose "`tAttempting to stop (if needed) + DELETE Data Collector Set: [$Name].";
+		
+		if ($status -eq "Running") {
+			Invoke-Expression "logman.exe stop `"$Name`"" | Out-Null;
+		}
+		
+		Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
+	}
+	catch {
+		Write-Error "Failed to remove (and/or STOP) Data Collector Set: [$Name]: $_" -ErrorAction Stop;
+	}
 	
-	# remove CLEANUP job which won't have been deleted. 
+	# TODO: arguably might have to check and see if these tasks are running, stop them, and so on... 
+	try {
+		# NOTE: removing the DCS typically removes the task as well - i.e., this SHOULD be $null.  
+		$task = Get-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\" -ErrorAction SilentlyContinue;
+		if ($null -ne $task) {
+			Write-Verbose "Removing Task from PLA Node within Task Scheduler.";
+			
+			Unregister-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\" -Confirm:$false;
+		}
+	}
+	catch {
+		Write-Error "Failed to Remove Startup Task at '\Microsoft\Windows\PLA\$($Name)' within Windows Task Scheduler: $_" -ErrorAction Stop;
+	}
+	
+	try {
+		$jobName = "$Name - Cleanup Older Files";
+		$task = Get-ScheduledTask -TaskName $jobName -ErrorAction SilentlyContinue;
+		
+		if ($null -ne $task) {
+			Unregister-ScheduledTask -TaskName $jobName -Confirm:$false;
+		}
+	}
+	catch {
+		Write-Error "Failed to Remove '$Name - Older Files Cleanup' Task within Windows Task Scheduler: $_" -ErrorAction Stop;
+	}
 }
 
 # ==============================================================================================================================================
@@ -167,10 +201,12 @@ filter Get-WindowsServerVersion {
 	)
 	
 	if ($Version.Major -eq 10) {
+		if ($Version.Build -ge 26100) {
+			return "Windows2025";
+		}
 		if ($Version.Build -ge 20348) {
 			return "Windows2022";
 		}
-		
 		if ($Version.Build -ge 17763) {
 			return "Windows2019";
 		}
@@ -256,7 +292,7 @@ filter New-ComPlaDataCollectorSetFromConfigFile {
 #	# seriously. fail. 
 #}
 
-filter Enable-DataCollectorSetForAutoStart {
+filter Enable-DataCollectorSetAutoStart {
 	param (
 		[Parameter(Mandatory)]
 		[string]$Name
@@ -284,6 +320,10 @@ filter New-DataCollectorSetFileCleanupJob {
 		[Parameter(Mandatory)]
 		[int]$RetentionDays
 	);
+	
+	# TODO: verify that the cleanup func/code is present. possibly drop it (to disk/etc.) if not. 
+	# 		and. lol. if I'm going to drop it to disk a) the dropped version has to be signed. so, b) i'd have to sign the version 
+	# 		of the code that ...drops said script (i.e., this script would need signing of the signature).
 	
 	$jobName = "$Name - Cleanup Older Files";
 	$task = Get-ScheduledTask -TaskName $jobName -ErrorAction SilentlyContinue;
