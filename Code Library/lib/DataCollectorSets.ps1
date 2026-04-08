@@ -323,6 +323,10 @@ filter New-DataCollectorSetFileCleanupJob {
 	# TODO: verify that the cleanup func/code is present. possibly drop it (to disk/etc.) if not. 
 	# 		and. lol. if I'm going to drop it to disk a) the dropped version has to be signed. so, b) i'd have to sign the version 
 	# 		of the code that ...drops said script (i.e., this script would need signing of the signature).
+	# 		and ... there IS a 'size' thingy... 
+	# 			without a code signature ... remove..ps1 is 1KB. 
+	# 			with it ... it's 16KB. 
+	# 			though, honestly, I wonder how that'd all look compressed within SQL Server anywho? 
 	
 	$jobName = "$Name - Cleanup Older Files";
 	$task = Get-ScheduledTask -TaskName $jobName -ErrorAction SilentlyContinue;
