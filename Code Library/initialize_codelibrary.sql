@@ -90,7 +90,7 @@ AS
 		@Error = @error OUTPUT
 	
 	IF @error IS NOT NULL BEGIN 
-		RAISERROR(N'ruh roh', 16, 1);
+		RAISERROR(N'Error creating Code Library directory at [%s]. Error: ', 16, 1);
 		RETURN -5;
 	END;
 
@@ -104,7 +104,8 @@ AS
 	-- Get BCP Version:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	-- NOTE: if there's already a v.fmt in place, BCP will overwrite it without throwing errors or prompts/etc. i.e., this is idempotent:
-	DECLARE @command varchar(2000) = 'bcp admindb.dbo.[code_view] format nul -f C:\Perflogs\lib\v.fmt -T -n';
+	-- NOTE: -u is for self-signed certs... might want to look at dynamically adding it ... or not. 
+	DECLARE @command varchar(2000) = 'bcp admindb.dbo.[code_view] format nul -f C:\Perflogs\lib\v.fmt -T -n -u';
 
 	SET @error = NULL;
 	EXEC dbo.[execute_command]
@@ -117,7 +118,7 @@ AS
 
 	IF @error IS NOT NULL BEGIN 
 		SELECT @error;
-		RAISERROR('ruh roh. something wrong happened.', 16, 1);
+		RAISERROR(N'Failed to Deploy BCP Format File: %s', 16, 1, @error);
 		RETURN -10;
 	END;
 
@@ -130,7 +131,7 @@ AS
 		@ErrorMessage = @error OUTPUT
 
 	IF @error IS NOT NULL BEGIN 
-		RAISERROR(N'ruh roh', 16, 1);
+		RAISERROR(N'Failed to verify BCP Format File: %s', 16, 1, @error);
 		RETURN -11;
 	END; 
 
