@@ -320,11 +320,6 @@ AS
 		N'@vlfCounts xml', 
 		@vlfCounts = @vlfCounts;
 
-
-SELECT * FROM #intermediate; 
-RETURN 0;
-
-
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		
 		SET @SerializedOutput = (
