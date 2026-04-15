@@ -301,17 +301,18 @@ AS
 		[db_size_gb] DESC; ';
 
 	DECLARE @crlf4Tabs nchar(6) = NCHAR(13) + NCHAR(10) + REPLICATE(NCHAR(9), 4);
-	DECLARE @v140Smells nvarchar(MAX) = @crlf4Tabs + N''
+	DECLARE @v140andv150Smells nvarchar(MAX) = @crlf4Tabs + N''
 		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_stale_page_detection_on] = 1 THEN N'' STALE_PAGE_DETECTION; '' ELSE N'''' END'
-		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N'' RESULT_SET_CACHING; '' ELSE N'''' END'
-	DECLARE @v150Smells nvarchar(MAX) = @v140Smells + @crlf4Tabs + N'+ CASE WHEN [d].[is_ledger_on] = 1 THEN N'' LEDGER; '' ELSE N'''' END'
+		+ @crlf4Tabs + N'+ CASE WHEN [d].[is_result_set_caching_on] = 1 THEN N'' RESULT_SET_CACHING; '' ELSE N'''' END';
+
+	DECLARE @v160Smells nvarchar(MAX) = @v140andv150Smells + @crlf4Tabs + N'+ CASE WHEN [d].[is_ledger_on] = 1 THEN N'' LEDGER; '' ELSE N'''' END';
 
 	DECLARE @version decimal(4,2) = dbo.[get_engine_version]();
 	SET @sql = REPLACE(@sql, N'{version_smells}', 
 		CASE 
 			WHEN @version < 14.00 THEN N''
-			WHEN @version >= 14.00 AND @version < 15.00 THEN @v140Smells
-			WHEN @version >= 15.00 THEN @v150Smells
+			WHEN @version >= 14.00 AND @version < 16.00 THEN @v140andv150Smells
+			WHEN @version >= 16.00 THEN @v160Smells
 		END
 	);
 
