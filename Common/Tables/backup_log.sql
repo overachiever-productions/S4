@@ -153,3 +153,16 @@ IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE [object_id] = OBJECT_ID('dbo.b
 
 	COMMIT;
 END;
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------
+-- v14+
+---------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+IF NOT EXISTS (SELECT NULL FROM sys.indexes WHERE [object_id] = OBJECT_ID('dbo.backup_log') AND [name] = N'COVIX_backup_history_by_date') BEGIN
+	SELECT N'Deploying COVIX against dbo.backup_history...' [status];
+
+	CREATE NONCLUSTERED INDEX [COVIX_backup_history_by_date]
+	ON [dbo].[backup_log] ([backup_date])
+	INCLUDE ([database], [error_details])
+END;
+GO
