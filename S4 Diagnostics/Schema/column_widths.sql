@@ -6,14 +6,19 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID(N'dbo.column_widths', N'IF') IS NOT NULL
-	DROP FUNCTION dbo.[column_widths];
+IF OBJECT_ID(N'dbo.[column_widths]', N'P') IS NOT NULL
+	DROP PROC dbo.[column_widths];
 GO
 
-CREATE FUNCTION dbo.[column_widths] ()
-RETURNS table
-AS 
-	RETURN 
+CREATE PROC dbo.[column_widths]
+	@database				sysname
+AS
+    SET NOCOUNT ON; 
+
+	-- {copyright}
+	
+	DECLARE @
+
 
 	SELECT
 		[c].[object_id],
