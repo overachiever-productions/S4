@@ -17,9 +17,6 @@ AS
 
 	-- {copyright}
 	
-	DECLARE @
-
-
 	SELECT
 		[c].[object_id],
 		SCHEMA_NAME([o].[schema_id]) [schema_name],
@@ -69,11 +66,7 @@ AS
 					WHEN [c].[scale] <= 4 THEN 9
 					ELSE 10
 				END
-			WHEN [t].[name] IN (N'char', N'varchar', N'binary') THEN	
-				CASE
-					WHEN [c].[max_length] = -1 THEN 16  -- row-overlflow (i.e., pointer)
-					ELSE [c].[max_length]
-				END
+			WHEN [t].[name] IN (N'char', N'varchar', N'binary') THEN [c].[max_length]
 			WHEN [t].[name] IN(N'varchar', N'nvarchar', N'varbinary') THEN
 				CASE
 					WHEN [c].[max_length] = -1 THEN 16  -- row-overlflow (i.e., pointer)

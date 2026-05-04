@@ -70,87 +70,6 @@ AS
 			CASE WHEN [m].[reserved] > [m].[used] THEN [m].[reserved] - [m].[used] ELSE 0 END * 8 [unused]
 		FROM 
 			[metrics] [m]
-	), 
-	[column_widths] AS ( 
-			SELECT
-		[c].[object_id],
-		CASE 
-			WHEN [t].[name] = N''bit'' THEN 1 -- simplify to 1 byte, even though it can be stored as a bit in SQL Server; this is for estimation purposes
-			WHEN [t].[name] = N''tinyint'' THEN 1
-			WHEN [t].[name] = N''smallint'' THEN 2
-			WHEN [t].[name] = N''int'' THEN 4
-			WHEN [t].[name] = N''bigint'' THEN 8
-			WHEN [t].[name] = N''smallmoney'' THEN 4
-			WHEN [t].[name] = N''money'' THEN 8
-			WHEN [t].[name] IN (N''decimal'', N''numeric'') THEN 
-				CASE
-					WHEN [c].[precision] <= 9 THEN 5
-					WHEN [c].[precision] <= 19 THEN 9
-					WHEN [c].[precision] <= 28 THEN 13
-					ELSE 17
-				END
-			WHEN [t].[name] = N''real'' THEN 4
-			WHEN [t].[name] = N''float'' THEN CASE WHEN [c].[precision] <= 24 THEN 4 ELSE 8 END
-			WHEN [t].[name] = N''date'' THEN 3
-			WHEN [t].[name] = N''time'' 
-				THEN CASE
-					WHEN [c].[scale] <= 2 THEN 3
-					WHEN [c].[scale] <= 4 THEN 4
-					ELSE 5
-				END
-			WHEN [t].[name] = N''smalldatetime'' THEN 4
-			WHEN [t].[name] = N''datetime'' THEN 8
-			WHEN [t].[name] = N''datetime2'' THEN
-				CASE
-					WHEN [c].[scale] <= 2 THEN 6
-					WHEN [c].[scale] <= 4 THEN 7
-					ELSE 8
-				END
-			WHEN [t].[name] = N''datetimeoffset'' 
-				THEN CASE
-					WHEN [c].[scale] <= 2 THEN 8
-					WHEN [c].[scale] <= 4 THEN 9
-					ELSE 10
-				END
-			WHEN [t].[name] IN (N''char'', N''varchar'', N''binary'') THEN	
-				CASE
-					WHEN [c].[max_length] = -1 THEN 16  -- row-overlflow (i.e., pointer)
-					ELSE [c].[max_length]
-				END
-			WHEN [t].[name] IN(N''varchar'', N''nvarchar'', N''varbinary'') THEN
-				CASE
-					WHEN [c].[max_length] = -1 THEN 16  -- row-overlflow (i.e., pointer)
-					ELSE [c].[max_length]
-				END
-			WHEN [t].[name] = N''text'' THEN 16 
-			WHEN [t].[name] = N''ntext'' THEN 16
-			WHEN [t].[name] = N''image'' THEN 16
-			WHEN [t].[name] = N''xml'' THEN 16
-			WHEN [t].[name] = N''uniqueidentifier'' THEN 16
-			WHEN [t].[name] = N''sysname'' THEN [c].[max_length]
-			WHEN [t].[name] = N''sql_variant'' THEN 8016 -- up to 8016 bytes; using max
-			WHEN [t].[name] = N''hierarchyid'' THEN 892 -- variable, max shown
-			WHEN [t].[name] = N''geography'' THEN [c].[max_length]
-			WHEN [t].[name] = N''geometry'' THEN [c].[max_length]
-			WHEN [t].[name] = N''rowversion'' THEN 8
-			WHEN [t].[name] = N''timestamp'' THEN 8
-			ELSE [c].[max_length]
-		END [data_width]
-	FROM
-		[sys].[columns] [c]
-		INNER JOIN [sys].[types] [t] ON [c].[user_type_id] = [t].[user_type_id]
-		INNER JOIN sys.[objects] [o] ON [c].[object_id] = [o].[object_id]
-	),
-	[estimated_table_sizes] AS (
-		SELECT 
-			[w].[object_id],
-			--SUM([w].[data_width]) [estimated_row_size],
-			SUM([e].[row_count] * [w].[data_width]) [estimated_table_size]
-		FROM 
-			[column_widths] [w] 
-			INNER JOIN [expanded] [e] ON [w].[object_id] = [e].[object_id]	
-		GROUP BY 
-			[w].[object_id]
 	),
 	[indexes] AS (
 		SELECT 
@@ -244,7 +163,7 @@ AS
 			[e].[object_id]
 	)
 
-	INSERT INTO [#results] ([database_name], [table_name], [row_count], [reserved_gb], [data_gb], [indexes_gb], [indexes], [estimated_gb], [columns], [triggers], [fks], [dfs], [cs], [uqs], [structure], [last_modified], [smells])
+	INSERT INTO [#results] ([database_name], [table_name], [row_count], [reserved_gb], [data_gb], [indexes_gb], [indexes], [columns], [triggers], [fks], [dfs], [cs], [uqs], [structure], [last_modified], [smells])
 	SELECT TOP ({top})
 		N''[{CURRENT_DB}]'' [database_name],
 		QUOTENAME(SCHEMA_NAME([t].[schema_id])) + N''.'' + QUOTENAME(OBJECT_NAME([e].[object_id])) [table_name],
@@ -252,8 +171,8 @@ AS
 		FORMAT([e].[reserved] / 1048576.0, N''N'') [reserved_gb],
 		FORMAT([e].[data] / 1048576.0, N''N'') [data_gb],
 		FORMAT([e].[index_size] / 1048576.0, N''N'') [indexes_gb],
-		--FORMAT([ets].[estimated_table_size] / 1048576.0, N''N'') [estimated_gb],
-		CAST([ets].[estimated_table_size] / 1048576.0 AS DECIMAL(18,2)) [estimated_gb],
+							----FORMAT([ets].[estimated_table_size] / 1048576.0, N''N'') [estimated_gb],
+							--CAST([ets].[estimated_table_size] / 1048576.0 AS DECIMAL(18,2)) [estimated_gb],
 		ISNULL([i].[index_count], 0) [indexes],
 		[c].[column_count] [columns],
 		[s].[triggers],
@@ -278,7 +197,6 @@ AS
 		LEFT OUTER JOIN [smell_widths] [sw] ON [e].[object_id] = [sw].[object_id]
 		LEFT OUTER JOIN [smell_pks] [sp] ON [e].[object_id] = [sp].[object_id]
 		LEFT OUTER JOIN [smell_constraints] [sc] ON [e].[object_id] = [sc].[object_id]
-		LEFT OUTER JOIN [estimated_table_sizes] [ets] ON [e].[object_id] = [ets].[object_id]
 	ORDER BY 
 		[e].[reserved] DESC; ';
 
