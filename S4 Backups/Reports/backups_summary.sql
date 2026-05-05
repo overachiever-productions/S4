@@ -124,7 +124,7 @@ AS
 		[copy_succeeded_count],
 		[copy_seconds],
 		[error_count], 
-		ISNULL((SELECT STRING_AGG([error_details], '; ') FROM [core] [c] WHERE [c].[database] = [correlated].[database]), N'') [error_details]
+		ISNULL((SELECT STRING_AGG([error_details], '||') FROM [core] [c] WHERE [c].[database] = [correlated].[database] AND [c].[backup_type] = [correlated].[backup_type]), N'') [error_details]
 	INTO 
 		#intermediate
 	FROM 
