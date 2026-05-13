@@ -68,7 +68,7 @@ AS
 			[offsite_seconds],
 			[error_details] 
 		FROM 
-			[admindb]..[backup_log] 
+			[dbo].[backup_log] 
 		WHERE 
 			[backup_date] >= DATEADD(DAY, -1, GETDATE())
 	),
