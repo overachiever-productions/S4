@@ -28,7 +28,9 @@
 		        <created>2026-05-12 21:18:22.333</created>
 		        <error_message>Fuzzy piglets in blankets.</error_message>
 	        </detail>
-        </details>';        
+        </details>';  
+        
+    @extended uses the EXACT SAME schema as @details EXCEPT with a root node of <extended> instead of <details>.
 
 
 */
@@ -49,11 +51,15 @@ CREATE PROC dbo.[format_email_minimal_report]
     @detail_header              sysname,   
     @metadata                   xml,
     @details                    xml, 
+    @extended_header            sysname             = NULL,     
+    @extended                   xml                 = N'<extended />',
     @output                     nvarchar(MAX)       OUTPUT
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
+    SET @extended_header = NULLIF(@extended_header, N'');
 	
 	DECLARE @body nvarchar(MAX) = N'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -117,7 +123,7 @@ AS
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:13px;color:#222222;">
               <thead>
                 <tr style="background-color:#fafafa;">
-                  {details_table_headers}
+                  {details_columns}
                 </tr>
               </thead>
               <tbody>
@@ -126,7 +132,7 @@ AS
             </table>
           </td>
         </tr>
-
+        {extended}
         <!-- Footer -->
         <tr>
           <td style="padding:14px 24px;border-top:1px solid #e5e5e5;font-size:11px;color:#888888;">
@@ -180,16 +186,16 @@ AS
     ---------------------------------------------------------------------------------------------------------------------------------------------------*/
     DECLARE @firstRow xml = @details.query(N'/details/detail[1]');
 
-    DECLARE @detailsThs nvarchar(MAX) = N'';
+    DECLARE @detailsColumns nvarchar(MAX) = N'';
     SELECT 
-        @detailsThs = @detailsThs +
+        @detailsColumns = @detailsColumns +
         N'<th align="left" style="padding:8px 10px;border-bottom:1px solid #e5e5e5;font-weight:600;color:#555555;">' +
             [t].[x].value(N'local-name(.)', N'sysname') + 
         N'</th>'
     FROM 
 	    @firstRow.nodes(N'/detail/*') AS [t]([x]);
 
-    SET @body = REPLACE(@body, N'{details_table_headers}', ISNULL(@detailsThs, N''));
+    SET @body = REPLACE(@body, N'{details_columns}', ISNULL(@detailsColumns, N''));
 
     DECLARE @detailRows nvarchar(MAX) = N'';
     WITH [rows] AS ( 
@@ -219,6 +225,86 @@ AS
         [row_id];
 
     SET @body = REPLACE(@body, N'{details_rows}', @detailRows);
+
+    /*---------------------------------------------------------------------------------------------------------------------------------------------------
+    -- Extended Details:
+    ---------------------------------------------------------------------------------------------------------------------------------------------------*/
+    DECLARE @extendedBlock nvarchar(MAX) = N'
+        <!-- Extended Details -->
+        <tr>
+          <td style="padding:16px 24px 8px 24px;font-size:12px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#666666;">
+            {extended-header}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 20px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:13px;color:#222222;">
+              <thead>
+                <tr style="background-color:#fafafa;">
+                  {extended_columns}
+                </tr>
+              </thead>
+              <tbody>
+                {extended_rows}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+        ';
+
+    IF ((SELECT dbo.[is_xml_empty](@extended)) = 0) OR (@extended_header IS NOT NULL) BEGIN
+        SET @extended_header = ISNULL(NULLIF(@extended_header, N''), 'Extended Details');
+
+        SET @extendedBlock = REPLACE(@extendedBlock, N'{extended-header}', @extended_header);
+
+        SELECT @firstRow = @extended.query(N'/extended/detail[1]');
+
+        DECLARE @extendedColumns nvarchar(MAX) = N'';
+        SELECT 
+            @extendedColumns = @extendedColumns +
+            N'<th align="left" style="padding:8px 10px;border-bottom:1px solid #e5e5e5;font-weight:600;color:#555555;">' +
+                [t].[x].value(N'local-name(.)', N'sysname') + 
+            N'</th>'
+        FROM 
+	        @firstRow.nodes(N'/detail/*') AS [t]([x]);
+
+        SET @extendedBlock = REPLACE(@extendedBlock, N'{extended_columns}', ISNULL(@extendedColumns, N''));
+        
+        DECLARE @extendedRows nvarchar(MAX) = N'';
+        WITH [rows] AS ( 
+            SELECT 
+	            [t].[x].value(N'(@row_id)[1]', N'int') [row_id],
+	            t.x.query(N'.') [row]
+            FROM 
+	            @extended.nodes(N'/extended/detail') [t]([x])
+        )
+
+        SELECT 
+            @extendedRows = @extendedRows +
+            N'<tr>' + 
+                (CAST(
+                    (SELECT 
+                        'padding:8px 10px;border-bottom:1px solid #f0f0f0;' [td/@style],
+                        ISNULL([n].[x].value(N'(.)[1]', N'sysname'), N'') [td], 
+                        ''
+                    FROM 
+                        [rows].row.nodes(N'/detail/*') AS [n]([x])
+                    FOR XML PATH(N''), TYPE) AS nvarchar(MAX))
+                ) +
+            N'</tr>'
+        FROM 
+            [rows] 
+        ORDER BY 
+            [row_id];
+
+        SET @extendedBlock = REPLACE(@extendedBlock, N'{extended_rows}', @extendedRows);
+
+        SET @body = REPLACE(@body, N'{extended}', @extendedBlock);
+
+      END;
+    ELSE 
+        SET @body = REPLACE(@body, N'{extended}', N'');
+
 
     /*---------------------------------------------------------------------------------------------------------------------------------------------------
     -- Footer / etc. 
