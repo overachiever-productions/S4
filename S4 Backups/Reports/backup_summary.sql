@@ -26,7 +26,7 @@ AS
 		FROM 
 			dbo.[backup_log]
 		WHERE 
-			[backup_date] >= DATEADD(DAY, 0 - @days_back, GETDATE())
+			[backup_start] >= DATEADD(DAY, 0 - @days_back, GETDATE())
 		GROUP BY 
 			[database]
 	), 
@@ -70,7 +70,7 @@ AS
 		FROM 
 			[dbo].[backup_log] 
 		WHERE 
-			[backup_date] >= DATEADD(DAY, -1, GETDATE())
+			[backup_start] >= DATEADD(DAY, -1, GETDATE())
 	),
 	aggregated AS ( 
 		SELECT 
