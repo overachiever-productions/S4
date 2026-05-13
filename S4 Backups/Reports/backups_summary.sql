@@ -1,6 +1,5 @@
 /*
 
-		
 
 
 */
@@ -8,11 +7,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[backups_summary]','P') IS NOT NULL
-	DROP PROC dbo.[backups_summary];
+IF OBJECT_ID('dbo.[backup_summary]','P') IS NOT NULL
+	DROP PROC dbo.[backup_summary];
 GO
 
-CREATE PROC dbo.[backups_summary]
+CREATE PROC dbo.[backup_summary]
 	@days_back						int					= 1, 
 	@databases						nvarchar(MAX)		= N'{ALL}', 
 	@serialized_output				xml					= N'<default/>'	    OUTPUT
@@ -27,7 +26,7 @@ AS
 		FROM 
 			dbo.[backup_log]
 		WHERE 
-			[backup_date] >= DATEADD(DAY, 0 - @days_back, GETDATE())
+			[backup_start] >= DATEADD(DAY, 0 - @days_back, GETDATE())
 		GROUP BY 
 			[database]
 	), 
@@ -69,13 +68,13 @@ AS
 			[offsite_seconds],
 			[error_details] 
 		FROM 
-			[admindb]..[backup_log] 
+			[dbo].[backup_log] 
 		WHERE 
-			[backup_date] >= DATEADD(DAY, -1, GETDATE())
+			[backup_start] >= DATEADD(DAY, -1, GETDATE())
 	),
 	aggregated AS ( 
 		SELECT 
-			[backup_date],
+			MIN([backup_date]) [backup_date],
 			[database],
 			[backup_type],
 			COUNT(*) [backup_count],
@@ -88,7 +87,6 @@ AS
 		FROM		 
 			core 
 		GROUP BY 
-			[backup_date],
 			[database], 
 			[backup_type]
 	), 
@@ -124,7 +122,7 @@ AS
 		[copy_succeeded_count],
 		[copy_seconds],
 		[error_count], 
-		ISNULL((SELECT STRING_AGG([error_details], '||') FROM [core] [c] WHERE [c].[database] = [correlated].[database] AND [c].[backup_type] = [correlated].[backup_type]), N'') [error_details]
+		ISNULL((SELECT STRING_AGG([error_details], '; ') FROM [core] [c] WHERE [c].[database] = [correlated].[database]), N'') [error_details]
 	INTO 
 		#intermediate
 	FROM 
