@@ -74,7 +74,7 @@ AS
 	),
 	aggregated AS ( 
 		SELECT 
-			[backup_date],
+			MIN([backup_date]) [backup_date],
 			[database],
 			[backup_type],
 			COUNT(*) [backup_count],
@@ -87,7 +87,6 @@ AS
 		FROM		 
 			core 
 		GROUP BY 
-			[backup_date],
 			[database], 
 			[backup_type]
 	), 
