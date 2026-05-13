@@ -1,9 +1,5 @@
 /*
 
-		MKC: 
-			I spent ... a decent amount of time on this - making it viable as a 'summary' ... 
-			it's ... arguably a bit too verbose. 
-			sigh. 
 
 
 */
