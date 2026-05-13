@@ -205,6 +205,7 @@ AS
         N'<tr>' + 
             (CAST(
                 (SELECT 
+                    'padding:8px 10px;border-bottom:1px solid #f0f0f0;' [td/@style],
                     ISNULL([n].[x].value(N'(.)[1]', N'sysname'), N'') [td], 
                     ''
                 FROM 
@@ -216,9 +217,6 @@ AS
         [rows] 
     ORDER BY 
         [row_id];
-
-    -- apply styling:
-    SET @detailRows = REPLACE(@detailRows, N'<td>', N'<td style="padding:8px 10px;border-bottom:1px solid #f0f0f0;">');
 
     SET @body = REPLACE(@body, N'{details_rows}', @detailRows);
 
