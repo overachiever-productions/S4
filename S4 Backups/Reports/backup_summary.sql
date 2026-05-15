@@ -1,9 +1,5 @@
 /*
 
-		MKC: 
-			I spent ... a decent amount of time on this - making it viable as a 'summary' ... 
-			it's ... arguably a bit too verbose. 
-			sigh. 
 
 
 */
@@ -30,7 +26,7 @@ AS
 		FROM 
 			dbo.[backup_log]
 		WHERE 
-			[backup_date] >= DATEADD(DAY, 0 - @days_back, GETDATE())
+			[backup_start] >= DATEADD(DAY, 0 - @days_back, GETDATE())
 		GROUP BY 
 			[database]
 	), 
@@ -72,13 +68,13 @@ AS
 			[offsite_seconds],
 			[error_details] 
 		FROM 
-			[admindb]..[backup_log] 
+			[dbo].[backup_log] 
 		WHERE 
-			[backup_date] >= DATEADD(DAY, -1, GETDATE())
+			[backup_start] >= DATEADD(DAY, -1, GETDATE())
 	),
 	aggregated AS ( 
 		SELECT 
-			[backup_date],
+			MIN([backup_date]) [backup_date],
 			[database],
 			[backup_type],
 			COUNT(*) [backup_count],
@@ -91,7 +87,6 @@ AS
 		FROM		 
 			core 
 		GROUP BY 
-			[backup_date],
 			[database], 
 			[backup_type]
 	), 
