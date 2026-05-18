@@ -29,6 +29,17 @@
 		        <error_message>Fuzzy piglets in blankets.</error_message>
 	        </detail>
         </details>';  
+
+
+    @kpis uses the following schema:
+        DECLARE @kpis xml = N'<indicators>
+            <indicator priority="1">
+                <name>Indicator 1</name>
+                <value>42</value>
+                <style>error|warning|ok|info</style>
+                <context>Context for indicator 1</context>
+            </indicator>
+        </indicators>';
         
     @extended uses the EXACT SAME schema as @details EXCEPT with a root node of <extended> instead of <details>.
 
@@ -53,6 +64,8 @@ CREATE PROC dbo.[format_email_minimal_report]
     @details                    xml, 
     @extended_header            sysname             = NULL,     
     @extended                   xml                 = N'<extended />',
+    @raw_header                 sysname             = NULL, 
+    @raw                        nvarchar(MAX)       = NULL,
     @output                     nvarchar(MAX)       OUTPUT
 AS
     SET NOCOUNT ON; 
@@ -60,6 +73,8 @@ AS
 	-- {copyright}
 
     SET @extended_header = NULLIF(@extended_header, N'');
+    SET @raw_header = NULLIF(@raw_header, N'');
+    SET @raw = NULLIF(@raw, N'');
 	
 	DECLARE @body nvarchar(MAX) = N'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -133,6 +148,7 @@ AS
           </td>
         </tr>
         {extended}
+        {raw}
         <!-- Footer -->
         <tr>
           <td style="padding:14px 24px;border-top:1px solid #e5e5e5;font-size:11px;color:#888888;">
@@ -305,6 +321,33 @@ AS
     ELSE 
         SET @body = REPLACE(@body, N'{extended}', N'');
 
+    /*---------------------------------------------------------------------------------------------------------------------------------------------------
+    -- Raw Details:
+    ---------------------------------------------------------------------------------------------------------------------------------------------------*/
+    DECLARE @rawBlock nvarchar(MAX) = N'
+        <!-- Raw output / log block -->
+        <tr>
+          <td style="padding:8px 24px 4px 24px;font-size:12px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#666666;">
+            {raw_header}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 20px 24px;">
+            <pre style="margin:0;padding:12px 14px;background-color:#fafafa;border:1px solid #eeeeee;font-family:Consolas,Menlo,''Courier New'',monospace;font-size:12px;line-height:1.5;color:#333333;white-space:pre-wrap;word-wrap:break-word;overflow-x:auto;">{raw}</pre>
+          </td>
+        </tr>
+        ';
+
+    IF (@raw_header IS NOT NULL) OR (@raw is NOT NULL) BEGIN
+        SET @raw_header = ISNULL(@raw_header, N'Raw Output');
+
+        SET @rawBlock = REPLACE(@rawBlock, N'{raw_header}', @raw_header);
+        SET @rawBlock = REPLACE(@rawBlock, N'{raw}', ISNULL(@raw, N''));
+
+        SET @body = REPLACE(@body, N'{raw}', @rawBlock);
+      END
+    ELSE 
+        SET @body = REPLACE(@body, N'{raw}', N'');
 
     /*---------------------------------------------------------------------------------------------------------------------------------------------------
     -- Footer / etc. 
