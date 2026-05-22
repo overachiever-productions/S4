@@ -12,6 +12,13 @@
 			however, if there were dbo.batch_status and myschema.batch_status, it'd NEVER 
 				be able to differentiate and ... probably crash/burn. 
 
+
+	vNEXT: 
+		I'm already HAMMERING the snot out of the XML stuff here... so ... perf-hit won't be that much of a deal. 
+		As such... look for missing INDEX recommendations in any of the query plans... 
+		and if there are any ... mark the # of recommendations in a column... 
+		so'z that I can see (easily) what IXes might be missing. 
+
 */
 
 USE [admindb];
