@@ -108,7 +108,7 @@ AS
           <td style="padding:20px 24px 8px 24px;border-bottom:1px solid #e5e5e5;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#666666;">
+                <td style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#{classificationColor};">
                   {classification}
                 </td>
                 <td align="right" style="font-size:12px;color:#888888;">
@@ -154,12 +154,20 @@ AS
 </table>
 </body>
 </html>';
-
+    
     SET @body = REPLACE(@body, N'{classification}', ISNULL(UPPER(@classification), N''));
+    
+    DECLARE @classificationColor sysname = CASE UPPER(@classification)
+        WHEN N'ERROR' THEN N'c0392b'
+        WHEN N'WARNING' THEN N'92400e'
+        WHEN N'INFO' THEN N'1e40af'
+        ELSE N'666666'
+    END;
+    
+    SET @body = REPLACE(@body, N'{classificationColor}', @classificationColor);
     SET @body = REPLACE(@body, N'{execution-time}', ISNULL(CONVERT(sysname, @execution_date, 120), N''));
     SET @body = REPLACE(@body, N'{title}', ISNULL(@title, N''));
     SET @body = REPLACE(@body, N'{summary}', ISNULL(@summary, N''));
-    
 
     /*---------------------------------------------------------------------------------------------------------------------------------------------------
     -- Metadata
@@ -225,7 +233,7 @@ AS
                 [t].[x].value(N'(name)[1]', N'sysname') [name],
                 [t].[x].value(N'(value)[1]', N'sysname') [value],
                 [t].[x].value(N'(style)[1]', N'sysname') [style],
-                [t].[x].value(N'(context)[1]', N'sysname') [context]
+                ISNULL([t].[x].value(N'(context)[1]', N'sysname'), N'&nbsp;') [context]
             FROM 
 	            @indicators.nodes(N'/indicators/indicator') [t]([x])
         )
