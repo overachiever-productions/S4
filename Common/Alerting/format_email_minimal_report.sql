@@ -1,5 +1,23 @@
 /*
 
+    @errors is, essentially, a set of KVPs, with a 'heading' (key) and then an 'error' (value). 
+        DECLARE @errors xml = N'<errors>
+            <error row_id="1">
+                <heading>DATABASE: [Auditing]</heading>
+                <error>Error with BACKUP command: Msg 3202, Level 16, State 1, Server FPITPDXD01, Line 1
+                Write on "E:\SQLBackups\Auditing\LOG_Auditing_backup_2026_04_30_050201_0063369.trn" failed: 112(There is not enough space on the disk.)
+                Msg 3013, Level 16, State 1, Server FPITPDXD01, Line 1
+                BACKUP LOG is terminating abnormally.</error>
+            </error>
+            <error row_id="2">
+                <heading>DATABASE: [Auditing]</heading>
+                <error>Error with BACKUP command: Msg 3202, Level 16, State 1, Server FPITPDXD01, Line 1
+                Write on "E:\SQLBackups\Jobs\LOG_Jobs_backup_2026_04_30_050201_0966489.trn" failed: 112(There is not enough space on the disk.)
+                Msg 3013, Level 16, State 1, Server FPITPDXD01, Line 1
+                BACKUP LOG is terminating abnormally.</error>
+            </error>
+        </errors>'; 
+
     @metadata is a set of key-value pairs - wrapped in <entry /> blocks - and ordered by the row_id attribute. 
         DECLARE @metadata xml = N'<metadata>
 	        <entry row_id="1">
@@ -71,10 +89,12 @@ CREATE PROC dbo.[format_email_minimal_report]
     @classification             sysname,                                        -- COMMON values are: { REPORT | INFO | WARNING | ERROR } - but anything works.
     @title                      sysname,    
     @execution_date             datetime,
-    @summary                    sysname, 
     @recipients                 nvarchar(MAX),                                  -- REQUIRED
-    @metadata                   xml,                                            -- KVPs. REQUIRED.
-    @indicators                 xml                 = NULL,                     -- OPTIONAL
+    @indicators                 xml                 = NULL,                     -- SPECIALIZED schema expected. 
+    @summary                    sysname             = NULL, 
+    @metadata                   xml                 = NULL,                     -- KVPs.
+    @errors_header              sysname             = NULL,
+    @errors                     xml                 = NULL,                     -- KVPs with 'arbitrary' key-name (as the element-name and element-text as the value)
     @details_header             sysname             = NULL,                     
     @details                    xml                 = NULL, 
     @extended_header            sysname             = NULL,     
@@ -88,6 +108,8 @@ AS
 	-- {copyright}
 
     SET @extended_header = NULLIF(@extended_header, N'');
+    SET @details_header = NULLIF(@details_header, N'');
+    SET @errors_header = NULLIF(@errors_header, N'');
     SET @raw_header = NULLIF(@raw_header, N'');
     SET @raw = NULLIF(@raw, N'');
 	
@@ -122,26 +144,7 @@ AS
               </tr>
             </table>
           </td>
-        </tr>
-
-        <!-- Summary -->
-        <tr>
-          <td style="padding:16px 24px;font-size:14px;color:#333333;line-height:1.55;">
-            {summary}
-          </td>
-        </tr>{indicators}
-
-        <!-- Metadata -->
-        <tr>
-          <td style="padding:0 24px 8px 24px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size:13px;color:#333333;border-collapse:collapse;">
-              <tr>
-                {meta_tds}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {details}{extended}{raw}
+        </tr>{metadata}{summary}{indicators}{errors}{details}{extended}{raw}
         <!-- Footer -->
         <tr>
           <td style="padding:14px 24px;border-top:1px solid #e5e5e5;font-size:11px;color:#888888;">
@@ -169,32 +172,6 @@ AS
     SET @body = REPLACE(@body, N'{title}', ISNULL(@title, N''));
     SET @body = REPLACE(@body, N'{summary}', ISNULL(@summary, N''));
 
-    /*---------------------------------------------------------------------------------------------------------------------------------------------------
-    -- Metadata
-    ---------------------------------------------------------------------------------------------------------------------------------------------------*/
-    DECLARE @metaRows nvarchar(MAX) = N'';
-    WITH [meta] AS ( 
-
-	    SELECT 
-		    [t].[x].value(N'(@row_id)[1]', N'int') [row_id], 
-		    [t].[x].value(N'(key)[1]', N'nvarchar(100)') [key],
-		    [t].[x].value(N'(value)[1]', N'nvarchar(100)') [value]
-	    FROM 
-		    @metadata.nodes('/metadata/entry') [t]([x])
-    )
-
-    SELECT 
-	    @metaRows = @metaRows + 
-        N'<tr>' +
-	        N'<td style="padding:8px 0;border-top:1px solid #eeeeee;width:35%;color:#666666;">' + [key] + N'</td>' + 
-	        N'<td style="padding:8px 0;border-top:1px solid #eeeeee;font-family:Consolas,Menlo,monospace;">' + [value] + N'</td>' + 
-        N'</tr>'
-    FROM 
-	    [meta]
-    ORDER BY 
-	    [row_id];
-
-    SET @body = REPLACE(@body, N'{meta_tds}', ISNULL(@metaRows, N''));
     DECLARE @firstRow xml;
 
     /*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -233,7 +210,7 @@ AS
                 [t].[x].value(N'(name)[1]', N'sysname') [name],
                 [t].[x].value(N'(value)[1]', N'sysname') [value],
                 [t].[x].value(N'(style)[1]', N'sysname') [style],
-                ISNULL([t].[x].value(N'(context)[1]', N'sysname'), N'&nbsp;') [context]
+                ISNULL(NULLIF([t].[x].value(N'(context)[1]', N'sysname'), N''), N'&nbsp;') [context]
             FROM 
 	            @indicators.nodes(N'/indicators/indicator') [t]([x])
         )
@@ -263,6 +240,129 @@ AS
     END;
         
     SET @body = REPLACE(@body, N'{indicators}', @indicatorsBlock);
+
+    /*---------------------------------------------------------------------------------------------------------------------------------------------------
+    -- Summary:
+    ---------------------------------------------------------------------------------------------------------------------------------------------------*/
+    DECLARE @summaryBlock nvarchar(MAX) = N'';
+    IF @summary IS NOT NULL BEGIN 
+        SET @summaryBlock = N'
+        <!-- Summary -->
+        <tr>
+          <td style="padding:16px 24px;font-size:14px;color:#333333;line-height:1.55;">
+            {summary}
+          </td>
+        </tr>
+        ';
+
+        SET @summaryBlock = REPLACE(@summaryBlock, N'{summary}', ISNULL(@summary, N''));
+    END;
+
+    SET @body = REPLACE(@body, N'{summary}', @summaryBlock);
+
+    /*---------------------------------------------------------------------------------------------------------------------------------------------------
+    -- Metadata
+    ---------------------------------------------------------------------------------------------------------------------------------------------------*/
+    DECLARE @metadataBlock nvarchar(MAX) = N'';
+
+    IF ((SELECT dbo.[is_xml_empty](@metadata)) = 0) BEGIN
+        SET @metadataBlock = N'
+        <!-- Metadata -->
+        <tr>
+          <td style="padding:0 24px 8px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size:13px;color:#333333;border-collapse:collapse;">
+              <tr>
+                {meta_tds}
+              </tr>
+            </table>
+          </td>
+        </tr>       
+        ';
+
+        DECLARE @metaRows nvarchar(MAX) = N'';
+        WITH [meta] AS ( 
+
+	        SELECT 
+		        [t].[x].value(N'(@row_id)[1]', N'int') [row_id], 
+		        [t].[x].value(N'(key)[1]', N'nvarchar(100)') [key],
+		        [t].[x].value(N'(value)[1]', N'nvarchar(100)') [value]
+	        FROM 
+		        @metadata.nodes('/metadata/entry') [t]([x])
+        )
+
+        SELECT 
+	        @metaRows = @metaRows + 
+            N'<tr>' +
+	            N'<td style="padding:8px 0;border-top:1px solid #eeeeee;width:35%;color:#666666;">' + [key] + N'</td>' + 
+	            N'<td style="padding:8px 0;border-top:1px solid #eeeeee;font-family:Consolas,Menlo,monospace;">' + [value] + N'</td>' + 
+            N'</tr>'
+        FROM 
+	        [meta]
+        ORDER BY 
+	        [row_id];
+
+        SET @metadataBlock = REPLACE(@metadataBlock, N'{meta_tds}', @metaRows);
+    END;
+
+    SET @body = REPLACE(@body, N'{metadata}', @metadataBlock);
+
+    /*---------------------------------------------------------------------------------------------------------------------------------------------------
+    -- Errors:
+    ---------------------------------------------------------------------------------------------------------------------------------------------------*/
+    DECLARE @errorsBlock nvarchar(MAX) = N'';
+    IF ((SELECT dbo.[is_xml_empty](@errors)) = 0) OR @errors_header IS NOT NULL BEGIN
+
+        SET @errors_header = ISNULL(@errors_header, N'Errors');
+        
+        DECLARE @errorKeyName sysname;
+        DECLARE @errorsRows nvarchar(MAX) = N'';
+
+        SET @errorsBlock = N'
+        <!-- Errors -->
+        <tr>
+          <td style="padding:16px 24px 4px 24px;font-size:12px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#666666;">
+            {error_heading}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 20px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+            {errors}
+            </table>
+          </td>
+        </tr>
+        ';
+
+        WITH errors AS ( 
+            SELECT 
+                [t].[x].value(N'(@row_id)[1]', N'int') [row_id],
+                [t].[x].value(N'(heading)[1]', N'sysname') [heading], 
+                [t].[x].value(N'(error)[1]', N'nvarchar(MAX)') [error]
+            FROM 
+                @errors.nodes(N'/errors/error') AS [t]([x])
+        )
+
+        SELECT 
+            @errorsRows = @errorsRows +
+            N'<tr>
+                <td style="padding:12px 0 2px 0;border-top:1px solid #eeeeee;">
+                  <span style="font-size:11px;font-weight:600;letter-spacing:0.08em;color:#888888;">' + [heading] + N'</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:2px 0 14px 0;font-size:13px;color:#333333;line-height:1.6;">' + [error] + N'</td>
+              </tr>'
+        FROM 
+            [errors] 
+        ORDER BY 
+            [row_id];
+
+        SET @errorsBlock = REPLACE(@errorsBlock, N'{error_heading}', @errors_header);
+        SET @errorsBlock = REPLACE(@errorsBlock, N'{errors}', @errorsRows);
+
+    END; 
+
+    SET @body = REPLACE(@body, N'{errors}', @errorsBlock);
 
     /*---------------------------------------------------------------------------------------------------------------------------------------------------
     -- Details:
