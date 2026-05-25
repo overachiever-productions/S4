@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[format_email_minimal_report]','P') IS NOT NULL
-	DROP PROC dbo.[format_email_minimal_report];
+IF OBJECT_ID('dbo.[format_html_email]','P') IS NOT NULL
+	DROP PROC dbo.[format_html_email];
 GO
 
-CREATE PROC dbo.[format_email_minimal_report]
+CREATE PROC dbo.[format_html_email]
     @classification             sysname,                                        -- COMMON values are: { REPORT | INFO | WARNING | ERROR } - but anything works.
     @title                      sysname,    
     @execution_date             datetime,
