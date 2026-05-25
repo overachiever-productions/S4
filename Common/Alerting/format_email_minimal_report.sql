@@ -170,7 +170,6 @@ AS
     SET @body = REPLACE(@body, N'{classificationColor}', @classificationColor);
     SET @body = REPLACE(@body, N'{execution-time}', ISNULL(CONVERT(sysname, @execution_date, 120), N''));
     SET @body = REPLACE(@body, N'{title}', ISNULL(@title, N''));
-    SET @body = REPLACE(@body, N'{summary}', ISNULL(@summary, N''));
 
     DECLARE @firstRow xml;
 
