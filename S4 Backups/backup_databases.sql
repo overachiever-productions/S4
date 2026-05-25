@@ -1010,47 +1010,80 @@ NextDatabase:
 --			f) for any true 'errors', those get picked up below. 
 --			g) for any non-errors - but failures to copy, there needs to be a 'warning' email sent - with a summary (list) of each db that hasn't copied - current number of attempts, how long it's been, etc. 
 
-	DECLARE @emailErrorMessage nvarchar(MAX);
+	--DECLARE @emailErrorMessage nvarchar(MAX);
+
+	DECLARE @errorsCount int;
+	DECLARE @xmlErrors xml;
 
 	IF EXISTS (SELECT NULL FROM dbo.backup_log WHERE execution_id = @executionID AND error_details IS NOT NULL) BEGIN;
-		SET @emailErrorMessage = N'BACKUP TYPE: ' + @BackupType + @crlf
-			+ N'TARGETS: ' + @DatabasesToBackup + @crlf
-			+ @crlf 
-			+ N'The following errors were encountered: ' + @crlf;
+		SELECT @errorsCount = COUNT(*) FROM dbo.backup_log WHERE execution_id = @executionID AND error_details IS NOT NULL;	
 
-		SELECT @emailErrorMessage = @emailErrorMessage + @tab + N'- Target Database: [' + [database] + N']. Error: ' + error_details + @crlf + @crlf
-		FROM 
-			dbo.backup_log
-		WHERE 
-			execution_id = @executionID
-			AND error_details IS NOT NULL 
-		ORDER BY 
-			backup_id;
+		DECLARE @indicators xml = N'<indicators>
+            <indicator priority="1">
+                <name>Backup Type</name>
+                <value>' + UPPER(@BackupType) + N'</value>
+                <style>info</style>
+                <context></context>
+            </indicator>
+            <indicator priority="2">
+                <name>Target(s)</name>
+                <value>' + @DatabasesToBackup + N'</value>
+                <style>info</style>
+                <context></context>
+            </indicator>
+            <indicator priority="3">
+                <name>Errors</name>
+                <value>' + CAST(@errorsCount AS sysname) + N'</value>
+                <style>error</style>
+                <context></context>
+            </indicator>
+        </indicators>';
 
+		SELECT @xmlErrors = (
+			SELECT 
+				ROW_NUMBER() OVER (ORDER BY backup_id) [@row_id],
+				[database] [heading],
+				error_details [error]
+			FROM 
+				dbo.backup_log
+			WHERE 
+				execution_id = @executionID
+				AND error_details IS NOT NULL
+			ORDER BY 
+				backup_id
+			FOR XML PATH(N'error'), ROOT(N'errors'), TYPE
+		);
 	END;
 
 	DECLARE @emailSubject nvarchar(2000);
-	IF @emailErrorMessage IS NOT NULL BEGIN;
+	IF @errorsCount > 0 BEGIN;
 		
 		IF RIGHT(@EmailSubjectPrefix, 1) <> N' ' SET @EmailSubjectPrefix = @EmailSubjectPrefix + N' ';
 		SET @emailSubject = @EmailSubjectPrefix + N'- ' + @BackupType + N' - ERROR';
-		SET @emailErrorMessage = @emailErrorMessage + @crlf + @crlf + N'Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
+		
+		DECLARE @title sysname = REPLACE(REPLACE(@emailSubject, N'[', N''), N']', N'');
+		DECLARE @raw nvarchar(MAX) = N'Execute [ SELECT * FROM [admindb].dbo.backup_log WHERE execution_id = ''' + CAST(@executionID AS nvarchar(36)) + N'''; ] for details.';
 
-		IF @PrintOnly = 1 BEGIN 
-			PRINT @emailSubject;
-			PRINT @emailErrorMessage;
-		  END;
-		ELSE BEGIN 
-
-			IF UPPER(@Edition) <> N'EXPRESS' BEGIN;
-				EXEC msdb..sp_notify_operator
-					@profile_name = @MailProfileName,
-					@name = @OperatorName,
-					@subject = @emailSubject, 
-					@body = @emailErrorMessage;
-			END;
-
-		END;
+		DECLARE @emailErrorMessage nvarchar(MAX);
+		EXEC dbo.[format_html_email]
+			@classification = N'ERROR',
+			@title = @title,
+			@execution_date = @operationStart,
+			@recipients = @OperatorName,
+			@indicators = @indicators,
+			@errors_header = N'ERRORS',
+			@errors = @xmlErrors,
+			@raw_header = N'Additional Details',
+			@raw = @raw,
+			@output = @emailErrorMessage OUTPUT;
+		
+		EXEC dbo.[notify_operator]
+			@profile_name = @MailProfileName,
+			@operator_name = @OperatorName,
+			@subject = @emailSubject,
+			@body = @emailErrorMessage ,
+			@body_format = 'HTML',
+			@print_only = @printOnly;
 	END;
 
 	RETURN 0;
