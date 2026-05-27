@@ -559,8 +559,8 @@ AS
 		{isolation_level}
 		c.[command], 
         c.[status], 
-		c.[wait_type],
-        c.[wait_resource],
+		[c].[wait_type] + CASE WHEN NULLIF([c].[wait_resource], N'''') IS NOT NULL THEN N'' - '' + [c].[wait_resource] ELSE N'''' END [wait_details],
+		c.[percent_complete] [%_complete],
 		t.[batch_text],  
 		--t.[statement_text],
 		{extractCost}        
@@ -610,7 +610,7 @@ AS
 	END; 
 
 	IF @IncludeExtendedDetails = 1 BEGIN
-		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'c.[percent_complete], c.[open_tran], (SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = c.session_id) [thread_count], ')
+		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'c.[open_tran], (SELECT COUNT(x.session_id) FROM sys.dm_os_waiting_tasks x WHERE x.session_id = c.session_id) [thread_count], ')
 	  END;
 	ELSE BEGIN 
 		SET @projectionSQL = REPLACE(@projectionSQL, N'{extended_details}', N'');

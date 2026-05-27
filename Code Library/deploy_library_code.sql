@@ -93,7 +93,8 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Write File to Disk (if not already written):
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @command nvarchar(MAX) = N'bcp "EXEC admindb.dbo.[load_library_code] {id};" queryout "{path}" -f C:\Perflogs\lib\code.fmt -T';
+	-- NOTE: addition of -u is for self-signed certs.
+	DECLARE @command nvarchar(MAX) = N'bcp "EXEC admindb.dbo.[load_library_code] {id};" queryout "{path}" -f C:\Perflogs\lib\code.fmt -T -u';
 	SET @command = REPLACE(@command, N'{id}', @libraryId);
 	SET @command = REPLACE(@command, N'{path}', @path);
 

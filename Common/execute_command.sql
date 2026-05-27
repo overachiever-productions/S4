@@ -161,7 +161,7 @@ AS
 	SET @IgnoredResults = NULLIF(@IgnoredResults, N'');
 	SET @SafeResults = NULLIF(@SafeResults, N'');
 	SET @DotIncludeFile = NULLIF(@DotIncludeFile, N'');
-
+	
 	IF @ExecutionAttemptsCount <= 0 SET @ExecutionAttemptsCount = 1;
 
     IF @ExecutionAttemptsCount > 0 
@@ -389,6 +389,10 @@ AS
 	    IF @ExecutionType = N'PARTNER' BEGIN 
 		    SELECT @serverName = REPLACE([data_source], N'tcp:', N'') FROM sys.servers WHERE [name] = N'PARTNER';
 	    END; 
+
+		IF dbo.[get_engine_version]() >= 17 BEGIN
+			SET @xpCmd = REPLACE(@xpCmd, N'{0}', N' -C{0}');  
+		END;
 
 		SET @xpCmd = REPLACE(@xpCmd, '{0}', ' -S' + @serverName);
     END;

@@ -140,7 +140,7 @@ AS
 	);
 
 	DECLARE @xmlOutput xml;
-	EXEC dbo.[load_database_names]
+	EXEC dbo.[targeted_databases]
 		@Databases = @Databases,
 		@Priorities = @Priorities,
 		@ExcludeClones = 1,
@@ -152,7 +152,7 @@ AS
 		@ExcludeOffline = 1,
 		@SerializedOutput = @xmlOutput OUTPUT;
 
-		WITH shredded AS ( 
+	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value('@id[1]', 'int') [row_id], 
 			[data].[row].value('.[1]', 'sysname') [database_name]
@@ -225,7 +225,8 @@ AS
 			FROM 
 				@errorDetails
 			FOR XML PATH(N'error'), ROOT(N'errors'), TYPE);
-		RETURN 0;
+		
+		RETURN -99;
 	END;
 
 	IF EXISTS (SELECT NULL FROM @errorDetails) BEGIN 
@@ -238,6 +239,8 @@ AS
 			@errorDetails
 		ORDER BY 
 			[row_id];
+
+		RETURN -98;
 	END;
 
 	RETURN 0;

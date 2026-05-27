@@ -11,7 +11,7 @@ IF OBJECT_ID(N'dbo.translate_characters', N'IF') IS NOT NULL
 	DROP FUNCTION dbo.[translate_characters];
 GO
 
-CREATE FUNCTION dbo.[translate_characters] (@Input nvarchar(MAX))
+CREATE FUNCTION dbo.[translate_characters] (@input nvarchar(MAX))
 RETURNS table
 AS
     RETURN

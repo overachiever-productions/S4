@@ -143,10 +143,8 @@ AS
 		
 		DECLARE @boundary int = PATINDEX(N'%[^0-9]%', @Retention)- 1;
 
-		-- Validation has already run TRY/CATCh against these... 
+		-- Validation has already run TRY/CATCH against these... 
 		SET @retentionValue = CAST((LEFT(@Retention, @boundary)) AS int);
-		SET @retentionValue = -1;
-
 		SET @retentionType = 'b';
 	   END;
 	ELSE BEGIN 
@@ -344,7 +342,7 @@ AS
 			
 			-- clear out any state from previous iterations:
 			DELETE FROM @lastN;
-
+			
 			IF @BackupType IN ('LOG', '{ALL}') BEGIN
 				INSERT INTO @lastN (original_id, backup_name, backup_type)
 				SELECT TOP (@retentionValue)

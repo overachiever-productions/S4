@@ -1,4 +1,375 @@
-﻿Set-StrictMode -Version 1.0;
+﻿#Requires -RunAsAdministrator;
+
+# ==============================================================================================================================================
+# 'Public':
+# ==============================================================================================================================================	
+function New-DataCollector {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[string]$Name,
+		[Parameter(Mandatory)]
+		[string]$ConfigFilePath,
+		[Parameter(Mandatory)]
+		[int]$RetentionDays,
+		[Switch]$SkipAutoStart = $false,
+		[Switch]$Force = $false
+	);
+	
+	begin {
+		
+	};
+	
+	process {
+		
+		if (-not (Test-Path -Path $ConfigFilePath)) {
+			Write-Host "Invalid Path or File Not Found for -ConfigFilePath value of [$ConfigFilePath]." -ForegroundColor Red;
+			return;
+		}
+		
+		$status = Get-DataCollectorStatus $Name;
+		
+		if ($status -ne "<EMPTY>") {
+			if (-not ($Force)) {
+				Write-Host "A Data Collector Set with the name of: [$Name] already exists. Use a different -Name or use the -Force option to overwrite." -ForegroundColor Red;
+				return;
+			}
+			else {
+				Write-Verbose "-Force Enabled. Data Collector Set [$Name] has a Status of: [$status].";
+				Remove-DataCollector -Name $Name;
+			}
+		}
+		
+		try {
+			New-LogManDataCollectorSetFromConfigFile -Name $Name -ConfigFilePath $ConfigFilePath;
+			$status = Get-DataCollectorStatus -Name $Name;
+			
+			if ($status -notin @("running", "stopped")) {
+				Write-Verbose "Failed to create Data Collector Set: [$Name]. Code executed WITHOUT any error/Exception, but collector NOT found.";
+				Write-Verbose "`tAttempting to create Data Collector Set via COM.";
+				
+				New-ComPlaDataCollectorSetFromConfigFile -Name $Name -ConfigFilePath $ConfigFilePath;
+			}
+		}
+		catch {
+			Write-Error "Failed to create Data Collector Set via logman or COM: $_" -ErrorAction Stop;
+		}
+		
+		if ($status -notin @("running", "stopped")) {
+			throw "Failed to create Data Collector Set. Attempted both logman and COM creation methods. No Exceptions - but Data Collector NOT created.";
+		}
+		
+		# otherwise, the DCS exists and ... we can move on to next steps: 
+		try {
+			New-DataCollectorSetFileCleanupJob -Name $Name -RetentionDays $RetentionDays;
+		}
+		catch {
+			Write-Error "Failed to create cleanup job for Data Collector Set [$Name]: $_" -ErrorAction Stop;
+		}
+		
+		if (-not $SkipAutoStart) {
+			Enable-DataCollectorSetAutoStart -Name $Name;
+		}
+		else {
+			Write-Verbose "Skipping auto-start config.";
+		}
+		
+		try {
+			Start-DataCollector -Name $Name;
+		}
+		catch {
+			Write-Error "Failed to start Data Collector Set [$Name]: $_" -ErrorAction Stop;
+		}
+	};
+	
+	end {
+		
+	};
+}
+
+function Get-DataCollectorStatus {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[string]$Name
+	);
+	
+	try {
+		# Sadly, this is total BS: https://docs.microsoft.com/en-us/powershell/scripting/whats-new/module-compatibility?view=powershell-7.1 
+		#$state = Get-SMPerformanceCollector -CollectorName $Name -ErrorAction Stop;
+		
+		$query = logman query "$Name";
+		if ($query -like "Data Collector Set was not found.") {
+			return "<EMPTY>";
+		}
+		
+		$regex = New-Object System.Text.RegularExpressions.Regex("Status:\s+(?<status>[^\r]+){1}", [System.Text.RegularExpressions.RegexOptions]::Multiline);
+		$regexMatches = $regex.Match($query);
+		
+		$status = "<EMPTY>";
+		if ($regexMatches) {
+			$hack = $regexMatches.Groups[1].Value;
+			Write-Verbose "Raw Status - via logman.exe: $hack";
+			$status = $hack.Substring(0, $hack.IndexOf(" ")).Trim();
+		}
+		
+		return $status;
+	}
+	catch {
+		Write-Error "Failed to retrieve Data Collector Set status for [$Name]: $_" -ErrorAction Stop;
+	}
+	
+	return $state;
+}
+
+function Start-DataCollector {
+	param (
+		[string]$Name
+	);
+	
+	$status = Get-DataCollectorStatus -Name $Name;
+	if ("Running" -ne $status) {
+		$results = Invoke-Expression "logman.exe start `"$Name`"";
+		if ("The command completed successfully." -ne $results) {
+			throw "Error STARTING Data Collector Set [$Name]: $results";
+		}
+	}
+}
+
+function Stop-DataCollector {
+	param (
+		[string]$Name
+	);
+	
+	$status = Get-DataCollectorStatus -Name $Name;
+	if ("Running" -ne $status) {
+		$results = Invoke-Expression "logman.exe stop `"$Name`"";
+		if ("The command completed successfully." -ne $results) {
+			throw "Error STOPPING Data Collector Set [$Name]: $results";
+		}
+	}
+}
+
+function Remove-DataCollector {
+	[CmdletBinding()]
+	param (
+		[string]$Name
+		# TODO: add a -CleanupFiles switch? that defaults (obviously) to $false
+	);
+	
+	$status = Get-DataCollectorStatus $Name;
+	if ($status -eq "<EMPTY>") {
+		Write-Verbose "A Data Collector Set with the name: [$Name] does not exist. Terminating";
+		return;
+	}
+	
+	try {
+		Write-Verbose "`tAttempting to stop (if needed) + DELETE Data Collector Set: [$Name].";
+		
+		if ($status -eq "Running") {
+			Invoke-Expression "logman.exe stop `"$Name`"" | Out-Null;
+		}
+		
+		Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
+	}
+	catch {
+		Write-Error "Failed to remove (and/or STOP) Data Collector Set: [$Name]: $_" -ErrorAction Stop;
+	}
+	
+	# TODO: arguably might have to check and see if these tasks are running, stop them, and so on... 
+	try {
+		# NOTE: removing the DCS typically removes the task as well - i.e., this SHOULD be $null.  
+		$task = Get-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\" -ErrorAction SilentlyContinue;
+		if ($null -ne $task) {
+			Write-Verbose "Removing Task from PLA Node within Task Scheduler.";
+			
+			Unregister-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\" -Confirm:$false;
+		}
+	}
+	catch {
+		Write-Error "Failed to Remove Startup Task at '\Microsoft\Windows\PLA\$($Name)' within Windows Task Scheduler: $_" -ErrorAction Stop;
+	}
+	
+	try {
+		$jobName = "$Name - Cleanup Older Files";
+		$task = Get-ScheduledTask -TaskName $jobName -ErrorAction SilentlyContinue;
+		
+		if ($null -ne $task) {
+			Unregister-ScheduledTask -TaskName $jobName -Confirm:$false;
+		}
+	}
+	catch {
+		Write-Error "Failed to Remove '$Name - Older Files Cleanup' Task within Windows Task Scheduler: $_" -ErrorAction Stop;
+	}
+}
+
+# ==============================================================================================================================================
+# Internal:
+# ==============================================================================================================================================	
+filter Get-WindowsServerVersion {
+	<#
+			# https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions#Server_versions
+			# https://www.techthoughts.info/windows-version-numbers/
+
+	#>	
+	param (
+		[System.Version]$Version = [System.Environment]::OSVersion.Version
+	)
+	
+	if ($Version.Major -eq 10) {
+		if ($Version.Build -ge 26100) {
+			return "Windows2025";
+		}
+		if ($Version.Build -ge 20348) {
+			return "Windows2022";
+		}
+		if ($Version.Build -ge 17763) {
+			return "Windows2019";
+		}
+		else {
+			return "Windows2016";
+		}
+		
+		#$output = $Version.Build -ge 17763 ? "Windows2019" : "Windows2016";
+	}
+	
+	if ($Version.Major -eq 6) {
+		switch ($Version.Minor) {
+			0 {
+				return "Windows2008";
+			}
+			1 {
+				return "Windows2008R2";
+			}
+			2 {
+				return "Windows2012";
+			}
+			3 {
+				return "Windows2012R2";
+			}
+			default {
+				return "UNKNOWN"
+			}
+		}
+	}
+}
+
+filter New-LogManDataCollectorSetFromConfigFile {
+	param (
+		[string]$Name,
+		[string]$ConfigFilePath
+	);
+	
+	try {
+		Invoke-Expression "logman.exe import `"$Name`" -xml `"$ConfigFilePath`"" | Out-Null;
+	}
+	catch {
+		Write-Error "Failed to import Data Collector Set via logman for [$Name]: $_" -ErrorAction Stop;
+	}
+}
+
+filter New-ComPlaDataCollectorSetFromConfigFile {
+	param (
+		[string]$Name,
+		[string]$ConfigFilePath
+	);
+	
+	try {
+		# Sources - via Gemini: 
+		# - https://www.jonathanmedd.net/2010/11/managing-perfmon-data-collector-sets-with-powershell.html/
+		# - https://github.com/Skatterbrainz/Garage/blob/master/New-DataCollectorSet.ps1
+		$newDcs = New-Object -ComObject PLA.DataCollectorSet;
+		$newDcs.SetXml($ConfigFilePath);
+		$newDcs.Commit($Name, $null, 0x0003) | Out-Null;
+		$newDcs.Start($false);
+	}
+	catch {
+		Write-Error "Failed to create Data Collector Set via COM for [$Name] using config [$ConfigFilePath]: $_" -ErrorAction Stop;
+	}
+}
+
+#filter New-SmtDataCollectorSetFromConfigFile {
+#	param (
+#		[string]$Name,
+#		[string]$ConfigFilePath
+#	);
+#	
+#	# Honestly. Kind of amazed at how much PowerShell sucks when it comes to BASIC windows Tasks. 
+#	# There's a SeverManagerTasks module for WindowsPowershell: 
+#	# 	https://learn.microsoft.com/en-us/powershell/module/servermanagertasks/?view=windowsserver2025-ps
+#	
+#	# which ... we COULD try to load via the following approach: 
+#	# i.e., if we're in PowerShell vs Windows PowerShell, we could: 
+#	Install-Module -Name WindowsCompatibility -Force;
+#	Import-WinModule -Name ServerManagerTasks;
+#	
+#	# only... when we're all said and done? 
+#	# ServerManagerTasks' cmdlets ... don't have a single method/func for CREATING a new Data Collector Set - only for state and ... extraction. 
+#	# seriously. fail. 
+#}
+
+filter Enable-DataCollectorSetAutoStart {
+	param (
+		[Parameter(Mandatory)]
+		[string]$Name
+	);
+	
+	$trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay 00:00:04;
+	
+	if ((Get-WindowsServerVersion) -in @("Windows2019", "Windows2022")) {
+		## Implementation of work-around listed here: https://docs.microsoft.com/en-us/troubleshoot/windows-server/performance/user-defined-dcs-doesnt-run-as-scheduled
+		$newAction = New-ScheduledTaskAction -Execute "C:\windows\system32\rundll32.exe" -Argument "C:\windows\system32\pla.dll,PlaHost `"$Name`" `"`$(Arg0)`"";
+		
+		Set-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\" -Action $newAction -Trigger $trigger | Out-Null;
+	}
+	else {
+		Set-ScheduledTask -TaskName $Name -TaskPath "\Microsoft\Windows\PLA\" -Trigger $trigger | Out-Null;
+	}
+}
+
+filter New-DataCollectorSetFileCleanupJob {
+	param (
+		[Parameter(Mandatory)]
+		[string]$Name,
+		[Parameter(Mandatory)]
+		[int]$RetentionDays
+	);
+	
+	# variable as ... I may end up changing this and ... need to pass it into other funcs/etc.,
+	$removeOlderCollectorFilesPath = 'C:\PerfLogs\RemoveOldCollectorSetFiles.ps1';
+	
+	if (-not (Test-Path -Path $removeOlderCollectorFilesPath)) {
+		Write-Verbose "dumping xxx to disk at path: $removeOlderCollectorFilesPath";
+		
+		try {
+			Write-RemoveOldCollectorSetFilesScriptToDisk -Path $removeOlderCollectorFilesPath;
+		}
+		catch {
+			Write-Error "Failed to Write RemoveOldCollectorSetFiles.ps1 to $($removeOlderCollectorFilesPath): $_" -ErrorAction Stop;
+		}
+	}
+	
+	$jobName = "$Name - Cleanup Older Files";
+	$task = Get-ScheduledTask -TaskName $jobName -ErrorAction SilentlyContinue;
+	
+	if ($null -eq $task) {
+		$trigger = New-ScheduledTaskTrigger -At 2am -Daily;
+		$runAsUser = "NT AUTHORITY\SYSTEM";
+		$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5);
+		
+		$action = New-ScheduledTaskAction -Execute "Powershell.exe" -Argument "-ExecutionPolicy BYPASS -NonInteractive -NoProfile -File C:\PerfLogs\RemoveOldCollectorSetFiles.ps1 -Name $Name -RetentionDays $RetentionDays ";
+		$task = Register-ScheduledTask -TaskName $jobName -Trigger $trigger -Action $action -User $runAsUser -Settings $settings -RunLevel Highest -Description "Regular cleanup of Data Collector Set files (> $RetentionDays days old) for `"$Name`" Data Collecctor.";
+	}
+}
+
+filter Write-RemoveOldCollectorSetFilesScriptToDisk {
+	param (
+		[Parameter(Mandatory)]
+		[string]$Path	
+	);
+	
+	$nestedFile = @'
+Set-StrictMode -Version 1.0;
 
 function Remove-OldDataCollectorFiles {
 	param (
@@ -13,12 +384,21 @@ function Remove-OldDataCollectorFiles {
 	
 	Get-ChildItem $directory | Where-Object CreationTime -lt $threshold | Remove-Item -Force;
 }
+'@
+	
+	if (($PSVersionTable).PSVersion.Major -ne 5) {
+		Set-Content -Path $Path -Value $nestedFile -Encoding UTF8BOM;
+	}
+	else {
+		Set-Content -Path $Path -Value $nestedFile;
+	}
+}
 
 # SIG # Begin signature block
-# MIIqkwYJKoZIhvcNAQcCoIIqhDCCKoACAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIIqlAYJKoZIhvcNAQcCoIIqhTCCKoECAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBaP+Ve2eeAPK2/
-# Klg+44cXAbYaBhJ8AwcyI60em+KM4aCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAgmk4OifhTE6dl
+# VTiVi2Ujyip5Tffc0wijwlY/74cWHaCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
 # hWVI5v9FUTANBgkqhkiG9w0BAQwFADBMMSAwHgYDVQQLExdHbG9iYWxTaWduIFJv
 # b3QgQ0EgLSBSNjETMBEGA1UEChMKR2xvYmFsU2lnbjETMBEGA1UEAxMKR2xvYmFs
 # U2lnbjAeFw0xNDEyMTAwMDAwMDBaFw0zNDEyMTAwMDAwMDBaMEwxIDAeBgNVBAsT
@@ -216,31 +596,31 @@ function Remove-OldDataCollectorFiles {
 # GGzNmTqazSZwROZmmJwlHhlqx9jz5/+mNXf79X27jILHb31UMrvqmQs56CBRFS+J
 # 4yrhxSDzenhOPa8XYpJUjSeMkDfc4ynoQpO2+DsrC5lQuOQ0Bpgj7urftVS7rtvx
 # 6t1y+UXtsdpDO4D8b2zf3JFtuKXU73XNZUxkLFnfEy4CG0v6BJPAuzcdH7Ig008z
-# rxahHMCqqIgxggTbMIIE1wIBATCBjzB7MQswCQYDVQQGEwJVUzEOMAwGA1UECAwF
+# rxahHMCqqIgxggTcMIIE2AIBATCBjzB7MQswCQYDVQQGEwJVUzEOMAwGA1UECAwF
 # VGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAPBgNVBAoMCFNTTCBDb3JwMTcwNQYD
 # VQQDDC5TU0wuY29tIEVWIENvZGUgU2lnbmluZyBJbnRlcm1lZGlhdGUgQ0EgUlNB
 # IFIzAhB5w2lRigPnF+NXyyeBVD75MA0GCWCGSAFlAwQCAQUAoEwwGQYJKoZIhvcN
-# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIJqoRuvdsryHrOf/NrAQ
-# mWFu4c3KD0dG2xvb6cNePUSqMAsGByqGSM49AgEFAARmMGQCMAXgA7GrGwoT7FSz
-# /8yWwHD59mXN1D/m6+gNjTHiY6haMCqhB4Ds7+MIemZXe3jf7wIwLkiPsGT1mWhS
-# xl69J8xvoXFgDsyNXktiXyCjBElzp7H3NVeb/M0tcF7S9jh+7LHCoYIDbDCCA2gG
-# CSqGSIb3DQEJBjGCA1kwggNVAgEBMG8wWzELMAkGA1UEBhMCQkUxGTAXBgNVBAoT
-# EEdsb2JhbFNpZ24gbnYtc2ExMTAvBgNVBAMTKEdsb2JhbFNpZ24gVGltZXN0YW1w
-# aW5nIENBIC0gU0hBMzg0IC0gRzQCEAFcwIrzm7RTc5aJxxqCnTIwCwYJYIZIAWUD
-# BAIBoIIBPTAYBgkqhkiG9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEP
-# Fw0yNjA0MDcyMjQzMTNaMCsGCSqGSIb3DQEJNDEeMBwwCwYJYIZIAWUDBAIBoQ0G
-# CSqGSIb3DQEBCwUAMC8GCSqGSIb3DQEJBDEiBCDzGHt6jm0c01jrms3HoHNMpX7k
-# intdstlJdSd8pe4ksDCBpAYLKoZIhvcNAQkQAgwxgZQwgZEwgY4wgYsEFHBf2oJU
-# MvP1hyvtvyOsoCS6o1tVMHMwX6RdMFsxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBH
-# bG9iYWxTaWduIG52LXNhMTEwLwYDVQQDEyhHbG9iYWxTaWduIFRpbWVzdGFtcGlu
-# ZyBDQSAtIFNIQTM4NCAtIEc0AhABXMCK85u0U3OWiccagp0yMA0GCSqGSIb3DQEB
-# CwUABIIBgHFn7icPE7tG2YSWoB0B+TaSWUKNKIIskvVDcgndyQc03hrIe6RyCOOZ
-# tCEfpEB9c+IWmHLmtsQ3bizBSK5tEbzbVqof8hP/U8O/3mIcCJF3VGaRO8+7OxGs
-# uoe/vpfcG/rH4Zt9d8pSDEeZaRNs48D4jqFLGNC6254ihIzgJEc2zFepv+qbmJ1x
-# wLCfYTNKx8uYa2AeBPfyiiii6+gB0ORO1JUUm4/Xvf8Ch9FS8Ny06QzzldCJQRzW
-# AcaN9caDAWSbd0I3L7ms6eOwMJbnL1keacSnXVt5Zrjshf3bwENDSdQMhL0ExEpD
-# jThnnNbXtDxTUMqAdVP+zvSu+4fk7jXapJQ9kctKWQK439oyj8w6193bzsGqr+qb
-# 73TTKCDOpdJV6E33M3e7GnQWjt2qIskWNg7b/El4bWeT7IZ9mPF0zt3uP/ea7IuQ
-# djgnHkFIT+jGuMLsIPyzEB4i3VgbYn/Ze93N+5lEETlIzkTwU6MeJgdD10iqag+q
-# AGm0ZEuSsg==
+# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIMwxhKKD+fIpe4OcneJf
+# er1N+H/Qa0TXiBOamYhY2ZCmMAsGByqGSM49AgEFAARnMGUCMQDzxaxLUJ/hv9oO
+# RS1akqqGpv45De3yrFgKYhzpAHhFLLlPClG2OPewMOkbpgXqe2ICMFLl8Cmc4paQ
+# nn0PKKWWddTMEsmPGJeoFs3sIBJxjm4HCnn0CQ7bemmHLm8XLTHquqGCA2wwggNo
+# BgkqhkiG9w0BCQYxggNZMIIDVQIBATBvMFsxCzAJBgNVBAYTAkJFMRkwFwYDVQQK
+# ExBHbG9iYWxTaWduIG52LXNhMTEwLwYDVQQDEyhHbG9iYWxTaWduIFRpbWVzdGFt
+# cGluZyBDQSAtIFNIQTM4NCAtIEc0AhABXMCK85u0U3OWiccagp0yMAsGCWCGSAFl
+# AwQCAaCCAT0wGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
+# DxcNMjYwNDA4MTkxOTQ2WjArBgkqhkiG9w0BCTQxHjAcMAsGCWCGSAFlAwQCAaEN
+# BgkqhkiG9w0BAQsFADAvBgkqhkiG9w0BCQQxIgQgf0gJ6TQ5ljiwvxnLs7vKfCPW
+# w2RExgkKxRSo69+g0RYwgaQGCyqGSIb3DQEJEAIMMYGUMIGRMIGOMIGLBBRwX9qC
+# VDLz9Ycr7b8jrKAkuqNbVTBzMF+kXTBbMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQ
+# R2xvYmFsU2lnbiBudi1zYTExMC8GA1UEAxMoR2xvYmFsU2lnbiBUaW1lc3RhbXBp
+# bmcgQ0EgLSBTSEEzODQgLSBHNAIQAVzAivObtFNzlonHGoKdMjANBgkqhkiG9w0B
+# AQsFAASCAYBmun1Xmp3oPG5PEnnoUYgilp+WK85AmleqCPhpy519TXrCxaXWzLX8
+# xoqRzj4jupgjeW/7ZQ/74SVAmolLVQ3IfS7kOFCFwibbvZvYesRqg/lO1Z8MaZMh
+# 9QQzJ8HCjKwYPmXqQz7z+iiSQ1WgDRG8GgCFcJEkMuBo4T8p9XK8jYOyWI5h2Ek3
+# SG5m+CVM2twXt+nu7V7v88899ERYV9GzIOon/npj+6YSpPE3Mvg4pacKdcgmuiow
+# 4UFcxSTmmCZlqc5xJADP2vNhl3/94Vlm/ZUNIfpzNYMc/Ky8Wa3YWCfFUISAT24w
+# LoMsKpQ0cw3h6nrMhJW2gXeg1iUf7ffkdb0cM8KonlFmLJX3VKs7YVkJH6bFV+x5
+# EgkP9sU3reFTiei+MC8jExVAW+7J18jtTA0V+u6c3NlgGndGa7jOFk8spEG6vBd2
+# GFiPSz+0YDAF4N0iVn/PDyRTJhbb1cbLPpv8XVf/bVBOGAzQ9+P4aLmqqts4oZ/I
+# 0ex+pbA27CQ=
 # SIG # End signature block

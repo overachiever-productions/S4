@@ -104,13 +104,17 @@ AS
 	BEGIN CATCH 
 		SELECT 
 			@errorLine = ERROR_LINE(), 
-			@errorMessage = N'Exception processing ETL for Session: [%s].' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+			@errorMessage = N'Exception processing ETL for Session: [' + @SessionName + N'].' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
 
 		IF @@TRANCOUNT > 0 
 			ROLLBACK;
 
 		RAISERROR(@errorMessage, 16, 1, @SessionName);
 		EXEC dbo.[extract_dynamic_code_lines] @sql, @errorLine, 6;
+
+		--PRINT N'-----------------------';
+		--EXEC dbo.[print_long_string] @sql;
+		
 
 		UPDATE dbo.[eventstore_extractions] 
 		SET

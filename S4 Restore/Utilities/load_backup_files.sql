@@ -98,9 +98,6 @@ CREATE PROC dbo.[load_backup_files]
 	@SourcePath					nvarchar(400), 
 	@Mode						sysname,				-- FULL | DIFF | LOG | REMOVE			-- Where REMOVE is for use via dbo.remove_backup_files (and was, once, 'LIST').
 	@LastAppliedFile			nvarchar(400)			= NULL,	  -- Hmmm. 260 chars is max prior to Windows Server 2016 - and need a REGISTRY tweak to support 1024: https://www.intel.com/content/www/us/en/support/programmable/articles/000075424.html 
--- TODO: 
--- REFACTOR: call this @BackupFinishTimeOfLastAppliedBackup ... er, well, that's what this IS... it's NOT the FINISH time of the last APPLY operation. 
-	@LastAppliedFinishTime		datetime				= NULL, 
 	@StopAt						datetime				= NULL,
 	@Output						xml						= N'<default/>'	    OUTPUT
 AS
@@ -122,24 +119,23 @@ AS
 	END; 
 
 	DECLARE @firstLSN decimal(25,0), @lastLSN decimal(25,0);
+	DECLARE @backupCompletionTimeOfLastAppliedBackup datetime;
 
 	IF @Mode IN (N'DIFF', N'LOG') BEGIN
 
-		IF @LastAppliedFinishTime IS NULL AND @LastAppliedFile IS NOT NULL BEGIN 
-			DECLARE @fullPath nvarchar(260) = dbo.[normalize_file_path](@SourcePath + N'\' + @LastAppliedFile);
-
-			EXEC dbo.load_header_details 
-				@BackupPath = @fullPath, 
-				@BackupDate = @LastAppliedFinishTime OUTPUT, 
-				@BackupSize = NULL, 
-				@Compressed = NULL, 
-				@Encrypted = NULL, 
-				@FirstLSN = @firstLSN OUTPUT, 
-				@LastLSN = @lastLSN OUTPUT;
-		END;
+		DECLARE @fullPath nvarchar(260) = dbo.[normalize_file_path](@SourcePath + N'\' + @LastAppliedFile);
+			
+		EXEC dbo.load_header_details 
+			@BackupPath = @fullPath, 
+			@BackupDate = @backupCompletionTimeOfLastAppliedBackup OUTPUT, 
+			@BackupSize = NULL, 
+			@Compressed = NULL, 
+			@Encrypted = NULL, 
+			@FirstLSN = @firstLSN OUTPUT, 
+			@LastLSN = @lastLSN OUTPUT;
 		
-		IF @LastAppliedFinishTime IS NULL BEGIN 
-			RAISERROR(N'Execution in ''DIFF'' or ''LOG'' Mode requires either a valid @LastAppliedFile or @LastAppliedFinishTime for filtering.', 16, 1);
+		IF @backupCompletionTimeOfLastAppliedBackup IS NULL BEGIN 
+			RAISERROR(N'Failed to extract BackupFinishDate from Header for backup file: [%s].', 16, 1, @fullPath);
 			RETURN -20;
 		END;
 	END;
@@ -359,15 +355,6 @@ AS
 			END;
 		END;
 	END;
-	/*
-		Need to account for a scenario where FULL/DIFF backup EXTENDS to or past the end of a T-LOG Backup running concurrently
-		What follows below is a BIT of a hack... because it only looks for LSNs when we're dealing with FULL/DIFF and a LOG backup. 
-			i.e., the non-HACK would ONLY look at LSNs. 	
-	*/
-	IF UPPER(@Mode) IN (N'LOG') AND (@LastAppliedFile IS NULL AND @LastAppliedFinishTime IS NOT NULL) BEGIN 
-		/* This is a fairly nasty hack... */
-		SELECT @LastAppliedFile = output FROM #orderedResults WHERE id = (SELECT MAX(id) FROM #orderedResults WHERE ([output] LIKE N'FULL%' OR [output] LIKE N'DIFF%') AND [timestamp] <= @LastAppliedFinishTime)
-	END;
 
 	IF @LastAppliedFile LIKE N'FULL%' OR @LastAppliedFile LIKE N'DIFF%' BEGIN
 		DECLARE @currentFileName varchar(500);
@@ -455,13 +442,13 @@ AS
 			should_include = 1 
 		WHERE 
 			[output] LIKE N'%LOG%' 
-			AND [timestamp] <= @LastAppliedFinishTime 
+			AND [timestamp] <= @backupCompletionTimeOfLastAppliedBackup 
 			AND [id] > (SELECT MAX(id) FROM #orderedResults WHERE should_include = 1);
 
 		/* This is a bit of an odd/weird hack - i.e., I could also exclude [should_include] = 1 from DELETE operations down below) */
 		UPDATE #orderedResults 
 		SET 
-			[timestamp] = DATEADD(MILLISECOND, 500, @LastAppliedFinishTime) 
+			[timestamp] = DATEADD(MILLISECOND, 500, @backupCompletionTimeOfLastAppliedBackup) 
 		WHERE 
 			should_include = 1; 
 	END;
@@ -506,7 +493,7 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'DIFF' BEGIN 
-		DELETE FROM #orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
+		DELETE FROM #orderedResults WHERE [timestamp] <= @backupCompletionTimeOfLastAppliedBackup;
 
 		-- now dump everything but the most recent DIFF - if there is one: 
 		IF EXISTS(SELECT NULL FROM #orderedResults WHERE [output] LIKE 'DIFF%') BEGIN
@@ -522,7 +509,7 @@ AS
 	END;
 
 	IF UPPER(@Mode) = N'LOG' BEGIN
-		DELETE FROM #orderedResults WHERE [timestamp] <= @LastAppliedFinishTime;
+		DELETE FROM #orderedResults WHERE [timestamp] <= @backupCompletionTimeOfLastAppliedBackup;
 		DELETE FROM #orderedResults WHERE [output] NOT LIKE 'LOG%';
 
 		IF @StopAt IS NOT NULL 

@@ -2,6 +2,84 @@
 
 # Change Log
 
+## [14.0] - 2026-04-01
+Event Store Improvements, Bug-Fixes, and other wins.
+
+### Fixed
+- Corrected bug with truncation of filenames. 
+- Corrected bug with NULLs (hypothetical IXes) within `dbo.script_indexes`.
+- Support for SQL Server 2025 via backups (addition of `-C` switch for `SQLCMD` connections).
+- Minor precision fixes/tweaks to `[db_size_gb]` and `[free_space_gb]` columns.
+- Corrected bug with wildcards (overwriting static and `TOKEN` databases) within `dbo.targeted_databases` (impacting all 'new' DB diagnostics and other 'targeting' routines).
+- Added `dbo.killed_processes` as all-purpose/general 'kill store' (removed `killed_process_snapshots` (old name/implementation) which was previously in place and ... caused bugs/crashes when `dbo.kill_blocking_processes` was executed.)
+- A handful of case-sensitivity fixes. 
+
+### Added
+- Light-weight version of `dbo.job_history`. (Nothing to write home about - very bare-bones/basic).
+- Initial addition of `dbo.format_hex_string()` - for use in "copy/paste" backups of Backup (and other) Certificates.
+- New (simple) utility: `dbo.remove_whitespace()` - mostly cuz TRIM() still really sucks and is a bit too 'fragmented' across different versions of SQL Server. 
+- Initial check-in of `dbo.script_server_certificate` - which dumps / scripts as hex-encoded data (vs to files (.cer + .key)).
+- Initial check-in of `dbo.restore_encoded_certificate`. 
+- Initial addition of `dbo.login_failures`.
+- Addition of `dbo.database_details` - a simple spot-check / validation routine - including various 'smells' for simplified checkups. 
+- `admindb_latest.sql` now explicitly sets `QUOTED_IDENTIFIERS ON` - to address scenarios like deployment from `SQLCMD` or other tools/connections that don't (correctly) default to `ON`.
+
+### Changed
+- `@RpoWarningThreshold` for `dbo.restore_databases` switched to `sysname` (from `nvarchar(20)`).
+- Minor formatting tweak/fix for xml nesting-depth of `dbo.escalated_server_permissions`.
+- Removed (LEGACY) `dbo.execute_uncatchable_command`. Everything is now handled via `dbo.execute_command`. 
+- Major changes and improvements to (still beta-ish) Event Store reports - especially heat-maps. 
+- `dbo.extract_statement` now reports if/when a SQL module was defined with the `WITH ENCRYPTION` option - i.e., instead of simply reporting `NULL`. 
+- Previously, the `tempdb` was NOT included for any operations outputting or targeting the `{SYSTEM}` (or `{ALL}`) `TOKEN`(s). This (legacy) decision made sense once upon a time as TOKENS were only (initially) use for backups and restores. But, this increasingly caused odd issues and friction with diagnostics. NOTE: Backups (and Restore and DBCC checks, etc.) will NOT try to target the `tempdb` if/when `{SYSTEM}` or `{ALL}` TOKENs are in play. Specific, explicit, 'tweaks' to all of these "it'd be bad and stupid to target the tempdb with this operation" kinds of sprocs have been added. 
+- XML output for `dbo.table_sizes` now (correctly) groups tables by database (explicit parent tags) - vs "dogs and cats living together in sin". 
+- @OffsiteRetention is now (fully) optional. (It's NOT honored yet anyhow - and probably NEVER will be - so, no sense throwing errors or causing problems if it was NULL/empty.)
+- Minor re-org of order-of-execution within admindb_latest.sql to avoid dependencies warnings.
+- Moved all Event Store logic/functionality (still beta-y) into dedicated folder (vs piggy-backing in the corner of the Extended Events folder).
+
+### Known-Issues
+- Ugly / Lame formatting of encoded-certificates. 
+
+
+## [12.9] - 2025-12-15
+Minor changes and diagnostic additions. 
+
+### Fixed 
+- Overhaul of error handling in 'consumers' of `dbo.execute_per_database`. Addressed issue where previous code was attempting, naively, to output @xml via `dbo.print_long_string` (which would never work) and associated hack/work-around. New approach is to levarge an Inline-Function to rehydrate + serialize THEN print details. 
+
+### Added 
+- Formal addition of `dbo.table_sizes` - which dumps table sizes per (targeted) database(s) and also lists potential problems as 'smells'. 
+- Addition of `dbo.nonsafe_clr_assemblies` - new diagnostic to list unsafe and external CLR assemblies. 
+
+## [12.8] - 2025-12-11 
+Multiple additional diagnostics; migration and restoration logic improvements.
+
+### Fixed
+- Full overhaul of logic within `dbo.apply_logs`; fixed issues with erroneous 'duplicates' reported and generally fixed overall processing so that this sproc is now quite solid/dependable. 
+
+### Added
+- Addition of `dbo.execute_per_database` - which does what it says and will eventually be used (backhauled) into gobs of existing diagnostics that can/will run per database. 
+- New `APPLY_DIFF` functionality now supported for `dbo.restore_databases` - which allows a DIFF to be applied to a restored FULL which hasn't, yet (obviously), had a DIFF applied. (Primarily designed to simplify DR scenarios (allows RESTORE of FULLs as soon as they're downloaded to a DR/smoke-&-rubble box without having to 'wait' for DIFFs - which can be applied later; but works EQUALLY well for migrations). 
+- Along with the above, there's now a new `EXCLUDE_DIFF` directive option for `@Directives` within `dbo.restore_databases` (allowing option to SKIP/EXCLUDE diffs). 
+- Added `dbo.preferred_secondary` (UDF) for use in helping EXTERNAL applications know which secondary to pull backups from when backups are being used for non-prod needs. 
+- Addition of `dbo.targeted_databases` as new 'filter' sproc (will eventually replace `dbo.list_databases`). Importantly, this NEW sproc allows WILDCARDs in target DB names - i.e., patterns vs just-hard-coded names (while still allowing `{tokens}` as well). NOTE: This also replaces `dbo.load_databases` - in fact, ti's effectively just a rename + some tweaks. 
+- A smattering of new diagnostics sprocs including: 
+    - `dbo.vlf_counts`
+    - `dbo.compute_details`
+    - `dbo.querystore_details`
+    - `dbo.filtered_index_obstacles`
+    - `dbo.escalated_server_permissions`
+    - `dbo.disabled_constraints`
+- Addition of additional 'smells' identification within `dbo.database_details`.
+
+### Changed
+- Full overhaul of Per-DB Migrations 'Scripts' - into 2x sprocs (Initialize (on 'old' server) and Finalize (on new server)) to simplify migration of databases between servers. 
+- Removed the `@AllowReplace` parameter for `dbo.restore_databases`. The parameter is now called `@IfTargetExists` and allows values in the form of `{ THROW | APPLY_DIFF | REPLACE }` (where `THROW` is the DEFAULT behavior and `REPLACE` still 100% has to be correctly typed, and then 'replaces' just as `@AllowReplace` used to).
+- `dbo.backup_databases` is now better able to address 'contained' (AG) system databases.
+
+### Known Issues
+- Code Library functionality mostly works. Consider it (still) to be an alpha or early beta. Needs documentation and some additional testing. Biggest issue is that granting permissions to SQL Server to interact with PLA roles requires a RESTART of SQL Server / SQL Server Agent (which needs some guidance), etc. 
+- `dbo.filtered_index_obstacles` needs some hefty documentation - consider it an alpha/eary-beta release. 
+
 ## [12.6] - 2025-09-30
 Incremental updates and mods; Initial Introduction of Code Library Framework.
 
