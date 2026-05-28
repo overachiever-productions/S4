@@ -64,3 +64,6 @@ AS
 		@subject = @subject,
 		@body = @body,
 		@body_format = @body_format;
+
+	RETURN 0;
+GO
