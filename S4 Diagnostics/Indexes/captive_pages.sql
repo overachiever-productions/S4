@@ -1,5 +1,23 @@
 /*
 
+	AH... this is what I was looking for - or CLOSE to it: 
+
+					SELECT	page_count,
+						record_count,
+						record_count / page_count	AS	avg_rows_per_page,
+						avg_page_space_used_in_percent
+					FROM	sys.dm_db_index_physical_stats
+						(
+						DB_ID(),
+						OBJECT_ID(N'dbo.Customers', N'U'),
+						NULL,
+						NULL,
+						N'DETAILED'
+						)
+					WHERE	index_level = 0;
+					GO
+		SOURCE: https://www.red-gate.com/simple-talk/databases/sql-server/t-sql-programming-sql-server/heaps-in-sql-server-part-4-pfs-contention/
+
 
 */
 
