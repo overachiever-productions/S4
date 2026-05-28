@@ -1,6 +1,11 @@
 /*
 
 
+	!! NOTE: 
+		FOR OFFLINE migrations, the CODE that takes the DB OFFLINE is now implemented in dbo.backup_databases. 
+		i.e., the FINAL directive when passed into dbo.backup_databases will cause the target database to be set to SINGLE_USER mode with a rollback timeout equal to the value passed in via @SingleUserRollbackSeconds, and then taken OFFLINE after the backup completes successfully.
+
+
 */
 
 USE [admindb];
