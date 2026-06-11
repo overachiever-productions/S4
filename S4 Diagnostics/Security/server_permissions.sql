@@ -49,6 +49,40 @@
             GRANT ALTER ON SERVER ROLE::[bogusadmin] TO [WIN-MNPBJ8S77R6\Administrator];
 
 
+     TODO: for LOGINS and ROLES ... there are two main permutations/patterns: 
+         A. when major_id and min_id are both 0 ... then the syntax is GRANT|REVOKE <permission> ANY <securable> TO [grantee]. 
+              e.g., GRANT IMPERSONATE ANY LOGIN TO [bilbo];
+         B. the other approach is - obviously - more granular and is when major_id/min_id are non-0. 
+              e.g., GRANT IMPERSONATE ON LOGIN::[Bilbo] TO [Frodo]. 
+              syntax pattern/rule is VERY similar - in that it's:      GRANT|REVOKE <permission> ON <securable>::<target> TO [grantee]. 
+                  the only real difference is that we have an explict TARGET. 
+        AND ... NOTE: 
+          the 'row' for this info in sys.server_permissions will be as follows: 
+              class_desc = SERVER_PRINCIPAL
+              major_id = <ID of the LOGIN::[{target_here}]> ... which makes perfect sense. 
+
+     TODO: need to address HOW I'm going to ... handle GRANTS when grantee_disabled = 1. 
+          Do I ... a) comment them out? or b) do I script the PERMISSION AND then ALTER LOGIN xxx DISABLE ? 
+
+     'DOCS'/INTERNAL:
+     and ... here's how it looks like things work: 
+         1. Anything with a class_desc of SERVER is going to have a major_id and minor_id of 0 and 0 - i.e., this looks like the PERMS 
+                  are things like CONNECT SQL, VIEW SERVER STATE, VIEW ANY DEFINITION, and ... similar. 
+                  BUT, there are also some 'uber' options in here too - in the form of ALTER ANY AG... 
+                  BUT, still, these are done/applied AT THE SERVER LEVEL. 
+          2. there's also a class_desc of Endpoint. 
+              these look pretty simple - as in: the major_id is ... the endpoint in question. Looks like this NEVER gets any more complex than
+              ENDPOINT => major_id = endpoint-name. 
+          3. SERVER_PRINCIPAL is also an option. I don't see any EXAMPLES of this one in any of the environments I have access to. 
+              I'm going to have to TEST this out. 
+                  this'll spit out SERVER_PRINCIPAL in the class_desc, and then ... the major_id is ... the principal in question.
+                  works similarly for ROLEs
+          4. AVAILABILITY_GROUP is the 4th/last class_desc (documented). 
+              I probably? have some examples I can look at? 
+              though, i suspect that ... we're talking about granular-ish perms at the level of either specific AGs or ... AG component-types? 
+
+
+
 */
 
 USE [admindb];
@@ -62,6 +96,7 @@ CREATE PROC dbo.[server_permissions]
     -- TODO: https://overachieverllc.atlassian.net/browse/S4-861
     --@permissions                nvarchar(MAX)        = N'{ALL}', 
     --@members                    nvarchar(MAX)        = N'{ALL}'
+    @serialized_output				xml					= N'<default/>'	    OUTPUT
 AS
     SET NOCOUNT ON; 
 
@@ -99,7 +134,6 @@ AS
         UPDATE [p] 
         SET 
             [p].[target] = [x].[name], 
-            -- todo: need to make sure that this logic works for ... all things - e.g., how does it work for ... cert-mapped-logins or ... WINDOWS_GROUPs? 
             [p].[securable] = 
             CASE [x].[type_desc] 
                 WHEN 'SQL_LOGIN' THEN N'LOGIN' 
@@ -111,14 +145,6 @@ AS
             INNER JOIN sys.[server_principals] [x] ON [p].[major_id] = [x].[principal_id]
         WHERE 
             [p].[class_desc] = N'SERVER_PRINCIPAL';
-
-        SELECT 
-            * 
-        FROM 
-            [#permissions]
-        WHERE 
-            [major_id] <> 0 
-            OR minor_id <> 0;
     END;
 
     SELECT 
@@ -130,19 +156,6 @@ AS
 		[grantee],
 		[grantee_disabled],
 		[grantor], 
-
--- TODO: for LOGINS and ROLES ... there are two main permutations/patterns: 
---     A. when major_id and min_id are both 0 ... then the syntax is GRANT|REVOKE <permission> ANY <securable> TO [grantee]. 
---          e.g., GRANT IMPERSONATE ANY LOGIN TO [bilbo];
---     B. the other approach is - obviously - more granular and is when major_id/min_id are non-0. 
---          e.g., GRANT IMPERSONATE ON LOGIN::[Bilbo] TO [Frodo]. 
---          syntax pattern/rule is VERY similar - in that it's:      GRANT|REVOKE <permission> ON <securable>::<target> TO [grantee]. 
---              the only real difference is that we have an explict TARGET. 
---    AND ... NOTE: 
---      the 'row' for this info in sys.server_permissions will be as follows: 
---          class_desc = SERVER_PRINCIPAL
---          major_id = <ID of the LOGIN::[{target_here}]> ... which makes perfect sense. 
-
         CASE [state_desc]
             WHEN 'GRANT_WITH_GRANT_OPTION' THEN N'GRANT'
             ELSE [state_desc]
@@ -155,33 +168,44 @@ AS
             WHEN N'GRANT_WITH_GRANT_OPTION' THEN 'WITH GRANT'
             ELSE N''
         END + N';' [scripted]
+    INTO 
+        #output
     FROM 
         [#permissions];
 	
+    IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 
+        SELECT @serialized_output = (
+            SELECT 
+                [class_desc],
+		        [state_desc],
+		        [major_id],
+		        [minor_id],
+		        [permission_name],
+		        [grantee],
+		        [grantee_disabled],
+		        [grantor],
+		        [scripted] [definition]
+            FROM 
+                [#output]
+            FOR XML PATH(N'permission'), ROOT(N'permissions'), TYPE
+        );
 
+        RETURN 0;
+    END;
 
+    SELECT 
+        [class_desc],
+		[state_desc],
+		[major_id],
+		[minor_id],
+		[permission_name],
+		[grantee],
+		[grantee_disabled],
+		[grantor],
+		[scripted] [definition]
+    FROM 
+        [#output];
 
--- TODO: need to address HOW I'm going to ... handle GRANTS when grantee_disabled = 1. 
---      Do I ... a) comment them out? or b) do I script the PERMISSION AND then ALTER LOGIN xxx DISABLE ? 
-
-
--- and ... here's how it looks like things work: 
---     1. Anything with a class_desc of SERVER is going to have a major_id and minor_id of 0 and 0 - i.e., this looks like the PERMS 
---              are things like CONNECT SQL, VIEW SERVER STATE, VIEW ANY DEFINITION, and ... similar. 
---              BUT, there are also some 'uber' options in here too - in the form of ALTER ANY AG... 
---              BUT, still, these are done/applied AT THE SERVER LEVEL. 
---      2. there's also a class_desc of Endpoint. 
---          these look pretty simple - as in: the major_id is ... the endpoint in question. Looks like this NEVER gets any more complex than
---          ENDPOINT => major_id = endpoint-name. 
---      3. SERVER_PRINCIPAL is also an option. I don't see any EXAMPLES of this one in any of the environments I have access to. 
---          I'm going to have to TEST this out. 
---              this'll spit out SERVER_PRINCIPAL in the class_desc, and then ... the major_id is ... the principal in question.
---              works similarly for ROLEs
---      4. AVAILABILITY_GROUP is the 4th/last class_desc (documented). 
---          I probably? have some examples I can look at? 
---          though, i suspect that ... we're talking about granular-ish perms at the level of either specific AGs or ... AG component-types? 
-
-
-
-
+    RETURN 0;
+GO
