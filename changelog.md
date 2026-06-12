@@ -2,6 +2,27 @@
 
 # Change Log
 
+## [14.1] - 2026-06-12
+Initial addition of HTML email formatting; Minor Bug Fixes; More Code-Library Infrastructure.
+
+### Fixed
+- Minor bug-fixes + formatting-improvements to `dbo.database_details`.
+
+### Added
+- Initial addition of `DataCollectorSets.ps1` (and associated files) into CodeLibrary. 
+- Added a Covering IX to `dbo.backup_log` + initial introduction of `dbo.backup_summaries` (work in progress).
+- Addition of `dbo.format_html_email` (following organic changes to scope and name) - for use in ... well, formatting HTML alerts/reports/etc (including options for KPIs/cards, errors, details, extended-details, 'raw' output/etc.)
+- Addition of `dbo.notify_operator` as 'bridge' to accomplish similar logic to msdb's `sp_send_dbmail` - but to operators vs recipients (and allowing HTML as an `@body` option).
+- Initial addition of `dbo.server_permissions` - diagnostic to identify + serialize/dump any/all Server Permissions.
+- Initial addition of `dbo.server_role_members` (to identify) logins with elevated permissions and/or membership within Server-Level Roles.
+- Added a 'helper' method to pretty-print XML (when 'printed' or output as a string): `dbo.format_xml_string`.
+
+### Changed
+- `dbo.backup_databases` now sends error / alert emails formatted in HTML (instead of plain text). 
+- `dbo.process_alerts` now sends alerts formatted in HTML. 
+- `dbo.verify_drivespace` now sends alerts formatted in HTML. 
+
+
 ## [14.0] - 2026-04-01
 Event Store Improvements, Bug-Fixes, and other wins.
 
