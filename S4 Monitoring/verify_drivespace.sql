@@ -8,7 +8,6 @@
 
 
 	SIGNATURE: 
-		
 
 			EXEC admindb.dbo.verify_drivespace 
 				@WarnWhenFreeGBsGoBelow	= 22.5, 
@@ -42,8 +41,6 @@ AS
 	SET @OperatorName = ISNULL(NULLIF(@OperatorName, N''), N'Alerts');
 	SET @MailProfileName = ISNULL(NULLIF(@MailProfileName, N''), N'General');
 	SET @EmailSubjectPrefix = ISNULL(NULLIF(@EmailSubjectPrefix, N''), N'[DriveSpace Checks] ');
-
-	--SET @WarnWhenFreeGBsGoBelow = ISNULL(@WarnWhenFreeGBsGoBelow, 22.0);
 
 	IF @WarnWhenFreeGBsGoBelow IS NOT NULL AND @WarnWhenUsageExceedsPercentage IS NOT NULL BEGIN 
 		RAISERROR(N'Values can NOT be specified for BOTH @WarnWhenFreeGBsGoBelow and @WarnWhenUsageExceedsPercentage. Specify one or the other.', 16, 1);
@@ -106,65 +103,124 @@ AS
 	ORDER BY 
 		[gbs].[drive];
 
-	DECLARE @crlf char(2) = CHAR(13) + CHAR(10);
-	DECLARE @tab char(1) = CHAR(9);
-	DECLARE @message nvarchar(MAX) = N'';
+	DECLARE @problems table (
+		[drive] sysname NOT NULL,
+		[available_gbs] decimal(14, 2) NOT NULL,
+		[total_gbs] decimal(14, 2) NOT NULL,
+		[%_used] decimal(5, 2) NOT NULL,
+		[threshold] sysname NOT NULL
+	);
 	
-	-- Start with the C:\ drive if it's present (i.e., has dbs on it - which is a 'worst practice'):
 	IF @GBsOrPercentages = N'GBs' BEGIN
+		INSERT INTO @problems ([drive], [available_gbs], [total_gbs], [%_used], [threshold])
 		SELECT 
-			@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS sysname) +  N' GB free out of ' + CAST([total_gbs] AS sysname) + N'GB total (vs. threshold of ' + CAST((CASE WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 ELSE @WarnWhenFreeGBsGoBelow END) AS nvarchar(20)) + N' GB) '  + @crlf
+			[drive],
+			[available_gbs],
+			[total_gbs],
+			[%_used], 
+			N'< ' + CAST((CASE WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 ELSE @WarnWhenFreeGBsGoBelow END) AS sysname) + N'GB' [threshold]
 		FROM 
-			@core
+			@core 
 		WHERE 
-			UPPER(drive) = N'C:\' AND 
-			CASE 
+			UPPER(drive) = N'C:\' -- config smell. 
+			AND CASE 
 				WHEN @HalveThresholdAgainstCDrive = 1 THEN @WarnWhenFreeGBsGoBelow / 2 
 				ELSE @WarnWhenFreeGBsGoBelow
 			END > available_gbs;
 
 		-- Now process all other drives: 
+		INSERT INTO @problems ([drive], [available_gbs], [total_gbs], [%_used], [threshold])
 		SELECT 
-			@message = @message + @tab + drive + N' -> ' + CAST(available_gbs AS sysname) +  N' GB free out of ' + CAST([total_gbs] AS sysname) + N'GB total (vs. threshold of ' + CAST(@WarnWhenFreeGBsGoBelow AS sysname) + N' GB) '  + @crlf
+			[drive],
+			[available_gbs],
+			[total_gbs],
+			[%_used], 
+			N'< ' + CAST(@WarnWhenFreeGBsGoBelow AS sysname) + N'GB' [threshold]
 		FROM 
-			@core
+			@core 
 		WHERE 
 			UPPER(drive) <> N'C:\'
 			AND @WarnWhenFreeGBsGoBelow > available_gbs;
 	  END; 
 	ELSE BEGIN 
+		INSERT INTO @problems ([drive], [available_gbs], [total_gbs], [%_used], [threshold])
 		SELECT 
-			@message = @message + @tab + drive + N' -> ' + CAST([%_used] AS sysname) + '% of disk-space used. (Total GBs: ' + CAST([total_gbs] AS sysname) + N', Free GBs: ' + CAST([available_gbs] AS sysname) + N').' + @crlf
+			[drive],
+			[available_gbs],
+			[total_gbs],
+			[%_used], 
+			N'> ' + CAST(CAST(@WarnWhenUsageExceedsPercentage AS decimal(5,2)) AS sysname) + N'%' [threshold]
 		FROM 
-			@core  
+			@core 
 		WHERE 
 			[%_used] > CAST(@WarnWhenUsageExceedsPercentage AS decimal(5,2));
-
 	END;
 
-	IF LEN(@message) > 3 BEGIN 
+	IF EXISTS (SELECT NULL FROM @problems) BEGIN 
 
 		DECLARE @subject nvarchar(200) = ISNULL(@EmailSubjectPrefix, N'') + N'Low Disk Notification';
+		DECLARE @warningsCount int = (SELECT COUNT(*) FROM @problems);
 
-		IF @GBsOrPercentages = N'GBs' 
-			SET @message = N'The following disks on ' + QUOTENAME(@@SERVERNAME) + ' have dropped below target thresholds for free space: ' + @crlf + @crlf + @message;
-		ELSE 
-			SET @message = N'The following disks on ' + QUOTENAME(@@SERVERNAME) + ' have exceeded the threshold of ' + CAST(@WarnWhenUsageExceedsPercentage AS sysname) + N'% of available space used: ' + @crlf + @crlf + @message;
+		DECLARE @indicators xml = N'<indicators>
+		<indicator priority="1">
+			<name>SERVER</name>
+			<value>' + @@SERVERNAME + N'</value>
+			<style>error</style>
+		</indicator>
+		<indicator priority="2">
+			<name>Warnings Count</name>
+			<value>'+ CAST(@warningsCount AS sysname) + '</value>
+			<style>warning</style>
+			<context>Drives with Problems</context>
+		</indicator>
+		<indicator priority="3">
+			<name>Alert Raised</name>
+			<value>' + CONVERT(sysname, GETDATE(), 8) + N'</value>
+			<style>info</style>
+			<context>Local Server Time</context>
+		</indicator>
+	</indicators>';
+
+		DECLARE @details xml = (
+			SELECT 
+				[drive],
+				CAST([total_gbs] AS sysname) + N'GB' [disk_size],
+				CAST([available_gbs] AS sysname) + N'GB' [free_space],
+				[threshold],
+				CAST([%_used] AS sysname) + N'%' [used]
+			FROM 
+				@problems
+			ORDER BY 
+				[drive]
+			FOR XML PATH(N'detail'), ROOT(N'details'), TYPE
+		);
 
 		IF @PrintOnly = 1 BEGIN 
-			PRINT @subject;
-			PRINT @message;
+			PRINT N'SUBJECT: ' + @subject; 
+			PRINT N'BODY: '; 
+			PRINT N'	INDICATORS: ' + dbo.[format_xml_string](@indicators);
+			PRINT N'	DETAILS: ' + dbo.[format_xml_string](@details);
 		  END;
-		ELSE BEGIN 
-
-			EXEC msdb..sp_notify_operator
+		ELSE BEGIN
+			DECLARE @body nvarchar(MAX);
+			EXEC [dbo].[format_html_email]
+				@classification = N'ALERT',
+				@title = @subject,
+				@execution_date = '2026-06-12 18:50:30',
+				@recipients = @OperatorName,
+				@indicators = @indicators,
+				@details = @details,
+				@output = @body OUTPUT;
+		
+			EXEC dbo.[notify_operator]
 				@profile_name = @MailProfileName,
-				@name = @OperatorName, -- operator name
-				@subject = @subject, 
-				@body = @message;			
-		END; 
+				@operator_name = @OperatorName,
+				@subject = @subject,
+				@body = @body,
+				@body_format = 'HTML',
+				@print_only = 0;
+		END;
 	END; 
-
 
 	RETURN 0;
 GO
