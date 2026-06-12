@@ -167,34 +167,67 @@ AS
 			-- add additional processing options here. 
 	END;
 
-	------------------------------------
-	-- If we're still here, then there were now 'special instructions' for this specific error/alert(so send an email with details): 
-
-	DECLARE @body nvarchar(MAX) = N'DATE/TIME: {0}
-
-DESCRIPTION: {1}
-
-ERROR NUMBER: {2}' ;
-
-	SET @body = REPLACE(@body, '{0}', CONVERT(nvarchar(20), GETDATE(), 100));
-	SET @body = REPLACE(@body, '{1}', @Message);
-	SET @body = REPLACE(@body, '{2}', @ErrorNumber);
-
-	DECLARE @subject nvarchar(256) = N'SQL Server Alert System: ''Severity {0}'' occurred on {1}';
-
+	DECLARE @subject nvarchar(256) = N'SQL Server Alert: ''Severity {0}'' occurred on {1}';
 	SET @subject = REPLACE(@subject, '{0}', @Severity);
 	SET @subject = REPLACE(@subject, '{1}', @@SERVERNAME); 
-	
-	IF @PrintOnly = 1 BEGIN 
-			PRINT N'SUBJECT: ' + @subject; 
-			PRINT N'BODY: ' + @body;
-	  END;
+
+	DECLARE @severityStyle nvarchar(10) = N'error';
+	IF @Severity <= 19 SET @severityStyle = N'warning';
+
+	DECLARE @indicators xml = N'<indicators>
+	<indicator priority="1">
+		<name>Error Number</name>
+		<value>' + CAST(@ErrorNumber AS sysname) + N'</value>
+		<style>error</style>
+	</indicator>
+	<indicator priority="2">
+		<name>Severity</name>
+		<value>' + CAST(@Severity AS sysname) + N'</value>
+		<style>' + @severityStyle + N'</style>
+	</indicator>
+	<indicator priority="3">
+		<name>Alert Raised</name>
+		<value>' + CONVERT(sysname, GETDATE(), 8) + N'</value>
+		<style>info</style>
+		<context>Local Server Time</context>
+	</indicator>
+</indicators>';
+
+	DECLARE @errorDetail xml = N'<errors>
+	<error row_id="1">
+		<heading>ERROR NUMBER: ' + CAST(@ErrorNumber AS sysname) + N' - SEVERITY: '  + CAST(@Severity AS sysname) + N'</heading>
+		<error>' + @Message + N'</error>
+	</error>
+</errors>';
+
+	IF @PrintOnly = 1 BEGIN
+		PRINT N'SUBJECT: ' + @subject;
+		PRINT N'BODY: ' 
+		PRINT N'	INDICATORS: ' + dbo.format_xml_string(@indicators);
+		PRINT N'	ERROR DETAIL: ' + dbo.format_xml_string(@errorDetail);
+
+	  END; 
 	ELSE BEGIN
-		EXEC msdb.dbo.sp_notify_operator
-			@profile_name = @MailProfileName, 
-			@name = @OperatorName,
-			@subject = @subject, 
-			@body = @body;
+		DECLARE @body nvarchar(MAX);
+		EXEC [dbo].[format_html_email]
+			@classification = N'ALERT',
+			@title = @subject,
+			@execution_date = '2026-06-12 16:44:58',
+			@recipients = @OperatorName,
+			@indicators = @indicators,
+			@summary = NULL,
+			@metadata = NULL,
+			@errors_header = N'ERROR DETAIL',
+			@errors = @errorDetail,
+			@output = @body OUTPUT;
+
+		EXEC dbo.[notify_operator]
+			@profile_name = N'General',
+			@operator_name = N'Alerts',
+			@subject = @subject,
+			@body = @body,
+			@body_format = 'HTML',
+			@print_only = 0;
 	END;
 
 	RETURN 0;

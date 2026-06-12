@@ -87,6 +87,7 @@ AS
     
     DECLARE @classificationColor sysname = CASE UPPER(@classification)
         WHEN N'ERROR' THEN N'c0392b'
+        WHEN N'ALERT' THEN N'c0392b'
         WHEN N'WARNING' THEN N'92400e'
         WHEN N'INFO' THEN N'1e40af'
         ELSE N'666666'
