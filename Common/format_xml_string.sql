@@ -54,28 +54,28 @@ AS
         DECLARE @currentTag nvarchar(MAX) = N'';
         DECLARE @indentLevel int = 0; 	
     
-      WHILE @pos <= @len BEGIN
-		SET @char = SUBSTRING(@xmlString, @pos, 1);
+		WHILE @pos <= @len BEGIN
+			SET @char = SUBSTRING(@xmlString, @pos, 1);
 
-		IF @char = '<' BEGIN
-			SET @inTag = 1;
-			IF SUBSTRING(@xmlString, @pos + 1, 1) = '/' SET @indentLevel = IIF(@indentLevel > 0, @indentLevel - 1, 0);
+			IF @char = '<' BEGIN
+				SET @inTag = 1;
+				IF SUBSTRING(@xmlString, @pos + 1, 1) = '/' SET @indentLevel = IIF(@indentLevel > 0, @indentLevel - 1, 0);
 
-			SET @output += CHAR(13) + CHAR(10) + REPLICATE('    ', @indentLevel) + @char;
-		END;
-		ELSE IF @char = '>' BEGIN
-			SET @inTag = 0;
-			SET @output += @char;
-			IF SUBSTRING(@xmlString, @pos - 1, 1) != '/' AND SUBSTRING(@currentTag, 1, 1) != '/' SET @indentLevel += 1;
-			SET @currentTag = '';
-		END;
-		ELSE BEGIN
-			IF @inTag = 1 SET @currentTag += @char;
-			SET @output += @char;
-		END;
+				SET @output += CHAR(13) + CHAR(10) + REPLICATE('    ', @indentLevel) + @char;
+			END;
+			ELSE IF @char = '>' BEGIN
+				SET @inTag = 0;
+				SET @output += @char;
+				IF SUBSTRING(@xmlString, @pos - 1, 1) != '/' AND SUBSTRING(@currentTag, 1, 1) != '/' SET @indentLevel += 1;
+				SET @currentTag = '';
+			END;
+			ELSE BEGIN
+				IF @inTag = 1 SET @currentTag += @char;
+				SET @output += @char;
+			END;
 
-		SET @pos += 1;
-	END;
+			SET @pos += 1;
+		END;
 
 	RETURN LTRIM(RTRIM(@output));
 
