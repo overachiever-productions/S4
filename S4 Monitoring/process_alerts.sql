@@ -222,8 +222,8 @@ AS
 			@output = @body OUTPUT;
 
 		EXEC dbo.[notify_operator]
-			@profile_name = N'General',
-			@operator_name = N'Alerts',
+			@profile_name = @MailProfileName,
+			@operator_name = @OperatorName,
 			@subject = @subject,
 			@body = @body,
 			@body_format = 'HTML',
