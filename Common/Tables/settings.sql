@@ -151,12 +151,3 @@ IF NOT EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = N'FULL_back
 	);
 
 END;
-
-
-SELECT * FROM [dbo].[settings]
-
-
-
-
-
-
