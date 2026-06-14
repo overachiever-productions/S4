@@ -1,5 +1,10 @@
 /*
 
+    TODO: I might actually get rid of this. 
+    OR, if not, I'm going to make it behave a bit more like dbo.format_hex_html - which is TONS simpler. 
+        see dbo.server_health to get a sense for how dbo.format_hex_html is called (and how easy it is to use).
+
+
     - Formats a HEX value AS a string. 
     - For the version of this logic that formats HEX as HEX data, see dbo.format_hex. 
 
