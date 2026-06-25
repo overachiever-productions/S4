@@ -107,7 +107,8 @@ CREATE PROC dbo.[execute_per_database]
 	@Databases							nvarchar(MAX), 
 	@Priorities							nvarchar(MAX)		= NULL, 
 	@Statement							nvarchar(MAX),										-- Specialized token {CURRENT_DB} allowed here - and replaced with DB_NAME() for currently executing db. 
-	@Errors								xml					= N'<default/>'	    OUTPUT
+	@Errors								xml					= N'<default/>'	    OUTPUT, 
+	@print_only							bit					= 0
 AS
     SET NOCOUNT ON; 
 
@@ -183,6 +184,14 @@ AS
 		
 		SET @sql = @Statement;
 		SET @sql = REPLACE(@sql, N'{CURRENT_DB}', @currentDatabase);
+
+		IF @print_only = 1 BEGIN
+
+			PRINT N'-- TARGET: ' + @currentDatabase + NCHAR(13) + NCHAR(10) + @sql + NCHAR(13) + NCHAR(10);
+
+			CONTINUE;
+		END;
+
 
 		BEGIN TRY 
 			EXEC sys.[sp_executesql]
