@@ -61,37 +61,7 @@ AS
 	--IF UPPER(@options) LIKE N'%FORCE%' OR UPPER(@options) LIKE N'%RELOAD%'
 	--	GOTO LOAD_LOG_DATA;
 
-	-- Problems with Caching: 
-	-- 1. Concurrency - if multiple consumers are trying to use the same cache, they might step on each other.
-	-- 2. Timespans - if the cache is based on a specific time range, it might not be valid for subsequent calls with different time ranges.
-
-	-- To Address the FIRST? maybe I end up with dbo.settings.log_extraction_active = 1 ... and then set it to 0. 
-	--				once completed. 
-	--	IF I end up going that route ... then I might as well have dbo.settings.log_extraction_cache 
-	--				as a sysname with start:[startTime], end: [endTime], and generated: [generatedTime] 
-	--			WHERE: 
-	--				-> generatedTime = when I set dbo.settings.log_extraction_active to 0. i.e., when I completed. 
-	--				-> endTime can ... be the equivalent of 'now' or GETDATE() ... something that indicates that the specified endTime
-	--						for the cached data is/was within X minutes of the current time.
-	--						OR ... hell. maybe just set ENDTime to ... GETDATE() or whatever when completed/etc. 
-	--							i.e., or the actual value of @EndTime ... 
-	-- 
-	-- THEN... 
-	--		CACHING WOULD WORK LIKE: 
-	--		IF EXISTS (SELECT NULL FROM dbo.cached_error_log) ... 
-	--				a. check to see the start/end of the cached data. 
-	--					if they're within 1-2 minutes? of current start/end ... then fine? 
-	--						unless there's some kind of directive. 
-	--						and/or ... I could have a dbo.settings.error_logs_cache_window_seconds = e.g., 90 or whatever. 
-	--					if ... start/end are within <threshold> then ... read from the CACHE instead. 
-	--				b. if the cache is expired/old/no-good: 
-	--					DELETE FROM dbo.cached_error_log;
-	--				c. then ... check for log_extraction_active. 
-	--						if it's active, then just read directly from the file and skip trying to ADD to the cache. 
-	--						if NOT active. 
-	--							set active and ... when done reading... 
-	--							'top off the cache'. 
-	--				d. either pull from the cache - if we had cached data or ... pull from ... #whatever.... depending upon logic. 
+	-- IMPLEMENTATION DETAILS: https://overachieverllc.atlassian.net/browse/S4-873
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Enumerate Logs + Extract
