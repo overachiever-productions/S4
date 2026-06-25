@@ -63,8 +63,7 @@ AS
 	FROM 
 		dbo.[log_events_data](@serialized_output)
 	ORDER BY 
-		[log_file_number],
-		[log_date];
+		[row_id];
 	
 	WITH core AS ( 
 		SELECT 
