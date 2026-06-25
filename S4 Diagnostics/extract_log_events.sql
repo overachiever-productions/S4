@@ -2,6 +2,31 @@
 	
 		TODO: look at changing the datatypes for @start and @end to 'vectors' or whatever I'm going to call them - maybe `timespans`. 
 
+
+		.EXAMPLE: Projecting outputs: 
+		Note that execution of the sproc returns all columns ... 
+
+		```sql
+		EXEC [admindb]..[extract_log_events]
+			@start = N'2 months';
+
+		```
+
+		.EXAMPLE: Extraction of XML + Shredding via Inline Func:
+		sdlkfjlasdfjldsfalk
+		
+		```sql
+
+		DECLARE @xml xml;
+		EXEC [admindb]..[extract_log_events]
+			@start = N'2 months', 
+			@serialized_output = @xml OUTPUT;
+
+		-- allows explicit columns and FILTERING if/as needed:
+		SELECT [log_date], [text] FROM [admindb]..[log_events_data](@xml);
+
+		```
+
 */
 
 USE [admindb];
@@ -78,7 +103,6 @@ LOAD_LOG_DATA:
 	INSERT INTO @log_files ([log_number], [log_end], [log_size])
 	EXEC sys.sp_enumerrorlogs; 
 
-	-- Logical Correction:
 	UPDATE @log_files SET [log_end] = GETDATE() WHERE [log_number] = 0;
 
 	WITH [marked] AS (
@@ -97,8 +121,7 @@ LOAD_LOG_DATA:
 		@log_files [x]
 		INNER JOIN [marked] [m] ON [x].[log_number] = [m].[log_number]
 	WHERE 
-		-- TODO: this logic is correct - it's "classic" interval-overlap logic. 
-		-- ONLY: there might be a granularity problem here - i.e., sp_enumerrorlogs pulls back values ROUNDED to nearest(?) minute. my granularity is more specific. 
+		https://overachieverllc.atlassian.net/browse/S4-874
 		[m].[log_start] <= @EndTime 
 		AND [m].[log_end] >= @StartTime;
 	
