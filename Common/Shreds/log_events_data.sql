@@ -17,7 +17,8 @@ RETURNS table
 	-- {copyright}
 
 	WITH core AS ( 
-		SELECT 
+		SELECT
+			[data].[row].value(N'@row_id[1]', N'int') [row_id], 
 			[data].[row].value(N'@log[1]', N'int') [log_file_number], 
 			[data].[row].value(N'@date[1]', N'datetime') [log_date], 
 			[data].[row].value(N'@process[1]', N'sysname') [process_info], 
@@ -27,6 +28,7 @@ RETURNS table
 	) 
 
 	SELECT 
+		[row_id],
 		[log_file_number],
 		[log_date],
 		[process_info],

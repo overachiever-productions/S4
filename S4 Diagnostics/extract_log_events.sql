@@ -23,7 +23,8 @@
 			@serialized_output = @xml OUTPUT;
 
 		-- allows explicit columns and FILTERING if/as needed:
-		SELECT [log_date], [text] FROM [admindb]..[log_events_data](@xml);
+		SELECT [log_date], [text] FROM [admindb]..[log_events_data](@xml)
+		ORDER BY [row_id];
 
 		```
 
@@ -121,7 +122,7 @@ LOAD_LOG_DATA:
 		@log_files [x]
 		INNER JOIN [marked] [m] ON [x].[log_number] = [m].[log_number]
 	WHERE 
-		https://overachieverllc.atlassian.net/browse/S4-874
+		-- https://overachieverllc.atlassian.net/browse/S4-874
 		[m].[log_start] <= @EndTime 
 		AND [m].[log_end] >= @StartTime;
 	
@@ -170,6 +171,7 @@ LOAD_LOG_DATA:
 		
 		SELECT @serialized_output = (
 			SELECT 
+				ROW_NUMBER() OVER (ORDER BY [row_number]) [@row_id],
 				[log_number] [@log],
 				[log_date] [@date],
 				[process_info] [@process],
@@ -185,6 +187,7 @@ LOAD_LOG_DATA:
 	END;
 
 	SELECT 
+		ROW_NUMBER() OVER (ORDER BY [row_number]) [row_id], 
 		[log_number] [log_file_number],
 		[log_date],
 		[process_info],
@@ -193,5 +196,4 @@ LOAD_LOG_DATA:
 		[#event_log_entries]
 	ORDER BY 
 		[row_number];
-
 GO
