@@ -146,17 +146,11 @@ AS
 		normalized n
 		LEFT OUTER JOIN msdb.dbo.[sysjobs] j ON [n].[job_id] = [j].[job_id] -- allow this to be NULL - i.e., if we're looking for a job that ran this morning at 2AM, it's better to see that SOMETHING ran other than that a Job that existed (and ran) - but has since been deleted - 'looks' like it didn't run.
 		LEFT OUTER JOIN msdb.dbo.[sysjobsteps] js ON [n].[job_id] = [js].[job_id] AND n.[step_id] = js.[step_id]
-	WHERE 
-		n.[step_id] <> 0 AND (
-			-- jobs that start/stop during specified time window... 
-			(n.[start_time] >= @start AND n.[end_time] <= @end)
-
-			-- jobs that were running when the specified window STARTS (and which may or may not end during out time window - but the jobs were ALREADY running). 
-			OR (n.[start_time] < @start AND n.[end_time] > @start)
-
-			-- jobs that get started during our time window (and which may/may-not stop during our window - because, either way, they were running...)
-			OR (n.[start_time] > @start AND n.[end_time] > @end)
-		)
+	WHERE
+		[n].[step_id] <> 0 AND ( 
+			[n].[start_time] <= @end 
+			AND [n].[end_time] >= @start
+		); 
 
 JOB_PREDICATES: 
 	-- Exclude any jobs specified: 
