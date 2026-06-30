@@ -13,7 +13,7 @@
 			SELECT @isRunning;
 
 		SELECT style: 
-			SELECT admindb.dbo.is_job_running('Fake Job');
+			SELECT admindb.dbo.is_job_running('Fake Job') [is_running];
 
 */
 

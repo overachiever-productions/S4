@@ -88,38 +88,30 @@ AS
 			row_id int IDENTITY(1,1) NOT NULL, 
 			job_name sysname NOT NULL, 
 			start_time datetime NULL, 
-			end_time datetime NULL, 
-			[status] sysname NULL 
+			end_time datetime NULL 
 		);
 
 		-- and get a list of jobs running in the last N minutes: 
 		DECLARE @runningJobs xml;
-		EXEC dbo.[list_running_jobs]
-			@StartTime = @lastCheckupExecutionTime,
-			@EndTime = @now,
-			@SerializedOutput = @runningJobs OUTPUT;
+		EXEC dbo.[running_jobs]
+			@start = @lastCheckupExecutionTime,
+			@end = @now,
+			@serialized_output = @runningJobs OUTPUT;
 
 			WITH shredded AS (
 				SELECT 
 					[data].[row].value(N'job_name[1]', N'sysname') job_name, 
 					[data].[row].value(N'start_time[1]', N'datetime') start_time, 
-					[data].[row].value(N'end_time[1]', N'datetime') end_time, 
-					[data].[row].value(N'job_status[1]', N'sysname') job_status 			
+					[data].[row].value(N'end_time[1]', N'datetime') end_time			
 				FROM 
 					@runningJobs.nodes(N'//job') [data]([row])
 			)
 
-			INSERT INTO [#running_jobs] (
-				[job_name],
-				[start_time],
-				[end_time],
-				[status]
-			)
+			INSERT INTO [#running_jobs] ([job_name], [start_time], [end_time])
 			SELECT 
 				[job_name], 
 				[start_time], 
-				[end_time], 
-				[job_status]
+				[end_time]
 			FROM 
 				[shredded];
 
