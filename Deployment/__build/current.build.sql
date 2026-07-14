@@ -321,6 +321,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: Common\Internal\engine_version().sql
+
+-----------------------------------
 --##INCLUDE: Common\base64_encode.sql
 
 -----------------------------------
@@ -328,6 +331,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\check_paths.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\database_defaults().sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\database_scoped_defaults().sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\verify_directory_access.sql
@@ -670,6 +679,9 @@ GO
 --##INCLUDE: S4 Jobs\running_jobs.sql
 
 -----------------------------------
+--##INCLUDE: S4 Jobs\job_schedules().sql
+
+-----------------------------------
 --##INCLUDE: S4 Jobs\is_job_running.sql
 
 -----------------------------------
@@ -729,10 +741,16 @@ GO
 --##INCLUDE: S4 Diagnostics\disabled_constraints.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\database_settings().sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\database_details.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\table_sizes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\io_freezes.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\filtered_index_obstacles.sql
@@ -784,6 +802,9 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\server_permissions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\TempDb\tempdb_details.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_details.sql
