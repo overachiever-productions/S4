@@ -321,7 +321,7 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: Common\Internal\engine_version().sql
+--##INCLUDE: Common\engine_version().sql
 
 -----------------------------------
 --##INCLUDE: Common\base64_encode.sql
@@ -333,10 +333,10 @@ GO
 --##INCLUDE: Common\Internal\check_paths.sql
 
 -----------------------------------
---##INCLUDE: Common\Internal\database_defaults().sql
+--##INCLUDE: Common\database_defaults().sql
 
 -----------------------------------
---##INCLUDE: Common\Internal\database_scoped_defaults().sql
+--##INCLUDE: Common\database_scoped_defaults().sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\verify_directory_access.sql
