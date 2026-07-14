@@ -2,6 +2,28 @@
 
 # Change Log
 
+## [14.2] - 2026-07-14
+More Monitoring / Diagnostics (tempdb); Job Schedules via TVIF; Additional HTML Formatting.
+
+### Fixed 
+- Bug fix to remove 'overflow' when attempting to read event/error logs OLDER than present/available. 
+- Improved granularity for log/error event (rows).
+- Minor, ongoing fixes, in the war on case-sensitive collations. 
+- Full overhaul of `dbo.running_jobs` (formerly `dbo.list_running_jobs`). Correctly bounds/wraps start/end times and provides increased context by means of `bounds`/status column.
+
+### Added 
+- Addition of `dbo.io_freezes`.
+- Serialization of SQL Server Agent Job Schedules into simple/plain text descriptions via Table Valued Inline Function. (Kind of proud of this one. It was a serious booooger.)
+- Improved engine-version evaluation logic via `dbo.engine_version()` - which will, eventually, replace `dbo.get_engine_version()`. Provides better precision - for use in dynamically determining supported features/options. 
+- Addition of `dbo.database_defaults()` and `dbo.database_scoped_defaults()` - providing version-specific defaults for both configuration options (via `master.sys.databases`) and SCOPED DATABASE CONFIGURATIONS (via `<db-name>.dbo.database_scoped_configurations`) - for optimal detection of non-default config-options/scoped-configs.
+- Addition of `dbo.tempdb_details` - FULL diagnostic for tempdb - outputs info/details + smells and warnings for overall tempdb/server health checks. 
+
+### Changed
+- Minor changes to formatting of HEX outputs (for HTML).
+- Major Refactor to address DRY-approach to reading event/error log details (consolidation of logic into a single sproc).
+- REFACTOR: `dbo.list_running_jobs` => `dbo.running_jobs` (retiring 'list' in list_xxx sprocs).
+- Minor refactoring and other changes to `dbo.is_job_running`, `dbo.verify_cpu_thresholds`, and `dbo.verify_ple_thresholds`;
+
 ## [14.1] - 2026-06-12
 Initial addition of HTML email formatting; Minor Bug Fixes; More Code-Library Infrastructure.
 
