@@ -37,7 +37,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[database_details]','P') IS NOT NULL
+IF OBJECT_ID(N'dbo.[database_details]', N'P') IS NOT NULL
 	DROP PROC dbo.[database_details];
 GO
 
