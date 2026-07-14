@@ -1,26 +1,21 @@
 /*
 
+	.EXAMPLE: Projecting outputs: 
+		Simple 'dump' of findings/outputs:
+		```sql
+		EXEC [admindb]..[tempdb_details];
+		SELECT @serialized_output;
+		```
 
-	SQLMONITOR.ing - CONDITIONS to watch for: 
-		- ANY/ALL smells. 
-		- ANY/ALL warnings.
-		- PLUS:
-			- spills, temp-tables, version store are > xxxx thresholds. 
-			- tempdb_log > Nx of tempdb_data. 
-			- FILE-GROWTH can/could/will EXCEDE avaialable disk space. 
-					THIS one's a bit tricky. 
-					if a single log|data file has a MAX-GROWTH > [available_disk_space_on_its_drive] ... then I need to know. 
-					BUT ... if SUM(log|data_growth_by_disk) > [available_disk_space_on_drives_by_GROUPED] ... then I need to know. 
+	.EXAMPLE: Returning outputs - via XML: 
+		... typically would consume the `@serialized_output` via consumer/whatever... 
+		```sql 
+		DECLARE @serialized_output xml;
+		EXEC [admindb]..[tempdb_details]
+			@serialized_output = @serialized_output OUTPUT; 
 
-	SCOPE
-		- PRESENTATION 
-
-		<tempdb> 
-			<facet classification="warning|smell|information" path="config.x|size.x|files.y|perf.n">detail here </facet>
-			<facet classification="warning|smell|information" path="config.x|size.x|files.y|perf.n">detail here </facet>
-			<facet classification="warning|smell|information" path="config.x|size.x|files.y|perf.n">detail here </facet>
-		</tempdb>
-
+		SELECT @serialized_output;
+		```
 
 */
 
@@ -206,42 +201,6 @@ FROM
 	DECLARE @tempdbCollation sysname = (SELECT [collation_name] FROM sys.databases WHERE name = N'tempdb');
 	DECLARE @tempdbCompat tinyint = (SELECT [compatibility_level] FROM sys.databases WHERE name = N'tempdb');
 
----------------------------------------------------------
-UPDATE [#latencies] SET [avg_read_latency] = 28, [avg_write_latency] = 95 WHERE [file_id] = 2;
-UPDATE [#latencies] SET [rg_queued_read_latency] = 12, [rg_queued_write_latency] = 4 WHERE [file_id] = 2;
-UPDATE [#tempdb_files] SET [is_percent_growth] = 1 WHERE [file_id] = 3;
-UPDATE [#tempdb_files] SET [state_desc] = N'RECOVERING' WHERE [file_id] = 4;
-UPDATE [#tempdb_files] SET [growth] = 4096 WHERE [file_id] = 5;
-	--SELECT * FROM [#latencies];
---SELECT * FROM [#disk_space];
---SELECT * FROM [#tempdb_files];
-
-INSERT INTO [#config_settings] ([scope], [option_name], [default_value], [set_value], [classification])
-VALUES (
-	N'scoped_configuration', -- scope - sysname
-	N'LAST_QUERY_PLAN_STATS',
-	N'0',
-	N'1',
-	N'CONFIG'
-);
-
-INSERT INTO [#trace_status] ([flag], [status], [global], [session])
-VALUES (
-	1117, -- flag - bit
-	1, -- status - int
-	1, -- global - bit
-	0 -- session - bit
-);
-
-INSERT INTO [#trace_status] ([flag], [status], [global], [session])
-VALUES (
-	3427, -- flag - bit
-	1, -- status - int
-	1, -- global - bit
-	0 -- session - bit
-);
-
----------------------------------------------------------
 	DECLARE @message sysname
 	CREATE TABLE #outputs (
 		[row_id] int IDENTITY(1,1) NOT NULL,
@@ -582,11 +541,24 @@ VALUES (
 		VALUES (N'WARNING', N'log_files.multiple_log_files', @files);
 	END;
 
-
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- PROJECT or RETURN:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN -- RETURN instead of project.. 
+		SET @serialized_output = (
+			SELECT 
+				[classification] [@classification],
+				[context] [@path],
+				[detail] [*]
+			FROM 
+				[#outputs] 
+			ORDER BY 
+				[row_id]
+			FOR XML PATH(N'facet'), ROOT(N'tempdb'), TYPE, ELEMENTS XSINIL
+		);
 
+		RETURN 0;
+	END;
 
 	SELECT 
 		[classification],
