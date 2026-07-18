@@ -1,7 +1,7 @@
 /*
 
 	REFACTOR:
-		- for admindb ... @ExecutionAttemptsCount changed to @RetryCount and @DelayBetweenRetries. 
+		- for admindb ... @ExecutionAttemptsCount changed to @RetryCount and @DelayBeforeRetry. 
 			as in, it'll always attempt to execute (if @PrintOnly = 0). 
 			and will ONLY retry if @Rretries > 0 
 			that'd make the factors a BIT cleaner.

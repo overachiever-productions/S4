@@ -16,6 +16,50 @@
 		- NOTE: there's a 'logic complication' outlined in the above issue as well. 
 
 
+
+	vNEXT:
+			I need to weaponize something like the following ... assuming I haven't ALREADY done so. 
+				specifically: the script below takes in a dbo.restore_log.restore_id and ... returns files and 'gaps' (RPOs)
+
+
+						DECLARE @restore_id int = 177;
+
+						DECLARE @xml xml = (SELECT restored_files FROM [dbo].[restore_log] WHERE restore_id = @restore_id);
+
+						WITH core AS ( 
+							SELECT 
+								[x].[file].value(N'@id[1]', N'int') [file_id],
+								[x].[file].value(N'(name)[1]', N'sysname') [file_name], 
+								[x].[file].value(N'(created)[1]', N'datetime') [created]
+							FROM 
+								@xml.nodes(N'/files/file') AS [x]([file])
+						), 
+						lagged AS ( 
+							SELECT 
+								[core].[file_id],
+								[core].[file_name],
+								[core].[created], 
+								LAG([core].[created]) OVER (ORDER BY [core].[file_id]) AS [prior_created]
+							FROM 
+								core
+						)
+
+						SELECT 
+							[lagged].[file_id],
+							[lagged].[file_name],
+							[lagged].[created],
+							[lagged].[prior_created], 
+							DATEDIFF(MINUTE, [lagged].[prior_created], [lagged].[created]) AS [minutes_since_prior], 
+							DATEDIFF(SECOND, [lagged].[prior_created], [lagged].[created]) AS [seconds_since_prior]
+						FROM 
+							[lagged] 
+						ORDER BY 
+							[lagged].[file_id];
+
+
+
+
+
 */
 
 USE [admindb];
