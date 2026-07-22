@@ -206,7 +206,7 @@ FROM
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[classification] sysname NOT NULL, 
 		[context] sysname NOT NULL, 
-		[detail] sysname NOT NULL 
+		[detail] nvarchar(MAX) NOT NULL 
 	);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -224,7 +224,7 @@ FROM
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
 		CASE WHEN COUNT(*) > 8 THEN N'SMELL' ELSE N'INFO' END [classification],
-		N'data_files.count', 
+		N'data_files.count' [context], 
 		COUNT(*) [detail]
 	FROM 
 		[#tempdb_files]
