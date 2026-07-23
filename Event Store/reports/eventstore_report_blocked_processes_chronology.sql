@@ -116,7 +116,6 @@ AS
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Zone Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @timeZoneTransformType sysname = N'NONE';
 	IF @TimeZone IS NOT NULL BEGIN 
 		IF (SELECT [dbo].[get_engine_version]()) < 13.00 BEGIN
 			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
@@ -125,13 +124,6 @@ AS
 
 		IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
 			SET @TimeZone = dbo.[get_local_timezone]();
-
-		DECLARE @timeZoneOffsetMinutes int = (dbo.[get_timezone_offset_minutes](@TimeZone));
-
-		IF @TimeZone IS NULL
-			SET @timeZoneTransformType = N'OUTPUT-ONLY';
-		ELSE 
-			SET @timeZoneTransformType = N'ALL';
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -164,7 +156,7 @@ AS
 		[blocking_request] [nvarchar](MAX) NULL,
 		[blocking_sproc_statement] [nvarchar](MAX) NOT NULL,
 		[blocking_resource_id] [nvarchar](80) NULL,
-		[blocking_resource] [varchar](2000) NOT NULL,
+		[blocking_resource] [varchar](2000) NULL,
 		[blocking_wait_time] [int] NULL,
 		[blocking_tran_count] [int] NULL,  -- ''self blockers'' can/will be NULL
 		[blocking_isolation_level] [nvarchar](128) NULL,   -- ''self blockers'' can/will be NULL
@@ -447,18 +439,18 @@ ORDER BY
 	SET @sql = REPLACE(@sql, N'{joins}', @joins);
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 
-	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
+	--DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
 
-	IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
-		SELECT 
-			@Start = CAST((@Start AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
-			@End   = CAST((@End   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
+	--IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
+	--	SELECT 
+	--		@Start = CAST((@Start AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
+	--		@End   = CAST((@End   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
 
-		SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (UTC).';
-	END;
+	--	SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @Start, 121) + N' - ' + CONVERT(sysname, @End, 121) + N' (UTC).';
+	--END;
 
-	PRINT @timeRangeString;
-	PRINT N'';
+	--PRINT @timeRangeString;
+	--PRINT N'';
 	
 	INSERT INTO [#metrics]
 	(
@@ -516,6 +508,10 @@ ORDER BY
 	IF @IncludePhantomBlocking = 0 BEGIN 
 		DELETE FROM [#metrics] WHERE [type] = N'PHANTOM';
 	END;
+
+--SELECT * FROM [#metrics];
+--RETURN 0;
+
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate:
