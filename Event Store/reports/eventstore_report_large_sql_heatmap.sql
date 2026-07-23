@@ -13,8 +13,8 @@
 			EXEC [admindb]..[eventstore_report_large_sql_heatmap]
 				@Mode = N'TIME_OF_WEEK',
 				@Granularity = N'HOUR',
-				@StartUTC = '2026-01-16',
-				@EndUTC = '2026-03-02',
+				@Start = '2026-01-16',
+				@End = '2026-03-02',
 				@TimeZone = N'Central Standard Time',
 				@UseDefaults = 1,
 				@EventStoreTarget = N'admindb_DT.dbo.eventstore_large_sql',
@@ -43,9 +43,10 @@ GO
 CREATE PROC dbo.[eventstore_report_large_sql_heatmap]
 	@Mode						sysname			= N'TIME_OF_DAY',		-- { TIME_OF_DAY | TIME_OF_WEEK } 
 	@Granularity				sysname			= N'HOUR',				-- { HOUR | [20]MINUTE } (minute = 20 minute blocks)
-	@StartUTC					datetime		= NULL, 
-	@EndUTC						datetime		= NULL, 
-	@TimeZone					sysname			= NULL, 
+	@Start						datetime		= NULL, 
+	@End						datetime		= NULL, 
+	@TimeZone					sysname			= N'UTC', 
+	@ExcludeUTCHeader			bit				= 0,					-- TODO: make this a 'default'/preference... 
 	@UseDefaults				bit				= 1, 
 	@EventStoreTarget			sysname			= NULL,	
 	@ExcludeSqlAgentJobs		bit				= 1, 
@@ -65,7 +66,8 @@ AS
 	-- {copyright}
 	
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
-	SET @TimeZone = NULLIF(@TimeZone, N'');
+	SET @TimeZone = ISNULL(NULLIF(@TimeZone, N''), N'UTC');
+	SET @ExcludeUTCHeader = ISNULL(@ExcludeUTCHeader, 0);
 	SET @EventStoreTarget = NULLIF(@EventStoreTarget, N'');
 	SET @UseDefaults = ISNULL(@UseDefaults, 1);
 
@@ -80,6 +82,8 @@ AS
 	SET @Hosts = NULLIF(@Hosts, N'');
 	SET @Principals = NULLIF(@Principals, N'');
 	SET @Statements = NULLIF(@Statements, N'');
+
+	-- TODO: validate @Mode
 	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Metadata + Preferences
@@ -120,9 +124,9 @@ AS
 			@PreferredPredicates = @defaultPredicates OUTPUT;
 
 		IF @TimeZone IS NULL SET @TimeZone = @defaultTimeZone;
-		IF @StartUTC IS NULL BEGIN 
-			SET @StartUTC = ISNULL(@defaultStartTime, DATEADD(HOUR, -24, GETUTCDATE())); 
-			SET @EndUTC = GETUTCDATE();
+		IF @Start IS NULL BEGIN 
+			SET @Start = ISNULL(@defaultStartTime, DATEADD(HOUR, -24, GETUTCDATE())); 
+			SET @End = GETUTCDATE();
 		END;
 
 		IF NULLIF(@defaultPredicates, N'') IS NOT NULL BEGIN 
@@ -133,14 +137,14 @@ AS
 				SUBSTRING([result], CHARINDEX(N':', [result]) + 1, LEN([result])) [value]
 			FROM  
 				dbo.[split_string](@defaultPredicates, N';', 1);
- 	
+ 			
+			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
 			IF @ExcludeSqlAgentJobs IS NULL SELECT @ExcludeSqlAgentJobs = CAST([value] AS bit) FROM @predicates WHERE [key] = N'@ExcludeSqlAgentJobs';
 			IF @ExcludeSqlCmd IS NULL SELECT @ExcludeSqlCmd = CAST([value] AS bit) FROM @predicates WHERE [key] = N'@ExcludeSqlCmd';
 			IF @MinCpuMilliseconds IS NULL SELECT @MinCpuMilliseconds = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinCpuMilliseconds';
 			IF @MinDurationMilliseconds IS NULL SELECT @MinDurationMilliseconds = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinDurationMilliseconds';
 			IF @MinRowsModifiedCount IS NULL SELECT @MinRowsModifiedCount = CAST([value] AS int) FROM @predicates WHERE [key] = N'@MinRowsModifiedCount';
 
-			IF @Granularity IS NULL SELECT @Granularity = CAST([value] AS sysname) FROM @predicates WHERE [key] = N'@Granularity';
 			IF @Databases IS NULL SELECT @Databases = [value] FROM @predicates WHERE [key] = N'@Databases';
  			IF @Applications IS NULL SELECT @Applications = [value] FROM @predicates WHERE [key] = N'@Applications';
 			IF @Hosts IS NULL SELECT @Hosts = [value] FROM @predicates WHERE [key] = N'@Hosts';
@@ -149,10 +153,11 @@ AS
 		END;
 	END;
 
+	-- TODO: @ExcludeUTCHeader can only be 1 IF there's a VALID @TimeZone specified 
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Time-Zone Processing:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @timeZoneTransformType sysname = N'NONE';
 	IF @TimeZone IS NOT NULL BEGIN 
 		IF (SELECT [dbo].[get_engine_version]()) < 13.00 BEGIN
 			RAISERROR(N'@TimeZone is only supported on SQL Server 2016+.', 16, 1);
@@ -161,13 +166,6 @@ AS
 
 		IF UPPER(@TimeZone) = N'{SERVER_LOCAL}'
 			SET @TimeZone = dbo.[get_local_timezone]();
-
-		DECLARE @timeZoneOffsetMinutes int = (dbo.[get_timezone_offset_minutes](@TimeZone));
-
-		IF @TimeZone IS NULL
-			SET @timeZoneTransformType = N'OUTPUT-ONLY';
-		ELSE 
-			SET @timeZoneTransformType = N'ALL';
 	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -182,7 +180,9 @@ AS
 	
 	EXEC @outcome = dbo.[eventstore_heatmap_frame]
 		@Granularity = @Granularity,
-		--@TimeZone = @TimeZone,
+        @TimeZone = @TimeZone,
+		@Start = @Start, 
+		@End = @End,
 		@SerializedOutput = @map OUTPUT;
 
 	IF @outcome <> 0 
@@ -191,8 +191,10 @@ AS
 	WITH shredded AS ( 
 		SELECT 
 			[data].[row].value(N'(block_id)[1]', N'int') [block_id], 
-			[data].[row].value(N'(start_time)[1]', N'datetime') [start_time],
-			[data].[row].value(N'(end_time)[1]', N'datetime2(7)') [end_time] 
+			[data].[row].value(N'(start_time)[1]', N'time') [start_time],
+			[data].[row].value(N'(end_time)[1]', N'time') [end_time], 
+			[data].[row].value(N'(local_start)[1]', N'datetime2(4)') [zone_start], 
+			[data].[row].value(N'(local_end)[1]', N'datetime2(4)') [zone_end]
 		FROM 
 			@map.nodes(N'//time') [data]([row])
 	) 
@@ -200,8 +202,9 @@ AS
 	SELECT 
 		[block_id],
 		[start_time],
-		DATEADD(HOUR, 1, [start_time]) [projection_end_time],
-		[end_time] [predicate_end_time]
+		[end_time],
+		[zone_start], 
+		[zone_end]
 	INTO 
 		#times
 	FROM 
@@ -209,15 +212,15 @@ AS
 	ORDER BY 
 		[block_id];
 	
-	IF @StartUTC IS NULL BEGIN 
+	IF @Start IS NULL BEGIN 
 		SELECT 
-			@StartUTC = MIN([start_time]), 
-			@EndUTC = MAX([predicate_end_time]) 
+			@Start = MIN([start_time]), 
+			@End = MAX([end_time]) 
 		FROM 
 			[#times];
 	END;
 
-	IF @EndUTC IS NULL SET @EndUTC = GETUTCDATE();
+	IF @End IS NULL SET @End = GETUTCDATE();
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Predicate Mapping and Extraction:
@@ -324,26 +327,13 @@ AS
 FROM 
 	{SourceTable} [x]{joins}
 WHERE 
-	[x].[timestamp]>= @StartUTC 
-	AND [x].[timestamp] <= @EndUTC{filters}{exclusions};'; 
+	[x].[timestamp]>= @Start 
+	AND [x].[timestamp] <= @End{filters}{exclusions};'; 
 
 	SET @sql = REPLACE(@sql, N'{SourceTable}', @fullyQualifiedTargetTable);
 	SET @sql = REPLACE(@sql, N'{joins}', @joins);
 	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 	SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
-
-	DECLARE @timeRangeString nvarchar(MAX) = N'Time-Range is ' + CONVERT(sysname, @StartUTC, 121) + N' - ' + CONVERT(sysname, @EndUTC, 121) + N' (' + ISNULL(@TimeZone, N'UTC') + N').';
-
-	IF (@timeZoneOffsetMinutes IS NOT NULL) AND (@timeZoneTransformType = N'ALL') BEGIN 
-		SELECT 
-			@StartUTC = CAST((@StartUTC AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime), 
-			@EndUTC   = CAST((@EndUTC   AT TIME ZONE @TimeZone AT TIME ZONE 'UTC') AS datetime);
-
-		SET @timeRangeString = @timeRangeString + N' Translated to ' + CONVERT(sysname, @StartUTC, 121) + N' - ' + CONVERT(sysname, @EndUTC, 121) + N' (UTC).';
-	END;
-
-	PRINT @timeRangeString;
-	PRINT N'';
 
 	INSERT INTO [#metrics] (
 		[execution_end_time],
@@ -355,20 +345,37 @@ WHERE
 	)
 	EXEC sys.sp_executesql 
 		@sql, 
-		N'@StartUTC datetime, @EndUTC datetime', 
-		@StartUTC = @StartUTC, 
-		@EndUTC = @EndUTC;
+		N'@Start datetime, @End datetime', 
+		@Start = @Start, 
+		@End = @End;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Correlate + Project
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @timeBounds nvarchar(MAX) = N'';
+	DECLARE @orderBy nvarchar(MAX) = N'[utc_time]';
+	DECLARE @renamed nvarchar(MAX) = N'zone_time';	
+
+	IF @TimeZone = N'UTC' BEGIN
+		SET @timeBounds = N'[utc_time],'
+		END;
+	ELSE BEGIN 
+		SET @renamed = REPLACE(LOWER(@TimeZone), N' ', N'_');
+
+		IF @ExcludeUTCHeader = 1 BEGIN 
+			SET @timeBounds = N'[zone_time] [{renamed}],';
+			SET @orderBy = N'[zone_time]';
+			END;
+		ELSE BEGIN
+			SET @timeBounds = N'[utc_time],' + @crlftab + N'[zone_time] [{renamed}], ';
+		END;
+	END;
+
 	IF @Mode = N'TIME_OF_DAY' BEGIN 
 		
 		WITH correlated AS ( 
 			SELECT 
 				[t].[block_id], 
-				[t].[start_time], 
-				[t].[projection_end_time] [end_time], 
 				[m].[execution_end_time], 
 				[m].[cpu_milliseconds], 
 				[m].[duration_milliseconds], 
@@ -377,7 +384,7 @@ WHERE
 				[m].[row_count]
 			FROM 
 				#times [t]
-				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[execution_end_time] AS time) <= CAST([t].[predicate_end_time] AS time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] AS time)
+				LEFT OUTER JOIN [#metrics] [m] ON CAST([m].[execution_end_time] AS time) <= CAST([t].[end_time] AS time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] AS time)
 		),
 		aggregated AS (
 			SELECT 
@@ -397,17 +404,39 @@ WHERE
 		) 
 
 		SELECT 
-			CONVERT(sysname, [t].[start_time], 24) [start_time],
-			CONVERT(sysname, [t].[projection_end_time], 24) [end_time],
-			[a].[events],
-			FORMAT([a].[total_cpu], N'N0') [total_cpu],
-			FORMAT([a].[total_duration], N'N0') [total_duration],
-			FORMAT([a].[total_reads], N'N0') [total_reads],
-			FORMAT([a].[total_writes], N'N0') [total_writes],
-			FORMAT([a].[total_rows], N'N0') [total_rows]
+			FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
+			FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
+			ISNULL([a].[events], 0) [events],
+			ISNULL(FORMAT([a].[total_cpu], N'N0'), N'-') [total_cpu],
+			ISNULL(FORMAT([a].[total_duration], N'N0'), N'-') [total_duration],
+			ISNULL(FORMAT([a].[total_reads], N'N0'), N'-') [total_reads],
+			ISNULL(FORMAT([a].[total_writes], N'N0'), N'-') [total_writes],
+			ISNULL(FORMAT([a].[total_rows], N'N0'), N'-') [total_rows]
+		INTO 
+			#tod_projection  -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
 		FROM 
 			[#times] [t]
 			LEFT OUTER JOIN [aggregated] [a] ON [t].[block_id] = [a].[block_id];
+
+		SET @sql = N'SELECT 
+	{time_bounds}
+	[events],
+	[total_cpu],
+	[total_duration],
+	[total_reads],
+	[total_writes],
+	[total_rows] 
+FROM 
+	[#tod_projection] 
+ORDER BY 
+	{order_by}; ';
+
+		SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
+		SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
+		SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
+
+		EXEC sys.[sp_executesql] 
+			@sql;
 
 		RETURN 0;
 	END;
@@ -443,7 +472,7 @@ WHERE
 	FROM 
 		[#times] [t]
 		LEFT OUTER JOIN [#metrics] [m] ON DATEPART(WEEKDAY, [m].[execution_end_time]) = @currentDayID
-			AND (CAST([m].[execution_end_time] AS time) <= CAST([t].[predicate_end_time] as time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] as time))
+			AND (CAST([m].[execution_end_time] AS time) <= CAST([t].[end_time] as time) AND CAST([m].[execution_end_time] AS time) > CAST([t].[start_time] as time))
 	WHERE 
 		[m].[execution_end_time] IS NOT NULL
 ), 
@@ -498,20 +527,42 @@ FROM
 	PRINT 'CELL LEGEND: [E (C - D)] - Where E is [total_events], C is [total_cpu_ms], and D is [total_duration_ms].';
 
 	SELECT 
-		CONVERT(sysname, [start_time], 24) [start_time],
-		CONVERT(sysname, [projection_end_time], 24) [end_time],
-		N' ' [ ],
-		ISNULL([Sunday], N'-') [Sunday],  
-		ISNULL([Monday], N'-') [Monday],
-		ISNULL([Tuesday], N'-') [Tuesday],
-		ISNULL([Wednesday], N'-') [Wednesday],
-		ISNULL([Thursday], N'-') [Thursday],
-		ISNULL([Friday], N'-') [Friday],
-		ISNULL([Saturday], N'-') [Saturday]
+		FORMAT([t].[start_time], N'hh\:mm') + N':00 - ' + FORMAT([t].[end_time], N'hh\:mm') + N':59' [utc_time],
+		FORMAT([t].[zone_start], N'HH\:mm') + N':00 - ' + FORMAT([t].[zone_end], N'HH\:mm') + N':59' [zone_time],
+		ISNULL([t].[Sunday], N'-') [Sunday],  
+		ISNULL([t].[Monday], N'-') [Monday],
+		ISNULL([t].[Tuesday], N'-') [Tuesday],
+		ISNULL([t].[Wednesday], N'-') [Wednesday],
+		ISNULL([t].[Thursday], N'-') [Thursday],
+		ISNULL([t].[Friday], N'-') [Friday],
+		ISNULL([t].[Saturday], N'-') [Saturday]
+	INTO 
+		#tow_projection -- this 'extra' projection into yet-another-temp-table incurs a bit of a perf-hit. BUT, makes projection of final results (+ debugging) trivial.
 	FROM 
-		[#times]
+		[#times] [t]
 	ORDER BY 
 		[block_id];
+
+	SET @sql = N'SELECT 
+	{time_bounds}
+	[Sunday],
+	[Monday],
+	[Tuesday],
+	[Wednesday],
+	[Thursday],
+	[Friday],
+	[Saturday] 
+FROM 
+	[#tow_projection]
+ORDER BY 
+	{order_by}; ';
+
+	SET @sql = REPLACE(@sql, N'{time_bounds}', @timeBounds);
+	SET @sql = REPLACE(@sql, N'{order_by}', @orderBy);
+	SET @sql = REPLACE(@sql, N'{renamed}', @renamed);
+
+	EXEC sys.[sp_executesql] 
+		@sql;
 
 	RETURN 0;
 GO
