@@ -879,7 +879,7 @@ ALTER DATABASE ' + QUOTENAME(@currentDatabase) + N' SET SINGLE_USER WITH ROLLBAC
 				offsite_path = @cloudfullOffSitePath,
 				offsite_succeeded = CASE WHEN @errorMessage IS NULL THEN 1 ELSE 0 END,
 				offsite_seconds = DATEDIFF(SECOND, @offSiteCopyStart, GETDATE()), 
-				failed_offsite_attempts = ((SELECT @outcome.value(N'count(/iterations/iteration)', N'int')) - (CASE WHEN @errorMessage IS NULL THEN 0 ELSE 1 END)), 
+				failed_offsite_attempts = (SELECT @outcome.value(N'count(/iterations/iteration[@execution_outcome="FAILED"])', N'int')), 
 				offsite_details = CAST(@offSiteCopyDetails AS nvarchar(MAX)), 
 				[error_details] = ISNULL([error_details], N'') + @errorMessage + N' '
 			WHERE
