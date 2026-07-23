@@ -1,22 +1,29 @@
 /*
 
 
-	REFACTOR ... maybe call this something along the lines of versionstore tables/names ... or versionstore_sources... 
+TODO: 
+	integrate the following FODDER into dbo.versionstore_generators 
+		AND 
+	into dbo.versionstore_consumers
 
-		Or just dbo.versionstore_consumers
-
-
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-current-transaction-transact-sql?view=sql-server-ver17
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-top-version-generators-transact-sql?view=sql-server-ver17
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-version-store-transact-sql?view=sql-server-ver17
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-active-snapshot-database-transactions-transact-sql?view=sql-server-ver17
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-database-transactions-transact-sql?view=sql-server-ver17
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-session-transactions-transact-sql?view=sql-server-ver17
+	- https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-version-store-space-usage?view=sql-server-ver17
 
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_versionstore_generators','P') IS NOT NULL
-	DROP PROC dbo.[list_versionstore_generators];
+IF OBJECT_ID(N'dbo.[versionstore_generators]', N'P') IS NOT NULL
+	DROP PROC dbo.[versionstore_generators];
 GO
 
-CREATE PROC dbo.[list_versionstore_generators]
+CREATE PROC dbo.[versionstore_generators]
 	@ExcludeMsdb			bit				= 1,	
 	@TargetDatabase			sysname			= NULL,				-- when specified, only pulls data (all tables/usages) for a SINGLE, given, database... 
 	@DatabasesOnly			bit				= 0					-- vs tables - by/from - each database ... (DEFAULT). 

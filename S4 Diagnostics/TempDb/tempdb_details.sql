@@ -185,18 +185,18 @@ FROM
 
 	DECLARE @rgTempdbLimitsInPlace bit = 0;
 
-	SET @sql = N'
-	IF (SELECT dbo.[engine_version](N''RTM'')) > 17.1000 BEGIN
-		IF EXISTS (SELECT NULL FROM sys.[resource_governor_configuration] WHERE [is_enabled] = 1) BEGIN
-			IF EXISTS (SELECT NULL FROM sys.[resource_governor_workload_groups] WHERE [group_max_tempdb_data_mb] IS NOT NULL OR [group_max_tempdb_data_mb] IS NOT NULL)
-				SET @rgTempdbLimitsInPlace = 1;
-		END;
+	IF (SELECT dbo.[engine_version](N'RTM')) > 17.1000 BEGIN
+		SET @sql = N'IF EXISTS (SELECT NULL FROM sys.[resource_governor_configuration] WHERE [is_enabled] = 1) BEGIN
+		IF EXISTS (SELECT NULL FROM sys.[resource_governor_workload_groups] WHERE [group_max_tempdb_data_mb] IS NOT NULL OR [group_max_tempdb_data_mb] IS NOT NULL)
+			SET @rgTempdbLimitsInPlace = 1;
 	END; ';
 
 	EXEC sys.[sp_executesql] 
 		@sql, 
 		N'@rgTempdbLimitsInPlace bit = 0 OUTPUT', 
 		@rgTempdbLimitsInPlace = @rgTempdbLimitsInPlace OUTPUT;
+
+	END;
 
 	DECLARE @tempdbCollation sysname = (SELECT [collation_name] FROM sys.databases WHERE name = N'tempdb');
 	DECLARE @tempdbCompat tinyint = (SELECT [compatibility_level] FROM sys.databases WHERE name = N'tempdb');
@@ -206,7 +206,7 @@ FROM
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[classification] sysname NOT NULL, 
 		[context] sysname NOT NULL, 
-		[detail] sysname NOT NULL 
+		[detail] nvarchar(MAX) NOT NULL 
 	);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -224,7 +224,7 @@ FROM
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
 		CASE WHEN COUNT(*) > 8 THEN N'SMELL' ELSE N'INFO' END [classification],
-		N'data_files.count', 
+		N'data_files.count' [context], 
 		COUNT(*) [detail]
 	FROM 
 		[#tempdb_files]

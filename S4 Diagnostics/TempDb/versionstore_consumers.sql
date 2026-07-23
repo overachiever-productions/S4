@@ -1,21 +1,38 @@
 /*
 
 
+TODO:
+
+	-- Make sure I'm addressing these details: 
+	https://dba.stackexchange.com/questions/269170/version-store-usage-and-entries-in-dm-tran-active-snapshot-database-transactions
+	https://dba.stackexchange.com/questions/36382/find-transactions-that-are-filling-up-the-version-store 
+	https://dba.stackexchange.com/questions/219992/version-store-blowing-up-but-responsible-sessions-have-no-open-transactions 
+
+TODO: 
+	- Include `max_version_chain_traversed` and `average_version_chain_traversed` from sys.dm_tran_active_snapshot_database_transactions.
+
+	- Also ...can't see why I shouldn't be able to JOIN this to ... sys.dm_tran_database_transactions as well... 
+
+
+	- NEED to integrate a JOIN with/against sys.dm_tran_version_store as well. 
+		LOOKs like i should be able to join against ... transation_sequence_num and/or the rowset_id... 
+
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_versionstore_transactions','P') IS NOT NULL
-	DROP PROC dbo.[list_versionstore_transactions];
+IF OBJECT_ID(N'dbo.[versionstore_consumers]', N'P') IS NOT NULL
+	DROP PROC dbo.[versionstore_consumers];
 GO
 
-CREATE PROC dbo.[list_versionstore_transactions]
+CREATE PROC dbo.[versionstore_consumers]
 
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
+
 	SELECT 
 		[v].[session_id],
 		CASE 
@@ -97,11 +114,9 @@ AS
 
 	-- TODO: look at providing a link/reference/update to 'last_plan' for rows in #detail where plan IS NULL. 
 	--		can't remember if there is such a thing (but there might, actually, be one in sys.sysprocesses? )
-
 	SELECT 
 		[c].[session_id],
 		[c].[duration],
-		[c].[ ],
 		[c].[tx_id],
 		[c].[is_user_tx],
 		[c].[open_tx_count],
@@ -110,7 +125,6 @@ AS
 		[c].[name],
 		[c].[tx_type],
 		[c].[request_count], 
-		N' ' [_], 
 		[d].[statement],
 		[d].[plan]
 	FROM 
