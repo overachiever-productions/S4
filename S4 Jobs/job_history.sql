@@ -1,15 +1,15 @@
 /*
 
 	NOTE:
-		This code might, superficially, seem fairly simple. 
-		It's actually not. 
+		This code might, superficially, seem simple. 
+		It's not. 
 			msdb..jobhistory does NOT account for: 
-				- instances of job execution. 
 				- skipped steps - which 1000000% can/will happen based upon on-success/on-failure directives
 					very much an edge case, but ... still. 
 				- jobs still RUNNING at the time of execution (of this sproc/query)
 					because the step_id for a job (vs it's individual steps) is ... 0
 						and may NOT be present at execution time. 
+				- it also makes job execution (vs job-STEP execution) a BIT harder to view/see EASILY.
 		The logic in this sproc leverages some semi-complex logic to address ALL of the above. 
 				In order to create an ACCURATE 'picture' of all selected and/or the CURRENTLY-executing outcome (progress) of an executing job. 
 
@@ -31,7 +31,7 @@
 
 	EXAMPLE: 
 
-			EXEC [admindb]..job_history NULL, N'Regular History Cleanup';
+			EXEC [admindb]..job_history NULL, N'Database Backups - Regular Restore Tests';
 
 
 */

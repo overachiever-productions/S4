@@ -1,6 +1,10 @@
 /*
 
 
+	.EXAMPLE:
+		SELECT * FROM dbo.job_histories() WHERE [job_name] = N'Database Backups - Regular Restore Tests'
+
+
 */
 
 USE [admindb];
