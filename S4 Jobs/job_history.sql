@@ -15,7 +15,37 @@
 
 
 
+	WORKING / CURRENT: 
+		So ... there's the whole 'variability' thing that I want to address here - i.e., the idea that I can easily spot outliers in job execution times (per step) and/or job execution times (overall).
+		As, ROUGHLY, outlined here: 
+			https://overachieverllc.atlassian.net/browse/S4-765
 
+		BUT. 
+
+		There are two main tasks to address as part of the 'above':
+			1. I need RUNNING averages vs raw averages. 
+				I'm tackling this primarily via ROWS BETWEEN windowing ... as that makes the most sense. 
+				BUT ... there are some details I need to address there
+					LIKE: 
+						If I'm grabbing a specific job execution run/date/instance... 
+						and try to get the RUNNING AVG for that ... I'm going to need to a) CTE to get history/running-avgs FIRST, and then b) select the specific 'row(s)' in question.
+			2. Once I've addressed the above... then it's time to address best ways to spot sigma (lower case) outliers. 
+				 I could use 
+					- Z-score 
+					- a MODIFIED Z-score 
+					- Percentiles / IQR (interquartile range) which is the most robust and does the best job of excluding ... outliers in the underlying
+						averages ... which makes outliers stand out better and more 'correctly'. 
+						AND it looks like T-SQL's PERCENTILE_COUNT() 100% does exactly what I want/need - right out of the gate. 
+							And  ... PERCENTILE_COUNT() was introduced in SQL Server 2012. So ... it's fine for all NEW dev. 
+
+					See: 
+						https://www.red-gate.com/simple-talk/databases/sql-server/t-sql-programming-sql-server/what-does-percentile_cont-do/
+					ER. 
+						WELL. percentile_cont() returns values based upon MEDIAN - not based upon the MEAN.
+							i.e., position (median) vs value (mean). 
+							This MIGHT be exactly what I want ... it might be 1000% the wrong approach. 
+							I just need to spend a bit more time determing which option makes the most sense and/or if tghere are 
+								are any major concerns with median vs mean. 
 
 	TODO:
 		Pretty sure I REALLY need this IX (i've created it on DEV ... and it does help reduce the COST of pulling info from dbo.job_histories()
@@ -131,14 +161,13 @@ AS
 			[h].[run_time],
 			[h].[weekday],
 			[h].[run_seconds],
-			[h].[run_status]
+			[h].[run_status], 
+			AVG([h].[run_seconds]) OVER (PARTITION BY [h].[step_id] ORDER BY [h].[run_time], [h].[step_id] ROWS BETWEEN 30 PRECEDING AND 0 FOLLOWING) [running_avg_seconds]
 		FROM 
 			dbo.[job_histories]() [h]
 		WHERE 
 			[h].[job_name] = @job_name
-			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- MKC: BUG -> https://overachieverllc.atlassian.net/browse/S4-761
-
---AND NOT ([h].[step_id] = 0 AND [h].[run_time] = '2025-12-28 09:45:00.000')
+			AND [h].[run_time] >= @history_start	 
 	), 
 	lagged AS ( 
 		SELECT
@@ -150,6 +179,7 @@ AS
 			[run_time], 
 			[weekday], 
 			[run_seconds], 
+			[running_avg_seconds],
 			[run_status]
 		FROM 
 			[translated]
@@ -165,6 +195,7 @@ AS
 		[run_time],
 		[weekday],
 		[run_seconds],
+		[running_avg_seconds],
 		[run_status] 
 	INTO
 		#jobHistory
@@ -173,13 +204,18 @@ AS
 	ORDER BY 
 		[row_number];
 
+
+-- S4-765: https://overachieverllc.atlassian.net/browse/S4-765
+-- replace AVG/MIN/MAX with windowed functions for RUNNING durations 
+--	ALONG WITH a modified z score - to make outliers more obvious and easier to spot. 
 	SELECT 
 		[job_name], 
 		[step_id], 
 		COUNT([job_name]) [count],
 		AVG([run_seconds]) [avg_seconds], 
 		MAX([run_seconds]) [max_seconds], 
-		MIN([run_seconds]) [min_seconds]
+		MIN([run_seconds]) [min_seconds], 
+		AVG([running_avg_seconds]) [avg_running_avg_seconds]
 	INTO 
 		#jobStats
 	FROM 
@@ -187,6 +223,14 @@ AS
 	GROUP BY 
 		[job_name], 
 		[step_id];
+
+SELECT * FROM [#jobHistory];
+SELECT * FROM [#jobStats];
+
+RETURN 0;
+
+
+
 
 	IF @latest_only = 1 BEGIN
 		DELETE FROM [#jobHistory] WHERE [row_number] < (SELECT MAX([instance]) FROM [#jobHistory]);
@@ -287,6 +331,7 @@ AS
 			END
 		END [outcome],
 		[h].[run_time],
+[h].[running_avg_seconds],
 		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
 	FROM 
 		[#frame] [x]
