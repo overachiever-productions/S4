@@ -13,7 +13,7 @@ GO
 CREATE PROC dbo.[format_html_email]
     @classification             sysname,                                        -- COMMON values are: { REPORT | INFO | WARNING | ERROR } - but anything works.
     @title                      sysname,    
-    @execution_date             datetime,
+    @execution_date             datetime            = NULL,
     @recipients                 nvarchar(MAX),                                  -- REQUIRED
     @indicators                 xml                 = NULL,                     -- SPECIALIZED schema expected. 
     @summary                    sysname             = NULL, 
@@ -37,6 +37,8 @@ AS
     SET @errors_header = NULLIF(@errors_header, N'');
     SET @raw_header = NULLIF(@raw_header, N'');
     SET @raw = NULLIF(@raw, N'');
+
+    SET @execution_date = ISNULL(@execution_date, GETDATE());
 	
 	DECLARE @body nvarchar(MAX) = N'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
