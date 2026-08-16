@@ -39,10 +39,10 @@ END;
 GO
 
 IF OBJECT_ID(N'dbo.[code_view]', N'V') IS NULL BEGIN
-	EXEC('CREATE VIEW [dbo].[code_view] AS SELECT [code] FROM dbo.[code_library];');
+	EXEC(N'CREATE VIEW [dbo].[code_view] AS SELECT [code] FROM dbo.[code_library];');
 END;
 
-EXEC('TRUNCATE TABLE dbo.[code_library];');
+EXEC(N'TRUNCATE TABLE dbo.[code_library];');
 
 DECLARE @fmtFile varchar(MAX) = N'{version}
 1
