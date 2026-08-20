@@ -147,7 +147,7 @@ AS
 		[row_id] int NOT NULL,
 		[timestamp] [datetime2](7) NOT NULL,
 		[database] [nvarchar](128) NOT NULL,
-		[type] sysname NOT NULL,
+		[type] sysname NULL,
 		[seconds_blocked] [decimal](24, 2) NOT NULL,
 		[report_id] [int] NOT NULL,
 		[blocking_id] sysname NULL,  -- ''self blockers'' can/will be NULL
