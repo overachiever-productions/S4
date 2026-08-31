@@ -6,7 +6,7 @@
 		
 		```sql 
 
-		EXEC admindb.dbo.[host_disks];
+		EXEC admindb.dbo.[system_disks];
 
 		```
 	.EXAMPLE: 
@@ -15,7 +15,7 @@
 		```sql 
 		
 		DECLARE @output xml; 
-		EXEC admindb..[host_disks] 
+		EXEC admindb..[system_disks]
 			@serialized_output = @output OUTPUT; 
 
 		SELECT @output;
@@ -27,11 +27,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID(N'dbo.[host_disks]', N'P') IS NOT NULL
-	DROP PROC dbo.[host_disks];
+IF OBJECT_ID(N'dbo.[system_disks]', N'P') IS NOT NULL
+	DROP PROC dbo.[system_disks];
 GO
 
-CREATE PROC dbo.[host_disks]
+CREATE PROC dbo.[system_disks]
 --	@disks							nvarchar(MAX)		= N'{ALL}',
 	@serialized_output				xml					= N'<default/>'	    OUTPUT
 AS
