@@ -45,6 +45,7 @@ AS
 Where-Object { $_.DriveLetter } |
     Select-Object @{n=''Drive''; e={$_.DriveLetter}},
                   @{n=''Label''; e={$_.FileSystemLabel}},
+				  @{n=''FileSystem''; e={$_.FileSystemType}},
                   @{n=''SizeGB''; e={[math]::Round($_.Size/1GB, 2)}},
                   @{n=''FreeGB''; e={[math]::Round($_.SizeRemaining/1GB, 2)}} | ConvertTo-Xml -As Stream; ';
 
@@ -66,6 +67,7 @@ Where-Object { $_.DriveLetter } |
 	SELECT 
 		[r].[disk].value(N'(Property[@Name="Drive"]/text())[1]', N'sysname') [drive], 
 		[r].[disk].value(N'(Property[@Name="Label"]/text())[1]', N'sysname') [label],
+		[r].[disk].value(N'(Property[@Name="FileSystem"]/text())[1]', N'sysname') [file_system],
 		[r].[disk].value(N'(Property[@Name="SizeGB"]/text())[1]', N'decimal(6,2)') [size_gb],
 		[r].[disk].value(N'(Property[@Name="FreeGB"]/text())[1]', N'decimal(6,2)') [free_gb]
 	INTO 
@@ -79,8 +81,10 @@ Where-Object { $_.DriveLetter } |
 			SELECT 
 				[drive] [@drive],
 				[label] [@label],
+				[file_system] [@file_system],
 				[size_gb] [@size_gb],
-				[free_gb] [@free_gb] 
+				[free_gb] [@free_gb], 
+				CAST(100. - ([free_gb] / [size_gb] * 100.) AS decimal(5,2)) [@percent_used]
 			FROM 
 				[#disks]		
 			FOR XML PATH(N'disk'), ROOT(N'disks'), TYPE
@@ -92,7 +96,12 @@ Where-Object { $_.DriveLetter } |
 	SELECT 
 		[drive],
 		[label],
+		[file_system],
 		[size_gb],
-		[free_gb] 
+		[free_gb], 
+		CAST(100. - ([free_gb] / [size_gb] * 100.) AS decimal(5,2)) [%_used] 
 	FROM 
 		[#disks];
+
+	RETURN 0;
+GO
