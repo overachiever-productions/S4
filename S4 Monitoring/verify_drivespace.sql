@@ -91,9 +91,8 @@ AS
 
 	DECLARE @output xml; 
 	EXEC dbo.[system_disks] @serialized_output = @output OUTPUT; 
-
 	
-	WITH gbs AS ( 
+	WITH [disks] AS ( 
 		SELECT 
 			[drive],
 			[free_gb] [available_gbs],
@@ -107,11 +106,11 @@ AS
 		UPPER([drive]) [drive],
 		[available_gbs],
 		[total_gbs], 
-		CAST(100.0 - ([available_gbs] / [gbs].[total_gbs] * 100.0) AS decimal(5,2)) [%_used]
+		CAST(100.0 - ([available_gbs] / [total_gbs] * 100.0) AS decimal(5,2)) [%_used]
 	FROM 
-		gbs 
+		[disks] 
 	ORDER BY 
-		[gbs].[drive];
+		[drive];
 
 	DECLARE @problems table (
 		[drive] sysname NOT NULL,
