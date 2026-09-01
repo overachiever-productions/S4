@@ -6,7 +6,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.log_events_data','IF') IS NOT NULL
+IF OBJECT_ID(N'dbo.log_events_data', N'IF') IS NOT NULL
 	DROP FUNCTION dbo.[log_events_data];
 GO
 
