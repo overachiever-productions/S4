@@ -9,15 +9,6 @@
         - NOT supported (i.e., won't even work) on Express editions (due to alerting options).
 
 
-    DEPENDENCIES:
-        - Requires that xp_cmdshell be enabled - to address issue with TRY/CATCH. 
-        - Requires a configured Database Mail Profile + SQL Server Agent Operator. 
-
-        - DEPENDS very heavily upon the conventions defined in dbo.dba_BackupDatabases - i.e., in terms of file-names (primarily for FULL vs DIFF) backups. 
-            (or, in other words, this sproc does NOT interrogate .BAK files to see which might/might-not apply when restoring all possible files
-            available for a restore operation - instead it uses FILE-names (and their time-stamps) to restore the most recent FULL + most-recent DIFF (if 
-                present) + all T-LOGs since the most-recent FULL or DIFF applied/used. 
-
     NOTES:
         - There's a serious bug/problem with T-SQL and how it handles TRY/CATCH (or other error-handling) operations:
             https://connect.microsoft.com/SQLServer/feedback/details/746979/try-catch-construct-catches-last-error-only
@@ -110,7 +101,7 @@ CREATE PROC dbo.restore_databases
     @SkipLogBackups					bit				= 0,
 	@ExecuteRecovery				bit				= 1,
     @CheckConsistency				bit				= 1,
-	@RpoWarningThreshold			sysname			= NULL,				-- Only evaluated if non-NULL. CAN be specified as 'vector' or ... as 'vector, vector' - in which case apply as FULL + SIMPLE recovery RPOs.
+	@RpoWarningThreshold			sysname			= NULL,				-- Only evaluated if non-NULL. USAGE: 'vector' (all DBs) OR 'vector, vector' => FULL (RPO), SIMPLE (RPO)
 	@SkipSanityChecks				bit				= 0,				-- ONLY evaluated if @RpoChecks are NULL. Similar to RPO tests - if restore is > 26 hours old, sends alerts about possible config error. 
     @DropDatabasesAfterRestore		bit				= 0,				-- Only works if set to 1, and if we've RESTORED the db in question. 
     @MaxNumberOfFailedDrops			int				= 1,				-- number of failed DROP operations we'll tolerate before early termination.
