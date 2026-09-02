@@ -161,10 +161,9 @@ WHERE
 	EXEC sp_executesql 
 		@sql; 
 
-	DECLARE @finalProjection nvarchar(MAX) = N'	SELECT 
+	DECLARE @finalProjection nvarchar(MAX) = N'SELECT {SELECTXML}
 		[d].[name] [session_name],
 		CASE WHEN (SELECT TOP (1) [r].[create_time] FROM [#states] [r] WHERE [d].[name] = [r].[name]) IS NULL THEN N''STOPPED'' ELSE N''RUNNING'' END [status],
-		--CASE WHEN [r].[name] IS NULL THEN N''STOPPED'' ELSE N''RUNNING'' END [status],
 		REPLACE(REPLACE([d].[event_retention_mode_desc], N''ALLOW_'', N''''), N''_EVENT_LOSS'', N'''') [loss_mode],
 		[d].[max_dispatch_latency] / 1000 [latency],
 		[d].[max_memory] / 1024 [buffer_mb],
@@ -203,9 +202,8 @@ WHERE
 
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		SET @finalProjection = REPLACE(@finalProjection, N'{padding}', N'');	
-
-		SET @finalProjection = REPLACE(@finalProjection, N'{FORXML}', @crlftab + N'FOR XML PATH(''session''), ROOT(''sessions'')');
-		SET @finalProjection = REPLACE(@finalProjection, N'SELECT', N'SELECT @output = (SELECT');
+		SET @finalProjection = REPLACE(@finalProjection, N'{FORXML}', @crlftab + N'FOR XML PATH(N''session''), ROOT(N''sessions'')');
+		SET @finalProjection = REPLACE(@finalProjection, N'{SELECTXML}', N'@output = (SELECT');
 		SET @finalProjection = REPLACE(@finalProjection, N';', N');');
 
 		DECLARE @output xml;
@@ -221,6 +219,7 @@ WHERE
 	END;
 
 	-- If we're still here: PROJECT:
+	SET @finalProjection = REPLACE(@finalProjection, N'{SELECTXML}', N'');
 	SET @finalProjection = REPLACE(@finalProjection, N'{FORXML}', N'');
 	SET @finalProjection = REPLACE(@finalProjection, N'{padding}', N''''' [ ],');
 	
