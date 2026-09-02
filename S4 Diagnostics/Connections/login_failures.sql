@@ -13,8 +13,9 @@ IF OBJECT_ID('dbo.[login_failures]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[login_failures]
+	@event_data						xml					= NULL,
 	@start							sysname				= N'2 weeks',		-- see https://www.notion.so/overachiever/2026-02-25-3125380af00e8039aba7ed71e6d4bcd6?source=copy_link
-	--@end							sysname				= NULL, 
+	@end							sysname				= NULL, 
 	@mode							sysname				= N'SUMMARY',		-- SUMMARY | DETAIL
 	@exclude_local_connections		bit					= 0, 
 	@ips							nvarchar(MAX)		= NULL, 
@@ -27,56 +28,34 @@ AS
 	-- {copyright}
 
 	SET @start = ISNULL(NULLIF(@start, N''), N'2 weeks');
-	--SET @end = NULLIF(@end, N'');
+	SET @end = NULLIF(@end, N'');
 	SET @exclude_local_connections = ISNULL(@exclude_local_connections, 0);
 	SET @ips = NULLIF(@ips, N'');
 	SET @principals = NULLIF(@principals, N'');
 
-	DECLARE @startTime datetime;
-	IF TRY_PARSE(@start AS datetime) IS NOT NULL BEGIN
-		SET @startTime = TRY_PARSE(@start AS datetime);
-	  END;
-	ELSE BEGIN
-	
-		DECLARE @error nvarchar(MAX);
-		EXEC dbo.[translate_vector_datetime]
-			@Vector = @start,
-			@Operation = N'SUBTRACT',
-			@Output = @startTime OUTPUT,
-			@Error = @error OUTPUT
-
-		IF @error IS NOT NULL BEGIN
-			RAISERROR(@error, 16, 1);
-			RETURN 1;
-		END;
+	IF @event_data IS NULL BEGIN
+		EXEC dbo.[extract_log_events]
+			@start = @start,
+			@end = @end,
+			@serialized_output = @event_data OUTPUT;		
 	END;
-
--- TODO: extract vectors... 
---		and then validate them - make sure they're not too long/etc. 
---		also ... there's an option for FILES here... which ... hmmm. yeah.... as per: https://www.notion.so/overachiever/2026-02-25-3125380af00e8039aba7ed71e6d4bcd6?source=copy_link
-
--- HACK for now: 
---	DECLARE @endTime datetime;
 
 	CREATE TABLE #event_log_entries (
 		[row_number] int IDENTITY(1,1) NOT NULL,
 		[log_date] datetime NOT NULL,
 		[process_info] sysname NOT NULL,
 		[text] varchar(2048) NOT NULL
-	);	
+	);
 
-	DECLARE @minTimeStamp datetime = GETDATE();	
-	DECLARE @targetLog int = 0;
-	DECLARE @rowCount int = 999; 
-
-	WHILE (@rowCount > 0) AND (@minTimeStamp > @startTime) BEGIN 
-		INSERT INTO [#event_log_entries]
-		EXEC sys.[xp_readerrorlog] @targetLog, 1;   -- TODO: https://www.notion.so/overachiever/Testing-Seams-2995380af00e806d93f7f9f318da000e?v=2b28b332289541a6a43c48c583c14d97&source=copy_link
-	
-		SELECT @rowCount = @@ROWCOUNT;
-		SET @minTimeStamp = (SELECT MIN([log_date]) FROM #event_log_entries);
-		SET @targetLog = @targetLog + 1;
-	END;
+	INSERT INTO [#event_log_entries] ([log_date], [process_info], [text])
+	SELECT 
+		[log_date],
+		[process_info],
+		[text] 
+	FROM 
+		dbo.[log_events_data](@event_data)
+	ORDER BY 
+		[row_id];
 
 	WITH identified AS (
 		SELECT
