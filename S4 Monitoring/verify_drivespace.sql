@@ -89,26 +89,28 @@ AS
 		[%_used] decimal(5,2) NOT NULL
 	);
 
-	WITH gbs AS ( 
-		SELECT DISTINCT
-			s.volume_mount_point [drive],
-			CAST(s.available_bytes / 1073741824. as decimal(24,2)) [available_gbs], 
-			CAST(s.[total_bytes] / 1073741824. as decimal(24,2)) [total_gbs]
-		FROM 
-			sys.master_files f
-			CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.[file_id]) s
-	) 
+	DECLARE @output xml; 
+	EXEC dbo.[system_disks] @serialized_output = @output OUTPUT; 
 	
+	WITH [disks] AS ( 
+		SELECT 
+			[drive],
+			[free_gb] [available_gbs],
+			[size_gb] [total_gbs]
+		FROM 
+			dbo.system_disks_data(@output)
+	) 
+
 	INSERT INTO @core (drive, [available_gbs], [total_gbs], [%_used])
 	SELECT 
 		UPPER([drive]) [drive],
 		[available_gbs],
 		[total_gbs], 
-		CAST(100.0 - ([available_gbs] / [gbs].[total_gbs] * 100.0) AS decimal(5,2)) [%_used]
+		CAST(100.0 - ([available_gbs] / [total_gbs] * 100.0) AS decimal(5,2)) [%_used]
 	FROM 
-		gbs 
+		[disks] 
 	ORDER BY 
-		[gbs].[drive];
+		[drive];
 
 	DECLARE @problems table (
 		[drive] sysname NOT NULL,
