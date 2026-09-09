@@ -1,6 +1,7 @@
 /*
 
-	EXEC dbo.load_library_code @ResourceId = 3;
+
+	EXEC dbo.codelibrary_file @LibraryId = 3;
 
 
 */
@@ -8,11 +9,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID(N'dbo.[load_library_code]', N'P') IS NOT NULL
-	DROP PROC  dbo.[load_library_code];
+IF OBJECT_ID(N'dbo.[codelibrary_file]', N'P') IS NOT NULL
+	DROP PROC  dbo.[codelibrary_file];
 GO
 
-CREATE PROC dbo.[load_library_code]
+CREATE PROC dbo.[codelibrary_file]
 	@LibraryId					int 
 AS
     SET NOCOUNT ON; 
