@@ -1,10 +1,165 @@
 ﻿Set-StrictMode -Version 1.0;
 
-<<<<<<< HEAD:Code Library/lib/RemoveOldCollectorSetFiles.ps1
-function Remove-OldDataCollectorFiles {
-=======
+function Remove-DataCollectorFiles {
+	param (
+		[Parameter(Mandatory)]
+		[string]$CollectorName,
+		[Parameter(Mandatory)]
+		[int]$DaysToKeep
+	);
+	
+	$threshold = (Get-Date).AddDays(0 - $DaysToKeep);
+	$directory = Join-Path -Path "C:\PerfLogs\" -ChildPath $CollectorName;
+	
+	Get-ChildItem $directory | Where-Object {
+		$_.CreationTime -lt $threshold
+	} | Remove-Item -Force;
+}
+
+function Get-DataCollectorStatus {
+	param (
+		[Parameter(Mandatory)]
+		[string]$CollectorName
+	);
+	
+	try {
+		$state = Get-SMPerformanceCollector -CollectorName $CollectorName -ErrorAction Stop;
+		
+		if ($state -in ('Running', 'Stopped')) {
+			return $state;
+		}
+	}
+	catch {
+	}
+	
+	try {
+		$query = logman query "$CollectorName";
+		if ($query -like "Data Collector Set was not found.") {
+			return "<EMPTY>";
+		}
+		
+		$regex = New-Object System.Text.RegularExpressions.Regex("(?i)(?s)Status:\s+(?<status>[^\r]+){1}", [System.Text.RegularExpressions.RegexOptions]::Multiline);
+		$matches = $regex.Match($query);
+		
+		if ($matches) {
+			$state = $matches.Groups[1].Value;
+		}
+	}
+	catch {
+		$state = "<EMPTY>";
+	}
+	
+	return $state;
+}
+
+function Install-DataCollector {
+	param (
+		[Parameter(Mandatory)]
+		[string]$CollectorName,
+		[Parameter(Mandatory)]
+		[string]$ConfigFilePath,
+		[switch]$Force
+	);
+	
+	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
+	if ('<EMPTY>' -ne $status) {
+		if ($Force) {
+			Uninstall-DataCollector -CollectorName $CollectorName -Force;
+		}
+		else {
+			throw "Data Collector Set: [$CollectorName] already exists. Remove or specify -Force.";
+		}
+	}
+	
+	if (-not (Test-Path -Path $ConfigFilePath -ErrorAction Stop)) {
+		throw "Invalid -ConfigFilePath arugment specified. Path: [$ConfigFilePath] not found (or access denied).";
+	}
+	
+	Invoke-Expression "logman.exe import `"$CollectorName`" -xml `"$ConfigFilePath`"" | Out-Null;
+	
+	Enable-DataCollectorAutoStart -CollectorName $CollectorName;
+}
+
+function Uninstall-DataCollector {
+	param (
+		[Parameter(Mandatory)]
+		[string]$CollectorName,
+		[switch]$Force
+	);
+	
+	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
+	if ('<EMPTY>' -eq $status) {
+		return;
+	}
+	
+	if (-not ($Force)) {
+		
+	}
+	
+	Stop-DataCollector -CollectorName $CollectorName;
+	Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
+}
+
+function Start-DataCollector {
+	param (
+		[Parameter(Mandatory)]
+		[string]$CollectorName
+	);
+	
+	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
+	if ('<EMPTY>' -eq $status) {
+		throw "Data Collector Set: [$CollectorName] does NOT exist.";
+	}
+	
+	if ('Running' -ne $status) {
+		$startError = $null;
+		try {
+			Start-SMPerformanceCollector -CollectorName $CollectorName;
+		}
+		catch {
+			$startError = $_;
+		}
+		
+		if ($startError -eq $null) {
+			return;
+		}
+		
+		$results = Invoke-Expression "logman.exe start `"$CollectorName`"";
+		if ("The command completed successfully." -ne $results) {
+			throw "Error STARTING Data Collector Set [$CollectorName]: $results";
+		}
+	}
+}
+
+function Stop-DataCollector {
+	param (
+		[Parameter(Mandatory)]
+		[string]$CollectorName
+	);
+	
+	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
+	if ('<EMPTY>' -eq $status) {
+		return;
+	}
+	
+	if ('Stopped' -ne $status) {
+		$stopError = $null;
+		try {
+			Stop-SMPerformanceCollector -CollectorName $CollectorName;
+		}
+		catch {
+			$stopError = $_;
+		}
+		
+		if ($stopError -eq $null) {
+			return;
+		}
+		
+		Invoke-Expression "logman.exe stop `"$CollectorName`"" | Out-Null;
+	}
+}
+
 function Enable-DataCollectorAutoStart {
->>>>>>> feature/S4-691:Code Library/lib/admindb.core.ps1
 	param (
 		[Parameter(Mandatory)]
 		[string]$CollectorName
@@ -23,47 +178,10 @@ function Enable-DataCollectorAutoStart {
 	}
 }
 
-<<<<<<< HEAD:Code Library/lib/RemoveOldCollectorSetFiles.ps1
-# SIG # Begin signature block
-# MIIqkwYJKoZIhvcNAQcCoIIqhDCCKoACAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBaP+Ve2eeAPK2/
-# Klg+44cXAbYaBhJ8AwcyI60em+KM4aCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
-=======
-function Get-DataCollectorStatus {
-	param (
-		[Parameter(Mandatory)]
-		[string]$CollectorName
-	);
-	
-	try {
-		$state = Get-SMPerformanceCollector -CollectorName $CollectorName -ErrorAction Stop;
-		
-		if ($state -in ('Running', 'Stopped')) {
-			return $state;
-		}
-		
-		return "Unknown";
-	}
-	catch {
-		# todo, watch for 'Access is denied.' ... 
-		return $_;
-	}
-}
-
-function Get-DataCollectors {
-	$results = Invoke-Expression "logman query";
-	
-	# check for "The command completed successfully." - if NOT present then failed. (look for access denied? )
-	
-	# then ... split by line... 
-	# and ignore first 2 lines ... and the last... 
-	# and return a PSCustomObject with name, and status (skip type - i don't need that)
-	# er, maybe only report on  type = "Counter" ... 
-}
-
 filter Get-WindowsServerVersion {
-	[System.Version]$Version = [System.Environment]::OSVersion.Version;
+	param (
+		[System.Version]$Version = [System.Environment]::OSVersion.Version
+	);
 	
 	# https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions#Server_versions
 	if ($Version.Major -eq 10) {
@@ -101,179 +219,12 @@ filter Get-WindowsServerVersion {
 	}
 }
 
-function Install-DataCollector {
-	param (
-		[Parameter(Mandatory)]
-		[string]$CollectorName,
-		[Parameter(Mandatory)]
-		[string]$ConfigFilePath,
-		[switch]$Force
-	);
-	
-	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
-	if ('<EMPTY>' -ne $status) {
-		if ($Force) {
-			Uninstall-DataCollector -CollectorName $CollectorName -Force;
-		}
-		else {
-			throw "Data Collector Set: [$CollectorName] already exists. Remove or specify -Force.";
-		}
-	}
-	
-	if (-not (Test-Path -Path $ConfigFilePath -ErrorAction Stop)) {
-		throw "Invalid -ConfigFilePath arugment specified. Path: [$ConfigFilePath] not found (or access denied).";
-	}
-	
-	Invoke-Expression "logman.exe import `"$CollectorName`" -xml `"$ConfigFilePath`"" | Out-Null;
-	
-	Enable-DataCollectorAutoStart -CollectorName $CollectorName;
-}
-
-function Remove-DataCollectorFiles {
-	param (
-		[Parameter(Mandatory)]
-		[string]$CollectorName,
-		[Parameter(Mandatory)]
-		[int]$DaysToKeep
-	);
-	
-	$threshold = (Get-Date).AddDays(0 - $DaysToKeep);
-	$directory = Join-Path -Path "C:\PerfLogs\" -ChildPath $CollectorName;
-	
-	Get-ChildItem $directory | Where-Object {
-		$_.CreationTime -lt $threshold
-	} | Remove-Item -Force;
-}
-
-function Start-DataCollector {
-	param (
-		[Parameter(Mandatory)]
-		[string]$CollectorName
-	);
-	
-	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
-	if ('<EMPTY>' -eq $status) {
-		throw "Data Collector Set: [$CollectorName] does NOT exist.";
-	}
-	
-	if ('Running' -ne $status) {
-		$startError = $null;
-		try {
-			Start-SMPerformanceCollector -CollectorName $CollectorName;
-		}
-		catch {
-			$startError = $_;
-		}
-		
-		if ($startError -eq $null) {
-			return;
-		}
-
-		$results = Invoke-Expression "logman.exe start `"$CollectorName`"";
-		if ("The command completed successfully." -ne $results) {
-			throw "Error STARTING Data Collector Set [$CollectorName]: $results";
-		}
-	}
-}
-
-function Stop-DataCollector {
-	param (
-		[Parameter(Mandatory)]
-		[string]$CollectorName
-	);
-	
-	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
-	if ('<EMPTY>' -eq $status) {
-		return;
-	}
-	
-	if ('Stopped' -ne $status) {
-		$stopError = $null;
-		try {
-			Stop-SMPerformanceCollector -CollectorName $CollectorName;
-		}
-		catch {
-			$stopError = $_;
-		}
-		
-		if ($stopError -eq $null) {
-			return;
-		}
-		
-		Invoke-Expression "logman.exe stop `"$CollectorName`"" | Out-Null;
-	}
-}
-
-function Uninstall-DataCollector {
-	param (
-		[Parameter(Mandatory)]
-		[string]$CollectorName,
-		[switch]$Force
-	);
-	
-	$status = Get-DataCollectorStatus -CollectorName $CollectorName;
-	if ('<EMPTY>' -eq $status) {
-		return;
-	}
-	
-	if (-not ($Force)) {
-		
-	}
-	
-	Stop-DataCollector -CollectorName $CollectorName;
-	Invoke-Expression "logman.exe delete `"$Name`"" | Out-Null;
-}
-
-function Test-IsUserLocalGroupMember {
-	param (
-		[Parameter(Mandatory)]
-		[string]$Group,
-		[string]$Member = $($env:USERNAME)  
-	);
-	
-	$match = Get-LocalGroupMember -Group $Group -Member $Member -ErrorAction SilentlyContinue;
-	
-	if ($match) {
-		return $true;
-	}
-	
-	return $false;
-}
-
-function Test-PerformanceGroupMembership {
-	param (
-		[Parameter(Mandatory)]
-		[string]$Member	
-	);
-	
-	# SQL Server Shouldn't (EVER) be running as a member of Local Admins (or even Power Users) - but an interactive user might be:
-	if ((Test-IsUserLocalGroupMember -Group "Administrators" -Member $Member) -or (Test-IsUserLocalGroupMember -Group "Power Users" -Member $Member)) {
-		return "Both (Admin/PowerUser)";
-	}
-	
-	[string[]]$perms = @();
-	if ((Test-IsUserLocalGroupMember -Group "Performance Log Users" -Member $Member)) {
-		$perms += "Write";
-	}
-	
-	if ((Test-IsUserLocalGroupMember -Group "Performance Monitor Users" -Member $Member)) {
-		$perms += "Read";
-	}
-	
-	switch ($perms.Count) {
-		0 { return "None"; }
-		1 { return $perms[0]; }
-		2 { return "Both"; }
-	}
-}
-
 
 # SIG # Begin signature block
-# MIIqkwYJKoZIhvcNAQcCoIIqhDCCKoACAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDqUIkhTRimuzvV
-# ZzCUJF/CovevCAguiSlLqwSSsulG6qCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
->>>>>>> feature/S4-691:Code Library/lib/admindb.core.ps1
+# xxxx this got destroyed during a manual merge. xxxxxxxxxxxxxxxxx
+# BgEEAYI3AgE      NEEDS TO BE REGENERATED      QQH8w7YFlLCE63JNLG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCylbxCB1/k57rp
+# P5jL4rht0b/mbo+Y1ar7So+UkxqMSKCCJQ4wggWDMIIDa6ADAgECAg5F5rsDgzPD
 # hWVI5v9FUTANBgkqhkiG9w0BAQwFADBMMSAwHgYDVQQLExdHbG9iYWxTaWduIFJv
 # b3QgQ0EgLSBSNjETMBEGA1UEChMKR2xvYmFsU2lnbjETMBEGA1UEAxMKR2xvYmFs
 # U2lnbjAeFw0xNDEyMTAwMDAwMDBaFw0zNDEyMTAwMDAwMDBaMEwxIDAeBgNVBAsT
@@ -471,56 +422,31 @@ function Test-PerformanceGroupMembership {
 # GGzNmTqazSZwROZmmJwlHhlqx9jz5/+mNXf79X27jILHb31UMrvqmQs56CBRFS+J
 # 4yrhxSDzenhOPa8XYpJUjSeMkDfc4ynoQpO2+DsrC5lQuOQ0Bpgj7urftVS7rtvx
 # 6t1y+UXtsdpDO4D8b2zf3JFtuKXU73XNZUxkLFnfEy4CG0v6BJPAuzcdH7Ig008z
-# rxahHMCqqIgxggTbMIIE1wIBATCBjzB7MQswCQYDVQQGEwJVUzEOMAwGA1UECAwF
+# rxahHMCqqIgxggTdMIIE2QIBATCBjzB7MQswCQYDVQQGEwJVUzEOMAwGA1UECAwF
 # VGV4YXMxEDAOBgNVBAcMB0hvdXN0b24xETAPBgNVBAoMCFNTTCBDb3JwMTcwNQYD
 # VQQDDC5TU0wuY29tIEVWIENvZGUgU2lnbmluZyBJbnRlcm1lZGlhdGUgQ0EgUlNB
 # IFIzAhB5w2lRigPnF+NXyyeBVD75MA0GCWCGSAFlAwQCAQUAoEwwGQYJKoZIhvcN
-<<<<<<< HEAD:Code Library/lib/RemoveOldCollectorSetFiles.ps1
-# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIJqoRuvdsryHrOf/NrAQ
-# mWFu4c3KD0dG2xvb6cNePUSqMAsGByqGSM49AgEFAARmMGQCMAXgA7GrGwoT7FSz
-# /8yWwHD59mXN1D/m6+gNjTHiY6haMCqhB4Ds7+MIemZXe3jf7wIwLkiPsGT1mWhS
-# xl69J8xvoXFgDsyNXktiXyCjBElzp7H3NVeb/M0tcF7S9jh+7LHCoYIDbDCCA2gG
-=======
-# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIFD8l759FrwNN0S6WHPo
-# QQpE9ybFComjjRWK2Oq2ovAyMAsGByqGSM49AgEFAARmMGQCME7tdCwFk8At0Vam
-# 3zAtWBcsAEG/OnuASU4k9ZpoIIwataPNRAUBhkdIeqVA/6VFIwIwXFe+CabNwOI/
-# pga6Ep7xDGILfJTeQaTXMf+aTsz2SjRA95OlK7ykWMYNzC0UoucRoYIDbDCCA2gG
->>>>>>> feature/S4-691:Code Library/lib/admindb.core.ps1
-# CSqGSIb3DQEJBjGCA1kwggNVAgEBMG8wWzELMAkGA1UEBhMCQkUxGTAXBgNVBAoT
+# AQkDMQwGCisGAQQBgjcCAQQwLwYJKoZIhvcNAQkEMSIEIMR1a1TJNhCRWckHNi/b
+# hDETEKNqq0mdcVtvupAYRxRFMAsGByqGSM49AgEFAARoMGYCMQDec+LVIfWbDVxD
+# TRUw+r24DwNza9EJs8yE4akVeR3IO5+9hpOn1QBbilY+R7cXGt8CMQDBNcf5552e
+# 2KbWmjolpQhWawAXzcZOR0JHuW8Qq5orsDCXhIrSjZjdDDl06KP+O4WhggNsMIID
+# aAYJKoZIhvcNAQkGMYIDWTCCA1UCAQEwbzBbMQswCQYDVQQGEwJCRTEZMBcGA1UE
+# ChMQR2xvYmFsU2lnbiBudi1zYTExMC8GA1UEAxMoR2xvYmFsU2lnbiBUaW1lc3Rh
+# bXBpbmcgQ0EgLSBTSEEzODQgLSBHNAIQAVzAivObtFNzlonHGoKdMjALBglghkgB
+# ZQMEAgGgggE9MBgGCSqGSIb3DQEJAzELBgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkF
+# MQ8XDTI1MTAwNjIyNTE0N1owKwYJKoZIhvcNAQk0MR4wHDALBglghkgBZQMEAgGh
+# DQYJKoZIhvcNAQELBQAwLwYJKoZIhvcNAQkEMSIEIAynEl57JlOiQqu8nny9rbqn
+# TT0lj6kuaxvycbDdscnaMIGkBgsqhkiG9w0BCRACDDGBlDCBkTCBjjCBiwQUcF/a
+# glQy8/WHK+2/I6ygJLqjW1UwczBfpF0wWzELMAkGA1UEBhMCQkUxGTAXBgNVBAoT
 # EEdsb2JhbFNpZ24gbnYtc2ExMTAvBgNVBAMTKEdsb2JhbFNpZ24gVGltZXN0YW1w
-# aW5nIENBIC0gU0hBMzg0IC0gRzQCEAFcwIrzm7RTc5aJxxqCnTIwCwYJYIZIAWUD
-# BAIBoIIBPTAYBgkqhkiG9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEP
-<<<<<<< HEAD:Code Library/lib/RemoveOldCollectorSetFiles.ps1
-# Fw0yNjA0MDcyMjQzMTNaMCsGCSqGSIb3DQEJNDEeMBwwCwYJYIZIAWUDBAIBoQ0G
-# CSqGSIb3DQEBCwUAMC8GCSqGSIb3DQEJBDEiBCDzGHt6jm0c01jrms3HoHNMpX7k
-# intdstlJdSd8pe4ksDCBpAYLKoZIhvcNAQkQAgwxgZQwgZEwgY4wgYsEFHBf2oJU
-# MvP1hyvtvyOsoCS6o1tVMHMwX6RdMFsxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBH
-# bG9iYWxTaWduIG52LXNhMTEwLwYDVQQDEyhHbG9iYWxTaWduIFRpbWVzdGFtcGlu
-# ZyBDQSAtIFNIQTM4NCAtIEc0AhABXMCK85u0U3OWiccagp0yMA0GCSqGSIb3DQEB
-# CwUABIIBgHFn7icPE7tG2YSWoB0B+TaSWUKNKIIskvVDcgndyQc03hrIe6RyCOOZ
-# tCEfpEB9c+IWmHLmtsQ3bizBSK5tEbzbVqof8hP/U8O/3mIcCJF3VGaRO8+7OxGs
-# uoe/vpfcG/rH4Zt9d8pSDEeZaRNs48D4jqFLGNC6254ihIzgJEc2zFepv+qbmJ1x
-# wLCfYTNKx8uYa2AeBPfyiiii6+gB0ORO1JUUm4/Xvf8Ch9FS8Ny06QzzldCJQRzW
-# AcaN9caDAWSbd0I3L7ms6eOwMJbnL1keacSnXVt5Zrjshf3bwENDSdQMhL0ExEpD
-# jThnnNbXtDxTUMqAdVP+zvSu+4fk7jXapJQ9kctKWQK439oyj8w6193bzsGqr+qb
-# 73TTKCDOpdJV6E33M3e7GnQWjt2qIskWNg7b/El4bWeT7IZ9mPF0zt3uP/ea7IuQ
-# djgnHkFIT+jGuMLsIPyzEB4i3VgbYn/Ze93N+5lEETlIzkTwU6MeJgdD10iqag+q
-# AGm0ZEuSsg==
-=======
-# Fw0yNTEwMDcxODUwMjdaMCsGCSqGSIb3DQEJNDEeMBwwCwYJYIZIAWUDBAIBoQ0G
-# CSqGSIb3DQEBCwUAMC8GCSqGSIb3DQEJBDEiBCChxbYwJniEUzGwYueSeczvvUdu
-# rq+eKmu4G+tFLpp8tzCBpAYLKoZIhvcNAQkQAgwxgZQwgZEwgY4wgYsEFHBf2oJU
-# MvP1hyvtvyOsoCS6o1tVMHMwX6RdMFsxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBH
-# bG9iYWxTaWduIG52LXNhMTEwLwYDVQQDEyhHbG9iYWxTaWduIFRpbWVzdGFtcGlu
-# ZyBDQSAtIFNIQTM4NCAtIEc0AhABXMCK85u0U3OWiccagp0yMA0GCSqGSIb3DQEB
-# CwUABIIBgG/4nyGHiEyw6EY+VmD2lRT+Q6zFC4YYZGdYcMJNN/DyRG62vmtr1G+G
-# 8gWe1VS6jKUSlRXqbBru72pH6cX+v8dUez0UTqrmTFhsM1pt2MRmO0m4DOB1WPve
-# +rfBoVu5lviEszdOFUEdlfvlqNsZc+3nHlrXQJSGQQsljVl+ProuhoK9c8MneJjj
-# 1xjDMNbRCurt/ETptBnCLm/wovb8h6f6IOWF/re/xsk4QMufYk8jkozZw9tNchpD
-# R/wvZUCSebQqY8PGlGZPRnWwYiCIWs+SskFKE8It6j+B65mJVgKHSArptfnt82q3
-# i10ki6p041iLEiKxUm1R4vqdZzhdKj/HZRz78LTlGZRH3FGhJnAiomHwf5MkOk1L
-# LI9LYXVbD+xe2tZ6hyqJHh8jhvgnIvEPW5AKRBHfT0jReTsUcPDdQtRRO5jyUytQ
-# JmUiwA6+/smJal2lNkICDlPzQHNDW+fbNzebzz8pKGHVUhz+gXmNDu+pukLU0c3z
-# UVN3MnDTVg==
->>>>>>> feature/S4-691:Code Library/lib/admindb.core.ps1
+# aW5nIENBIC0gU0hBMzg0IC0gRzQCEAFcwIrzm7RTc5aJxxqCnTIwDQYJKoZIhvcN
+# AQELBQAEggGAJnOmyUuSrcHWl7WrLu1TZm5ND3bcYJq2Uer7W5xuOp7tLmk0qzaL
+# rCS1sY2Nebu4IQNHAYWhbW48y4u/VtpQUH/6wdEWMveJ/ubsECtwlrSR0oBnWQda
+# +G8ACbivqAj5r3fQMjBh8mZAaToNkBIcUZRxeadWgKCJJHy2tbJ57657qPVVh+NJ
+# cO3h31bFO+/ArYrQiu1mpu4nuvj9JHg4Cy+qXJYvoNHLNZu6/ixCqUtn9tGRKnJx
+# ncyYEUilE9TNdhNfg9mDZsuIzdhT9eIC6/ZZkHEV3DjA7guVCEzagwaerq9hrJHn
+# NwXhaYhTur+gZGyoG9vNXPs4ch2h/cQm39Hye54EzQfWZldKzlx3cYL9HbT3Gr9k
+# E1c9iw3+NFJcjrArMW//kPh40XOrLpmYmvv+4BczNc9TlN8B/mwTlS1L72wSsqZh
+# oVFmyWR41szkHif16uFcbA/hE1a0iKdO7MlbqW77zDf1SN8k4GYNDo1weCai9nkM
+# 664SX17gtXl5
 # SIG # End signature block
