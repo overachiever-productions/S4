@@ -60,7 +60,7 @@ AS
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @job_name = NULLIF(@job_name, N'');
 	SET @latest_only = ISNULL(@latest_only, 1);
-
+	
 	IF @job_id IS NULL AND @job_name IS NULL BEGIN 
 		RAISERROR(N'Please specify inputs for either @job_id OR @job_name.', 16, 1);
 		RETURN -1;
@@ -131,14 +131,15 @@ AS
 			[h].[run_time],
 			[h].[weekday],
 			[h].[run_seconds],
-			[h].[run_status]
+			[h].[run_status], 
+			[h].[sql_message_id], 
+			[h].[sql_severity], 
+			[h].[message]
 		FROM 
 			dbo.[job_histories]() [h]
 		WHERE 
 			[h].[job_name] = @job_name
 			AND [h].[run_time] >= DATEADD(MONTH, -3, GETDATE())		 -- MKC: BUG -> https://overachieverllc.atlassian.net/browse/S4-761
-
---AND NOT ([h].[step_id] = 0 AND [h].[run_time] = '2025-12-28 09:45:00.000')
 	), 
 	lagged AS ( 
 		SELECT
@@ -150,7 +151,10 @@ AS
 			[run_time], 
 			[weekday], 
 			[run_seconds], 
-			[run_status]
+			[run_status], 
+			[sql_message_id], 
+			[sql_severity],
+			[message]
 		FROM 
 			[translated]
 	)
@@ -165,7 +169,10 @@ AS
 		[run_time],
 		[weekday],
 		[run_seconds],
-		[run_status] 
+		[run_status], 
+		[sql_message_id], 
+		[sql_severity], 
+		[message]
 	INTO
 		#jobHistory
 	FROM 
@@ -187,17 +194,17 @@ AS
 	GROUP BY 
 		[job_name], 
 		[step_id];
-
+	
 	IF @latest_only = 1 BEGIN
-		DELETE FROM [#jobHistory] WHERE [row_number] < (SELECT MAX([instance]) FROM [#jobHistory]);
+		DELETE FROM [#jobHistory] WHERE [row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [instance] IS NOT NULL);
 	  END;
 	ELSE BEGIN
 		DELETE FROM [#jobHistory] 
 		WHERE 
-			[row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [run_time] < @history_start)
-			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end);
+			[row_number] < (SELECT MAX([instance]) FROM [#jobHistory] WHERE [run_time] < @history_start AND [instance] IS NOT NULL)
+			AND [row_number] > (SELECT MIN([instance]) FROM [#jobHistory] WHERE [run_seconds] > @history_end AND [instance] IS NOT NULL);
 	END;
-	
+
 	WITH instance_starts AS ( 
 		SELECT 
 			[row_number],
@@ -225,7 +232,7 @@ AS
 	WITH correlated AS ( 
 		SELECT 
 			[h].[row_number],
-			CASE WHEN [h].[instance] IS NOT NULL THEN [h].[instance] ELSE (SELECT MAX([x].[instance]) FROM [#jobHistory] [x] WHERE [x].[row_number] <= [h].[row_number]) END [instance]
+			CASE WHEN [h].[instance] IS NOT NULL THEN [h].[instance] ELSE (SELECT MAX([x].[instance]) FROM [#jobHistory] [x] WHERE [x].[row_number] <= [h].[row_number] AND [x].[instance] IS NOT NULL) END [instance]
 		FROM 
 			[#jobHistory] [h]
 	) 
@@ -238,8 +245,6 @@ AS
 		INNER JOIN #jobHistory [x] ON [c].[row_number] = [x].[row_number]
 	WHERE 
 		x.[instance] IS NULL;
-
---DELETE FROM [#jobHistory] WHERE [instance] = 43 AND [step_id] IN (3,4,6);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Project or RETURN:
@@ -260,7 +265,10 @@ AS
 				END
 			END [outcome],
 			[h].[run_time],
-			dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
+			dbo.[format_timespan](1000 * [h].[run_seconds]) [duration], 
+			[h].[sql_message_id], 
+			[h].[sql_severity], 
+			[h].[message]
 		FROM 
 			[#frame] [x]
 			LEFT OUTER JOIN [#jobHistory] [h] ON [x].[instance] = [h].[instance] AND [x].[step_id] = [h].[step_id]
@@ -272,7 +280,6 @@ AS
 	END;	
 
 	SELECT 
-		--[x].[instance],
 		CASE WHEN [x].[step_id] = 0 THEN @job_name ELSE N'' END [job_name],
 		[x].[step_id], 
 		[x].[step_name],
@@ -287,7 +294,10 @@ AS
 			END
 		END [outcome],
 		[h].[run_time],
-		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration]
+		dbo.[format_timespan](1000 * [h].[run_seconds]) [duration], 
+		[h].[sql_message_id], 
+		[h].[sql_severity], 
+		[h].[message]
 	FROM 
 		[#frame] [x]
 		LEFT OUTER JOIN [#jobHistory] [h] ON [x].[instance] = [h].[instance] AND [x].[step_id] = [h].[step_id]
