@@ -846,7 +846,7 @@ ALTER DATABASE ' + QUOTENAME(@currentDatabase) + N' SET SINGLE_USER WITH ROLLBAC
 			IF @cloudType = N'S3' BEGIN 
 				SET @cloudExecutionType = N'PS';
 				SET @cloudfullOffSitePath = N'S3::' + @cloudBucketName + N':' + @cloudFullFileKey;		
-				SET @command = N'Write-S3Object -BucketName ''' + @cloudBucketName + N''' -Key ''' + @cloudFullFileKey + N''' -File ''' + @backupPath + N'\' + @backupName + N''' -ConcurrentServiceRequest 2';
+				SET @command = N'Write-S3Object -BucketName ''' + @cloudBucketName + N''' -Key ''' + REPLACE(@cloudFullFileKey, N'\', N'/') + N''' -File ''' + @backupPath + N'\' + @backupName + N''' -ConcurrentServiceRequest 2';
 			  END;
 			ELSE BEGIN 
 				SET @cloudExecutionType = N'SHELL';

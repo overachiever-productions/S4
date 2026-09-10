@@ -97,7 +97,7 @@ AS
 	[s].[dropped_event_count],
 	[s].[dropped_buffer_count],
 	[s].[blocked_event_fire_time],
-	[s].[create_time] /* Pretty much pointless as per: https://dba.stackexchange.com/q/255387/6100 */,{version_specific}
+	[s].[create_time] /* Pretty much pointless as per: https://dba.stackexchange.com/q/255387/6100; UPDATE:Err... it''s how determine if running/stopped. */,{version_specific}
 	[t].[target_data],
 	[t].[bytes_written]	
 FROM 
@@ -161,9 +161,9 @@ WHERE
 	EXEC sp_executesql 
 		@sql; 
 
-	DECLARE @finalProjection nvarchar(MAX) = N'	SELECT 
+	DECLARE @finalProjection nvarchar(MAX) = N'SELECT {SELECTXML}
 		[d].[name] [session_name],
-		CASE WHEN [s].[name] IS NULL THEN N''stopped'' ELSE N''RUNNING'' END [status],
+		CASE WHEN (SELECT TOP (1) [r].[create_time] FROM [#states] [r] WHERE [d].[name] = [r].[name]) IS NULL THEN N''STOPPED'' ELSE N''RUNNING'' END [status],
 		REPLACE(REPLACE([d].[event_retention_mode_desc], N''ALLOW_'', N''''), N''_EVENT_LOSS'', N'''') [loss_mode],
 		[d].[max_dispatch_latency] / 1000 [latency],
 		[d].[max_memory] / 1024 [buffer_mb],
@@ -173,10 +173,10 @@ WHERE
 		[d].[startup_state] [auto_start],
 		[d].[storage_type],
 		--[s].[buffer_policy_des],
-		[f].[file_name]{diagnostics}
+		CASE WHEN [d].[storage_type] = N''event_file'' THEN [f].[file_name] ELSE UPPER([d].[storage_type]) END [target]{diagnostics}
 	FROM 
 		[#definitions] [d]
-		LEFT OUTER JOIN [#states] [s] ON [d].[name] = [s].[name]
+		LEFT OUTER JOIN [#states] [s] ON [d].[name] = [s].[name] AND [s].[target_data] LIKE N''<'' + UPPER([d].[storage_type]) + N''%'' 
 		LEFT OUTER JOIN [#files] [f] ON [d].[event_session_id] = [f].[event_session_id]{WHERE} 
 	ORDER BY 
 		[d].[name]{FORXML} ;';
@@ -202,9 +202,8 @@ WHERE
 
 	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN -- RETURN instead of project.. 
 		SET @finalProjection = REPLACE(@finalProjection, N'{padding}', N'');	
-
-		SET @finalProjection = REPLACE(@finalProjection, N'{FORXML}', @crlftab + N'FOR XML PATH(''session''), ROOT(''sessions'')');
-		SET @finalProjection = REPLACE(@finalProjection, N'SELECT', N'SELECT @output = (SELECT');
+		SET @finalProjection = REPLACE(@finalProjection, N'{FORXML}', @crlftab + N'FOR XML PATH(N''session''), ROOT(N''sessions'')');
+		SET @finalProjection = REPLACE(@finalProjection, N'{SELECTXML}', N'@output = (SELECT');
 		SET @finalProjection = REPLACE(@finalProjection, N';', N');');
 
 		DECLARE @output xml;
@@ -220,6 +219,7 @@ WHERE
 	END;
 
 	-- If we're still here: PROJECT:
+	SET @finalProjection = REPLACE(@finalProjection, N'{SELECTXML}', N'');
 	SET @finalProjection = REPLACE(@finalProjection, N'{FORXML}', N'');
 	SET @finalProjection = REPLACE(@finalProjection, N'{padding}', N''''' [ ],');
 	

@@ -1,16 +1,17 @@
 /*
 
 
+
 */
 
 USE [admindb];
 GO
 
-IF OBJECT_ID(N'dbo.[deploy_library_code]', N'P') IS NOT NULL
-	DROP PROC  dbo.[deploy_library_code];
+IF OBJECT_ID(N'dbo.[deploy_codelibrary_file]', N'P') IS NOT NULL
+	DROP PROC  dbo.[deploy_codelibrary_file];
 GO
 
-CREATE PROC	dbo.[deploy_library_code]
+CREATE PROC	dbo.[deploy_codelibrary_file]
 	@Key					sysname, 
 	@PrintOnly				bit					= 0
 AS
@@ -85,8 +86,7 @@ AS
 		SET @stringResult = REPLACE(@stringResult, @crlf, N'');
 
 		IF @stringResult = @hash BEGIN 
-			PRINT 'File [' + @file + N'] already deployed to [' + @directory + N'] with up-to-date hash: [' + @hash + N'].';
-			RETURN 0;
+			GOTO Update_Deployed;
 		END;
 	END;
 
@@ -118,6 +118,9 @@ AS
 		RAISERROR(N'Error writing library-file to disk. Path: [%s]. Command: [%s]. Error: [%s].', 16, 1, @path, @command, @errorMessage);
 		RETURN -30;
 	END;	
+
+Update_Deployed:
+	UPDATE dbo.[code_library] SET [last_deployed] = GETDATE() WHERE [library_key] = @Key;
 
 	RETURN 0;
 GO
