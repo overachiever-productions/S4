@@ -47,7 +47,7 @@ Where-Object { $_.DriveLetter } |
                   @{n=''Label''; e={$_.FileSystemLabel}},
 				  @{n=''FileSystem''; e={$_.FileSystemType}},
                   @{n=''SizeGB''; e={[math]::Round($_.Size/1GB, 2)}},
-                  @{n=''FreeGB''; e={[math]::Round($_.SizeRemaining/1GB, 2)}} | ConvertTo-Xml -As Stream; ';
+                  @{n=''FreeGB''; e={[math]::Round($_.SizeRemaining/1GB, 2)}} | ConvertTo-Xml -As Stream -NoTypeInformation;; ';
 
 	DECLARE @returnValue int, @xmlOutput xml, @errorMessage nvarchar(MAX);
 	EXEC @returnValue = dbo.[execute_powershell]

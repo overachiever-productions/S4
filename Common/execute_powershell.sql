@@ -5,10 +5,6 @@
 			> if @SerializedOutput is explicitly set to NULL, then it'll be populated with (attempted) xml output. 
 			> Otherwise, this sproc will simply 'spit out' the string output/reply sent back from posh execution.
 
-
-	vNEXT: 
-		- MIGHT? make sense to have an @StringOutput (and @SerializedXmlOutput vs @serializeOutput) parameter? 
-
 	EXAMPLES: 
 
 			-- text output: 
