@@ -403,16 +403,15 @@ AS
 
 		IF @DotIncludeFile IS NOT NULL BEGIN 
 			IF @DotIncludeFile LIKE N'%{%' BEGIN
-				PRINT N'Signed Code Library Functionality (dot-include by key-name) is not YET supported.';
-				--SET @dotInclude = N'<LOAD A FILE HERE - or throw if signature is no good>';
-				-- TODO: load/initialize the code. As in: 
-				--		check to see if the KEY exists in 'library'. 
-				--				if not, throw. 
-				--		if so, see if the CODE for the KEY exists on disk - and what the CHECKSUM is. 
-				--			if doesn't exist (on disk) or CHECKSUM is different... 
-				--				then stream (OA signed) contents to disk. 
-				--		then, return the PATH for the code in question as @dotInclude. 
-				--		so that the code can be -File'd / dotSource'd. 
+				DECLARE @key sysname = REPLACE(REPLACE(@DotIncludeFile, N'{', N''), N'}', N'');
+				SELECT @dotInclude = [file_path] FROM dbo.[code_library] WHERE [library_key] = @key;
+
+				IF @DotIncludeFile IS NULL BEGIN 
+					RAISERROR(N'CodeLibrary File-Key Token [%s] for parameter @DotFileInclude (translated to [%s]) does not match a valid CodeLibrary Key.', 16, 1, @DotIncludeFile, @key);
+					RETURN -50;
+				END;
+
+				EXEC dbo.[verify_codelibrary_file] @key;
 			  END; 
 			ELSE BEGIN
 				IF IS_SRVROLEMEMBER(N'sysadmin') = 0 BEGIN
@@ -438,6 +437,7 @@ AS
 		SET @xpCmd = CASE WHEN @ExecutionType = N'PS' THEN 'Powershell ' ELSE 'pwsh ' END + N'-noni -c "{dotInclude}' + REPLACE(CAST(@Command AS varchar(2000)), @crlf, ' ') + '"';
 
 		IF @dotInclude IS NOT NULL BEGIN 
+			/* NOTE: This is ... tricky. IF @xpCmd is T-SQL PRINT'd, it'll need 'double' ticks (i.e., NOT what's down below). BUT, when EXECUTED, double-ticks (e.g., . ''C:\Perflogs...'') obviously don't work. */
 			SET @xpCmd = REPLACE(@xpCmd, N'{dotInclude}', N'. ''' + @dotInclude + N'''; ');
 		  END; 
 		ELSE 
@@ -460,15 +460,12 @@ ExecutionAttempt:
 	DELETE FROM #cmd_results;
 
 	IF @PrintOnly = 1 BEGIN 
-		PRINT N'-- xp_cmdshell ''' + @xpCmd + ''';';
-        --PRINT @xpCmd;
+		PRINT N'-- EXEC sys.xp_cmdshell ''' + REPLACE(@xpCmd, N'''', N'''''') + ''';';
 		SET @succeeded = 1; 
 		GOTO Terminate;
 	END;
 
 	BEGIN TRY 
-		--PRINT @xpCmd;
-		
 		INSERT INTO #cmd_results ([result_text]) 
 		EXEC sys.[xp_cmdshell] @xpCmd;
 

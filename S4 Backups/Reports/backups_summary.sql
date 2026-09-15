@@ -7,11 +7,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[backup_summary]','P') IS NOT NULL
-	DROP PROC dbo.[backup_summary];
+IF OBJECT_ID('dbo.[backups_summary]','P') IS NOT NULL
+	DROP PROC dbo.[backups_summary];
 GO
 
-CREATE PROC dbo.[backup_summary]
+CREATE PROC dbo.[backups_summary]
 	@days_back						int					= 1, 
 	@databases						nvarchar(MAX)		= N'{ALL}', 
 	@serialized_output				xml					= N'<default/>'	    OUTPUT

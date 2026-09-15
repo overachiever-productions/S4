@@ -44,13 +44,27 @@ AS
 
 		POWERSHELL CODE:
 
-			$acl = Get-Acl -Path "{directory}\"; 
-			$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("{service}", "FullControl", "ContainerInherit,ObjectInherit", "none", "Allow");
-			$acl.SetAccessRule($rule);
-			Set-Acl -Path "{directory}\" -AclObject $acl;
+			$dirRule = New-Object System.Security.AccessControl.FileSystemAccessRule({service}, ''FullControl'', ''ContainerInherit,ObjectInherit'', ''None'', ''Allow'');
+			$fileRule = New-Object System.Security.AccessControl.FileSystemAccessRule({service}, ''FullControl'', ''None'', ''None'', ''Allow'');
+
+			$acl = Get-Acl -LiteralPath {directory};
+			$acl.SetAccessRule($dirRule);
+			Set-Acl -LiteralPath {directory} -AclObject $acl;
+
+			Get-ChildItem -LiteralPath {directory} -Recurse -Force | ForEach-Object {
+				$acl = Get-Acl -LiteralPath $_.FullName;
+				$acl.SetAccessRule($(if ($_.PSIsContainer) {
+							$dirRule
+						}
+						else {
+							$fileRule
+						}))
+				Set-Acl -LiteralPath $_.FullName -AclObject $acl;
+			}
 
 		CMD.EXE CODE:
-
+			
+			icacls "{directory}\*" /inheritance:e /T /C
 			icacls "{directory}" /grant:r "{service}":(OI)(CI)F
 
 	';

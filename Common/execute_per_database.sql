@@ -189,7 +189,7 @@ AS
 
 			PRINT N'-- TARGET: ' + @currentDatabase + NCHAR(13) + NCHAR(10) + @sql + NCHAR(13) + NCHAR(10);
 
-			CONTINUE;
+			GOTO GoNext;
 		END;
 
 
@@ -217,7 +217,7 @@ AS
 			INSERT INTO @errorDetails ([database_name], [error_message], [dynamic_sql])
 			VALUES (@currentDatabase, @errorMessage, @isolatedCodeLine)
 		END CATCH;
-	
+GoNext:
 		FETCH NEXT FROM [walker] INTO @currentDatabase;
 	END;
 	

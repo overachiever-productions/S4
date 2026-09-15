@@ -1,21 +1,16 @@
 /*
 
-	TODO: Implement dbo.io_freeze_data() ... to shred/translate the XML output ... 
-				
-
-
 	.EXAMPLE
 		
 		```sql
 
 		DECLARE @xml xml; 
 		EXEC dbo.[io_freezes] 
-			@SerializedOutput = @xml OUTPUT; 
+			@serialized_output = @xml OUTPUT; 
 
 		SELECT @xml;
 		
 		```
-
 */
 
 USE [admindb];
@@ -26,19 +21,20 @@ IF OBJECT_ID('dbo.[io_freezes]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[io_freezes]
-	@Start								datetime	= NULL, 
-	@End								datetime	= NULL, 
-	@SerializedOutput					xml			= N'<default/>'	    OUTPUT		
+	@event_data							xml			= NULL,
+	@start								datetime	= NULL, 
+	@end								datetime	= NULL, 
+	@serialized_output					xml			= N'<default/>'	    OUTPUT		
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 	
-	SET @Start = ISNULL(@Start, DATEADD(DAY, -14, GETDATE()));
-	SET @End = ISNULL(@End, GETDATE());
+	SET @start = ISNULL(@start, DATEADD(DAY, -14, GETDATE()));
+	SET @end = ISNULL(@end, GETDATE());
 
-	IF @Start >= @End BEGIN
-		RAISERROR(N'@Start can not be greater than @End.', 16, 1);
+	IF @start >= @end BEGIN
+		RAISERROR(N'@start can not be greater than @end.', 16, 1);
 		RETURN -1;
 	END;
 	
@@ -49,11 +45,12 @@ AS
 		[text] varchar(2048) NOT NULL
 	);
 
-	DECLARE @serialized_output xml;
-	EXEC dbo.[extract_log_events]
-		@start = @Start,
-		@end = @End,
-		@serialized_output = @serialized_output OUTPUT; 
+	IF @event_data IS NULL BEGIN
+		EXEC dbo.[extract_log_events]
+			@start = @start,
+			@end = @end,
+			@serialized_output = @event_data OUTPUT; 
+	END;
 
 	INSERT INTO [#event_log_entries] ([log_date], [process_info], [text])
 	SELECT 
@@ -61,7 +58,7 @@ AS
 		 [process_info],
 		 [text]
 	FROM 
-		dbo.[log_events_data](@serialized_output)
+		dbo.[log_events_data](@event_data)
 	ORDER BY 
 		[row_id];
 	
@@ -116,8 +113,8 @@ AS
 	ORDER BY 
 		[timestamp];
 
-	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN
-		SELECT @SerializedOutput = (
+	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
+		SELECT @serialized_output = (
 			SELECT 
 				[database],
 				[freeze_start],

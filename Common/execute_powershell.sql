@@ -5,10 +5,6 @@
 			> if @SerializedOutput is explicitly set to NULL, then it'll be populated with (attempted) xml output. 
 			> Otherwise, this sproc will simply 'spit out' the string output/reply sent back from posh execution.
 
-
-	vNEXT: 
-		- MIGHT? make sense to have an @StringOutput (and @SerializedXmlOutput vs @serializeOutput) parameter? 
-
 	EXAMPLES: 
 
 			-- text output: 
@@ -65,6 +61,7 @@ GO
 
 CREATE PROC dbo.[execute_powershell]
 	@Command							nvarchar(MAX),
+	@DotIncludeFile						sysname					= NULL,
 	@ExecutionAttemptsCount				int						= 1,								-- TOTAL number of times to try executing process - until either success (no error) or @ExecutionAttemptsCount reached. a value of 1 = NO retries... 
 	@DelayBetweenAttempts				sysname					= N'5s',
 	@PrintOnly							bit						= 0,
@@ -74,6 +71,8 @@ CREATE PROC dbo.[execute_powershell]
 AS
     SET NOCOUNT ON; 
 
+	SET @DotIncludeFile = NULLIF(@DotIncludeFile, N'');
+
 	-- {copyright}
 	
 	DECLARE @commandOutput xml; 
@@ -81,6 +80,7 @@ AS
 
 	EXEC @returnValue = [dbo].[execute_command]
 		@Command = @Command,
+		@DotIncludeFile = @DotIncludeFile,
 		@ExecutionType = N'PS',   
 		@ExecutionAttemptsCount = @ExecutionAttemptsCount,
 		@DelayBetweenAttempts = @DelayBetweenAttempts,

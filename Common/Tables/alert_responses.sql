@@ -64,4 +64,8 @@ IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 178
 	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
 	VALUES	(17835, N'[IGNORE]', 1, 1, N'Encryption is required to connect to this server but the client library does not support encryption; the connection has been closed. Please upgrade your client library.');
 
+--IF NOT EXISTS (SELECT NULL FROM [dbo].[alert_responses] WHERE [message_id] = 17835)
+--	INSERT INTO [dbo].[alert_responses] ([message_id], [response], [is_s4_response], [is_enabled], [notes])
+--	VALUES	(17810, N'[IGNORE]', 1, 1, N'Could not connect because the maximum number of ''1'' dedicated administrator connections already exists. Before a new connection can be made, the existing dedicated administrator connection must be dropped, either by logging off or ending the process.');
+
 GO

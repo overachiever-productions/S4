@@ -30,6 +30,7 @@ AS
 		[reserved_gb] sysname NULL,
 		[data_gb] sysname NULL,
 		[indexes_gb] sysname NULL,
+		[estimated_gb] sysname NULL,
 		[indexes] [int] NOT NULL,
 		[columns] [int] NOT NULL,
 		[triggers] [int] NOT NULL,
@@ -58,7 +59,7 @@ AS
 			GROUP BY
 				[ps].[object_id]	
 	), 
-	expanded AS ( 
+	[expanded] AS ( 
 		SELECT 
 			[m].[object_id],
 			CAST([m].[last_modified] AS date) [last_modified],
@@ -69,7 +70,7 @@ AS
 			CASE WHEN [m].[reserved] > [m].[used] THEN [m].[reserved] - [m].[used] ELSE 0 END * 8 [unused]
 		FROM 
 			[metrics] [m]
-	), 
+	),
 	[indexes] AS (
 		SELECT 
 			[e].[object_id], 
@@ -169,7 +170,9 @@ AS
 		FORMAT([e].[row_count], N''N0'') [row_count],
 		FORMAT([e].[reserved] / 1048576.0, N''N'') [reserved_gb],
 		FORMAT([e].[data] / 1048576.0, N''N'') [data_gb],
-		FORMAT([e].[index_size] / 1048576.0, N''N'') [indexes_gb], 
+		FORMAT([e].[index_size] / 1048576.0, N''N'') [indexes_gb],
+							----FORMAT([ets].[estimated_table_size] / 1048576.0, N''N'') [estimated_gb],
+							--CAST([ets].[estimated_table_size] / 1048576.0 AS DECIMAL(18,2)) [estimated_gb],
 		ISNULL([i].[index_count], 0) [indexes],
 		[c].[column_count] [columns],
 		[s].[triggers],
@@ -199,6 +202,8 @@ AS
 
 	DECLARE @sql nvarchar(MAX) = REPLACE(@template, N'{top}', @Top);
 
+EXEC dbo.print_long_string @sql;
+
 	DECLARE @Errors xml;
 	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
@@ -224,6 +229,7 @@ AS
 						[data_gb],
 						[indexes_gb],
 						[indexes],
+						[estimated_gb],
 						[columns],
 						[triggers],
 						[fks],
@@ -259,6 +265,7 @@ AS
 		[data_gb],
 		[indexes_gb],
 		[indexes],
+		[estimated_gb],
 		[columns],
 		[triggers],
 		[fks],

@@ -1,6 +1,10 @@
 /*
 	REFACTOR/RENAME:
-		dbo.project_table_from_query
+		~dbo.project_table_from_query~
+		dbo.project_table_schema
+
+		ALSO... another option/idea I could use here? 
+			SELECT xxx INTO #temp .. then grab the tempdb schema
 
 
 	CONVENTIONS: 
