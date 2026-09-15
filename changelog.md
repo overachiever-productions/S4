@@ -2,6 +2,39 @@
 
 # Change Log
 
+## [14.4] - 2026-09-15
+xxxxx
+
+### Fixed 
+- Corrected 2x bugs with dbo.`list_xe_sessions` (reporting of duplicate sessions if/when a single session used > 1 target; busted (previously) reporting of running/stopped states).
+- Corrected a (dumb) bug with `dbo.execute_per_databases` when `@print_only` was set to `1`;
+
+### Added
+- Initial addition of `dbo.options` + supporting funcs/etc. for extraction and de-serialization of `@options` overrides.
+- Initial addition of `dbo.alert_state` and `dbo.alert_state_details` for 'dynamic' alert management (i.e., only degrade on initial violations, increased/worse-r violations, and/or resolutions) + track history of changes/states.
+- Formal addition of `dbo.server_configuration` - which should PROBABLY be refactored to `dbo.server_configurationS` - since it reports on `sys.configurations`.
+- Added `dbo.system_disks` to enable disk-usage against disks vs limitations imposed by `sys.dm_os_volume_stats()` (which ONLY provides stats for disks with 1 or more ACTIVELY hosted databases).
+- Addition of `dbo.directory_sizing` - for use in diagnostics (and alerting) for potential issues with disk-usage by C:\PerfLogs, backups, data/log files, etc. 
+- Place-holder / formal - addition of `dbo.aggregated_errorlog`. (Currently JUST 'aggregates' - which is fine. Future versions will offer EASY options to scrub/ignore 'noise' entries from the event logs).
+- Initial addition of `dbo.format_text_width()` - simple helper to assist with left/right (eventually) center alignment of text. 
+- New (trivial) diagnostic: `dbo.column_widths` (initial intention was to leverage this for detection of CAPTIVE PAGES - still working on debugging some LOGIC bombs around that).
+
+### Changed
+- Full overhaul of `dbo.verify_drivespace` - to enable DYNAMIC tracking of problems - i.e., instead of static (repeat) alerts when disk-space drops below TARGET thresholds, no alerts 1x for initial violation, and ONLY for subsequent violations (or correction) that drop below DECREMENT levels (to avoid repeated 'spamming' of inbox with same info).
+- Significant changes/cleanup to various diagnostics tracking tempdb-usage / consumers. 
+- Overhaul of multiple diagnostic-sprocs that 'read' the SQL Server Event Log - to allow SINGLE read of log + serialized 'pass along' of event-data into chained read/analysis routines (effectively the same as allowing caching - to avoid excessive reads on box with HUGE event/error logs).
+- Refactoring of APIs/interfaces for numerous event-store sprocs. 
+- `dbo.format_html_email` no longer REQUIRES `@execution_date` (which caused problems in part due to SQLPrompt defaulting 'hard coded' values into play).
+- `dbo.verify_disk` now uses `dbo.system_disks` to enable evaluation of disk-space monitoring/alerting against ALL disks (not just those with ACTIVE .mdf/.ndf/.ldf) files. 
+- Minor changes to `dbo.hob_history` and `dbo.verify_job_outcome`. 
+- Minor, iterative, changes to `dbo.backups_summary`.
+- MINOR tweaks to XML output of a few diagnostics - to 'flatten' outputs (for simlified visual review (less cluttered/noisy) and to simplify vectoring).
+
+### Known Issues
+- Numerous bugs / glitches with `dbo.tempdb_details` - seriously busted and effectively just a place-holder at this point. 
+- Execution of `dbo.system_disks` will consistently take 2-3 seconds to execute. This is due to PowerShell needing to load various code/modules and/or query underlying disk providers (e.g., if you run `Get-Volume` from a new console, it'll always take a few seconds; close console + re-open, takes a few seconds, etc. (super fast after FIRST query)).
+- This release provides initial addition of additional CodeLibary files/support; CodeLibrary is NOT production-ready (buggy, needs additional testing; included only to enable testing in some environments). 
+
 ## [14.2] - 2026-07-14
 More Monitoring / Diagnostics (tempdb); Job Schedules via TVIF; Additional HTML Formatting.
 
