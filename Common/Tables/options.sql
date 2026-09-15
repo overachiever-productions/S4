@@ -1,5 +1,3 @@
-
-
 USE [admindb];
 GO
 
@@ -20,29 +18,4 @@ IF OBJECT_ID(N'dbo.[options]', N'U') IS NULL BEGIN
 	
 END;
 
-INSERT INTO dbo.[options] ([module], [key], [value], [summary], [example])
-VALUES (
-	N'GLOBAL', -- module - sysname
-	N'@operator', -- key - sysname
-	N'Alerts', -- value - sysname
-	N'', -- summary - nvarchar(1024)
-	NULL -- example - nvarchar(1024)
-), 
-(
-	N'GLOBAL', -- module - sysname
-	N'@profile', -- key - sysname
-	N'General', -- value
-	N'',
-	NULL
-);
-
-
-INSERT INTO [dbo].[options] ([module], [key], [value], [summary], [example])
-VALUES
-(
-	N'dbo.verify_drivespace', -- module - sysname
-	N'@excluded_drives', -- key - sysname
-	N'X, Y', -- value - sysname
-	NULL, -- summary - nvarchar(1024)
-	NULL -- example - nvarchar(1024)
-)
+-- SEE: https://overachieverllc.atlassian.net/browse/S4-944
