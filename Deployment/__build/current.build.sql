@@ -107,6 +107,9 @@ GO
 --##INCLUDE: Common\tables\numbers.sql
 
 -----------------------------------
+--##INCLUDE: Common\tables\options.sql
+
+-----------------------------------
 --##INCLUDE: Common\tables\backup_log.sql
 
 -----------------------------------
@@ -120,6 +123,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\tables\alert_responses.sql
+
+-----------------------------------
+--##INCLUDE: Common\tables\alert_states.sql
+
+-----------------------------------
+--##INCLUDE: Common\tables\alert_state_details.sql
 
 -----------------------------------
 --##INCLUDE: Common\tables\eventstore_extractions.sql
@@ -324,7 +333,16 @@ GO
 --##INCLUDE: Common\engine_version().sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\extract_option.sql
+
+-----------------------------------
+--##INCLUDE: Common\Internal\extract_parameter_option.sql
+
+-----------------------------------
 --##INCLUDE: Common\base64_encode.sql
+
+-----------------------------------
+--##INCLUDE: Common\format_text_width.sql
 
 -----------------------------------
 --##INCLUDE: Common\format_xml_string.sql
@@ -472,6 +490,15 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_id_for_normalized_name.sql
+
+-----------------------------------
+--##INCLUDE: Common\Shreds\log_events_data().sql
+
+-----------------------------------
+--##INCLUDE: Common\Shreds\directory_sizing_data().sql
+
+-----------------------------------
+--##INCLUDE: Common\Shreds\system_disks_data().sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Backups:
@@ -732,6 +759,9 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\aggregated_errorlog.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\vlf_counts.sql
 
 -----------------------------------
@@ -751,6 +781,21 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\io_freezes.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\server_configuration.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Connections\thesevensets_database_settings.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Connections\thesevensets_problem_connections.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Connections\thesevensets_problem_objects.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Connections\thesevensets_server_useroptions.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\filtered_index_obstacles.sql
@@ -783,6 +828,9 @@ GO
 --##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_statistics_by_table.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Schema\column_widths.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\escalated_server_permissions.sql
 
 -----------------------------------
@@ -802,6 +850,15 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Security\server_permissions.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\extract_log_events.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Storage\system_disks.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Storage\directory_sizing.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\TempDb\tempdb_details.sql

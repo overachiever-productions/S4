@@ -3,7 +3,7 @@
 # Change Log
 
 ## [14.4] - 2026-09-15
-xxxxx
+Dynamic disk-space alerting; monitoring/diagnostics for data collector sets; initial seven-sets diagnostics.
 
 ### Fixed 
 - Corrected 2x bugs with dbo.`list_xe_sessions` (reporting of duplicate sessions if/when a single session used > 1 target; busted (previously) reporting of running/stopped states).
@@ -11,6 +11,7 @@ xxxxx
 
 ### Added
 - Initial addition of `dbo.options` + supporting funcs/etc. for extraction and de-serialization of `@options` overrides.
+- Initial addition of multiple 'seven sets' diagnostics to simplify + streamline checks for potential problems with "the Seven Sets" settings at database, object, server(default), and user/application-connection levels. 
 - Initial addition of `dbo.alert_state` and `dbo.alert_state_details` for 'dynamic' alert management (i.e., only degrade on initial violations, increased/worse-r violations, and/or resolutions) + track history of changes/states.
 - Formal addition of `dbo.server_configuration` - which should PROBABLY be refactored to `dbo.server_configurationS` - since it reports on `sys.configurations`.
 - Added `dbo.system_disks` to enable disk-usage against disks vs limitations imposed by `sys.dm_os_volume_stats()` (which ONLY provides stats for disks with 1 or more ACTIVELY hosted databases).
