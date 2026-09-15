@@ -462,6 +462,9 @@ GO
 --##INCLUDE: Common\Internal\transient_error_occurred.sql
 
 -----------------------------------
+--##INCLUDE: Code Library\verify_codelibrary_file.sql
+
+-----------------------------------
 --##INCLUDE: Common\execute_command.sql
 
 -----------------------------------
@@ -490,15 +493,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Internal\load_id_for_normalized_name.sql
-
------------------------------------
---##INCLUDE: Common\Shreds\log_events_data().sql
-
------------------------------------
---##INCLUDE: Common\Shreds\directory_sizing_data().sql
-
------------------------------------
---##INCLUDE: Common\Shreds\system_disks_data().sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Backups:
@@ -534,9 +528,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: Code Library\codelibrary_file.sql
-
------------------------------------
---##INCLUDE: Code Library\verify_codelibrary_file.sql
 
 -----------------------------------
 --##INCLUDE: Code Library\deploy_codelibrary_file.sql
@@ -1223,6 +1214,19 @@ END;
 
 -----------------------------------
 --##INCLUDE: Common\Internal\list_nonaccessible_databases.sql
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Shreds:
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------
+--##INCLUDE: Common\Shreds\log_events_data().sql
+
+-----------------------------------
+--##INCLUDE: Common\Shreds\directory_sizing_data().sql
+
+-----------------------------------
+--##INCLUDE: Common\Shreds\system_disks_data().sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Auditing:
