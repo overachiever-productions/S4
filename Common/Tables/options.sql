@@ -20,29 +20,32 @@ IF OBJECT_ID(N'dbo.[options]', N'U') IS NULL BEGIN
 	
 END;
 
+-- TEMPORARY HACK: https://overachieverllc.atlassian.net/browse/S4-943
+TRUNCATE TABLE dbo.[options];
+
 INSERT INTO dbo.[options] ([module], [key], [value], [summary], [example])
 VALUES (
-	N'GLOBAL', -- module - sysname
-	N'@operator', -- key - sysname
-	N'Alerts', -- value - sysname
-	N'', -- summary - nvarchar(1024)
-	NULL -- example - nvarchar(1024)
+	N'GLOBAL',
+	N'@operator',
+	N'Alerts',
+	N'',
+	NULL 
 ), 
 (
-	N'GLOBAL', -- module - sysname
-	N'@profile', -- key - sysname
-	N'General', -- value
+	N'GLOBAL',
+	N'@profile',
+	N'General',
 	N'',
 	NULL
 );
 
 
-INSERT INTO [dbo].[options] ([module], [key], [value], [summary], [example])
-VALUES
-(
-	N'dbo.verify_drivespace', -- module - sysname
-	N'@excluded_drives', -- key - sysname
-	N'X, Y', -- value - sysname
-	NULL, -- summary - nvarchar(1024)
-	NULL -- example - nvarchar(1024)
-)
+--INSERT INTO [dbo].[options] ([module], [key], [value], [summary], [example])
+--VALUES
+--(
+--	N'dbo.verify_drivespace', 
+--	N'@excluded_drives', 
+--	N'X, Y', 
+--	NULL, 
+--	NULL 
+--)
