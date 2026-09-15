@@ -165,10 +165,10 @@ FROM
 		IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 			SELECT @serialized_output = (
 				SELECT 
-					[log_date],
-					[principal],
-					[reason],
-					[ip] 
+					[principal] [@principal],
+					[ip] [@ip],
+					[log_date] [@date],
+					[reason] [*]
 				FROM 
 					[#login_failures] 
 				ORDER BY 
@@ -195,10 +195,10 @@ FROM
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		SELECT @serialized_output = (
 			SELECT 
-				[principal], 
-				[ip], 
-				COUNT(*) [fail_count],
-				[reason] 
+				[principal] [@principal], 
+				[ip] [@ip], 
+				COUNT(*) [@fail_count],
+				[reason] [*]
 			FROM 
 				#login_failures 
 			GROUP BY
