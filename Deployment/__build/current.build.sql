@@ -533,10 +533,13 @@ GO
 --##INCLUDE: Code Library\create_code_formatfile.sql
 
 -----------------------------------
---##INCLUDE: Code Library\load_library_code.sql
+--##INCLUDE: Code Library\codelibrary_file.sql
 
 -----------------------------------
---##INCLUDE: Code Library\deploy_library_code.sql
+--##INCLUDE: Code Library\verify_codelibrary_file.sql
+
+-----------------------------------
+--##INCLUDE: Code Library\deploy_codelibrary_file.sql
 
 -----------------------------------
 --##INCLUDE: Code Library\initialize_codelibrary.sql
@@ -879,10 +882,10 @@ GO
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_list_forced_plans.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\VersionStore\list_versionstore_transactions.sql
+--##INCLUDE: S4 Diagnostics\TempDb\versionstore_consumers.sql
 
 -----------------------------------
---##INCLUDE: S4 Diagnostics\VersionStore\list_versionstore_generators.sql
+--##INCLUDE: S4 Diagnostics\TempDb\versionstore_generators.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Extended Events
