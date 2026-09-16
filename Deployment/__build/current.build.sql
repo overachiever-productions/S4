@@ -208,6 +208,7 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
 	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
 	<entry schema="dbo" name="list_running_jobs" type="P" comment="v14.2 refactoring." />
+	<entry schema="dbo" name="translate_io_perfcounters" type="P" comment="v14.5 refactoring. (removed ''perf'' from name)." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -1096,7 +1097,7 @@ GO
 --##INCLUDE: S4 Capacity Planning\extraction\translate_cpu_counters.sql
 
 -----------------------------------
---##INCLUDE: S4 Capacity Planning\extraction\translate_io_perfcounters.sql
+--##INCLUDE: S4 Capacity Planning\extraction\translate_io_counters.sql
 
 -----------------------------------
 --##INCLUDE: S4 Capacity Planning\extraction\translate_memory_counters.sql
