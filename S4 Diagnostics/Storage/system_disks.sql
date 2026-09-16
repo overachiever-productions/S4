@@ -68,12 +68,15 @@ Where-Object { $_.DriveLetter } |
 		[r].[disk].value(N'(Property[@Name="Drive"]/text())[1]', N'sysname') [drive], 
 		[r].[disk].value(N'(Property[@Name="Label"]/text())[1]', N'sysname') [label],
 		[r].[disk].value(N'(Property[@Name="FileSystem"]/text())[1]', N'sysname') [file_system],
-		[r].[disk].value(N'(Property[@Name="SizeGB"]/text())[1]', N'decimal(6,2)') [size_gb],
-		[r].[disk].value(N'(Property[@Name="FreeGB"]/text())[1]', N'decimal(6,2)') [free_gb]
+		[r].[disk].value(N'(Property[@Name="SizeGB"]/text())[1]', N'decimal(14,2)') [size_gb],
+		[r].[disk].value(N'(Property[@Name="FreeGB"]/text())[1]', N'decimal(14,2)') [free_gb]
 	INTO 
 		#disks
 	FROM 
 		@xmlOutput.nodes(N'/Objects/Object') [r]([disk]);
+
+	/* PREVENT divide-by-zero errors for (typically) CD/DVD drives. */
+	DELETE FROM [#disks] WHERE [size_gb] = 0. AND [free_gb] = 0.;
 
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 
