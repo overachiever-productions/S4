@@ -6,11 +6,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.translate_io_perfcounters','P') IS NOT NULL
-	DROP PROC dbo.[translate_io_perfcounters];
+IF OBJECT_ID('dbo.translate_io_counters','P') IS NOT NULL
+	DROP PROC dbo.[translate_io_counters];
 GO
 
-CREATE PROC dbo.[translate_io_perfcounters]
+CREATE PROC dbo.[translate_io_counters]
 	@SourceTable			sysname, 
 	@TargetTable			sysname, 
 	@OverwriteTarget		bit				= 0, 
