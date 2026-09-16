@@ -2,6 +2,17 @@
 
 # Change Log
 
+## [14.5] - 2026-09-16
+Bug-Fixes for multiple problems in v14.4. 
+
+### Fixed
+- Corrected (non-idempotency) bug with `dbo.options` attempting to 'spam' in place-holders (causing problems with rewrites of `dbo.verify_drivespace`, etc.)
+- Minor formatting / documentation updates for `dbo.initialize_codelibrary` + idempotency changes for deployment of `[last_deployed]` column for `dbo.code_library`.
+- Minor refactoring + bug-fix for 'odd' scenarios where Granted Workspace Mem counters can/will report `''` (empty) values for/against `dbo.translate_memory_counters`.
+
+### Known Issues
+Everything outlined in v 14.4 is still in effect vs v14.5. 
+
 ## [14.4] - 2026-09-15
 Dynamic disk-space alerting; monitoring/diagnostics for data collector sets; initial seven-sets diagnostics.
 
