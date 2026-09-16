@@ -202,8 +202,6 @@ AS
 
 	DECLARE @sql nvarchar(MAX) = REPLACE(@template, N'{top}', @Top);
 
-EXEC dbo.print_long_string @sql;
-
 	DECLARE @Errors xml;
 	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
