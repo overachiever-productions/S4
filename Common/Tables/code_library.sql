@@ -36,8 +36,14 @@ IF OBJECT_ID(N'dbo.[code_library]', N'U') IS NULL BEGIN
 	);
 
 	CREATE NONCLUSTERED INDEX [IX_code_library_library_key] ON dbo.[code_library] ([library_key]);
+  END;
+ELSE BEGIN
+	IF NOT EXISTS (SELECT NULL FROM sys.[columns] WHERE [object_id] = OBJECT_ID(N'dbo.code_library', N'U') AND [name] = N'last_deployed') BEGIN
+		EXEC(N'ALTER TABLE dbo.[code_library] ADD [last_deployed] datetime NULL;');
+	END;
 END;
 GO
+
 
 IF OBJECT_ID(N'dbo.[code_view]', N'V') IS NULL BEGIN
 	EXEC(N'CREATE VIEW [dbo].[code_view] AS SELECT [code] FROM dbo.[code_library];');
