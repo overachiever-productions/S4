@@ -133,7 +133,7 @@ AS
 		TRY_CAST([{timeZone}] AS datetime) [timestamp],
 		N''' + @serverName + N''' [server_name],
 		CAST(['+ @instanceNamePrefix + N'Buffer Manager\Page life expectancy] as int) [ple],
-		CAST((['+ @instanceNamePrefix + N'Memory Manager\Granted Workspace Memory (KB)] / (1024.0 * 1024.0)) as decimal(22,2)) [granted_workspace_memory_GBs],
+		CAST((TRY_CAST(['+ @instanceNamePrefix + N'Memory Manager\Granted Workspace Memory (KB)] as decimal(22,2)) / (1024.0 * 1024.0)) as decimal(22,2)) [granted_workspace_memory_GBs],
 		CAST(['+ @instanceNamePrefix + N'Memory Manager\Memory Grants Outstanding] as int) [grants_outstanding],
 		CAST(['+ @instanceNamePrefix + N'Memory Manager\Memory Grants Pending] as int) [grants_pending],
 		['+ @instanceNamePrefix + N'SQL Statistics\Batch Requests/sec] [batch_requests/second]
