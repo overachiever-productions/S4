@@ -44,8 +44,8 @@ AS
 
 		POWERSHELL CODE:
 
-			$dirRule = New-Object System.Security.AccessControl.FileSystemAccessRule({service}, ''FullControl'', ''ContainerInherit,ObjectInherit'', ''None'', ''Allow'');
-			$fileRule = New-Object System.Security.AccessControl.FileSystemAccessRule({service}, ''FullControl'', ''None'', ''None'', ''Allow'');
+			$dirRule = New-Object System.Security.AccessControl.FileSystemAccessRule(''{service}'', ''FullControl'', ''ContainerInherit,ObjectInherit'', ''None'', ''Allow'');
+			$fileRule = New-Object System.Security.AccessControl.FileSystemAccessRule(''{service}'', ''FullControl'', ''None'', ''None'', ''Allow'');
 
 			$acl = Get-Acl -LiteralPath {directory};
 			$acl.SetAccessRule($dirRule);
