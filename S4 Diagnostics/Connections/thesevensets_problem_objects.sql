@@ -36,7 +36,7 @@ AS
 		N''[{CURRENT_DB}]'' [database_name],
 		N''COLUMN'' [type],
 		CONCAT(QUOTENAME(SCHEMA_NAME([o].[schema_id])), N''.'', QUOTENAME(OBJECT_NAME([c].[object_id]))) [object],
-		CONCAT(N''ANSI_NULLS = OFF for column: '', QUOTENAME([c].[name]), N''.'') [problem]
+		CONCAT(N''ANSI_PADDED = OFF for column: '', QUOTENAME([c].[name]), N''.'') [problem]
 	FROM
 		[sys].[columns] [c]
 		INNER JOIN [sys].[objects] [o] ON [c].[object_id] = [o].[object_id]
