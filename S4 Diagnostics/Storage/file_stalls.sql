@@ -12,6 +12,8 @@ GO
 
 CREATE PROC dbo.[file_stalls]
 	@databases							nvarchar(MAX)		= N'{ALL}', 
+	@minimum_ms							int					= 0,
+	@minimum_kb							int					= 0,
 	@vector_tag							sysname				= NULL,
 	@serialized_output					xml					= N'<default/>'	    OUTPUT
 
@@ -21,6 +23,8 @@ AS
 	-- {copyright}
 	
 	SET @databases = UPPER(ISNULL(NULLIF(@databases, N''), N'{ALL}'));
+	SET @minimum_ms = ISNULL(@minimum_ms, 0);
+	SET @minimum_kb = ISNULL(@minimum_kb, 0);
 	SET @vector_tag = NULLIF(@vector_tag, N'');	
 
 	SELECT
@@ -201,24 +205,70 @@ FROM
 	)
 	EXEC sys.[sp_executesql]
 		@sql;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Additional Predicates (thresholds):
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	CREATE TABLE [#intermediate] (
+		[database] sysname NOT NULL,
+		[file_id] smallint NOT NULL,
+		[file_name] nvarchar(260) NOT NULL,
+		[avg_read_ms] bigint NOT NULL,
+		[avg_write_ms] bigint NOT NULL,
+		[avg_total_ms] bigint NOT NULL,
+		[avg_read_kb] decimal(22, 2) NULL,
+		[avg_write_kb] decimal(22, 2) NULL
+	);
 	
+	WITH core AS ( 
+		SELECT 
+			[x].[database],
+			[x].[file_id],
+			[m].[physical_name] [file_name],
+			ISNULL([x].[io_stall_read_ms] / NULLIF([x].[num_of_reads], 0), 0) [avg_read_ms],
+			ISNULL([x].[io_stall_write_ms] / NULLIF([x].num_of_writes, 0), 0) [avg_write_ms],
+			ISNULL([x].[io_stall] / NULLIF([x].[num_of_reads] + [x].[num_of_writes], 0), 0) [avg_total_ms], 
+			CAST(ISNULL([x].[num_of_bytes_read] / NULLIF([x].[num_of_writes], 0), 0) / 1024. AS decimal(22,2)) [avg_read_kb],
+			CAST(ISNULL([x].[num_of_bytes_written] / NULLIF([x].[num_of_writes], 0), 0) / 1024. AS decimal(22,2)) [avg_write_kb]
+		FROM 
+			[#filtered] [x]
+			INNER JOIN sys.[master_files] [m] ON DB_ID([x].[database]) = [m].[database_id] AND [x].[file_id] = [m].[file_id]
+	) 
+
+	INSERT INTO [#intermediate] ([database], [file_id], [file_name], [avg_read_ms], [avg_write_ms], [avg_total_ms], [avg_read_kb], [avg_write_kb])
+	SELECT 
+		[database],
+		[file_id],
+		[file_name],
+		[avg_read_ms],
+		[avg_write_ms],
+		[avg_total_ms],
+		[avg_read_kb],
+		[avg_write_kb] 
+	FROM 
+		[core]
+	WHERE 
+		((@minimum_ms <= 0) OR ([avg_read_ms] > @minimum_ms AND [avg_write_ms] > @minimum_ms))
+		AND 
+		((@minimum_kb <= 0) OR ([avg_read_kb] > CAST(@minimum_kb AS decimal(22,2)) AND [avg_write_kb] > CAST(@minimum_kb AS decimal(22,2))));
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Return or Project:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		SELECT @serialized_output = (
+
 			SELECT 
-				[x].[database] [@database],
-				[x].[file_id] [@file_id],
-				[m].[physical_name] [@file_name],
-				ISNULL([x].[io_stall_read_ms] / NULLIF([x].[num_of_reads], 0), 0) [@avg_read_ms],
-				ISNULL([x].[io_stall_write_ms] / NULLIF([x].num_of_writes, 0), 0) [@avg_write_ms],
-				ISNULL([x].[io_stall] / NULLIF([x].[num_of_reads] + [x].[num_of_writes], 0), 0) [@avg_total_ms], 
-				CAST(ISNULL([x].[num_of_bytes_read] / NULLIF([x].[num_of_writes], 0), 0) / 1024. AS decimal(22,2)) [@avg_read_kb],
-				CAST(ISNULL([x].[num_of_bytes_written] / NULLIF([x].[num_of_writes], 0), 0) / 1024. AS decimal(22,2)) [@avg_write_kb]
+				[database] [@database],
+				[file_id] [@file_id],
+				[file_name] [@file_name],
+				[avg_read_ms] [@avg_read_ms],
+				[avg_write_ms] [@avg_write_ms],
+				[avg_total_ms] [@avg_total_ms],
+				[avg_read_kb] [@avg_read_kb],
+				[avg_write_kb] [@avg_write_kb] 
 			FROM 
-				[#filtered] [x]
-				INNER JOIN sys.[master_files] [m] ON DB_ID([x].[database]) = [m].[database_id] AND [x].[file_id] = [m].[file_id]
+				[#intermediate]			
 			FOR XML PATH(N'stall'), ROOT(N'stalls'), TYPE
 		);
 
@@ -226,17 +276,16 @@ FROM
 	END;
 
 	SELECT 
-		[x].[database],
-		[x].[file_id],
-		[m].[physical_name] [file_name],
-		ISNULL([x].[io_stall_read_ms] / NULLIF([x].[num_of_reads], 0), 0) [avg_read_ms],
-		ISNULL([x].[io_stall_write_ms] / NULLIF([x].num_of_writes, 0), 0) [avg_write_ms],
-		ISNULL([x].[io_stall] / NULLIF([x].[num_of_reads] + [x].[num_of_writes], 0), 0) [avg_total_ms], 
-		CAST(ISNULL([x].[num_of_bytes_read] / NULLIF([x].[num_of_writes], 0), 0) / 1024. AS decimal(22,2)) [avg_read_kb],
-		CAST(ISNULL([x].[num_of_bytes_written] / NULLIF([x].[num_of_writes], 0), 0) / 1024. AS decimal(22,2)) [avg_write_kb]
+		[database],
+		[file_id],
+		[file_name],
+		[avg_read_ms],
+		[avg_write_ms],
+		[avg_total_ms],
+		[avg_read_kb],
+		[avg_write_kb] 
 	FROM 
-		[#filtered] [x]
-		INNER JOIN sys.[master_files] [m] ON DB_ID([x].[database]) = [m].[database_id] AND [x].[file_id] = [m].[file_id];
+		[#intermediate];
 
 	RETURN 0;
 GO
