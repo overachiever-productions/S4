@@ -856,6 +856,9 @@ GO
 --##INCLUDE: S4 Diagnostics\Storage\directory_sizing.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Storage\file_stalls.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\TempDb\tempdb_details.sql
 
 -----------------------------------
@@ -878,6 +881,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\TempDb\versionstore_generators.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Waits\signal_waits.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Waits\wait_stats.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --- Extended Events

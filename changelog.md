@@ -2,6 +2,22 @@
 
 # Change Log
 
+## [14.6] - 2026-09-28
+Addition of new core diagnostics: dbo.wait_stats, dbo.signal_waits, dbo.file_stalls.
+
+### Fixed
+- Initial release of `dbo.thesevensets_problem_objects` erroneously labeled issues with tables using `ANSI_PADDING = OFF` as ... having `ANSI_NULLs` off instead (i.e., brain-fart). 
+
+### Added
+Addition of 3x new diagnostics for core performance monitoring/baselines. All 3x new sprocs implement options for live-ish vectoring - i.e., without specifying a value for the `@vector_tag`, they'll pull full/aggregated stats; but, if you specify a value for `@vector_tag`, the first (new/subsequent) call drops a cached value of current output into the tempdb such that all subsequent requests/executions with the same `@vector_tag` will pull 'vectored' or differential data. 
+New sprocs are: 
+- `dbo.wait_stats`
+- `dbo.signal_waits`
+- `dbo.file_stalls`
+
+### Changed
+- Minor changes to storage of diagnostic script (paths) within repo. 
+
 ## [14.5] - 2026-09-16
 Bug-Fixes for multiple problems in v14.4. 
 
