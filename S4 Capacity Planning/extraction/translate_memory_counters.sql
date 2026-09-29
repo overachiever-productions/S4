@@ -163,7 +163,7 @@ ORDER BY
 	SET @statement = REPLACE(@statement, N'{TargetTable}', @TargetTable);
 
 	IF @PrintOnly = 1 BEGIN 
-		EXEC dbo.[print_long_string] @statement; 
+		EXEC dbo.[print_string] @statement; 
 	  END; 
 	ELSE BEGIN 
 		EXEC sp_executesql @statement;

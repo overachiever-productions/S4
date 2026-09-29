@@ -14,11 +14,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.list_collisions', 'P') IS NOT NULL
-	DROP PROC dbo.list_collisions;
+IF OBJECT_ID('dbo.[list_collisions]', 'P') IS NOT NULL
+	DROP PROC dbo.[list_collisions];
 GO
 
-CREATE PROC dbo.list_collisions 
+CREATE PROC dbo.[list_collisions] 
 	@TargetDatabases								nvarchar(max)	= N'{ALL}',  -- allowed values: {ALL} | {SYSTEM} | {USER} | 'name, other name, etc'; -- this is an EXCLUSIVE list... as in, anything not explicitly mentioned is REMOVED. 
 	@IncludePlans									bit				= 1, 
 	@IncludeContext									bit				= 1,
@@ -371,7 +371,7 @@ AS
 	ELSE 
 		SET @finalProjection = REPLACE(@finalProjection, N'{duration}', N'ISNULL(c.[total_elapsed_time], DATEDIFF(MILLISECOND, c.[last_request_start_time], GETDATE())) [duration],');
 
-	--EXEC dbo.[print_long_string]
+	--EXEC dbo.[print_string]
 		--@Input = @finalProjection;
 
 	EXEC sp_executesql 

@@ -17,11 +17,11 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.apply_logs','P') IS NOT NULL
-	DROP PROC dbo.apply_logs;
+IF OBJECT_ID('dbo.[apply_logs]','P') IS NOT NULL
+	DROP PROC dbo.[apply_logs];
 GO
 
-CREATE PROC dbo.apply_logs 
+CREATE PROC dbo.[apply_logs]
 	@SourceDatabases					nvarchar(MAX)		= NULL,						-- explicitly named dbs - e.g., N'db1, db7, db28' ... and, only works, obviously, if dbs specified are in non-recovered mode (or standby).
 	@Exclusions							nvarchar(MAX)		= NULL,
 	@Priorities							nvarchar(MAX)		= NULL, 
@@ -574,7 +574,7 @@ NextDatabase:
 				ORDER BY 
 					ID;
 
-				EXEC [dbo].[print_long_string] @outputSummary;
+				EXEC [dbo].[print_string] @outputSummary;
 			END;
 		END; ELSE BEGIN
 			IF NULLIF(@statusDetail,'') IS NULL

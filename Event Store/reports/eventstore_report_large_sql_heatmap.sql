@@ -512,7 +512,7 @@ FROM
 		SET @sql = REPLACE(@sql, N'{select}', @select);
 		SET @sql = REPLACE(@sql, N'{currentDayName}', @currentDayName);	
 			
-		--EXEC dbo.[print_long_string] @sql;
+		--EXEC dbo.[print_string] @sql;
 		EXEC sys.sp_executesql 
 			@sql, 
 			N'@currentDayID int', 

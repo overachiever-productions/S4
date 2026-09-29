@@ -113,7 +113,7 @@ AS
 		EXEC dbo.[extract_dynamic_code_lines] @sql, @errorLine, 6;
 
 		--PRINT N'-----------------------';
-		--EXEC dbo.[print_long_string] @sql;
+		--EXEC dbo.[print_string] @sql;
 		
 
 		UPDATE dbo.[eventstore_extractions] 

@@ -725,10 +725,10 @@ GO';
 	-- Projection/Print-Out:
 	---------------------------------------------------------------------------------------------------
 
-	EXEC admindb.dbo.[print_long_string] @signature;
-	EXEC admindb.dbo.[print_long_string] @initialization;
-	EXEC [admindb].dbo.[print_long_string] @body;
-	EXEC [admindb].dbo.[print_long_string] @finalize;
+	EXEC admindb.dbo.[print_string] @signature;
+	EXEC admindb.dbo.[print_string] @initialization;
+	EXEC [admindb].dbo.[print_string] @body;
+	EXEC [admindb].dbo.[print_string] @finalize;
 	
 	RETURN 0;
 

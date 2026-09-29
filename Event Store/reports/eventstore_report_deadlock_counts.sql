@@ -157,7 +157,7 @@ WHERE
 	SET @sql = REPLACE(@sql, N'{excludedStatementsJoin}', @excludedStatementsJoin);
 	SET @sql = REPLACE(@sql, N'{exclusions}', @exclusions);
 
-	--EXEC [dbo].[print_long_string] @sql;
+	--EXEC [dbo].[print_string] @sql;
 	
 	INSERT INTO [#metrics] (
 		[deadlock_time],

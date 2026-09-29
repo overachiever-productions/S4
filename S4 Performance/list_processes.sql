@@ -405,7 +405,7 @@ AS
 		SET @topSQL = REPLACE(@topSQL, N'{ExcludeBrokerWaits}', N'');
 	END;
 
---EXEC dbo.[print_long_string] @Input = @topSQL;
+--EXEC dbo.[print_string] @Input = @topSQL;
 --RETURN 0;
 
 	INSERT INTO [#core] (
@@ -636,7 +636,7 @@ AS
         SET @projectionSQL = REPLACE(@projectionSQL, N'{tempdbUsageJoin}', N'');
     END;
 
---EXEC dbo.print_long_string @projectionSQL;
+--EXEC dbo.print_string @projectionSQL;
 --RETURN 0;
 
 	-- final output:

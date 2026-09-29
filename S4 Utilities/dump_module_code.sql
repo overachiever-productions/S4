@@ -145,7 +145,7 @@ AS
 		PRINT N'---------------------------------------------------------------------';
 		PRINT N'GO '; -- prevents the comments above from becoming part of the module definition... 
 
-		EXEC dbo.[print_long_string] @definition;
+		EXEC dbo.[print_string] @definition;
 
 		PRINT N'GO';
 		PRINT N'';

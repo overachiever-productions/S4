@@ -211,7 +211,7 @@ AS
 	ELSE 
 		SET @sql = REPLACE(@sql, N'{smallBuckets}', N'');
 
-	EXEC [admindb].dbo.[print_long_string] @sql;
+	EXEC [admindb].dbo.[print_string] @sql;
 	
 	EXEC sys.[sp_executesql]
 		@sql, 

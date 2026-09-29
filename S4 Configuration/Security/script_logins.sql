@@ -109,7 +109,7 @@ AS
 
 
 	IF NULLIF(@output, N'') IS NOT NULL BEGIN
-		EXEC dbo.[print_long_string] @output;
+		EXEC dbo.[print_string] @output;
 
 		PRINT @crlf;
 	END;

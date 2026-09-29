@@ -381,7 +381,7 @@ ORDER BY
 		END;
 
 		IF @PrintOnly = 1 BEGIN 
-			EXEC dbo.[print_long_string] @body;
+			EXEC dbo.[print_string] @body;
 		  END;
 		ELSE BEGIN 
 			EXEC msdb..sp_notify_operator

@@ -216,7 +216,7 @@ WHERE
 
 				SET @text = @text + @crlf;
 
-				EXEC [dbo].[print_long_string] @text;
+				EXEC [dbo].[print_string] @text;
 
 			  END; 
 			ELSE BEGIN 

@@ -104,7 +104,7 @@ END;' ;
     END;
 
     IF @PrintOnly = 1 
-        EXEC dbo.[print_long_string] @command;
+        EXEC dbo.[print_string] @command;
     ELSE 
         EXEC sp_executesql @command;
 

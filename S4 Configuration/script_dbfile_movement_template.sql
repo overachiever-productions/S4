@@ -208,7 +208,7 @@ GO
 	SET @sql = REPLACE(@sql, N'{rollback}', @rollback);
 
 
-	EXEC [dbo].[print_long_string] @sql;
+	EXEC [dbo].[print_string] @sql;
 
 	RETURN 0; 
 GO

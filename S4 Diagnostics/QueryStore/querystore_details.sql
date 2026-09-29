@@ -178,7 +178,7 @@ ErrorDetails:
 		[error_id];
 
 	RAISERROR(@errorContext, 16, 1);
-	EXEC dbo.[print_long_string] @errorDetails;	
+	EXEC dbo.[print_string] @errorDetails;	
 	RETURN -100;
 
 GO

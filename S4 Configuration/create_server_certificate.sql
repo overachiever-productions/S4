@@ -131,7 +131,7 @@ WITH
 	@EncryptionKeyPassword = N''' + @EncryptionKeyPassword + N''',
 	@PrintOnly = 1; ';
 
-			EXEC dbo.[print_long_string] @backup;
+			EXEC dbo.[print_string] @backup;
 
 			PRINT N'------------------------------------------------------------------------------------------------';
 

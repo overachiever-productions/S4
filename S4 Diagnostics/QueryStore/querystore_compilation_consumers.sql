@@ -162,7 +162,7 @@ ORDER BY
 	END;
 	
 	IF @PrintOnly = 1 BEGIN 
-		EXEC dbo.[print_long_string] @sql;
+		EXEC dbo.[print_string] @sql;
 		RETURN 0;
 	END;
 

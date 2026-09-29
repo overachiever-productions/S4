@@ -541,7 +541,7 @@ WHERE
 	PRINT @timeRangeString;
 	PRINT N'';
 
---EXEC dbo.[print_long_string] @sql;
+--EXEC dbo.[print_string] @sql;
 
 	INSERT INTO [#metrics] (
 		[error_timestamp],

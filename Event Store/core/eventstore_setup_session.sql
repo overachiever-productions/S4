@@ -302,7 +302,7 @@ VALUES (
 	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
 
 	IF @PrintOnly = 1 BEGIN 
-		EXEC dbo.[print_long_string] @finalSQL;
+		EXEC dbo.[print_string] @finalSQL;
 	  END;
 	ELSE BEGIN 
 		BEGIN TRY 

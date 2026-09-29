@@ -774,7 +774,7 @@ ORDER BY
 		SET @sql = REPLACE(@sql, N'{phantom_join}', N'');
 	END;
 
-	--EXEC [dbo].[print_long_string] @sql;
+	--EXEC [dbo].[print_string] @sql;
 	
 	EXEC [sys].[sp_executesql]
 		@sql;

@@ -104,7 +104,7 @@ AS
 		RETURN -40;
 	END;
 
-	EXEC dbo.[print_long_string] @stringOutput;
+	EXEC dbo.[print_string] @stringOutput;
 
 	RETURN 0;
 GO

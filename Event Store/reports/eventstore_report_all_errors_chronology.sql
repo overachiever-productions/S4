@@ -526,7 +526,7 @@ WHERE
 	ELSE 
 		SET @sql = REPLACE(@sql, N'{local_zone}', N'');
 
-	EXEC dbo.[print_long_string] @sql;
+	EXEC dbo.[print_string] @sql;
 	
 	EXEC sys.[sp_executesql] 
 		@sql;	

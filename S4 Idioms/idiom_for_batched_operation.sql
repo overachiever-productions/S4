@@ -558,9 +558,9 @@ END;'
 	-- Output/Projection:
 	---------------------------------------------------------------------------------------------------
 
-	EXEC [admindb].dbo.[print_long_string] @initialization;
-	EXEC [admindb].dbo.[print_long_string] @body;
-	EXEC [admindb].dbo.[print_long_string] @cleanup;
+	EXEC [admindb].dbo.[print_string] @initialization;
+	EXEC [admindb].dbo.[print_string] @body;
+	EXEC [admindb].dbo.[print_string] @cleanup;
 
 	RETURN 0
 GO

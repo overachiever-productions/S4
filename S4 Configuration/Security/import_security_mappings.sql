@@ -320,7 +320,7 @@ AS
 		END;
 		
 		IF @PrintOnly = 1 BEGIN 
-			EXEC dbo.[print_long_string] @body;
+			EXEC dbo.[print_string] @body;
 		  END; 
 		ELSE BEGIN 
 			DECLARE @subject sysname = @EmailSubjectPrefix; 

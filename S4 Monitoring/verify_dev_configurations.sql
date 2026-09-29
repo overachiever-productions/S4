@@ -282,7 +282,7 @@ AS
 			ELSE BEGIN 
 				-- Print to job output - so there's a 'history' (ish) of these changes:
 				PRINT @emailSubject;
-				EXEC admindb.dbo.[print_long_string] @emailBody;
+				EXEC dbo.[print_string] @emailBody;
 			END;
 		END
 	END;

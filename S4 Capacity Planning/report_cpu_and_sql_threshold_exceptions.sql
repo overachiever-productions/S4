@@ -145,7 +145,7 @@ ORDER BY
 	SET @sql = REPLACE(@sql, N'{BatchCount}', @batchCount);
 
 	IF @PrintOnly = 1 BEGIN 
-		EXEC dbo.[print_long_string] @sql;
+		EXEC dbo.[print_string] @sql;
 	  END; 
 	ELSE BEGIN 
 		EXEC sys.[sp_executesql] @sql;

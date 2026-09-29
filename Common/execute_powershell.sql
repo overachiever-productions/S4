@@ -126,7 +126,7 @@ AS
 		END CATCH;
 	END;
 
-	EXEC dbo.[print_long_string] @output;
+	EXEC dbo.[print_string] @output;
 
 	RETURN 0;
 GO

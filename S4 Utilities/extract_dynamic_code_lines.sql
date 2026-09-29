@@ -155,7 +155,7 @@ Output:
 	PRINT N'/* ';
 	PRINT N'';
 	
-	EXEC dbo.[print_long_string] @output;
+	EXEC dbo.[print_string] @output;
 
 	PRINT N'';
 	PRINT N'*/';
