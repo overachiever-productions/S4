@@ -762,6 +762,9 @@ GO
 --##INCLUDE: S4 Diagnostics\server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Connections\thesevensets_server_useroptions.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Connections\thesevensets_database_settings.sql
 
 -----------------------------------
@@ -769,9 +772,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Connections\thesevensets_problem_objects.sql
-
------------------------------------
---##INCLUDE: S4 Diagnostics\Connections\thesevensets_server_useroptions.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\filtered_index_obstacles.sql
