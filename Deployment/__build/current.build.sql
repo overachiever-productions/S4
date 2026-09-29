@@ -424,6 +424,9 @@ GO
 --##INCLUDE: Common\Internal\generate_bounding_times.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\inserlect_cache.sql
+
+-----------------------------------
 --##INCLUDE: Common\targeted_databases.sql
 
 -----------------------------------
