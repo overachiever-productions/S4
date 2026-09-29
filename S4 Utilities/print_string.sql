@@ -10,44 +10,59 @@ TODO:
         but ... won't EVEN set a default for it (will just CHECK in the sproc below to see if there's a match/value and then USE whatever I get back to handle print warning OR NOT). 
 
 
-	SAMPLE TEST(s)
+	    
+        .EXAMPLE:
+        Contrived example showing how `dbo.print_string` splits on CRLF/TAB/SPACE as present/possible:
+            
+            ```sql
 
-				DECLARE @longLine nvarchar(MAX) = N'0000. This is a line of Text and Stuff.';
+		    DECLARE @longLine nvarchar(MAX) = N'0000. This is a line of Text and Stuff.';
 
-				DECLARE @current int = 1; 
-				WHILE @current < 1001 BEGIN 
-					-- NOTE: comment/uncomment lines below to test execution with carriage returns or not... 
-					--SET @longLine = @longLine + NCHAR(13) + NCHAR(10) + RIGHT(N'0000' + CAST(@current AS sysname), 4) +   N'. This is a line of Text and Stuff.';
-					SET @longLine = @longLine + RIGHT(N'0000' + CAST(@current AS sysname), 4) +   N'. This is a line of Text and Stuff. ';
+			DECLARE @current int = 1; 
+			WHILE @current < 1001 BEGIN 
+				-- NOTE: comment/uncomment lines below to test execution with carriage returns or not... 
+				--SET @longLine = @longLine + NCHAR(13) + NCHAR(10) + RIGHT(N'0000' + CAST(@current AS sysname), 4) +   N'. This is a line of Text and Stuff.';
+				SET @longLine = @longLine + RIGHT(N'0000' + CAST(@current AS sysname), 4) +   N'. This is a line of Text and Stuff. ';
 
-					SET @current = @current + 1;
-				END;
+				SET @current = @current + 1;
+			END;
 
-				PRINT N'--------------------------------'
+			PRINT N'--------------------------------'
 
-				EXEC [admindb].dbo.[print_long_string] @longLine;
+			EXEC [admindb].dbo.[print_string] @longLine;
+
+            ```
+
+        .EXAMPLE
+        More practical example, showing how `dbo.print_string` can be used print a sproc/module with a char-count > 4000: 
+            ```sql 
+
+            DECLARE @moduleDefinition nvarchar(MAX) = (SELECT TOP 1 [definition] FROM sys.sql_modules ORDER BY DATALENGTH([definition]) DESC);
+            EXEC [admindb].dbo.[print_string] @moduleDefinition;
+
+            ```
 
 
-DECLARE @a nvarchar(MAX) = REPLICATE(CAST(N'x' AS nvarchar(MAX)), 12088);
-EXEC dbo.print_long_string @input = @a;
-GO
+    BASIC UNIT TESTS:
 
+                DECLARE @a nvarchar(MAX) = REPLICATE(CAST(N'x' AS nvarchar(MAX)), 12088);
+                EXEC dbo.print_long_string @input = @a;
+                GO
 
+                -- Many ~75-char lines joined by CRLF => every chunk breaks on a line boundary
+                DECLARE @b nvarchar(MAX) =
+                    REPLICATE(CAST(N'SELECT col1, col2, col3 FROM dbo.SomeTable WHERE id = 12345 AND flag = 1;' AS nvarchar(MAX))
+                              + NCHAR(13) + NCHAR(10), 400);
+                EXEC dbo.print_long_string @input = @b;
+                GO
 
--- B) Many ~75-char lines joined by CRLF => every chunk breaks on a line boundary
-DECLARE @b nvarchar(MAX) =
-    REPLICATE(CAST(N'SELECT col1, col2, col3 FROM dbo.SomeTable WHERE id = 12345 AND flag = 1;' AS nvarchar(MAX))
-              + NCHAR(13) + NCHAR(10), 400);
-EXEC dbo.print_long_string @input = @b;
-GO
-
--- C) 11,000 chars of no whitespace, then 9,000 chars of words
---    => 2 NOTEs, then word-wrapped chunks
-DECLARE @c nvarchar(MAX) =
-      REPLICATE(CAST(N'x' AS nvarchar(MAX)), 11000)
-    + REPLICATE(CAST(N'word ' AS nvarchar(MAX)), 1800);
-EXEC dbo.print_long_string @input = @c;
-GO
+                -- 11,000 chars of no whitespace, then 9,000 chars of words
+                --    => 2 NOTEs, then word-wrapped chunks
+                DECLARE @c nvarchar(MAX) =
+                      REPLICATE(CAST(N'x' AS nvarchar(MAX)), 11000)
+                    + REPLICATE(CAST(N'word ' AS nvarchar(MAX)), 1800);
+                EXEC dbo.print_long_string @input = @c;
+                GO
 
 
 
@@ -56,11 +71,11 @@ GO
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.print_long_string','P') IS NOT NULL
-	DROP PROC dbo.print_long_string;
+IF OBJECT_ID('dbo.print_string','P') IS NOT NULL
+	DROP PROC dbo.print_string;
 GO
 
-CREATE PROC dbo.print_long_string 
+CREATE PROC dbo.print_string 
 	@input				nvarchar(MAX)
 AS
 	SET NOCOUNT ON; 

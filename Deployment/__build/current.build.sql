@@ -209,6 +209,7 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
 	<entry schema="dbo" name="list_running_jobs" type="P" comment="v14.2 refactoring." />
 	<entry schema="dbo" name="translate_io_perfcounters" type="P" comment="v14.5 refactoring. (removed ''perf'' from name)." />
+	<entry schema="dbo" name="print_long_string" type="P" comment="v14.7 refactoring. (removed ''_long_'' from name)." />
 </list>');
 
 EXEC dbo.drop_obsolete_objects @olderObjects, N'admindb';
@@ -460,7 +461,7 @@ GO
 --##INCLUDE: Common\Alerting\format_hex_html().sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\print_long_string.sql
+--##INCLUDE: S4 Utilities\print_string.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\extract_dynamic_code_lines.sql
