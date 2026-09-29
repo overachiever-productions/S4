@@ -472,6 +472,9 @@ GO
 --##INCLUDE: Common\Internal\transient_error_occurred.sql
 
 -----------------------------------
+--##INCLUDE: Code Library\deploy_codelibrary_file.sql
+
+-----------------------------------
 --##INCLUDE: Code Library\verify_codelibrary_file.sql
 
 -----------------------------------
@@ -538,9 +541,6 @@ GO
 
 -----------------------------------
 --##INCLUDE: Code Library\codelibrary_file.sql
-
------------------------------------
---##INCLUDE: Code Library\deploy_codelibrary_file.sql
 
 -----------------------------------
 --##INCLUDE: Code Library\initialize_codelibrary.sql
