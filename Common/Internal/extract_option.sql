@@ -47,7 +47,6 @@ AS
 				[rank]
 		) [o];
 
-
 		RETURN @output;    
     END;
 GO

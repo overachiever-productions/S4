@@ -4,13 +4,24 @@
 		Use dbo.print_long_string when you want to print EVERYTHING within a ... long string. 
 
 
-TODO: 
-    set a dbo.options 'setting'/option to REMOVE/SQUELCH the warning I'm printing out if/when no-whitespace-per-current-4K-gap. 
-        DON'T make this a parameter for the sproc. just don't care... but do care enough-ish to make it an OPTION.
-        but ... won't EVEN set a default for it (will just CHECK in the sproc below to see if there's a match/value and then USE whatever I get back to handle print warning OR NOT). 
+        .REMARKS
+        By default, `dbo.print_string` will warn (i.e., PRINT a "NOTE") each time it is 'forced' to break on anything other than whitespace. 
+        This is done to ensure that it's clear/obvious that formatting MAY be negatively impacted. 
+        You CAN disable this functionality by creating an entry in `dbo.options` via an INSERT as follows: 
+            ```sql 
+                
+                INSERT INTO dbo.[options] ([module], [key], [value])
+                VALUES (
+	                N'dbo.print_string',
+	                N'@warn_on_jagged_break',
+	                N'false'
+                );
+
+            ```
+        NOTE: the above OPTION is global in scope. 
+        NOTE: To undo the removal of these warnings, either DELETE the row in dbo.options, or set `[value]` equal to the literal string of `true`.
 
 
-	    
         .EXAMPLE:
         Contrived example showing how `dbo.print_string` splits on CRLF/TAB/SPACE as present/possible:
             
@@ -42,18 +53,17 @@ TODO:
 
             ```
 
-
     BASIC UNIT TESTS:
 
                 DECLARE @a nvarchar(MAX) = REPLICATE(CAST(N'x' AS nvarchar(MAX)), 12088);
-                EXEC dbo.print_long_string @input = @a;
+                EXEC dbo.print_string @input = @a;
                 GO
 
                 -- Many ~75-char lines joined by CRLF => every chunk breaks on a line boundary
                 DECLARE @b nvarchar(MAX) =
                     REPLICATE(CAST(N'SELECT col1, col2, col3 FROM dbo.SomeTable WHERE id = 12345 AND flag = 1;' AS nvarchar(MAX))
                               + NCHAR(13) + NCHAR(10), 400);
-                EXEC dbo.print_long_string @input = @b;
+                EXEC dbo.print_string @input = @b;
                 GO
 
                 -- 11,000 chars of no whitespace, then 9,000 chars of words
@@ -61,7 +71,7 @@ TODO:
                 DECLARE @c nvarchar(MAX) =
                       REPLICATE(CAST(N'x' AS nvarchar(MAX)), 11000)
                     + REPLICATE(CAST(N'word ' AS nvarchar(MAX)), 1800);
-                EXEC dbo.print_long_string @input = @c;
+                EXEC dbo.print_string @input = @c;
                 GO
 
 
@@ -98,6 +108,9 @@ AS
 		RETURN 0;
 	END;	
 
+    DECLARE @moduleKey sysname = QUOTENAME(OBJECT_SCHEMA_NAME(@@PROCID)) + N'.' + QUOTENAME(OBJECT_NAME(@@PROCID));
+    DECLARE @warnOnJagged bit = (SELECT CAST(dbo.[extract_option](@moduleKey, N'@warn_on_jagged_break') AS bit));
+    
     WHILE @currentPosition <= @totalLength BEGIN
         IF @totalLength - @currentPosition + 1 <= @maxPrintLength
         BEGIN
@@ -149,7 +162,9 @@ AS
         -- no whitespace (crlf, space, tab) ... so, dump a .. note:
         -----------------------------------------------------------------------------------------------------*/
         PRINT SUBSTRING(@currentGulp, 1, @maxPrintLength);
-        PRINT N'-- dbo.print_string: NO whitespace found in previous gulp of 4000 characters... ';
+        IF @warnOnJagged = 1 
+            PRINT N'-- dbo.print_string: NO whitespace found in previous gulp of 4000 characters... ';
+        
         SET @currentPosition += @maxPrintLength;
     END;
 
