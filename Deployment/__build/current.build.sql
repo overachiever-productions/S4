@@ -343,10 +343,10 @@ GO
 --##INCLUDE: Common\base64_encode.sql
 
 -----------------------------------
---##INCLUDE: Common\format_text_width.sql
+--##INCLUDE: Common\format_text_width().sql
 
 -----------------------------------
---##INCLUDE: Common\format_xml_string.sql
+--##INCLUDE: Common\format_xml_string().sql
 
 -----------------------------------
 --##INCLUDE: Common\Internal\check_paths.sql
@@ -433,7 +433,7 @@ GO
 --##INCLUDE: Common\format_timespan.sql
 
 -----------------------------------
---##INCLUDE: Common\format_number.sql
+--##INCLUDE: Common\format_number().sql
 
 -----------------------------------
 --##INCLUDE: Common\xml_decode.sql
@@ -449,6 +449,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: Common\Alerting\format_html_email.sql
+
+-----------------------------------
+--##INCLUDE: Common\Alerting\format_hex_string().sql
+
+-----------------------------------
+--##INCLUDE: Common\Alerting\format_hex_html().sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\print_long_string.sql
