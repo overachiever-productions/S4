@@ -21,7 +21,7 @@ AS
 	SET @private_key_password = NULLIF(@private_key_password, N'');
 
 	IF NOT EXISTS (SELECT NULL FROM [master].sys.[certificates] WHERE [name] = @certificate_name) BEGIN
-		RAISERROR(N'Specified Server Name: [%s] not found in [master].[sys].[certificates].', 16, 1, @certificate_name);
+		RAISERROR(N'Specified Certificate Name: [%s] not found in [master].[sys].[certificates].', 16, 1, @certificate_name);
 		RETURN -10;
 	END;
 
@@ -50,21 +50,13 @@ AS
 	DECLARE @width int = 220; 
 
 	DECLARE @template nvarchar(MAX) = N'EXEC [admindb].dbo.[restore_encoded_certificate]
-	@private_key_password = N'''',			-- !!!!! MUST BE MANUALLY SPECIFIED (i.e., should be stored in Password Vault).
-	@certificate_name = N''{cert_name}'',	-- NOTE: The Certificate NAME can be changed with NO problems.
-	@execute_backup_and_cleanup = 1,		-- sdflksdjalkfj	
+	@private_key_password = N'''',			
+	@certificate_name = N''{cert_name}'',	
+	@execute_backup_and_cleanup = 1,		
 	@print_only = 0,
 {public_key}'', 
 {private_key}''; 
 GO ';
-
-
-
---DECLARE @publicKey nvarchar(MAX) = dbo.[format_hex_string2](@cert, N'@encoded_certificate = N', 240, 10); 
-
---EXEC dbo.[print_string] @publicKey;
-
-
 
 	SET @template = REPLACE(@template, N'{cert_name}', @certificate_name);
 	SET @template = REPLACE(@template, N'{public_key}', dbo.[format_hex_string](@cert, NCHAR(9) + N'@encoded_certificate = N''', 120, 10));

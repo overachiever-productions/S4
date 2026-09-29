@@ -34,8 +34,8 @@ AS
 		RETURN -12;
 	END;
 
-	DECLARE @encodedCert varbinary(MAX) = DECOMPRESS(CONVERT(varbinary(MAX), dbo.[remove_whitespace](@encoded_certificate), 1));
-	DECLARE @encodedKey varbinary(MAX) = DECOMPRESS(CONVERT(varbinary(MAX), dbo.[remove_whitespace](@encoded_private_key), 1));
+	DECLARE @encodedCert varbinary(MAX) = DECOMPRESS(CONVERT(varbinary(MAX), REPLACE(dbo.[remove_whitespace](@encoded_certificate), N';', N''), 1));
+	DECLARE @encodedKey varbinary(MAX) = DECOMPRESS(CONVERT(varbinary(MAX), REPLACE(dbo.[remove_whitespace](@encoded_private_key), N';', N''), 1));
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Master Encryption Key (if/as needed): 
@@ -64,6 +64,8 @@ END;
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Rehydate Certificate:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @errorMessage nvarchar(MAX), @errorLine int, @errorNumber int;
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @template nvarchar(MAX) = N'USE [master];
 	
 CREATE CERTIFICATE [{name}]
@@ -87,9 +89,32 @@ CREATE CERTIFICATE [{name}]
 		PRINT N'GO';
 		PRINT N'';
 	  END; 
-	ELSE 
-		EXEC sys.sp_executesql 
-			@template;
+	ELSE BEGIN
+		BEGIN TRY
+			EXEC sys.sp_executesql 
+				@template;
+		END TRY 
+		BEGIN CATCH 
+			SELECT @errorNumber = ERROR_NUMBER();
+
+			IF @errorNumber = 15232 BEGIN 
+				-- SQL Server Bug: Error Message for 15232 is WRONG ... (it says NAME - thumbprint is the issue).  
+				RAISERROR(N'A certificate with a MATCHING THUMBPRINT already exists or this certificate already has been added to the master database.', 16, 1);
+				RETURN -100;
+			END;
+
+			SELECT 
+				@errorLine = ERROR_LINE(), 
+				@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(@errorNumber AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+			
+			IF @@TRANCOUNT > 0 
+				ROLLBACK;
+
+			RAISERROR(@errorMessage, 16, 1);
+			EXEC admindb.dbo.[extract_dynamic_code_lines] @template, @errorLine, 6;
+			RETURN -100;
+		END CATCH;
+	END;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Backup + Cleanup:
@@ -97,8 +122,9 @@ CREATE CERTIFICATE [{name}]
 	IF @execute_backup_and_cleanup = 1 BEGIN
 		DECLARE @cleanup nvarchar(MAX) = N'USE [master];
 		
-BACKUP CERTIFICATE [{certName}] TO FILE = ''{path}.cer'' WITH PRIVATE KEY ( FILE = ''{path}.key'', ENCRYPTION BY PASSWORD = ''xxxxxx''); 
+BACKUP CERTIFICATE [{certName}] TO FILE = ''{path}.cer'' WITH PRIVATE KEY ( FILE = ''{path}.key'', ENCRYPTION BY PASSWORD = ''{password}''); 
 
+WAITFOR DELAY ''00:00:02.000'';
 DECLARE @quiet_please table (output sysname NULL);
 INSERT INTO @quiet_please ([output])
 EXEC xp_cmdshell ''del "{path}.*" /q;''; ';
@@ -108,15 +134,36 @@ EXEC xp_cmdshell ''del "{path}.*" /q;''; ';
 
 		SET @cleanup = REPLACE(@cleanup, N'{certName}', @certificate_name);
 		SET @cleanup = REPLACE(@cleanup, N'{path}', @fileName);
+		SET @cleanup = REPLACE(@cleanup, N'{password}', CAST(NEWID() AS sysname));
 
 		IF @print_only = 1 BEGIN
 			PRINT @cleanup;
 			PRINT N'GO';
 			PRINT N'';
 		  END;
-		ELSE 
-			EXEC sys.sp_executesql 
-				@cleanup;
+		ELSE BEGIN
+			BEGIN TRY
+
+				EXEC sys.sp_executesql 
+					@cleanup;
+			END TRY
+			BEGIN CATCH
+				SELECT @errorNumber = ERROR_NUMBER();
+
+				SELECT 
+					@errorLine = ERROR_LINE(), 
+					@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(@errorNumber AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+			
+				IF @@TRANCOUNT > 0 
+					ROLLBACK;
+
+				RAISERROR(@errorMessage, 16, 1);
+				EXEC admindb.dbo.[extract_dynamic_code_lines] @template, @errorLine, 6;
+				
+				RAISERROR(N'WARNING: Backup and/or cleanup of CERT (backup) did NOT complete correctly. ', 16, 1);
+				RETURN -200;	
+			END CATCH;
+		END;
 	END;
 
 	RETURN 0;
