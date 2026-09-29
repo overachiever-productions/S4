@@ -344,6 +344,9 @@ GO
 --##INCLUDE: Common\base64_encode.sql
 
 -----------------------------------
+--##INCLUDE: Common\Internal\remove_whitespace().sql
+
+-----------------------------------
 --##INCLUDE: Common\format_text_width().sql
 
 -----------------------------------
