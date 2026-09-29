@@ -54,15 +54,23 @@ AS
 	@certificate_name = N''{cert_name}'',	-- NOTE: The Certificate NAME can be changed with NO problems.
 	@execute_backup_and_cleanup = 1,		-- sdflksdjalkfj	
 	@print_only = 0,
-	@encoded_certificate = N''{public_key}'', 
-	@encoded_private_key = N''{private_key}''; 
+{public_key}'', 
+{private_key}''; 
 GO ';
 
-	SET @template = REPLACE(@template, N'{cert_name}', @certificate_name);
-	SET @template = REPLACE(@template, N'{public_key}', dbo.[format_hex_string](@cert, 240, N'NONE', 10, 19));
-	SET @template = REPLACE(@template, N'{private_key}', dbo.[format_hex_string](@key, 240, N'NONE', 10, 19));
 
-	EXEC dbo.[print_long_string] @template;
+
+--DECLARE @publicKey nvarchar(MAX) = dbo.[format_hex_string2](@cert, N'@encoded_certificate = N', 240, 10); 
+
+--EXEC dbo.[print_string] @publicKey;
+
+
+
+	SET @template = REPLACE(@template, N'{cert_name}', @certificate_name);
+	SET @template = REPLACE(@template, N'{public_key}', dbo.[format_hex_string](@cert, NCHAR(9) + N'@encoded_certificate = N''', 120, 10));
+	SET @template = REPLACE(@template, N'{private_key}', dbo.[format_hex_string](@key, NCHAR(9) + N'@encoded_private_key = N''', 120, 10));
+
+	EXEC dbo.[print_string] @template;
 
 	RETURN 0;
 GO		

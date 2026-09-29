@@ -45,7 +45,7 @@
 
     DECLARE @output nvarchar(MAX) = dbo.[format_hex_html](@payload, N'@payload varbinary(MAX) = ', 90, 0);
 
-    EXEC [admindb]..[print_long_string] @output;
+    EXEC [admindb]..[print_string] @output;
     ```
 
 */

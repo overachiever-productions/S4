@@ -83,7 +83,7 @@ CREATE CERTIFICATE [{name}]
 		SET @template = REPLACE(@template, N'{password}', @private_key_password);
 
 	IF @print_only = 1 BEGIN
-		EXEC dbo.[print_long_string] @template;
+		EXEC dbo.[print_string] @template;
 		PRINT N'GO';
 		PRINT N'';
 	  END; 
