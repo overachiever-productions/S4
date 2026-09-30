@@ -2,6 +2,24 @@
 
 # Change Log
 
+## [14.7] - 2026-09-30
+Overhaul of dbo.print_string() + addition of dbo.querystats_consumers.
+
+### Fixed
+- Added `dbo.inserlect`_cache - missing from previous release (doh) - and core for enabling 'caching'/vectoring logic. 
+- Minor formatting tweaks/improvements to: 
+    - `dbo.format_hex_string()`
+    - `dbo.restore_encoded_certificate`
+    - `dbo.script_server_certificate`
+    - `dbo.format_timespan()`
+
+### Added
+- Initial introduction of `dbo.querystats_consumers` (nothing special overall) with 'dynamic' outputs (columns chosen by consumer-type). 
+
+### Changed
+- Additional file-name refactoring (funcs to <funcname>().sql).
+- Refactored `dbo.print_long_string()` down to `dbo.print_string()` (i.e., who cares about 'long');
+
 ## [14.6] - 2026-09-28
 Addition of new core diagnostics: dbo.wait_stats, dbo.signal_waits, dbo.file_stalls.
 
