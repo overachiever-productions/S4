@@ -437,7 +437,7 @@ GO
 --##INCLUDE: Common\list_databases.sql
 
 -----------------------------------
---##INCLUDE: Common\format_timespan.sql
+--##INCLUDE: Common\format_timespan().sql
 
 -----------------------------------
 --##INCLUDE: Common\format_number().sql
