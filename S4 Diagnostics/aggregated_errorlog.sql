@@ -170,7 +170,7 @@ AS
 	IF (SELECT dbo.is_xml_empty(@serialized_output)) = 1 BEGIN
 		
 		SELECT @serialized_output = (
-			SELECT TOP(@Top)
+			SELECT TOP(@top)
 				COUNT(*) [@count],
 				[text] [*]
 			FROM 
@@ -185,7 +185,7 @@ AS
 		RETURN 0;
 	END;
 
-	SELECT TOP(@Top)
+	SELECT TOP(@top)
 		COUNT(*) [count],
 		[text] [entry] 
 	FROM 

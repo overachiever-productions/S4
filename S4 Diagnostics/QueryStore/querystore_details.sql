@@ -100,7 +100,7 @@ END; ';
 	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
 		@Databases = @databases,
-		@Priorities = @Priorities,
+		@Priorities = @priorities,
 		@Statement = @sql,
 		@Errors = @Errors OUTPUT;	
 

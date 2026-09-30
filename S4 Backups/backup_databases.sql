@@ -1105,7 +1105,7 @@ NextDatabase:
 			@subject = @emailSubject,
 			@body = @emailErrorMessage ,
 			@body_format = 'HTML',
-			@print_only = @printOnly;
+			@print_only = @PrintOnly;
 	END;
 
 	RETURN 0;

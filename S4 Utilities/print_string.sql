@@ -125,7 +125,7 @@ AS
         /*-----------------------------------------------------------------------------------------------------
         -- Attempt to Break on CRLFs first (if present within the current gulp of 4K chars):
         -----------------------------------------------------------------------------------------------------*/
-        SET @targetBreak = CHARINDEX(@LF, @reversedGulp COLLATE Latin1_General_BIN2);
+        SET @targetBreak = CHARINDEX(@lf, @reversedGulp COLLATE Latin1_General_BIN2);
         IF @targetBreak > 0 BEGIN
             SET @targetBreak = @currentGulpLength - @targetBreak + 1;
             SET @chunkLength = @targetBreak - 1;

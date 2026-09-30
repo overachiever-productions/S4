@@ -86,7 +86,7 @@ AS
 	DECLARE @Errors xml;
 	DECLARE @errorContext nvarchar(MAX);
 	EXEC dbo.[execute_per_database]
-		@Databases = @Databases,
+		@Databases = @databases,
 		@Statement = @sql,
 		@Errors = @Errors OUTPUT; 
 

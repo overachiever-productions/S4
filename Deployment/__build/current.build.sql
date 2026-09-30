@@ -814,6 +814,9 @@ GO
 --##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_statistics_by_table.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Performance\querystats_consumers.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Schema\column_widths.sql
 
 -----------------------------------
