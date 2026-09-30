@@ -458,10 +458,10 @@ GO
 --##INCLUDE: Common\Alerting\format_html_email.sql
 
 -----------------------------------
---##INCLUDE: Common\Alerting\format_hex_string().sql
+--##INCLUDE: Common\format_hex_string().sql
 
 -----------------------------------
---##INCLUDE: Common\Alerting\format_hex_html().sql
+--##INCLUDE: Common\format_hex_html().sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\print_string.sql
@@ -641,10 +641,10 @@ GO
 --##INCLUDE: S4 Configuration\Security\import_security_mappings.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\Security\script_server_certificate.sql
+--##INCLUDE: S4 Configuration\script_server_certificate.sql
 
 -----------------------------------
---##INCLUDE: S4 Configuration\Security\restore_encoded_certificate.sql
+--##INCLUDE: S4 Configuration\restore_encoded_certificate.sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Restores:
