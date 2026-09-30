@@ -65,7 +65,7 @@ AS
 				WHEN @Milliseconds > 33696000000 THEN CAST(CAST(ROUND(@Milliseconds / 31536000000.0, 1) AS decimal(4,1)) AS sysname) + N' years'
 				WHEN @Milliseconds >  5443200000 THEN CAST(CAST(ROUND(@Milliseconds / 2592000000.0, 1) AS decimal(4,1)) AS sysname) + N' months'
 				WHEN @Milliseconds >  1209600000 THEN CAST(CAST(ROUND(@Milliseconds / 604800000.0, 1) AS decimal(4,1)) AS sysname) + N' weeks'
-				WHEN @Milliseconds >   259200000 THEN CAST(CAST(ROUND(@Milliseconds / 86400000.0, 1) AS decimal(4,1)) AS sysname) + N' days'
+				WHEN @Milliseconds >   172800000 THEN CAST(CAST(ROUND(@Milliseconds / 86400000.0, 1) AS decimal(4,1)) AS sysname) + N' days'
 			END;	
 			
 			IF @output LIKE N'%.0%' 
@@ -74,7 +74,7 @@ AS
 			GOTO Negate;
 		END 
 
-		SET @output = RIGHT('000' + CAST(@Milliseconds / 3600000 as sysname), 3) + N':' + RIGHT('00' + CAST((@Milliseconds / (60000) % 60) AS sysname), 2) + N':' + RIGHT('00' + CAST(((@Milliseconds / 1000) % 60) AS sysname), 2) + N'.' + RIGHT('000' + CAST((@Milliseconds) AS sysname), 3)
+		SET @output = RIGHT('00' + CAST(@Milliseconds / 3600000 as sysname), 2) + N':' + RIGHT('00' + CAST((@Milliseconds / (60000) % 60) AS sysname), 2) + N':' + RIGHT('00' + CAST(((@Milliseconds / 1000) % 60) AS sysname), 2) + N'.' + RIGHT('000' + CAST((@Milliseconds) AS sysname), 3)
 
 Negate:
 		IF @Milliseconds < 0 
