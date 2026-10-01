@@ -149,15 +149,6 @@ ORDER BY
 		@sql, 
 		N'@top int', 
 		@top = @top;
-	
-/*
-
-				--CASE WHEN [x].[dbid] = 32767 THEN N'(object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME([t].[objectid], [t].[dbid]) END [module],
-
-
-*/
-
-
 
 	SELECT 
 		[n].[row_id],
@@ -166,7 +157,12 @@ ORDER BY
 		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'resource_db' ELSE DB_NAME(ISNULL([t].[dbid], [x].[dbid])) END [database], 
 		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'  (object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME(ISNULL([t].[objectid], [x].[objectid]), ISNULL([t].[dbid], [x].[dbid])) END [module],
 		SUBSTRING([t].[text], n.[statement_start_offset] / 2 + 1, (CASE WHEN [n].[statement_end_offset] = -1 THEN LEN([t].[text]) * 2 ELSE [n].[statement_end_offset] END - [n].[statement_start_offset]) / 2) [statement],
-		CAST([x].[query_plan] AS xml) [statement_plan],
+		--CAST([x].[query_plan] AS xml) [statement_plan],
+		CASE 
+			WHEN TRY_CAST([x].[query_plan] AS xml) IS NULL THEN (SELECT NCHAR(13) + NCHAR(10) + NCHAR(9) + N'This plan is too large to display. Remove the TOP line, and the BOTTOM line, then save as .sqlplan and open.' + NCHAR(13) + NCHAR(10) +
+			REPLACE([x].[query_plan], N'</ShowPlanXML>', N'</ShowPlanXML>' + NCHAR(13) + NCHAR(10)) [processing-instruction(Plan_Too_Large)] FOR XML PATH(N''), TYPE)
+			ELSE TRY_CAST([x].[query_plan] AS xml)
+		END [statement_plan],
 		[p].[query_plan] [batch_plan],
 		FORMAT([n].[execution_count], N'N0') [exec_count],
 		FORMAT([n].[total_cpu] / 1000, N'N0') [total_cpu_ms],
