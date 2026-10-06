@@ -1,5 +1,8 @@
 /*
 
+	EXAMPLE:
+		
+		EXEC [admindb]..[querystats_consumers] @top = 20, @order_by = N'CPU_TOTAL'
 
 */
 
@@ -155,9 +158,9 @@ ORDER BY
 		dbo.format_timespan(DATEDIFF_BIG(MILLISECOND, [n].[creation_time], GETDATE())) [plan_age],
 		dbo.format_timespan(DATEDIFF_BIG(MILLISECOND, [n].[last_execution_time], GETDATE())) [last_execution],
 		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'resource_db' ELSE DB_NAME(ISNULL([t].[dbid], [x].[dbid])) END [database], 
-		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'  (object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME(ISNULL([t].[objectid], [x].[objectid]), ISNULL([t].[dbid], [x].[dbid])) END [module],
+		ISNULL([t].[objectid], [x].[objectid]) [module],
+		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'  (object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME(ISNULL([t].[objectid], [x].[objectid]), ISNULL([t].[dbid], [x].[dbid])) END [module_name],
 		SUBSTRING([t].[text], n.[statement_start_offset] / 2 + 1, (CASE WHEN [n].[statement_end_offset] = -1 THEN LEN([t].[text]) * 2 ELSE [n].[statement_end_offset] END - [n].[statement_start_offset]) / 2) [statement],
-		--CAST([x].[query_plan] AS xml) [statement_plan],
 		CASE 
 			WHEN TRY_CAST([x].[query_plan] AS xml) IS NULL THEN (SELECT NCHAR(13) + NCHAR(10) + NCHAR(9) + N'This plan is too large to display. Remove the TOP line, and the BOTTOM line, then save as .sqlplan and open.' + NCHAR(13) + NCHAR(10) +
 			REPLACE([x].[query_plan], N'</ShowPlanXML>', N'</ShowPlanXML>' + NCHAR(13) + NCHAR(10)) [processing-instruction(Plan_Too_Large)] FOR XML PATH(N''), TYPE)
@@ -186,7 +189,8 @@ ORDER BY
 
 		-- TODO: see https://overachieverllc.atlassian.net/browse/S4-969
 		[n].[querystore_sql_handle],
-		[n].[querystore_context_id]
+		[n].[querystore_context_id], 
+		CAST(N'' AS sysname) [querystore_details]
 	INTO 
 		#intermediate
 	FROM 
@@ -195,19 +199,155 @@ ORDER BY
 		OUTER APPLY sys.[dm_exec_sql_text]([n].[sql_handle]) [t]
 		OUTER APPLY sys.[dm_exec_text_query_plan]([n].[plan_handle], [n].[statement_start_offset], [n].[statement_end_offset]) [x];
 
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Extract Module Names:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF EXISTS (SELECT NULL FROM [#intermediate] WHERE [module] IS NOT NULL) BEGIN
+		DECLARE @modules table (
+			[row_id] int NOT NULL, 
+			[database] sysname NOT NULL,
+			[module] int NOT NULL, 
+			[schema_name] sysname NULL
+		);
+
+		INSERT INTO @modules ([row_id], [database], [module])
+		SELECT
+			[row_id],
+			[database],
+			[module]
+		FROM
+			[#intermediate]
+		WHERE
+			[module] IS NOT NULL;
+
+		DECLARE @template nvarchar(MAX) = N'SELECT @schemaName = [s].[name] FROM [{database}].sys.objects [o] INNER JOIN [{database}].sys.schemas [s] ON [o].[schema_id] = [s].[schema_id] WHERE [o].[object_id] = @moduleId; ';
+		DECLARE @database sysname, @moduleId int, @schemaName sysname;
+
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT	DISTINCT
+			[database],
+			[module]
+		FROM
+			[#intermediate]
+		WHERE
+			[module] IS NOT NULL 
+			AND [database] <> N'resource_db';
+
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @database, @moduleId;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+			SET @sql = REPLACE(@template, N'{database}', @database);
+
+			EXEC sys.sp_executesql 
+				@sql, 
+				N'@moduleId int, @schemaName sysname OUTPUT', 
+				@moduleId = @moduleId,
+				@schemaName = @schemaName OUTPUT;
+
+			UPDATE @modules 
+			SET 
+				[schema_name] = @schemaName
+			WHERE 
+				[database] = @database
+				AND module = @moduleId;
+		
+			FETCH NEXT FROM [walker] INTO @database, @moduleId;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		UPDATE [i]
+		SET 
+			[i].[module_name] = QUOTENAME([m].[schema_name]) + N'.' + QUOTENAME([i].[module_name])
+		FROM 
+			#intermediate [i]
+			INNER JOIN @modules [m] ON [i].[row_id] = [m].[row_id];
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Extract QueryStore Query-IDs:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF EXISTS (SELECT NULL FROM [#intermediate] WHERE [querystore_sql_handle] IS NOT NULL) BEGIN
+		DECLARE @queryStoreQueryIds table (
+			[row_id] int NOT NULL, 
+			[database] sysname NOT NULL,
+			[querystore_sql_handle] varbinary(64) NOT NULL, 
+			[query_id] bigint NULL
+		);
+
+		INSERT INTO @queryStoreQueryIds ([row_id], [database], [querystore_sql_handle])
+		SELECT
+			[row_id],
+			[database],
+			[querystore_sql_handle]
+		FROM 
+			[#intermediate] 
+		WHERE 
+			querystore_sql_handle IS NOT NULL;
+
+		SET @template = N'SELECT @queryId = [query_text_id] FROM [{database}].sys.[query_store_query_text] WHERE [statement_sql_handle] = @sqlHandle; ';
+		DECLARE @sqlHandle varbinary(64), @queryId bigint;
+
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT DISTINCT
+			[database],
+			[querystore_sql_handle] 
+		FROM 
+			#intermediate 
+		WHERE 
+			querystore_sql_handle IS NOT NULL;
+		
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @database, @sqlHandle;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			SET @sql = REPLACE(@template, N'{database}', @database);
+
+			EXEC sys.sp_executesql 
+				@sql, 
+				N'@sqlHandle varbinary(64), @queryId bigint OUTPUT', 
+				@sqlHandle = @sqlHandle,
+				@queryId = @queryId OUTPUT;
+
+			UPDATE @queryStoreQueryIds 
+			SET 
+				query_id = @queryId
+			WHERE 
+				[database] = @database
+				AND [querystore_sql_handle] = @sqlHandle;
+		
+			FETCH NEXT FROM [walker] INTO @database, @sqlHandle;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		UPDATE [i]
+		SET 
+			[i].[querystore_details] = [i].[database] + N':' + CAST([q].[query_id] AS sysname) + N':' + CAST([i].[querystore_context_id] AS sysname)
+		FROM 
+			#intermediate [i]
+			INNER JOIN @queryStoreQueryIds [q] ON [i].[row_id] = [q].[row_id];
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Final Projection:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @sql = N'SELECT 
 	[plan_age],
 	[last_execution],
 	[database],
-	[module],
+	ISNULL(CASE WHEN [database] = N''resource_db'' THEN N''  [object_id]: '' + ISNULL(CAST([module] AS sysname), N'''') ELSE [module_name] END, N'''') [module],
 	[statement],
-	[statement_plan],
-	[batch_plan],
 	[exec_count],
 	{targetColumns}, 
 	(SELECT {metricsColumns} FROM [#intermediate] [i2] WHERE [#intermediate].[row_id] = [i2].[row_id] FOR XML PATH(N''detail''), TYPE) [metrics],
-	[querystore_sql_handle],
-	[querystore_context_id] 
+	[statement_plan],
+	[batch_plan],
+	[querystore_details]
 FROM 
 	[#intermediate]
 ORDER BY 
