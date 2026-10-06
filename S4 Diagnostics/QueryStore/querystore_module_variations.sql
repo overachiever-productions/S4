@@ -1,10 +1,10 @@
 /*
 
-
 	EXAMPLE: 
 
 			EXEC [admindb].dbo.[querystore_module_variations]
 				@TargetDatabase = N'Billing',
+				@Granularity = N'TOTAL',
 				@ModuleName = N'AddEntry',
 				@ExtractParameters = 1;
 
@@ -13,7 +13,7 @@
 USE [admindb];
 GO
 
-IF OBJECT_ID('dbo.[querystore_module_variations]','P') IS NOT NULL
+IF OBJECT_ID(N'dbo.[querystore_module_variations]', N'P') IS NOT NULL
 	DROP PROC dbo.[querystore_module_variations];
 GO
 
@@ -30,15 +30,15 @@ AS
 	-- {copyright}
 	
 	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'TOTAL'));
+	
+	IF @Granularity NOT IN (N'TOTAL', N'DAY', N'NATIVE') BEGIN
+		RAISERROR(N'Allowed values for @Granularity are: { TOTAL | DAY | NATIVE }.', 16, 1);
+		RETURN -10;
+	END;
 
 	IF NULLIF(@ModuleName, N'') IS NULL BEGIN 
 		RAISERROR(N'@ModuleName cannot be NULL or empty.', 16, 1);
 		RETURN -2;
-	END;
-
-	IF @Granularity NOT IN (N'TOTAL', N'DAY', N'NATIVE') BEGIN
-		RAISERROR(N'Allowed values for @Granularity are: { TOTAL | DAY | NATIVE }.', 16, 1);
-		RETURN -10;
 	END;
 
 	IF @TargetDatabase IS NULL BEGIN 
