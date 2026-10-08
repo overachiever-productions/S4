@@ -54,7 +54,7 @@ AS
 	DECLARE @storageType sysname, @fileName sysname;
 	SELECT 
 		@storageType = [nodes].[data].value(N'(storage_type)[1]',N'sysname'), 
-		@fileName = [nodes].[data].value(N'(file_name)[1]',N'sysname')
+		@fileName = [nodes].[data].value(N'(target)[1]',N'sysname')
 	FROM 
 		@SerializedOutput.nodes(N'//session') [nodes] ([data]);
 
@@ -131,6 +131,7 @@ AS
 				[x].[XMLData].value(N'(/event/@timestamp)[1]', N'datetime2') >= @lset AND [x].[XMLData].value(N'(/event/@timestamp)[1]', N'datetime2') < @cet;
 		  END; 
 		ELSE BEGIN
+
 			INSERT INTO [#raw_xe_data] (
 				[event_data],
 				[file_name],
