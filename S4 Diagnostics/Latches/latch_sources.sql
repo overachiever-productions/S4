@@ -151,12 +151,12 @@ AS
 
 	DECLARE @orderBy nvarchar(MAX) = N'';
 	SELECT @orderBy = CASE @order_by 
-		WHEN N'TOTAL_LEAF' THEN N'[leaf_latch_ms] DESC, [io_latch_count] DESC'
-		WHEN N'AVG_LEAF' THEN N'[avg_leaf_latch_ms] DESC, [io_latch_count] DESC'
-		WHEN N'TOTAL_TREE' THEN N'[tree_latch_ms] DESC, [io_latch_count] DESC'
-		WHEN N'AVG_TREE' THEN N'[avg_tree_latch_ms] DESC, [io_latch_count] DESC'
-		WHEN N'TOTAL_IO' THEN N'[io_latch_ms] DESC, [leaf_latch_count] DESC'
-		WHEN N'AVG_IO' THEN N'[avg_io_latch_ms] DESC, [leaft_latch_count] DESC'
+		WHEN N'TOTAL_LEAF' THEN N'[leaf_latch_ms] DESC, [io_latch_count] + [io_latch_count] DESC'
+		WHEN N'AVG_LEAF' THEN N'[avg_leaf_latch_ms] DESC, [io_latch_count] + [io_latch_count] DESC'
+		WHEN N'TOTAL_TREE' THEN N'[tree_latch_ms] DESC, [io_latch_count] + [leaf_latch_count] DESC'
+		WHEN N'AVG_TREE' THEN N'[avg_tree_latch_ms] DESC, [io_latch_count] + [leaf_latch_count] DESC'
+		WHEN N'TOTAL_IO' THEN N'[io_latch_ms] DESC, [leaf_latch_count] + [io_latch_count] DESC'
+		WHEN N'AVG_IO' THEN N'[avg_io_latch_ms] DESC, [leaf_latch_count] + [io_latch_count] DESC'
 		ELSE N''
 	END;
 
@@ -228,7 +228,7 @@ FROM
 			@Errors = @errors OUTPUT; 
 
 		IF @errors IS NOT NULL BEGIN 
-			SET @errorContext = N'Unexpected error while extracting latch details (per database): ';
+			RAISERROR('Unexpected error while extracting latch details (per database): ', 16, 1);
 			RETURN -20;
 		END;
 
@@ -367,7 +367,7 @@ FROM
 ORDER BY 
 	{orderBy}; ';
 
-	SET @sql = REPLACE(@sql, N'{CURRENT_DB}', DB_NAME());
+	SET @sql = REPLACE(@sql, N'{CURRENT_DB}', @databases);
 	SET @sql = REPLACE(@sql, N'{orderBy}', @orderBy);
 
 	IF @granularity = N'TABLE' BEGIN
