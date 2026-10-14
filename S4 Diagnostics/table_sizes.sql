@@ -215,7 +215,7 @@ AS
 		GOTO ErrorDetails;
 	END;
 
-	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN
+	IF dbo.is_xml_empty(@SerializedOutput) = 1 BEGIN
 		SET @SerializedOutput = (
 			SELECT 
 				[outer].[database_name] [@name], 
