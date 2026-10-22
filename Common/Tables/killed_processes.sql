@@ -11,7 +11,7 @@ IF OBJECT_ID(N'[dbo].[killed_processes]', N'U') IS NULL BEGIN
 	CREATE TABLE [dbo].[killed_processes] (
 		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[timestamp] datetime NOT NULL, 
-		[type] sysname NOT NULL,	-- blocked_process, orphaned_connection, connection_pool_leak, etc. 
+		[type] sysname NOT NULL,	-- BLOCKING_PROCESSES | CONNECTIONPOOL_LEAKS | ZOMBIED_TRANSACTIONS | LONG_RUNNING_PROCESSES | KILL_PROCESSES | RESOURCEGOVERNOR_CONNECTIONS | CONTROL_DATABASE
 		[print_only] bit NOT NULL,
 		[row_count] int NOT NULL, 
 		[kill_count] int NOT NULL, 
