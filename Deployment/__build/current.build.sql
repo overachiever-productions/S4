@@ -1063,10 +1063,10 @@ GO
 --##INCLUDE: S4 Utilities\extract_matches.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+--##INCLUDE: Kill Store\kill_blocking_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_long_running_processes.sql
+--##INCLUDE: Kill Store\kill_long_running_processes.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\translate_characters.sql
@@ -1101,7 +1101,7 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Resource Governor\kill_resource_governor_connections.sql
+--##INCLUDE: Kill Store\kill_resource_governor_connections.sql
 
 -----------------------------------
 --##INCLUDE: S4 Resource Governor\resource_governor_compute_metrics.sql
