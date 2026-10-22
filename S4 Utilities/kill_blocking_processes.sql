@@ -770,7 +770,7 @@ SendMessage:
 		@crlf + @crlf + @tab + N']' +
 		@crlf + @crlf
 	FROM 
-		dbo.[view_killed_blocking_processes]()
+		dbo.[killed_blocking_processes_data]()
 	WHERE 
 		[instance_id] = @snapshotId;
 
