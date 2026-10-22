@@ -1070,12 +1070,6 @@ GO
 --##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
-
------------------------------------
 --##INCLUDE: S4 Utilities\kill_long_running_processes.sql
 
 -----------------------------------
