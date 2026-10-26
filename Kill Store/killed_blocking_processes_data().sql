@@ -53,7 +53,7 @@ AS
 			dbo.[killed_processes] [s]
 			OUTER APPLY [s].[snapshot].nodes(N'blocked_processes/row') [nodes]([row])
 		WHERE 
-			[type] = N'blocking_processes'
+			[type] = N'BLOCKING_PROCESSES'
 
 	) 
 
