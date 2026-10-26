@@ -127,13 +127,23 @@ AS
     END;
 
     BEGIN TRY
+		DECLARE @provider sysname = N'MSOLEDBSQL';
+		IF dbo.[engine_version](N'RTM') <= 13
+			SET @provider = N'SQLNCLI';
+
         EXEC master.dbo.sp_addlinkedserver 
 	        @server = N'PARTNER', 
 	        @srvproduct = N'', 
--- TODO: IF SQL Server 2016 or lower, use 'SQLNCLI' instead of MSOLEDBSQL
-	        @provider = N'MSOLEDBSQL', 
+	        @provider = @provider, 
 	        @datasrc = @remoteHostName, 
 	        @catalog = N'master';
+
+		IF dbo.[engine_version](N'RTM') >= 17. BEGIN
+			EXEC master.dbo.sp_serveroption 
+				@server = N'PARTNER', 
+				@optname = N'provider string', 
+				@optvalue = N'Encrypt=Yes;TrustServerCertificate=Yes';
+		END;
 
         EXEC master.dbo.sp_addlinkedsrvlogin 
 	        @rmtsrvname = N'PARTNER',
