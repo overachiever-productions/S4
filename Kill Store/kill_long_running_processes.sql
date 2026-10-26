@@ -14,6 +14,7 @@ CREATE PROC dbo.[kill_long_running_processes]
 	@ExecutionThresholdSeconds				int					= 70, 
 	@ExcludeBackupsAndRestores				bit					= 1, 
 	@ExcludeSqlServerAgentJobs				bit					= 1, 
+-- TODO: https://overachieverllc.atlassian.net/browse/S4-984
 	@Databases								nvarchar(MAX)		= NULL,
 	@Applications							nvarchar(MAX)		= NULL, 
 	@Principals								nvarchar(MAX)		= NULL, 
@@ -338,6 +339,7 @@ AS
 	-- Snapshot / Persist any Processes that have made it to this point (whether @PrintOnly = 1 or not):
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF @CaptureDetails = 1 BEGIN 
+-- TODO: https://overachieverllc.atlassian.net/browse/S4-985
 		INSERT INTO dbo.[long_running_process_snapshots]
 		(
 			[timestamp],

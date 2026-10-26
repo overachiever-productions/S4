@@ -85,9 +85,6 @@
 	running for 10s of seconds BEFORE getting blocked for just a few seconds when this sproc runs) - so there ARE some inherant issues with the way this sproc is forced
 	to use [duration] (total execution time) of BLOCKED PROCESSES to assess whether or not a lead-blocker SHOULD be killed. 
 
-
-
-
 	.RESULT 
 	When @PrintOnly = 1, will print KILL commands and a summary of actions that WOULD HAVE BEEN taken had @PrintOnly been set to 0. 
 	Otherwise, if @SendAlerts is set to 1 (true), procedure will send an email summary for any lead-blockers matching @AlertThreshold AND
@@ -95,7 +92,6 @@
 	In cases where any lead-blockers exist and have been blocking 1 or more processes for MORE than the minimum of either @AlertThreshold OR @KillThreshold,  
 	this procedure WILL dump a blocked-processes snapshot into dbo.killed_processes - even IF predicates/filters otherwise REMOVE lead-blockers from being
 	KILL'd or ALERT'd against. 
-
 
 	.EXAMPLE
 	TITLE = Setting `@AlertThreshold` and `@KillThreshold` dynamically during different parts of the day.
@@ -731,7 +727,7 @@ Capture_Snapshot:
 	VALUES
 	(
 		GETDATE(),	-- timestamp
-		N'blocking_processes', 
+		N'BLOCKING_PROCESSES', 
 		@PrintOnly, 
 		@count, 
 		@killCount, 
@@ -770,7 +766,7 @@ SendMessage:
 		@crlf + @crlf + @tab + N']' +
 		@crlf + @crlf
 	FROM 
-		dbo.[view_killed_blocking_processes]()
+		dbo.[killed_blocking_processes_data]()
 	WHERE 
 		[instance_id] = @snapshotId;
 

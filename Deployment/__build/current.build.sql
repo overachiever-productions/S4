@@ -207,6 +207,8 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
 	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
 	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
 	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
+	<entry schema="dbo" name="kill_connections_by_statement" type="P" comment="v15.0 cleanup." />
+	<entry schema="dbo" name="kill_connections_by_hostname" type="P" comment="v15.0 cleanup." />
 	<entry schema="dbo" name="list_running_jobs" type="P" comment="v14.2 refactoring." />
 	<entry schema="dbo" name="translate_io_perfcounters" type="P" comment="v14.5 refactoring. (removed ''perf'' from name)." />
 	<entry schema="dbo" name="print_long_string" type="P" comment="v14.7 refactoring. (removed ''_long_'' from name)." />
@@ -1061,22 +1063,10 @@ GO
 --##INCLUDE: S4 Utilities\extract_matches.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
+--##INCLUDE: Kill Store\kill_blocking_processes.sql
 
 -----------------------------------
---##INCLUDE: S4 Utilities\kill_connections_by_statement.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\kill_connections_by_hostname.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\kill_blocking_processes.sql
-
------------------------------------
---##INCLUDE: S4 Utilities\kill_long_running_processes.sql
+--##INCLUDE: Kill Store\kill_long_running_processes.sql
 
 -----------------------------------
 --##INCLUDE: S4 Utilities\translate_characters.sql
@@ -1111,7 +1101,7 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------
---##INCLUDE: S4 Resource Governor\kill_resource_governor_connections.sql
+--##INCLUDE: Kill Store\kill_resource_governor_connections.sql
 
 -----------------------------------
 --##INCLUDE: S4 Resource Governor\resource_governor_compute_metrics.sql
