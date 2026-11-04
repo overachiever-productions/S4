@@ -116,6 +116,11 @@ AS
 	--		can't remember if there is such a thing (but there might, actually, be one in sys.sysprocesses? )
 	SELECT 
 		[c].[session_id],
+		DB_NAME([s].[database_id]) [database],
+		[s].[login_name] [principal],
+		[s].[host_name] [host],
+		[s].[program_name] [application],
+		[s].[status] [session_status],
 		[c].[duration],
 		[c].[tx_id],
 		[c].[is_user_tx],
@@ -130,6 +135,7 @@ AS
 	FROM 
 		[#core] [c] 
 		INNER JOIN [#details] [d] ON [c].[session_id] = [d].[session_id] 
+		LEFT OUTER JOIN sys.[dm_exec_sessions] [s] ON [c].[session_id] = [s].[session_id]
 	ORDER BY 
 		[c].[elapsed_time_seconds] DESC;
 
