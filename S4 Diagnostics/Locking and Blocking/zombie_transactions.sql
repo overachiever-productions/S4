@@ -11,6 +11,39 @@
 		So .. this diagnostic returns anything that has the SYMPTOMs of a zombie (which are the same symptoms of zombie-like operations).
 
 
+
+	.PARAMETER @sort 		
+	REQUIRED
+	DEFAULT: `IDLE_TIME`
+	VALID VALUES: `{	IDLE_TIME | SESSION_ID | TEMPDB_LRC | LOCKS_COUNT | LOG_USED }`
+	| @sort Type | Description |
+	|---|---|
+	| IDLE_TIME | Sort by the amount of time the session has been idle (descending) |	
+	| SESSION_ID | Sort by the session_id (ascending) |
+	| TEMPDB_LRC | Sort by tempdb log record COUNTs (descending) |
+	| LOCKS_COUNT | Sort by the number of locks held - across ALL databases (descending) |
+	| LOG_USED | Sort by the amount of T-Log space used - against ALL databases (descending) |
+
+	
+	.RESULT
+
+	.TABLE 
+	| Column | Type | Description |
+	|---|---|---|
+	| session_id | smallint | The session_id of the zombie-like session |
+	| databases | nvarchar(4000) | The databases that the zombie-like session has open transactions in |
+	| principal | nvarchar(128) | The login_name of the zombie-like session |
+	| host | nvarchar(128) | The host_name of the zombie-like session |
+	| ip | nvarchar(48) | The client_net_address of the zombie-like session |
+	| application | nvarchar(128) | The program_name of the zombie-like session |
+	| status | nvarchar(30) | The status of the zombie-like session (i.e., sleeping) |
+	| session_conn_count | int | The number of connections that the zombie-like session has open (i.e., MARS connections, etc.) |
+
+
+	.REMARKS
+	For the `@sort` parameter, the `TEMPDB_LRC` sort option allows easy identification of zombie-like sessions that are likely to PREVENT the tempdb's transaction log from being TRUNCATED. 
+
+
 */
 
 USE [admindb];
@@ -21,19 +54,38 @@ IF OBJECT_ID(N'dbo.[zombie_transactions]', N'P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[zombie_transactions]
-	@idle_threshold					sysname				= N'90 seconds',
-	@sort							sysname				= N'IDLE',						-- IDLE | SESSION | TEMPDB_USED					
-	@serialized_output				xml					= N'<default/>'		OUTPUT
+	@idle_threshold							sysname				= N'90 seconds',
+	@sort									sysname				= N'IDLE_TIME',						-- { IDLE_TIME | SESSION_ID | TEMPDB_LOG_RECORDS | LOCKS_COUNT | LOG_USED }
+	@exclude_backups_and_restores			bit					= 0,					
+	@exclude_sqlagent_jobs					bit					= 0,	
+	@databases								nvarchar(MAX)		= NULL,
+	@applications							nvarchar(MAX)		= NULL, 
+	@principals								nvarchar(MAX)		= NULL, 
+	@roles									nvarchar(MAX)		= NULL,						
+	@hosts									nvarchar(MAX)		= NULL, 
+	@ips									nvarchar(MAX)		= NULL, 
+	@statements								nvarchar(MAX)		= NULL,	
+	@serialized_output						xml					= N'<default/>'		OUTPUT
 AS
     SET NOCOUNT ON; 
 
 	-- {copyright}
 
 	SET @idle_threshold = ISNULL(NULLIF(@idle_threshold, N''), N'90 seconds');
-	SET @sort = UPPER(ISNULL(NULLIF(@sort, N''), N'IDLE'));
+	SET @sort = UPPER(ISNULL(NULLIF(@sort, N''), N'IDLE_TIME'));
 
-	IF @sort NOT IN (N'IDLE', N'SESSION', N'TEMPDB_USED') BEGIN
-		RAISERROR(N'Invalid @sort value. Valid values are: { IDLE | SESSION | TEMPDB_USED }', 16, 1);
+	SET @exclude_backups_and_restores = ISNULL(@exclude_backups_and_restores, 0);
+	SET @exclude_sqlagent_jobs = ISNULL(@exclude_sqlagent_jobs, 0);
+	SET @databases = NULLIF(@databases, N'');
+	SET @applications = NULLIF(@applications, N'');
+	SET @principals = NULLIF(@principals, N'');
+	SET @roles = NULLIF(@roles, N'');
+	SET @hosts = NULLIF(@hosts, N'');
+	SET @ips = NULLIF(@ips, N'');
+	SET @statements = NULLIF(@statements, N'');
+
+	IF @sort NOT IN (N'IDLE_TIME', N'SESSION_ID', N'TEMPDB_LRC', N'LOCKS_COUNT', N'LOG_USED') BEGIN
+		RAISERROR(N'Invalid @sort value. Valid values are: { IDLE_TIME | SESSION_ID | TEMPDB_LRC | LOCKS_COUNT	| LOG_USED }', 16, 1);
 		RETURN -10;  
 	END;
 
@@ -158,8 +210,8 @@ AS
 		[session_id],
 		(
 			SELECT 
-				DB_NAME([database_id]) [@database], 
-				(
+				DB_NAME([database_id]) [@name], 
+				ISNULL((
 					SELECT 
 						CAST([dt].[database_transaction_log_bytes_used] / 1024. AS decimal(10,2)) 
 					FROM 
@@ -169,11 +221,11 @@ AS
 					WHERE 
 						[st].[session_id] = [mid].[session_id]
 						AND dt.database_id = [mid].[database_id]
-				) [@log_kb_used],
+				), 0) [@log_kb_used],
 				(
 					SELECT 
-						[resource_type] [@resource_type],
 						[request_mode] [@request_mode],
+						[resource_type] [@resource_type],
 						[request_status] [@request_status],
 						[request_owner_type] [@request_owner_type],
 						[count] [@count]
@@ -196,12 +248,11 @@ AS
 	FROM 
 		[session];
 
-/*---------------------------------------------------------------------------------------------------------------------------------------------------
--- Get-Tempdb (LOG) usage for all sessions: 
----------------------------------------------------------------------------------------------------------------------------------------------------*/
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Get-Tempdb (LOG) usage for all sessions: 
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SELECT
 		[st].[session_id],
-		--[at].[name] [tran_name],
 		[dt].[database_transaction_log_record_count] [record_count],
 		CAST([dt].[database_transaction_log_bytes_used] / 1048576. AS decimal(12, 2)) [log_used_mb],
 		CAST([dt].[database_transaction_log_bytes_reserved] / 1048576. AS decimal(12, 2)) [log_reserved_mb]
@@ -217,8 +268,45 @@ AS
 		[dt].[database_transaction_log_bytes_used] + [dt].[database_transaction_log_bytes_reserved] DESC;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Intermediate Results + Checks for Missing [statement]:
+	-- Predication:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF @databases IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_databases ([row_id] int IDENTITY(1,1) NOT NULL, [database] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [database]));
+	END;
+	
+	IF @applications IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
+	END; 
+
+	IF @Hosts IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
+	END;
+
+	IF @ips IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_ips ([row_id] int IDENTITY(1,1) NOT NULL, [ip] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [ip]));		
+	END;
+
+	IF @principals IS NOT NULL BEGIN
+		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
+	END;
+
+	IF @Statements IS NOT NULL BEGIN
+		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
+	END;
+
+	DECLARE @joins nvarchar(MAX), @filters nvarchar(MAX);
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @tab nchar(1) = NCHAR(9);
+	EXEC dbo.[core_predicates]
+		@Databases = @databases,
+		@Applications = @applications,
+		@Hosts = @hosts,
+		@IPs = @ips,
+		@Principals = @principals,
+		@Statements = @Statements,
+		@JoinPredicates = @joins OUTPUT,
+		@FilterPredicates = @filters OUTPUT;
+
 	CREATE TABLE [#intermediate] (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[session_id] smallint NOT NULL,
@@ -233,8 +321,7 @@ AS
 		[idle_time] sysname NULL,
 		[idle_milliseconds] bigint NULL,
 		[tx_id] bigint NOT NULL,
--- REFACTOR: these names suck... but I need to make it clear that these are TEMPDB log usage values (not the log usage for the database that the transaction is in)
-		[tempdb_record_count] bigint NULL,
+		[tempdb_lrc] bigint NULL,
 		[tempdb_log_used_mb] decimal(12, 2) NULL,
 		[tempdb_log_reserved_mb] decimal(12, 2) NULL,
 		[resources] xml NULL,
@@ -244,44 +331,79 @@ AS
 		[database_id] smallint NOT NULL,
 		[statement] nvarchar(MAX) NULL
 	);
-	
+
 	DECLARE @orderBy nvarchar(MAX);
 	SELECT @orderBy = CASE @sort
-		WHEN N'IDLE' THEN N'[idle_milliseconds] DESC'
-		WHEN N'SESSION_ID' THEN N'[session_id]'
-		WHEN N'TEMPDB_USED' THEN N'[tempdb_log_used_mb] DESC'
+		WHEN N'IDLE_TIME' THEN N'[x].[idle_milliseconds] DESC'
+		WHEN N'SESSION_ID' THEN N'[x].[session_id]'
+		WHEN N'TEMPDB_LOG_RECORDS' THEN N'[x].[tempdb_lrc] DESC'
+		WHEN N'LOCKS_COUNT' THEN N'DATALENGTH([x].[resources]) DESC'
+		WHEN N'LOG_USED' THEN N'[x].[log_used_mb] DESC'
+		ELSE N'[x].[idle_milliseconds] DESC'
 	END;
 
-	DECLARE @sql nvarchar(MAX) = N'SELECT
-	[z].[session_id],
-	[d].[databases],
-	[z].[login_name] [principal],
-	[z].[host_name] [host],
-	(SELECT [e].[client_net_address] FROM sys.[dm_exec_connections] [e] WHERE [z].[session_id] = [e].[session_id] AND [e].[parent_connection_id] IS NULL) [ip],
-	[z].[program_name] [application],
-	[z].[status],
-	(SELECT COUNT(*) FROM sys.[dm_exec_connections] [e] WHERE [z].[session_id] = [e].[session_id]) [session_conn_count], /* Good ol'' MARS (sigh) */
-	(SELECT SUM([open_transactions]) FROM [#potential_zombies] [z2] WHERE [z2].[session_id] = [z].[session_id]) [open_tx_count],
-	[dbo].[format_timespan]([z].[idle_milliseconds]) [idle_time],
-	[z].[idle_milliseconds],
-	[z].[tx_id],
-	[l].[record_count] [tempdb_record_count],
-	[l].[log_used_mb] [tempdb_log_used_mb],
-	[l].[log_reserved_mb] [tempdb_log_reserved_mb],
+	DECLARE @sql nvarchar(MAX) = N'WITH core AS (
+	SELECT
+		[z].[session_id],
+		[d].[databases] [database],  -- tweaked spelling to allow for joins/predicates to filter vs [database]
+		[z].[login_name] [principal],
+		[z].[host_name] [host],
+		(SELECT [e].[client_net_address] FROM sys.[dm_exec_connections] [e] WHERE [z].[session_id] = [e].[session_id] AND [e].[parent_connection_id] IS NULL) [ip],
+		[z].[program_name] [application],
+		[z].[status],
+		(SELECT COUNT(*) FROM sys.[dm_exec_connections] [e] WHERE [z].[session_id] = [e].[session_id]) [session_conn_count], /* Good ol'' MARS (sigh) */
+		(SELECT SUM([open_transactions]) FROM [#potential_zombies] [z2] WHERE [z2].[session_id] = [z].[session_id]) [open_tx_count],
+		[dbo].[format_timespan]([z].[idle_milliseconds]) [idle_time],
+		[z].[idle_milliseconds],
+		[z].[tx_id],
+		[l].[record_count] [tempdb_lrc],
+		[l].[log_used_mb] [tempdb_log_used_mb],
+		[l].[log_reserved_mb] [tempdb_log_reserved_mb],
+		[x].[resources],
+		CAST([x].[resources].value(N''xs:decimal(sum(/databases/database/@log_kb_used))'', N''decimal(10,2)'') AS decimal(10,2)) [log_used_mb],
+		[z].[tx_name],
+		[z].[tx_start],
+		[z].[transaction_state],
+		[z].[database_id],
+		[z].[last_statement] [statement]
+	FROM
+		[#potential_zombies] [z]
+		INNER JOIN #databases_by_session [d] ON [z].[session_id] = [d].[session_id]
+		INNER JOIN [#resources_xml] [x] ON [z].[session_id] = [x].[session_id]
+		LEFT OUTER JOIN [#log_usage] [l] ON [z].[session_id] = [l].[session_id]
+)
+
+SELECT
+	[x].[session_id],
+	[x].[database] [databases],
+	[x].[principal],
+	[x].[host],
+	[x].[ip],
+	[x].[application],
+	[x].[status],
+	[x].[session_conn_count],
+	[x].[open_tx_count],
+	[x].[idle_time],
+	[x].[idle_milliseconds],
+	[x].[tx_id],
+	[x].[tempdb_lrc],
+	[x].[tempdb_log_used_mb],
+	[x].[tempdb_log_reserved_mb],
 	[x].[resources],
-	[z].[tx_name],
-	[z].[tx_start],
-	[z].[transaction_state],
-	[z].[database_id],
-	[z].[last_statement] [statement]
-FROM
-	[#potential_zombies] [z]
-	INNER JOIN #databases_by_session [d] ON [z].[session_id] = [d].[session_id]
-	INNER JOIN [#resources_xml] [x] ON [z].[session_id] = [x].[session_id]
-	LEFT OUTER JOIN [#log_usage] [l] ON [z].[session_id] = [l].[session_id]
+	[x].[tx_name],
+	[x].[tx_start],
+	[x].[transaction_state],
+	[x].[database_id],
+	[x].[statement] 
+FROM 
+	[core] [x]{joins}
+WHERE 
+	1 = 1{filters}
 ORDER BY
 	{orderBy};';
 
+	SET @sql = REPLACE(@sql, N'{joins}', @joins);
+	SET @sql = REPLACE(@sql, N'{filters}', @filters);
 	SET @sql = REPLACE(@sql, N'{orderBy}', @orderBy);
 
 	INSERT INTO [#intermediate] (
@@ -297,7 +419,7 @@ ORDER BY
 		[idle_time],
 		[idle_milliseconds],
 		[tx_id],
-		[tempdb_record_count],
+		[tempdb_lrc],
 		[tempdb_log_used_mb],
 		[tempdb_log_reserved_mb],
 		[resources],
@@ -310,6 +432,12 @@ ORDER BY
 	EXEC sys.sp_executesql 
 		@sql;
 
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Checks for Missing [statement]:
+-- well... crap. I can't predicate for statements and THEN look for more data 
+-- have to move this up the stack.
+-- https://overachieverllc.atlassian.net/browse/S4-997
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	UPDATE
 		[x]
 	SET
@@ -327,23 +455,24 @@ ORDER BY
 	IF dbo.is_xml_empty(@serialized_output) = 1 BEGIN
 		SELECT @serialized_output = (
 			SELECT 
-				[session_id],
-				[databases],
-				[principal],
-				[application],
-				[status],
-				[transaction_state] [tx_state],
-				[tx_name],
-				[idle_time],
-				[session_conn_count],
-				[open_tx_count],
-				[tempdb_record_count],
-				[tempdb_log_used_mb],
-				[tempdb_log_reserved_mb],
+				[session_id] [@session_id],
+				[databases] [@databases],
+				[idle_time] [@idle_time],
+				[idle_milliseconds] [@idle_milliseconds],
+				[status] [@status],
+				[tx_name] [@tx_name],
+				[transaction_state] [@tx_state],
+				[session_conn_count] [@conn_count],
+				[open_tx_count] [@open_tx_count],
+				[tempdb_lrc] [@tempdb_lrc],
+				[tempdb_log_used_mb] [@tempdb_log_used_mb], 
+				[tempdb_log_reserved_mb] [@tempdb_log_reserved_mb],
+				[tx_start] [@tx_start],
+				[principal] [@principal],
+				[application] [@application],
+				[host] [@host],
+				[ip] [@ip], 
 				[resources],
-				[tx_start],
-				[host],
-				[ip],
 				REPLACE([statement] COLLATE Latin1_General_BIN, char(0x0), N'') [statement]
 			FROM
 				#intermediate
@@ -360,14 +489,13 @@ ORDER BY
 		[principal],
 		[application],
 		[status],
-		[transaction_state] [tx_state],
 		[tx_name],
+		[transaction_state] [tx_state],
 		[idle_time],
-		[session_conn_count],
+		[session_conn_count] [conn_count],
 		[open_tx_count],
-		[tempdb_record_count],
-		[tempdb_log_used_mb],
-		[tempdb_log_reserved_mb],
+		[tempdb_lrc],
+		CAST ([tempdb_log_used_mb] AS sysname) + CASE WHEN [tempdb_log_used_mb] = [tempdb_log_reserved_mb] THEN N'' ELSE N' (' + CAST([tempdb_log_reserved_mb] AS sysname) + N')' END [tempdb_log_mb (reserved)],
 		[resources],
 		[tx_start],
 		[host],
