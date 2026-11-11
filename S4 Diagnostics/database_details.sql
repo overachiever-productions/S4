@@ -183,12 +183,12 @@ AS
 	
 	WITH files_on_c AS ( 
 		SELECT 
-			[name],
+			DB_NAME([database_id]) [name],
 			MAX(CASE WHEN [physical_name] LIKE N''C:\%'' THEN 1 ELSE 0 END) [files_on_c]
 		FROM 
 			sys.[master_files]
 		GROUP BY 
-			[name]
+			DB_NAME([database_id])
 	), 
 	core AS ( 
 		SELECT 
