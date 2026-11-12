@@ -189,7 +189,7 @@ FROM
 		[session] bit NOT NULL
 	);
 	INSERT INTO #trace_status ([flag], [status], [global], [session])
-	EXEC ('DBCC TRACESTATUS(-1)');
+	EXEC (N'DBCC TRACESTATUS(-1)');
 
 	DECLARE @rgTempdbLimitsInPlace bit = 0;
 
@@ -281,25 +281,12 @@ FROM
 	-- PERF:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @files nvarchar(MAX) = N'';
-	SELECT 
-		@files = @files + QUOTENAME([f].[name]) + N', '
-	FROM 
-		#latencies [l]
-		INNER JOIN [#tempdb_files] [f] ON [l].[file_id] = [f].[file_id]
-	WHERE 
-		[l].[avg_read_latency] < 2 AND [l].[avg_write_latency] < 2
-	ORDER BY 
-		[f].[file_id];
 
-	IF @files LIKE N'%,%' SET @files = LEFT(@files, LEN(@files) - 1);
-	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'PERF', N'latency.under_2ms', @files);
-
-	IF EXISTS (SELECT NULL FROM #latencies [l] WHERE [l].[avg_read_latency] >= 2 OR [l].[avg_write_latency] >= 2) BEGIN
+	IF EXISTS (SELECT NULL FROM #latencies [l] WHERE [l].[avg_read_latency] >= 8 OR [l].[avg_write_latency] >= 8) BEGIN
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		SELECT 
 			CASE WHEN [l].[avg_read_latency] > 30 OR [l].[avg_write_latency] > 30 THEN N'PERF-WARNING' ELSE N'PERF' END [classification], 
-			CASE WHEN [l].[avg_read_latency] > 30 OR [l].[avg_write_latency] > 30 THEN N'latency.over_30ms' ELSE N'latency.over_2ms' END [context], 
+			CASE WHEN [l].[avg_read_latency] > 30 OR [l].[avg_write_latency] > 30 THEN N'latency.over_30ms' ELSE N'latency.over_8ms' END [context], 
 			QUOTENAME([f].[name]) + N': read=' + CAST([l].[avg_read_latency] AS sysname) + N'ms, write=' + CAST([l].[avg_write_latency] AS sysname) + N'ms'
 				+ N', gbs_read=' + CAST([l].[read_gbs] AS sysname) + N', avg_read_kb=' + CAST([l].[avg_read_kb] AS sysname) 
 				+ N', gbs_written=' + CAST([l].[written_gbs] AS sysname) + N', avg_write_kb=' + CAST([l].[avg_write_kb] AS sysname) [detail]
@@ -307,7 +294,7 @@ FROM
 			[#latencies] [l]
 			INNER JOIN [#tempdb_files] [f] ON [l].[file_id] = [f].[file_id]
 		WHERE 
-			[l].[avg_read_latency] >= 2 OR [l].[avg_write_latency] >= 2;
+			[l].[avg_read_latency] >= 8 OR [l].[avg_write_latency] >= 8;
 	END;
 
 	IF EXISTS (SELECT NULL FROM #latencies [l] WHERE [l].[rg_queued_read_latency] > 0 OR [l].[rg_queued_write_latency] > 0) BEGIN
