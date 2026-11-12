@@ -50,13 +50,14 @@ AS
 	);
 
 	WITH gbs AS ( 
-		SELECT DISTINCT
-			s.volume_mount_point [drive],
-			CAST(s.available_bytes / 1073741824 AS decimal(24,2)) [available_gbs]
-		FROM 
-			sys.master_files f
-			CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.[file_id]) s
+		SELECT	DISTINCT
+			[s].[volume_mount_point] [drive],
+			CAST([s].[available_bytes] / 1073741824 AS decimal(24, 2)) [available_gbs]
+		FROM
+			[sys].[master_files] [f]
+			CROSS APPLY [sys].dm_os_volume_stats([f].[database_id], [f].[file_id]) [s]
 	) 
+
 	INSERT INTO [#disk_space] ([drive], [available_gbs])
 	SELECT 
 		[drive],
@@ -87,57 +88,59 @@ AS
 		[physical_name] nvarchar(260) NOT NULL,
 		[type_desc] nvarchar(60) NULL,
 		[state_desc] nvarchar(60) NULL,
-		[size] int NOT NULL,
+		[start_size] int NOT NULL,
+		[current_size] int NOT NULL,
 		[max_size] int NOT NULL,
 		[growth] int NOT NULL,
 		[is_percent_growth] bit NOT NULL
 	); 
 
-	INSERT INTO [#tempdb_files] ([file_id], [name], [type_desc], [physical_name], [state_desc], [size], [max_size], [growth], [is_percent_growth])
+	INSERT INTO [#tempdb_files] ([file_id], [name], [type_desc], [physical_name], [state_desc], [start_size], [current_size], [max_size], [growth], [is_percent_growth])
 	SELECT 
-		[file_id],
-		[name],
-		[type_desc],
-		[physical_name],
-		[state_desc],
-		[size],
-		[max_size],
-		[growth],
-		[is_percent_growth]
+		[f].[file_id],
+		[f].[name],
+		[f].[type_desc],
+		[f].[physical_name],
+		[f].[state_desc],
+		[f].[size] [start_size],
+		[d].[size] [current_size],
+		[f].[max_size],
+		[f].[growth],
+		[f].[is_percent_growth]
 	FROM 
-		sys.[master_files] 
+		sys.[master_files] [f]
+		INNER JOIN [tempdb].sys.database_files [d] ON [f].[file_id] = [d].[file_id]
 	WHERE 
 		[database_id] = 2
 	ORDER BY 
 		[file_id];
 
 	CREATE TABLE #log_space (
-		[reserved_gb] decimal(22,3) NOT NULL,
-		[used_gb] decimal(23,3) NOT NULL,
-		[used_percent] decimal(5,1) NOT NULL
+		[space_used] decimal(23,3) NOT NULL,
+		[space_available] decimal(5,1) NOT NULL
 	);
+
 	DECLARE @sql nvarchar(MAX) = N'USE [tempdb];
-	INSERT INTO [#log_space] ([reserved_gb], [used_gb], [used_percent])
-	SELECT 
-		CAST(ROUND([total_log_size_in_bytes] / (1024. * 1024. * 1024.), 1) AS decimal(24, 3)) [reserved_gb],
-		CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024. * 1024.), 1) AS decimal(24, 3)) [used_gb],
-		CAST([used_log_space_in_percent] AS decimal(5,1)) [used_percent]
-	FROM 
-		sys.[dm_db_log_space_usage]; ';
+SELECT 
+	CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024. * 1024.), 1) AS decimal(24, 3)) [space_used],
+	CAST(100. - [used_log_space_in_percent] AS decimal(5,1)) [space_available]
+FROM 
+	sys.[dm_db_log_space_usage]; ';
+
+	INSERT INTO [#log_space] ([space_used], [space_available])
 	EXEC sys.sp_executesql @sql;
 
 	CREATE TABLE #tempdb_space (
-		[total_size] decimal(22,3) NOT NULL,
 		[free_space] decimal(22,3) NOT NULL,
 		[temp_tables] decimal(22,3) NOT NULL,
 		[work_tables] decimal(22,3) NOT NULL,
 		[version_store] decimal(22,3) NOT NULL,
 		[tiny_tables] decimal(22,3) NOT NULL
 	);
+
 	SET @sql = N'USE [tempdb];
-INSERT INTO [#tempdb_space] ([total_size], [free_space], [temp_tables], [work_tables], [version_store], [tiny_tables])
+INSERT INTO [#tempdb_space] ([free_space], [temp_tables], [work_tables], [version_store], [tiny_tables])
 SELECT
-	CAST(SUM([total_page_count]) * 8. / (1024. * 1024.) AS decimal(22,3)) [total_size],
 	CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [free_space],
 	CAST(SUM(ISNULL(user_object_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [temp_tables],
 	CAST(SUM(ISNULL(internal_object_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [work_tables],
@@ -145,6 +148,7 @@ SELECT
 	CAST(SUM(ISNULL(mixed_extent_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [tiny_tables]
 FROM 
 	sys.[dm_db_file_space_usage];';
+
 	EXEC sys.sp_executesql @sql;
 
 	CREATE TABLE #config_settings (
@@ -188,6 +192,7 @@ FROM
 		[global] bit NOT NULL, 
 		[session] bit NOT NULL
 	);
+
 	INSERT INTO #trace_status ([flag], [status], [global], [session])
 	EXEC (N'DBCC TRACESTATUS(-1)');
 
@@ -195,21 +200,21 @@ FROM
 
 	IF (SELECT dbo.[engine_version](N'RTM')) > 17.1000 BEGIN
 		SET @sql = N'IF EXISTS (SELECT NULL FROM sys.[resource_governor_configuration] WHERE [is_enabled] = 1) BEGIN
-		IF EXISTS (SELECT NULL FROM sys.[resource_governor_workload_groups] WHERE [group_max_tempdb_data_mb] IS NOT NULL OR [group_max_tempdb_data_mb] IS NOT NULL)
-			SET @rgTempdbLimitsInPlace = 1;
-	END; ';
+	IF EXISTS (SELECT NULL FROM sys.[resource_governor_workload_groups] WHERE [group_max_tempdb_data_mb] IS NOT NULL OR [group_max_tempdb_data_mb] IS NOT NULL)
+		SET @rgTempdbLimitsInPlace = 1;
+END; ';
 
-	EXEC sys.[sp_executesql] 
-		@sql, 
-		N'@rgTempdbLimitsInPlace bit = 0 OUTPUT', 
-		@rgTempdbLimitsInPlace = @rgTempdbLimitsInPlace OUTPUT;
-
+		EXEC sys.[sp_executesql] 
+			@sql, 
+			N'@rgTempdbLimitsInPlace bit = 0 OUTPUT', 
+			@rgTempdbLimitsInPlace = @rgTempdbLimitsInPlace OUTPUT;
 	END;
 
 	DECLARE @tempdbCollation sysname = (SELECT [collation_name] FROM sys.databases WHERE name = N'tempdb');
 	DECLARE @tempdbCompat tinyint = (SELECT [compatibility_level] FROM sys.databases WHERE name = N'tempdb');
 
-	DECLARE @message sysname
+	DECLARE @message sysname;
+	
 	CREATE TABLE #outputs (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[classification] sysname NOT NULL, 
@@ -220,24 +225,27 @@ FROM
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- INFO:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @xml xml = (SELECT * FROM [#tempdb_space] FOR XML PATH(N'attribute'), TYPE);
-	INSERT INTO [#outputs] ([classification], [context], [detail])
-	SELECT 
-		N'INFO' [classification],
-		N'data_files.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
-		[x].[r].value(N'.', N'nvarchar(MAX)') + N'GB' [detail]
-	FROM 
-		@xml.nodes(N'//attribute/*') AS [x]([r]);
+	DECLARE @xml xml;
+	SELECT @xml = (
+		SELECT 
+			COUNT(CASE WHEN [type_desc] = N'ROWS' THEN 1 END) [datafile_count],
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'ROWS' THEN [start_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [data_init_size],
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'ROWS' THEN [current_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [data_current_size],
+			COUNT(CASE WHEN [type_desc] = N'LOG' THEN 1 END) [logfile_count],
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'LOG' THEN [start_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [log_init_size], 
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'LOG' THEN [current_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [log_current_size]
+		FROM 
+			#tempdb_files
+		FOR XML PATH(N'attribute'), TYPE
+	);
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
-		CASE WHEN COUNT(*) > 8 THEN N'SMELL' ELSE N'INFO' END [classification],
-		N'data_files.count' [context], 
-		COUNT(*) [detail]
+		N'INFO' [classification],
+		N'database.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
+		[x].[r].value(N'.', N'nvarchar(MAX)') [detail]
 	FROM 
-		[#tempdb_files]
-	WHERE 
-		[type_desc] = N'ROWS';
+		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
 	DECLARE @disks nvarchar(MAX) = N'';
 	WITH disks AS ( 
@@ -247,35 +255,45 @@ FROM
 			[#tempdb_files]
 	)
 	SELECT 
-		@disks = @disks + [x].[drive] + N', free_gb=' + CAST([x].[available_gbs] AS sysname) + N'; ' 
+		@disks =STRING_AGG(QUOTENAME([x].[drive]) + N', free_gb=' + CAST([x].[available_gbs] AS sysname), N'; ')
 	FROM 
 		disks [d]
 		INNER JOIN [#disk_space] [x] ON [d].[disk] = [x].[drive];
-	IF @disks LIKE N'%,%' SET @disks = LEFT(@disks, LEN(@disks) - 1);
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'INFO', N'data_files.disks', @disks);
+	VALUES (N'INFO', N'data_files.available_space', @disks);
 
+	SELECT @xml = (SELECT * FROM [#tempdb_space] FOR XML PATH(N'attribute'), TYPE);
+	INSERT INTO [#outputs] ([classification], [context], [detail])
+	SELECT 
+		N'INFO' [classification],
+		N'usage.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
+		[x].[r].value(N'.', N'nvarchar(MAX)') + N'GB' [detail]
+	FROM 
+		@xml.nodes(N'//attribute/*') AS [x]([r]);
+
+
+SELECT * FROM [#log_space];
 	SELECT @xml = (SELECT * FROM [#log_space] FOR XML PATH(N'attribute'), TYPE);
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
 		N'INFO' [classification],
-		N'log_files.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
-		[x].[r].value(N'.', N'nvarchar(MAX)') + CASE WHEN [x].[r].value(N'local-name(.)', N'sysname') LIKE N'%percent' THEN N'%' ELSE N'GB' END [detail]
+		N'log_usage.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
+		[x].[r].value(N'.', N'nvarchar(MAX)') + CASE WHEN [x].[r].value(N'local-name(.)', N'sysname') LIKE N'%available%' THEN N'%' ELSE N'GB' END [detail]
 	FROM 
 		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
 	SET @disks = N'';
-	SELECT @disks = STRING_AGG([name] + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
+	SELECT @disks = STRING_AGG(QUOTENAME([name]) + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'INFO', N'data_files.disks', @disks);
+	VALUES (N'INFO', N'data_files.disk(s)', @disks);
 
 	SET @disks = N'';
-	SELECT @disks = STRING_AGG([name] + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
+	SELECT @disks = STRING_AGG(QUOTENAME([name]) + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'INFO', N'log_files.disks', @disks);
+	VALUES (N'INFO', N'log_file(s).disk(s)', @disks);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- PERF:
@@ -313,7 +331,8 @@ FROM
 	
 	DECLARE @mismatchedCollations int = (SELECT COUNT(*) FROM sys.databases WHERE [collation_name] <> @tempdbCollation);
 	IF @mismatchedCollations > 0 BEGIN
-		SET @message = N'mismatch_count=' + CAST(@mismatchedCollations AS sysname)
+		SET @message = N'count=' + CAST(@mismatchedCollations AS nvarchar(MAX)); 
+		SET @message = @message + N'; dbs=' + (SELECT STRING_AGG(QUOTENAME([name]), N', ') FROM sys.databases WHERE [collation_name] <> @tempdbCollation);
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'PERF-WARNING', N'config.collation_mismatch', @message);  /* NOTE: Contained DBs can/will 'cause' this. That and ... poor config. */
 	END;
