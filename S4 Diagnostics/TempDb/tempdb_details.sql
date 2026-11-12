@@ -266,15 +266,13 @@ FROM
 		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
 	SET @disks = N'';
-	SELECT @disks = @disks + [name] + N'=' + LEFT([physical_name], 1) + N', ' FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
-	SET @disks = LEFT(@disks, LEN(@disks) - 1);
+	SELECT @disks = STRING_AGG([name] + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	VALUES (N'INFO', N'data_files.disks', @disks);
 
-		SET @disks = N'';
-	SELECT @disks = @disks + [name] + N'=' + LEFT([physical_name], 1) + N', ' FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
-	SET @disks = LEFT(@disks, LEN(@disks) - 1);
+	SET @disks = N'';
+	SELECT @disks = STRING_AGG([name] + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	VALUES (N'INFO', N'log_files.disks', @disks);
@@ -395,8 +393,7 @@ FROM
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N', ' FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]), N', ') FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'SMELL', N'data_files.using_percent_growth', @files);
@@ -404,8 +401,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'LOG') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N', ' FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]), N', ') FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'SMELL', N'log_files.using_percent_growth', @files);
@@ -413,8 +409,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [state_desc] + N', ' FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [state_desc], N', ') FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
 		
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'SMELL', N'data_files.not_online', @files);
@@ -473,8 +468,7 @@ FROM
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [state_desc] + N', ' FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [state_desc], N', ') FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
 		
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'WARNING', N'log_files.not_online', @files);
@@ -497,8 +491,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'ROWS') BEGIN 
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [name] + N', ' FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [name], N', ') FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'data_files.on_c_drive', @files);
@@ -506,8 +499,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'LOG') BEGIN 
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [name] + N', ' FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [name], N', ') FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'log_files.on_c_drive', @files);
@@ -515,8 +507,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=-1, ' FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=-1', N', ') FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'data_files.unlimited_growth', @files);
@@ -524,8 +515,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'LOG') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=-1, ' FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=-1', N', ') FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'log_files.unlimited_growth', @files);
@@ -533,8 +523,7 @@ FROM
 
 	IF (SELECT COUNT(DISTINCT[growth]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + CAST([growth] * 8 / 1024 AS sysname) + N'MB, ' FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + CAST([growth] * 8 / 1024 AS sysname) + N'MB', N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'files.heterogeneous_growth', @files);
@@ -542,8 +531,7 @@ FROM
 
 	IF (SELECT COUNT(*) FROM [#tempdb_files] WHERE [type_desc] = N'LOG') > 1 BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N', ' FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'log_files.multiple_log_files', @files);
