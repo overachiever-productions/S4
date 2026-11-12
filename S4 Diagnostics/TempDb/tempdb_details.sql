@@ -417,16 +417,11 @@ FROM
 
 	IF (SELECT COUNT(DISTINCT [max_size]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
 		/* This is a SMELL because in SOME cases there's an argument for letting 1x file grow LARGER as an 'overspill'. NOT great ... but... not quite a WARN either.  */
+		SET @files = N'';
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + CAST([max_size] AS sysname), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
+		
 		INSERT INTO [#outputs] ([classification], [context], [detail])
-		SELECT 
-			N'SMELL' [classification], 
-			N'files.different_max_sizes' [context], 
-			QUOTENAME([name]) + N'=' + CAST([max_size] AS sysname)
-		FROM 
-			[#tempdb_files]
-		WHERE 
-			[type_desc] = N'ROWS'
-			AND [max_size] <> -1;
+		VALUES(N'SMELL', N'data_files.different_max_sizes', @files);
 	END;
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
