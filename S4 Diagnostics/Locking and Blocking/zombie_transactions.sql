@@ -97,7 +97,7 @@ AS
 	IF @idle_threshold IS NOT NULL BEGIN 
 		EXEC admindb.dbo.[translate_vector]
 			@Vector = @idle_threshold,
-			@ValidationParameterName = N'@IdleThreshold',
+			@ValidationParameterName = N'@idle_threshold',
 			@Output = @idleThresholdMilliseconds OUTPUT,
 			@Error = @vectorError OUTPUT; 
 
@@ -278,7 +278,7 @@ AS
 		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
 	END; 
 
-	IF @Hosts IS NOT NULL BEGIN 
+	IF @hosts IS NOT NULL BEGIN 
 		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
 	END;
 
@@ -290,7 +290,7 @@ AS
 		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
 	END;
 
-	IF @Statements IS NOT NULL BEGIN
+	IF @statements IS NOT NULL BEGIN
 		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
 	END;
 
@@ -303,7 +303,7 @@ AS
 		@Hosts = @hosts,
 		@IPs = @ips,
 		@Principals = @principals,
-		@Statements = @Statements,
+		@Statements = @statements,
 		@JoinPredicates = @joins OUTPUT,
 		@FilterPredicates = @filters OUTPUT;
 
