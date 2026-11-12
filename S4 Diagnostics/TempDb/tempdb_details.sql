@@ -17,6 +17,14 @@
 		SELECT @serialized_output;
 		```
 
+
+	TODO:
+		sys.master_files keeps the INITIALIZE-ABLE size of tempdb files - i.e., what they're SET to be whenever the service restarts/etc. 
+		tempdb.sys.database_files keeps the CURRENT size of tempdb files - i.e., what they are at the moment.
+			which ... impacts % growth (if/when it's set). 
+			and which dtermines when the 'next' growth operation will be. 
+
+
 */
 
 USE [admindb];
