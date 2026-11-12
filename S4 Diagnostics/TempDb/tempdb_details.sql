@@ -531,7 +531,7 @@ FROM
 		VALUES (N'WARNING', N'log_files.unlimited_growth', @files);
 	END;
 
-	IF (SELECT DISTINCT COUNT([growth]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
+	IF (SELECT COUNT(DISTINCT[growth]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
 		SET @files = N'';
 		SELECT @files = @files + QUOTENAME([name]) + N'=' + CAST([growth] * 8 / 1024 AS sysname) + N'MB, ' FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
 		SET @files = LEFT(@files, LEN(@files) - 1);
