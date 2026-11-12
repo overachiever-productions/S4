@@ -15,22 +15,8 @@
 			accelerated_database_recovery... ... which is a 150? feature. If the SERVER is 150, 160, 170 ... great. BUT what if the DB is COMPAT 100? or something odd? 
 				does that 'hide'/remove the column in question? (Again, i don't think so. but I really need to test for this.)
 
-
 	vNEXT:
 		https://overachieverllc.atlassian.net/browse/S4-482
-
-
-	vNEXT:
-		- Option to dump output as XML 
-			So that XML blobs can be saved/stored in admindb.dbo.db_somethings or whatever. 
-			AND so that there can be a sproc with options for comparisons - to list changes (so'z I can keep an eye on mods over time and so on). 
-				See: https://www.notion.so/overachiever/Database-Baselines-for-admindb-fa9375b6d3f6471999f57833e3c4ca6e?pvs=4
-
-
-			DECLARE @x xml;
-			EXEC admindb.dbo.[database_details]
-				@SerializedOutput = @x OUTPUT;
-			SELECT @x;
 
 */
 
@@ -53,7 +39,7 @@ AS
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
 	SET @Priorities = NULLIF(@Priorities, N'');
 
-	CREATE TABLE #freeSpace (
+	CREATE TABLE #fileSpace (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[database_name] sysname NOT NULL, 
 		[file_name] sysname NOT NULL, 
@@ -62,7 +48,7 @@ AS
 		[free_space_mb] decimal(24,2) NULL 
 	); 
 	DECLARE @sql nvarchar(MAX) = N'USE [{CURRENT_DB}];
-	INSERT INTO [#freeSpace] ([database_name], [file_name], [type], [file_size_mb], [free_space_mb])
+	INSERT INTO [#fileSpace] ([database_name], [file_name], [type], [file_size_mb], [free_space_mb])
 	SELECT
 		N''{CURRENT_DB}'' [database_name], 
 		[name] AS [file_name],
@@ -206,8 +192,9 @@ AS
 			--		ideally, there''s some way to communicate if we''re primary, secondary, RO, distributed, etc. 
 
 			[d].[collation_name] [collation],
-			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,2)) [db_size_gb],
-			(SELECT SUM([free_space_mb]) FROM [#freeSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
+			--CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,2)) [db_size_gb],
+			(SELECT SUM([file_size_mb]) FROM [#fileSpace] WHERE [database_name] = [d].[name] AND [type] = 0) / 1024. [db_size_gb],
+			(SELECT SUM([free_space_mb]) FROM [#fileSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
 			CAST(([log_space].[reserved_mb] / 1024.0) AS decimal(24,2)) [log_size_gb],
 			[log_space].[used_percent] [%_log_used],
 			[d].[recovery_model_desc] [recovery],
@@ -242,9 +229,9 @@ AS
 			sys.databases [d]
 			LEFT OUTER JOIN [files_on_c] [fc] ON [d].[name] = [fc].[name]
 			LEFT OUTER JOIN [#fileCount] [c] ON [d].[database_id] = [c].[database_id]
-			LEFT OUTER JOIN (
-				SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
-			) [s] ON [d].database_id = [s].database_id
+	--LEFT OUTER JOIN (
+	--	SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
+	--) [s] ON [d].database_id = [s].database_id
 			LEFT OUTER JOIN [#logSpace] [log_space] ON [d].[name] = [log_space].[database_name]
 	), 
 	vlfs AS ( 
