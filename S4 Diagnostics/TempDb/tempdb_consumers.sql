@@ -11,6 +11,14 @@
 				2. user vs internal objects:  
 					https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-db-session-space-usage-transact-sql?view=sql-server-ver17#user-objects
 
+			Specifics on TASK vs SPACE: 
+				task = sys.dm_exec_requests "level" info - and counts what is running "right now". 
+				space = sys.dm_exec_sessions "level" info - and counts what has been allocated over the life of the SESSION. 
+					SQL Server does NOT 'double-count' between task and space - i.e., task = active/right-now, once it COMPLETES, it's pushed on to space/session-level usage. 
+					Translation: pooled connections (sessions) will get LARGER over time - but this is ONLY an indicator of how much space the session has used over its lifetime.
+						i.e., SPACE/session-level details are NOT an indicator of what is CURRENTLY consuming space. 
+	
+	
 	TODO: 
 		THIS is a concern: 
 			| Work table caching, temporary table caching, and deferred drop operations affect the number of pages allocated and deallocated in a specified task.
@@ -24,11 +32,18 @@
 
 
 	.RESULTS 
-		/table ... 
-		- active_user		| decimal(10,3) | IN-FLIGHT temp tables/variables (in GB)
-		- active_sys		| decimal(10,3) | IN-FLIGHT spills (in GB)
-		- total_user		| decimal(10,3) | Session-Lifetime temp objects (in GB)
-		- total_sys			| decimal(10,3) | Session-Lifetime spills (in GB)
+		| Column Name		| Data Type		| Description |
+		|----------------------|----------------|-------------|
+		| live_gb		| decimal(10,2) | IN-FLIGHT temp tables/variables (in GB) |
+		| live_spill_gb		| decimal(10,2) | IN-FLIGHT spills (in GB) [*1] |
+		| session_gb		| decimal(10,2) | Session-Lifetime temp objects (in GB) [*2] |
+		| session_spill_gb			| decimal(10,2) | Session-Lifetime spills (in GB) [*2] |
+
+		| %_of_tempdb_used | decimal(6,2)  | % of total tempdb DATA FILE space used by this REQUEST (live 'user' and live SPILLS/internal) |
+
+
+		[*1] Spills INCLUDE: sort and hash spills, spools, work tables, cursors and temporary LOB storage.
+		[*2] Session-Lifetime temp objects/spills are _NOT_ an indicator of what is CURRENTLY consuming space.
 
 
 	.REMARKS
@@ -97,7 +112,7 @@ AS
 		AND [t].[f].value(N'@path[1]', N'sysname') NOT LIKE N'%disks';
 
 	DECLARE @sizeString sysname = REPLACE((SELECT [value] FROM @tempdbDetails WHERE [path] = N'data_files.total_size'), N'GB', N'');
-	DECLARE @totalSize decimal(10,3) = CAST(@sizeString AS decimal(10,3));
+	DECLARE @totalSize decimal(10,2) = CAST(@sizeString AS decimal(10,2));
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Consumers:
@@ -110,6 +125,8 @@ AS
 			SUM([internal_objects_alloc_page_count] - [internal_objects_dealloc_page_count]) [internal]
 		FROM 
 			sys.[dm_db_task_space_usage]
+		--WHERE 
+		--	[database_id] = 2  /* docs state that this DMV is restricted to tempdb only ... not sure if that 100000% applies to Azure? */
 		GROUP BY 
 			[session_id]
 	), 
@@ -145,7 +162,7 @@ AS
 		FROM 
 			sys.[dm_exec_requests] [r]
 			OUTER APPLY sys.[dm_exec_sql_text]([r].[sql_handle]) [t]
-			OUTER APPLY sys.dm_exec_query_plan([r].[plan_handle]) [p]
+			OUTER APPLY sys.[dm_exec_query_plan]([r].[plan_handle]) [p]
 	)
 
 	SELECT 
@@ -162,16 +179,16 @@ AS
 		[r].[plan_handle],
 		[r].[statement_start_offset],
 		[r].[statement_end_offset],
-		CAST(ISNULL([t].[user], 0) * .00000762 AS decimal(10,3)) [live_user],    -- instead of * 8 / 1048576 ... could use * .00000762 as well. odd ... but, works. 
-		CAST(ISNULL([t].[internal], 0) * .00000762 AS decimal(10,3)) [live_sys], 
-		CAST(ISNULL([u].[session_user], 0) * .00000762 AS decimal(10,3)) [total_user],
-		CAST(ISNULL([u].[session_internal], 0) * .00000762 AS decimal(10,3)) [total_sys], 
-		CAST(ISNULL([u].[session_user_deferred], 0) * .00000762 AS decimal(10,3)) [total_deferred],
+		CAST(ISNULL([t].[user], 0) * .00000762 AS decimal(10,2)) [live_user],    -- instead of * 8 / 1048576 ... could use * .00000762 as well. odd ... but, works. 
+		CAST(ISNULL([t].[internal], 0) * .00000762 AS decimal(10,2)) [live_sys], 
+		CAST(ISNULL([u].[session_user], 0) * .00000762 AS decimal(10,2)) [total_user],
+		CAST(ISNULL([u].[session_internal], 0) * .00000762 AS decimal(10,2)) [total_sys], 
+		CAST(ISNULL([u].[session_user_deferred], 0) * .00000762 AS decimal(10,2)) [total_deferred],
 		CASE WHEN [r].[module] IS NOT NULL THEN N'MODULE: [' + [r].[module] + N']' ELSE [r].[command] END [operation],
 		[r].[statement], 
 		CAST(N'' AS nvarchar(MAX)) [statement_plan], 
-		CAST(0.0 AS decimal(10,3)) [active], 
-		CAST(0.0 AS decimal(10,3)) [total]
+		CAST(0.0 AS decimal(10,2)) [active], 
+		CAST(0.0 AS decimal(10,2)) [total]
 	INTO 
 		#consumers
 	FROM 
@@ -182,10 +199,11 @@ AS
 	WHERE 
 		[s].[database_id] > 0;
 
+/* MKC: I can sorta see why I'm looing for plans via sys.dm_exec_text_query_plan ... in a separate operation. but i was... too scared to compute active and 'total' inline in previous SELECT? */
 	UPDATE [x]
-	SET 
-		[x].[active] = CAST(ISNULL([x].[live_user], 0) + ISNULL([x].[live_sys], 0) AS decimal(10,3)),
-		[x].[total] = CAST(ISNULL([x].[total_user], 0) + ISNULL([x].[total_sys], 0) - ISNULL([x].[total_deferred], 0) AS decimal(10,3)), 
+	SET
+		[x].[active] = CAST(ISNULL([x].[live_user], 0) + ISNULL([x].[live_sys], 0) AS decimal(10,2)),
+		[x].[total] = CAST(ISNULL([x].[total_user], 0) + ISNULL([x].[total_sys], 0) - ISNULL([x].[total_deferred], 0) AS decimal(10,2)), 
 		[x].[statement_plan] = CASE WHEN [x].[statement_end_offset] > 0 THEN [sp].[query_plan] ELSE NULL END
 	FROM 
 		[#consumers] [x]
@@ -193,29 +211,29 @@ AS
 	WHERE 
 		[session_id] IS NOT NULL; 
 
-
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Final Projection: 
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SELECT 
 		[c].[session_id],
-		[c].[live_user],
-		[c].[live_sys],
-		[c].[total_user],
-		[c].[total_sys],
-		[c].[total_deferred],
-
-		CAST(ABS([c].[active]) * 100. / @totalSize AS decimal(6,3)) [active_%],
-		CAST(ABS([c].[total]) * 100. / @totalSize AS decimal(6,3)) [total_%],
-
-		[c].[last_request_start_time],
-		[c].[is_user_process],
+		[c].[live_user] [live_gb],
+		[c].[live_sys] [live_spill_gb],
+		CAST(ABS([c].[active]) * 100. / @totalSize AS decimal(6,2)) [%_of_tempdb_used],
+		CASE WHEN [c].[is_user_process] = 1 THEN 0 ELSE 1 END [is_system],
 		[c].[open_transaction_count] [tx_count],
 		[c].[threads] [task_count],
 		[c].[status],
+
+		-- deferred is just SQL Server 'caching' / re-using tempdb table SCHEMA... important to keep a rough eye on in terms of trends... but NOT a good indicator of CURRENT consumption. 
+		[c].[total_deferred] [deferred_gb],
+		[c].[total_user] [session_gb],
+		[c].[total_sys] [session_spill_gb],
+
+		[c].[last_request_start_time],
+		
 		[d].[name] [database],
-		[c].[host_name],
-		[c].[program_name],
+		[c].[host_name] [host],
+		[c].[program_name] [application],
 		[c].[login_name] [principal],
 
 		[b].[event_info] [batch], 
