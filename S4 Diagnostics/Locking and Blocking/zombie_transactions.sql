@@ -10,8 +10,6 @@
 		Finally, there's no true/viable way to distinguish between true zombies vs zombie-like operations. 
 		So .. this diagnostic returns anything that has the SYMPTOMs of a zombie (which are the same symptoms of zombie-like operations).
 
-
-
 	.PARAMETER @sort 		
 	REQUIRED
 	DEFAULT: `IDLE_TIME`
@@ -107,6 +105,8 @@ AS
 		END;
 	END;
 
+	DECLARE @idleCutoff datetime = DATEADD(SECOND, 0 - (@idleThresholdMilliseconds / 1000), GETDATE());
+
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Identify Potential Zombie-Like Sessions:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -147,11 +147,9 @@ AS
 		AND [s].[open_transaction_count] > 0 
 		AND [s].[status] = N'sleeping' 
 		AND NOT EXISTS (SELECT NULL FROM [sys].[dm_exec_requests] [r] WHERE [r].[session_id] = [s].[session_id])
-		AND DATEDIFF_BIG(MILLISECOND, [s].[last_request_end_time], GETUTCDATE()) > @idleThresholdMilliseconds
-	ORDER BY
-		[at].[transaction_begin_time];
+		AND [s].[last_request_end_time] <= @idleCutoff;
 
-	IF NOT EXISTS (SELECT 1 FROM #potential_zombies)
+	IF NOT EXISTS (SELECT NULL FROM #potential_zombies)
 		RETURN 0;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -169,6 +167,8 @@ AS
 		#zombie_resources 
 	FROM
 		[sys].[dm_tran_locks] [l]
+	WHERE 
+		[l].[request_session_id] IN (SELECT [session_id] FROM #potential_zombies)
 	GROUP BY 
 		[l].[request_session_id],
 		[l].[resource_type],
