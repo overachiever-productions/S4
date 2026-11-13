@@ -3,18 +3,21 @@
 	.EXAMPLE: Projecting outputs: 
 		Simple 'dump' of findings/outputs:
 		```sql
+
 		EXEC [admindb]..[tempdb_details];
-		SELECT @serialized_output;
+		
 		```
 
 	.EXAMPLE: Returning outputs - via XML: 
 		... typically would consume the `@serialized_output` via consumer/whatever... 
 		```sql 
+		
 		DECLARE @serialized_output xml;
 		EXEC [admindb]..[tempdb_details]
 			@serialized_output = @serialized_output OUTPUT; 
 
 		SELECT @serialized_output;
+		
 		```
 
 
@@ -73,6 +76,7 @@ AS
 		ISNULL([io_stall_write_ms] / NULLIF([num_of_writes], 0), 0) [avg_write_latency], 
         CAST([num_of_bytes_read] / (1024. * 1024. * 1024.) AS decimal(24,3)) [read_gbs], 
 		CAST([num_of_bytes_written] / (1024. * 1024. * 1024.) AS decimal(24,3)) [written_gbs], 
+-- HUH? these 2x columns look like they're on drugs... 
 		CAST(ISNULL(NULLIF([num_of_reads], 0), 0) / 1024. AS decimal(24,3)) [avg_read_kb],
 		CAST(ISNULL(NULLIF([num_of_writes], 0), 0) / 1024. AS decimal(24,3)) [avg_write_kb], 
 		CASE WHEN [io_stall_queued_read_ms] = 0 THEN 0 ELSE 1 END [rg_queued_read_latency],
@@ -132,24 +136,32 @@ FROM
 
 	CREATE TABLE #tempdb_space (
 		[free_space] decimal(22,3) NOT NULL,
+		[space_available] decimal(5,2) NOT NULL,	
 		[temp_tables] decimal(22,3) NOT NULL,
 		[work_tables] decimal(22,3) NOT NULL,
 		[version_store] decimal(22,3) NOT NULL,
 		[tiny_tables] decimal(22,3) NOT NULL
 	);
 
+	/* sys.dm_db_file_space_usage ALWAYS under-reports available space by a TINY bit... */
+	DECLARE @totalCurrentSpace decimal(10,2) = (SELECT SUM([current_size]) * .00000762 FROM [#tempdb_files] WHERE [type_desc] = N'ROWS');
+
 	SET @sql = N'USE [tempdb];
-INSERT INTO [#tempdb_space] ([free_space], [temp_tables], [work_tables], [version_store], [tiny_tables])
 SELECT
-	CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [free_space],
-	CAST(SUM(ISNULL(user_object_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [temp_tables],
-	CAST(SUM(ISNULL(internal_object_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [work_tables],
-	CAST(SUM(ISNULL(version_store_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [version_store],
-	CAST(SUM(ISNULL(mixed_extent_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [tiny_tables]
+	CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * .00000762 AS decimal(22,3)) [free_space],
+	CAST(CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * .00000762 AS decimal(22,3)) * 100. / @totalCurrentSpace AS decimal(5,2)) [space_available],
+	CAST(SUM(ISNULL(user_object_reserved_page_count, 0)) * .00000762 AS decimal(22,3)) [temp_tables],
+	CAST(SUM(ISNULL(internal_object_reserved_page_count, 0)) * .00000762 AS decimal(22,3)) [work_tables],
+	CAST(SUM(ISNULL(version_store_reserved_page_count, 0)) * .00000762 AS decimal(22,3)) [version_store],
+	CAST(SUM(ISNULL(mixed_extent_page_count, 0)) * .00000762 AS decimal(22,3)) [tiny_tables]
 FROM 
 	sys.[dm_db_file_space_usage];';
 
-	EXEC sys.sp_executesql @sql;
+	INSERT INTO [#tempdb_space] ([free_space], [space_available], [temp_tables], [work_tables], [version_store], [tiny_tables])
+	EXEC sys.sp_executesql 
+		@sql, 
+		N'@totalCurrentSpace decimal(10,2) = 0',
+		@totalCurrentSpace = @totalCurrentSpace;
 
 	CREATE TABLE #config_settings (
 		[scope] sysname NOT NULL, 
@@ -268,12 +280,10 @@ END; ';
 	SELECT 
 		N'INFO' [classification],
 		N'usage.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
-		[x].[r].value(N'.', N'nvarchar(MAX)') + N'GB' [detail]
+		[x].[r].value(N'.', N'nvarchar(MAX)') + CASE WHEN [x].[r].value(N'local-name(.)', N'sysname') LIKE N'%available%' THEN N'%' ELSE N'GB' END [detail]
 	FROM 
 		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
-
-SELECT * FROM [#log_space];
 	SELECT @xml = (SELECT * FROM [#log_space] FOR XML PATH(N'attribute'), TYPE);
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
