@@ -206,7 +206,7 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
     <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
 	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
 	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
-	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
+	<entry schema="dbo" name="kill_blocking_process_snapshots" type="U" comment="v14.0 refactoring." />
 	<entry schema="dbo" name="kill_connections_by_statement" type="P" comment="v15.0 cleanup." />
 	<entry schema="dbo" name="kill_connections_by_hostname" type="P" comment="v15.0 cleanup." />
 	<entry schema="dbo" name="list_running_jobs" type="P" comment="v14.2 refactoring." />

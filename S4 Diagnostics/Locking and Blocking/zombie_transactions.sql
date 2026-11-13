@@ -10,8 +10,6 @@
 		Finally, there's no true/viable way to distinguish between true zombies vs zombie-like operations. 
 		So .. this diagnostic returns anything that has the SYMPTOMs of a zombie (which are the same symptoms of zombie-like operations).
 
-
-
 	.PARAMETER @sort 		
 	REQUIRED
 	DEFAULT: `IDLE_TIME`
@@ -97,7 +95,7 @@ AS
 	IF @idle_threshold IS NOT NULL BEGIN 
 		EXEC admindb.dbo.[translate_vector]
 			@Vector = @idle_threshold,
-			@ValidationParameterName = N'@IdleThreshold',
+			@ValidationParameterName = N'@idle_threshold',
 			@Output = @idleThresholdMilliseconds OUTPUT,
 			@Error = @vectorError OUTPUT; 
 
@@ -106,6 +104,8 @@ AS
 			RETURN -10;  
 		END;
 	END;
+
+	DECLARE @idleCutoff datetime = DATEADD(SECOND, 0 - (@idleThresholdMilliseconds / 1000), GETDATE());
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Identify Potential Zombie-Like Sessions:
@@ -147,11 +147,9 @@ AS
 		AND [s].[open_transaction_count] > 0 
 		AND [s].[status] = N'sleeping' 
 		AND NOT EXISTS (SELECT NULL FROM [sys].[dm_exec_requests] [r] WHERE [r].[session_id] = [s].[session_id])
-		AND DATEDIFF_BIG(MILLISECOND, [s].[last_request_end_time], GETUTCDATE()) > @idleThresholdMilliseconds
-	ORDER BY
-		[at].[transaction_begin_time];
+		AND [s].[last_request_end_time] <= @idleCutoff;
 
-	IF NOT EXISTS (SELECT 1 FROM #potential_zombies)
+	IF NOT EXISTS (SELECT NULL FROM #potential_zombies)
 		RETURN 0;
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -169,6 +167,8 @@ AS
 		#zombie_resources 
 	FROM
 		[sys].[dm_tran_locks] [l]
+	WHERE 
+		[l].[request_session_id] IN (SELECT [session_id] FROM #potential_zombies)
 	GROUP BY 
 		[l].[request_session_id],
 		[l].[resource_type],
@@ -278,7 +278,7 @@ AS
 		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
 	END; 
 
-	IF @Hosts IS NOT NULL BEGIN 
+	IF @hosts IS NOT NULL BEGIN 
 		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
 	END;
 
@@ -290,7 +290,7 @@ AS
 		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
 	END;
 
-	IF @Statements IS NOT NULL BEGIN
+	IF @statements IS NOT NULL BEGIN
 		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
 	END;
 
@@ -303,7 +303,7 @@ AS
 		@Hosts = @hosts,
 		@IPs = @ips,
 		@Principals = @principals,
-		@Statements = @Statements,
+		@Statements = @statements,
 		@JoinPredicates = @joins OUTPUT,
 		@FilterPredicates = @filters OUTPUT;
 
