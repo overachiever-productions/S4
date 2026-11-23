@@ -1,5 +1,25 @@
 /*
 
+	USAGE EXAMPLE: 
+
+		SELECT 
+			[j].[name],
+			[j].[enabled],
+			[j].[description],
+			[j].[start_step_id],
+			[s].[schedule_name],
+			[s].[schedule_summary],
+			[s].[enabled]
+		FROM 
+			msdb..sysjobs [j]
+			LEFT OUTER JOIN msdb..sysjobschedules [js] ON [j].[job_id] = [js].[job_id]
+			LEFT OUTER JOIN dbo.[job_schedules]() [s] ON js.[schedule_id] = [s].[schedule_id]
+		WHERE 
+			[s].[schedule_id] IS NOT NULL
+		ORDER BY 
+			[j].[name], s.[schedule_name];
+
+
 
     IMPLEMENTATION NOTES: 
         

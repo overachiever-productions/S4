@@ -1,69 +1,5 @@
 /*
 
-	.TARGET 
-	dbo.[extract_dynamic_code_lines]
-
-	.SYNOPSIS 
-	Debugging aid to help provide context for syntax and other errors. 
-
-	.DESCRIPTION 
-	<longer version of the above goes here> 
-
-	.PARAMETER @DynamicCode 
-	REQUIRED
-	The dynamic T-SQL Command being processed (typically via sys.sp_executesql) - which'll be 'shredded' so that the line causing
-	problems can be identified visually. 
-
-	.Parameter @TargetLine
-	REQUIRED
-	The line that the error occured on - or that you want to view. 
-
-	.Parameter @BeforeAndAfterLines 
-	DEFAULT = 6 
-	Number of lines of code (i.e., context) to show BEFORE and AFTER the @TargetLine in question 
-
-	.REMARK
-	This sproc is similar to `dbo.extract_code_lines` - which targets specific T-SQL modules (via `sys.sql_modules`) and which is for
-	debugging of 'static' code. 
-
-	.RESULT
-	<description here about how outputs are printed - not projected as table, etc.... and that there's a 'visual map' with code-lines numbered
-	and with a --> pointer to the @TargetLine
-
-	.RESULT 
-	.TABLE (optional table name can go here - cuz... i guess there might be scenarios with multiple result sets). 
-	column_name	int	description goes here - and note that I'm not doing anything other than tab-separation for columns. I mean, I could use | bars | and I guess that would work. 
-	another_column	nvarchar(12)	another description goes here. and i guess it probably makes more sense to put | bars into place. 
-	final_columns | tinyint | this is an example of what it would look like to have bars as separators. yeah. they're way better. and then I can just trim whitespace after 'splitting'. 
-		<NOTE: output tables can/will only EVER have 3 columns: Column Name | Data type | Description - just as is done with T-SQL docs online.> 
-
-	.EXAMPLE
-	-- I'm really only putting this into place as an EXAMPLE of what it'll look like to have T-SQL code in here. 
-	--		along with having comments and the "whole 9 yards"... 
-	DECLARE @sql nvarchar(max) = 'SELECT TOP 200 FROM somethingWithMoreThanOneLine;'; 
-	EXEC dbo.extracct_dynamic_code_lines @sql, 3, 2; 
-
-	.EXAMPLE
-	.TITLE Optional Title for this Example would go here.
-	Some sort of overview about what the example/sample is doing and so on.
-
-	More text that's still part of the intro or whatever. 
-
-	Could put in screenshots here? i mean... yeah. need to figure out how that's going to work. 
-
-	```sql 
-
-	SELECT @@VERSION; 
-
-	``` 
-	And the sql/code above is why I NEED TO KNOW if/when a CREATE xxx or DROP y or whatever is inside block-comments. 
-	Cuz, otherwise, it'd throw EVERYTHING off. 
-	Otherwise, this 'example' is finished. 
-
-	.EXAMPLE 
-	.TITLE Example B
-	Another Example, this time ... smaller and with less stuff. 
-
 
 	the other thing I need to tackle is ... making this 'powershell-like' syntax/approach to documentation for tsmake ... more like T-SQL docs. 
 		such as: 
@@ -88,6 +24,81 @@
 
 */
 
+/*
+	.TARGET 
+	dbo.[extract_dynamic_code_lines]
+
+	.SYNOPSIS 
+	Debugging aid to help provide context for syntax and other errors. 
+
+	.DESCRIPTION 
+	<longer version of the above goes here>
+
+	.CONVENTION
+	Project and return
+
+	.CONVENTION
+	x, y, z... 
+
+	.REMARK
+	This sproc is similar to `dbo.extract_code_lines` - which targets specific T-SQL modules (via `sys.sql_modules`) and which is for
+	debugging of 'static' code. 
+
+	.RESULT
+	<description here about how outputs are printed - not projected as table, etc.... and that there's a 'visual map' with code-lines numbered
+	and with a --> pointer to the @TargetLine
+
+	.RESULT: Default Execution
+	<description about how it's just a 'print' of lines of code and such>
+	
+	.RESULT: @StringOutput
+	<ditto - but loaded into a string... for programatic access/output>
+
+	.EXAMPLE
+	-- I'm really only putting this into place as an EXAMPLE of what it'll look like to have T-SQL code in here. 
+	--		along with having comments and the "whole 9 yards"... 
+	DECLARE @sql nvarchar(max) = 'SELECT TOP 200 FROM somethingWithMoreThanOneLine;'; 
+	EXEC dbo.extracct_dynamic_code_lines @sql, 3, 2; 
+
+	.EXAMPLE: Optional Title for this Example would go here.
+	Some sort of overview about what the example/sample is doing and so on.
+
+	More text that's still part of the intro or whatever. 
+
+	Could put in screenshots here? i mean... yeah. need to figure out how that's going to work. 
+
+	```sql 
+
+	SELECT @@VERSION; 
+
+	``` 
+	And the sql/code above is why I NEED TO KNOW if/when a CREATE xxx or DROP y or whatever is inside block-comments. 
+	Cuz, otherwise, it'd throw EVERYTHING off. 
+	Otherwise, this 'example' is finished. 
+
+	.EXAMPLE:Example B
+	Another Example, this time ... smaller and with less stuff. 
+
+	.LINK
+	<something something pointer to dbo.extract_code_linses>
+
+	.LINK 
+	<another link if/as needed> 
+
+	.PARAMETER @DynamicCode
+	The dynamic T-SQL Command being processed (typically via sys.sp_executesql) - which'll be 'shredded' so that the line causing
+	problems can be identified visually.
+
+	.PARAMETER @TargetLine
+	The line that the error occured on - or that you want to view. 
+
+	.PARAMETER @BeforeAndAfterLines
+	The number of lines to display before and after the target line. 
+
+	.PARAMETER @StringOutput
+	Optional OUTPUT for programatic access. 
+*/
+
 USE [admindb];
 GO
 
@@ -96,6 +107,7 @@ IF OBJECT_ID('dbo.[extract_dynamic_code_lines]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[extract_dynamic_code_lines]
+
 	@DynamicCode						nvarchar(MAX), 
 	@TargetLine							int, 
 	@StringOutput						nvarchar(MAX)			= N''	OUTPUT
