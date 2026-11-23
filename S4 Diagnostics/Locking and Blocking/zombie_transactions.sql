@@ -53,7 +53,7 @@ GO
 
 CREATE PROC dbo.[zombie_transactions]
 	@idle_threshold							sysname				= N'90 seconds',
-	@sort									sysname				= N'IDLE_TIME',						-- { IDLE_TIME | SESSION_ID | TEMPDB_LOG_RECORDS | LOCKS_COUNT | LOG_USED }
+	@sort									sysname				= N'IDLE_TIME',						-- { IDLE_TIME | SESSION_ID | TEMPDB_LRC | LOCKS_COUNT | LOG_USED }
 	@exclude_backups_and_restores			bit					= 0,					
 	@exclude_sqlagent_jobs					bit					= 0,	
 	@databases								nvarchar(MAX)		= NULL,
@@ -336,7 +336,7 @@ AS
 	SELECT @orderBy = CASE @sort
 		WHEN N'IDLE_TIME' THEN N'[x].[idle_milliseconds] DESC'
 		WHEN N'SESSION_ID' THEN N'[x].[session_id]'
-		WHEN N'TEMPDB_LOG_RECORDS' THEN N'[x].[tempdb_lrc] DESC'
+		WHEN N'TEMPDB_LRC' THEN N'[x].[tempdb_lrc] DESC'
 		WHEN N'LOCKS_COUNT' THEN N'DATALENGTH([x].[resources]) DESC'
 		WHEN N'LOG_USED' THEN N'[x].[log_used_mb] DESC'
 		ELSE N'[x].[idle_milliseconds] DESC'
