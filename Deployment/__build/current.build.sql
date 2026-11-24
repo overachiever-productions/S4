@@ -316,6 +316,8 @@ GO
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 --##INCLUDE: Common\Types\backup_history_entry.sql
 
+--##INCLUDE: Common\Types\enumeration.sql
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Advanced S4 Error-Handling Capabilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -774,6 +776,9 @@ GO
 --##INCLUDE: S4 Diagnostics\server_configuration.sql
 
 -----------------------------------
+--##INCLUDE: S4 Diagnostics\Connections\leaked_connections.sql
+
+-----------------------------------
 --##INCLUDE: S4 Diagnostics\Connections\thesevensets_server_useroptions.sql
 
 -----------------------------------
@@ -802,6 +807,15 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\Indexes\list_heap_problems.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Latches\latch_sources.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Locking and Blocking\block_sources.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\Locking and Blocking\zombie_transactions.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\PlanCache\plancache_shred_columns_by_table.sql
@@ -871,6 +885,12 @@ GO
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\QueryStore\querystore_list_forced_plans.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_module_variations.sql
+
+-----------------------------------
+--##INCLUDE: S4 Diagnostics\QueryStore\querystore_statement_variations.sql
 
 -----------------------------------
 --##INCLUDE: S4 Diagnostics\TempDb\versionstore_consumers.sql
@@ -1249,6 +1269,12 @@ END;
 
 -----------------------------------
 --##INCLUDE: Common\Shreds\system_disks_data().sql
+
+-----------------------------------
+--##INCLUDE: Kill Store\killed_processes_data().sql
+
+-----------------------------------
+--##INCLUDE: Kill Store\killed_blocking_processes_data().sql
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Auditing:

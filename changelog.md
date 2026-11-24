@@ -2,6 +2,33 @@
 
 # Change Log
 
+## [14.8] - 2026-11-24
+Major changes and improvements to tempdb diagnostics + addition of dbo.zombie_transactions.
+
+### Fixed 
+- Multiple case-sensitivity fixes. (sigh)
+- `dbo.querystats_consumers` now addresses > 128-levels of xml bug. 
+- Bug fix with previous changes to `dbo.eventstore_extract_session_xml` 'clobbering' extraction details.
+- Updates to `dbo.add_synchronization_partner` to address SQL Server 2025 changes to Linked Server definitions. 
+- Corrected (bone-headed) bug preventing `dbo.database_details` from reporting smell for "Files on C:\" vs tempdb/msdb/model. 
+
+### Added 
+- Initial introduction of `dbo.querystore_module_variations` (rough draft, needs some more work/cleanup - but a functional MVP). 
+- Initial introduction of `dbo.querystore_statement_variations` (ditto).
+- Initial addition of `dbo.latch_sources`. 
+- Addition of `dbo.block_sources`.
+- New "shred" for `dbo.killed_blocking_processes_data()`. 
+- Addition of `dbo.zombie_transactions`.
+- Extraction of diagnostics for leaked-connections (from `dbo.kill_leaked_connections`) into stand-alone sproc: `dbo.leaked_connections`.
+
+### Changed 
+- `dbo.querystats_consumers` now extracts `schema_id` - for module/query ids.
+- Removed older/obsolete Kill-Store table (`dbo.kill_blocking_process_snapshots`).
+- Consolidation and standardization of Kill-Store parameters/inputs (predicates).
+- Cleanup and additional-details (context) for `dbo.versionstore_consumers`. 
+- Cleanup and additional-details (context) for `dbo.tempdb_consumers` - to better weaponize identification of problems (consumers).
+- Major overhaul to `dbo.tempdb_details` to cleanup bugs and inconsistencies.
+
 ## [14.7] - 2026-09-30
 Overhaul of dbo.print_string() + addition of dbo.querystats_consumers.
 
