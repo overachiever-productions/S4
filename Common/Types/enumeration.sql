@@ -17,13 +17,14 @@ CREATE TYPE dbo.enumeration AS TABLE (
 ); 
 GO
 
-IF TYPE_ID('dbo.bigint_enumeration') IS NOT NULL 
+IF TYPE_ID('dbo.bigint_enumeration') IS NOT NULL BEGIN
 	DROP PROCEDURE IF EXISTS dbo.[querystore_variations_by_query_ids];
 
-	EXEC('DROP TYPE dbo.bigint_enumeration;');
+	EXECUTE('DROP TYPE dbo.bigint_enumeration;');
+END;
 GO
 
-CREATE TYPE dbo.bigint_enumeration AS TABLE (
+CREATE TYPE dbo.[bigint_enumeration] AS TABLE (
 	[id] int IDENTITY(1,1) NOT NULL, 
 	[value] bigint NOT NULL
 ); 
