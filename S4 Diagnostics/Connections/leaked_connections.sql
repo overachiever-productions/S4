@@ -331,6 +331,22 @@ ORDER BY
 		@sql;
 
 	SELECT 
-		* 
+		[session_id],
+		[login_time],
+		[host],
+		[application],
+		[principal],
+		[status],
+		[last_request_end_time],
+		[is_user_process],
+		[prev_error],
+		[last_successful_logon],
+		[open_transaction_count],
+		[ip],
+		[most_recent_sql_handle],
+		[statement] 
 	FROM 
 		#intermediate;
+
+	RETURN 0;
+GO

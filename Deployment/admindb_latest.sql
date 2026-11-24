@@ -5,14 +5,14 @@
 			https://github.com/overachiever-productions/s4/
 
 	NOTES:
-		- This script will either install/deploy S4 version 14.7.5586.5 or upgrade a PREVIOUSLY deployed version of S4 to 14.7.5586.5.
+		- This script will either install/deploy S4 version 14.8.5641.3 or upgrade a PREVIOUSLY deployed version of S4 to 14.8.5641.3.
 		- This script will create a new, admindb, if one is not already present on the server where this code is being run.
 
 	Deployment Steps/Overview: 
 		1. Create admindb if not already present.
 		2. Create core S4 tables (and/or ALTER as needed + import data from any previous versions as needed). 
 		3. Cleanup any code/objects from previous versions of S4 installed and no longer needed. 
-		4. Deploy S4 version 14.7.5586.5 code to admindb (overwriting any previous versions). 
+		4. Deploy S4 version 14.8.5641.3 code to admindb (overwriting any previous versions). 
 		5. Report on current + any previous versions of S4 installed. 
 
 */
@@ -63,7 +63,7 @@ GO
 CREATE FUNCTION dbo.get_engine_version() 
 RETURNS decimal(4,2)
 AS
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN 
 		DECLARE @output decimal(4,2);
@@ -101,7 +101,7 @@ RETURNS @Results table (row_id int IDENTITY NOT NULL, result nvarchar(MAX))
 AS 
 	BEGIN
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF NULLIF(@serialized,'') IS NOT NULL AND DATALENGTH(@delimiter) >= 1 BEGIN
 		IF @delimiter = N' ' BEGIN 
@@ -166,7 +166,7 @@ CREATE FUNCTION dbo.[get_s4_version](@DefaultValueIfNoHistoryPresent varchar(20)
 RETURNS decimal(3,1)
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
     BEGIN; 
     	
@@ -216,7 +216,7 @@ IF OBJECT_ID('dbo.version_history', 'U') IS NULL BEGIN
 		@level1name = 'version_history';
 END;
 
-DECLARE @CurrentVersion varchar(20) = N'14.7.5586.5';
+DECLARE @CurrentVersion varchar(20) = N'14.8.5641.3';
 
 -- Add previous details if any are present: 
 DECLARE @version sysname; 
@@ -306,7 +306,7 @@ END;
 USE [admindb];
 GO
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 IF OBJECT_ID('dbo.backup_log','U') IS NULL BEGIN
 	CREATE TABLE dbo.backup_log  (
@@ -465,7 +465,7 @@ GO
 USE [admindb];
 GO
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 IF OBJECT_ID('dbo.restore_log', 'U') IS NULL BEGIN
 
@@ -1121,7 +1121,7 @@ GO
 USE [admindb];
 GO
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 IF OBJECT_ID(N'dbo.[eventstore_report_preferences]', N'U') IS NULL BEGIN
 	CREATE TABLE dbo.[eventstore_report_preferences] (
@@ -1154,12 +1154,13 @@ GO
 USE [admindb];
 GO 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+-- {copyright}
+
 IF OBJECT_ID(N'[dbo].[killed_processes]', N'U') IS NULL BEGIN 
 	CREATE TABLE [dbo].[killed_processes] (
 		[row_id] int IDENTITY(1,1) NOT NULL, 
 		[timestamp] datetime NOT NULL, 
-		[type] sysname NOT NULL,	-- blocked_process, orphaned_connection, connection_pool_leak, etc. 
+		[type] sysname NOT NULL,	-- BLOCKING_PROCESSES | CONNECTIONPOOL_LEAKS | ZOMBIED_TRANSACTIONS | LONG_RUNNING_PROCESSES | KILL_PROCESSES | RESOURCEGOVERNOR_CONNECTIONS | CONTROL_DATABASE
 		[print_only] bit NOT NULL,
 		[row_count] int NOT NULL, 
 		[kill_count] int NOT NULL, 
@@ -1388,7 +1389,7 @@ CREATE PROC dbo.drop_obsolete_objects
 AS 
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     IF @Directives IS NULL BEGIN 
         PRINT '-- Attempt to execute dbo.drop_obsolete_objects - but @Directives was NULL.';
@@ -1587,7 +1588,9 @@ DECLARE @olderObjects xml = CONVERT(xml, N'
     <entry schema="dbo" name="list_problem_heaps" type="P" comment="Switched to dbo.list_heap_problems (to avoid intellisense ''collisions'' with dbo.list_processes)." />
 	<entry schema="dbo" name="view_querystore_consumers" type="P" comment="Simplfieid name - to querystore_consumers." />
 	<entry schema="dbo" name="execute_uncatchable_command" type="P" comment="Replaced via dbo.execute_command." />
-	<entry schema="dbo" name="kill_blocking_process_snapshots" type="P" comment="v14.0 refactoring." />
+	<entry schema="dbo" name="kill_blocking_process_snapshots" type="U" comment="v14.0 refactoring." />
+	<entry schema="dbo" name="kill_connections_by_statement" type="P" comment="v15.0 cleanup." />
+	<entry schema="dbo" name="kill_connections_by_hostname" type="P" comment="v15.0 cleanup." />
 	<entry schema="dbo" name="list_running_jobs" type="P" comment="v14.2 refactoring." />
 	<entry schema="dbo" name="translate_io_perfcounters" type="P" comment="v14.5 refactoring. (removed ''perf'' from name)." />
 	<entry schema="dbo" name="print_long_string" type="P" comment="v14.7 refactoring. (removed ''_long_'' from name)." />
@@ -1598,7 +1601,7 @@ GO
 
 -----------------------------------
 -- v7.0+ - Conversion of [tokens] to {tokens}. (Breaking Change - Raises warnings/alerts via SELECT statements). 
-IF (SELECT admindb.dbo.get_s4_version('14.7.5586.5')) < 7.0 BEGIN
+IF (SELECT admindb.dbo.get_s4_version('14.8.5641.3')) < 7.0 BEGIN
 
 	-- Replace any 'custom' token definitions in dbo.settings: 
 	DECLARE @tokenChanges table (
@@ -1686,7 +1689,6 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 4. Deploy new/updated code.
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 USE [admindb];
 GO
 
@@ -1732,6 +1734,32 @@ CREATE TYPE dbo.backup_history_entry AS TABLE (
 GO
 
 
+USE [admindb];
+GO
+
+IF TYPE_ID('dbo.enumeration') IS NOT NULL 
+	DROP TYPE dbo.enumeration;
+GO
+
+CREATE TYPE dbo.enumeration AS TABLE (
+	[id] int IDENTITY(1,1) NOT NULL, 
+	[value] nvarchar(500)
+); 
+GO
+
+IF TYPE_ID('dbo.bigint_enumeration') IS NOT NULL 
+	DROP PROCEDURE IF EXISTS dbo.[querystore_variations_by_query_ids];
+
+	DROP TYPE dbo.bigint_enumeration;
+GO
+
+CREATE TYPE dbo.bigint_enumeration AS TABLE (
+	[id] int IDENTITY(1,1) NOT NULL, 
+	[value] bigint NOT NULL
+); 
+GO
+
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Advanced S4 Error-Handling Capabilities:
 ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1749,7 +1777,7 @@ CREATE PROC dbo.enable_advanced_capabilities
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @xpCmdShellValue bit; 
 	DECLARE @xpCmdShellInUse bit;
@@ -1845,7 +1873,7 @@ CREATE PROC dbo.disable_advanced_capabilities
 AS 
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @xpCmdShellValue bit; 
 	DECLARE @xpCmdShellInUse bit;
@@ -1932,7 +1960,7 @@ CREATE PROC dbo.verify_advanced_capabilities
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @xpCmdShellInUse bit;
 	DECLARE @advancedS4 bit;
@@ -1976,7 +2004,7 @@ CREATE FUNCTION dbo.[engine_version] (@scope sysname = NULL)
 RETURNS decimal(6,4)
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
 
@@ -2025,7 +2053,7 @@ RETURNS sysname
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	DECLARE @output sysname; 
@@ -2075,7 +2103,7 @@ RETURNS sysname
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -2118,7 +2146,7 @@ RETURNS nvarchar(MAX)
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	RETURN (
@@ -2141,7 +2169,7 @@ RETURNS nvarchar(MAX)
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -2171,7 +2199,7 @@ RETURNS nvarchar(MAX)
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -2265,7 +2293,7 @@ CREATE PROC dbo.check_paths
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Exists = 0;
 
@@ -2297,7 +2325,7 @@ CREATE FUNCTION dbo.[database_defaults] (@database_id int = 3)
 RETURNS table
 AS RETURN
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	WITH core AS ( 
 		SELECT 
@@ -2558,7 +2586,7 @@ CREATE FUNCTION dbo.[database_scoped_defaults] (@database_id int = 3)
 RETURNS table
 AS RETURN
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	WITH core AS ( 
 		SELECT 
@@ -2742,7 +2770,7 @@ CREATE PROC dbo.[verify_directory_access]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- verify that the directory exists BEFORE attempting to check on permissions:
 	DECLARE @e bit; 
@@ -2786,7 +2814,7 @@ RETURNS nvarchar(400)
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -2815,7 +2843,7 @@ RETURNS nvarchar(4000)
 AS
 BEGIN
  
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @output sysname;
 
@@ -2904,7 +2932,7 @@ CREATE PROC dbo.load_default_setting
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @output sysname; 
 
@@ -2961,7 +2989,7 @@ RETURNS TABLE
 AS 
   RETURN	
 	
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SELECT 
 		[resource].value('resource_identifier[1]', 'sysname') [resource_identifier], 
@@ -2989,7 +3017,7 @@ CREATE FUNCTION dbo.is_system_database(@DatabaseName sysname)
 	RETURNS bit
 AS 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN 
 		DECLARE @output bit = 0;
@@ -3042,7 +3070,7 @@ CREATE PROC dbo.parse_vector
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ValidationParameterName = ISNULL(NULLIF(@ValidationParameterName, N''), N'@Vector');
 	IF @ValidationParameterName LIKE N'@%'
@@ -3122,7 +3150,7 @@ CREATE PROC dbo.translate_vector
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 
@@ -3194,7 +3222,7 @@ CREATE PROC dbo.translate_vector_delay
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @difference int;
 
@@ -3239,7 +3267,7 @@ CREATE PROC dbo.translate_vector_datetime
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	IF UPPER(@Operation) NOT IN (N'ADD', N'SUBTRACT') BEGIN 
@@ -3314,7 +3342,7 @@ CREATE PROC dbo.[verify_alerting_configuration]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     DECLARE @output sysname;
 
@@ -3379,7 +3407,7 @@ CREATE PROC dbo.[verify_directory_access]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- verify that the directory exists BEFORE attempting to check on permissions:
 	DECLARE @e bit; 
@@ -3425,7 +3453,7 @@ AS
 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -3563,7 +3591,7 @@ CREATE PROC dbo.[core_predicates]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @Applications = NULLIF(@Applications, N'');
@@ -3778,7 +3806,7 @@ CREATE PROC dbo.extract_waitresource
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF NULLIF(@WaitResource, N'') IS NULL BEGIN 
 		SET @Output = N'';
@@ -3981,7 +4009,7 @@ CREATE PROC dbo.replace_dbname_tokens
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -4113,7 +4141,7 @@ CREATE FUNCTION dbo.format_sql_login (
 )
 RETURNS nvarchar(MAX)
 AS 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     BEGIN 
         DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
@@ -4257,7 +4285,7 @@ CREATE	FUNCTION [dbo].[format_windows_login] (
 RETURNS nvarchar(MAX)
 AS
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 BEGIN
 
@@ -4385,7 +4413,7 @@ CREATE PROC dbo.script_sql_login
 AS 
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     IF NULLIF(@LoginName, N'') IS NULL BEGIN 
         RAISERROR('@LoginName is required.', 16, 1);
@@ -4475,7 +4503,7 @@ CREATE PROC dbo.[script_windows_login]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @enabled bit, @name sysname;
 	DECLARE @defaultDB sysname, @defaultLang sysname;
@@ -4548,7 +4576,7 @@ CREATE PROC dbo.[create_agent_job]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @existingJob sysname; 
 	SELECT 
@@ -4644,7 +4672,7 @@ CREATE PROC dbo.[generate_bounding_times]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF @End < @Start BEGIN 
 		RAISERROR(N'@End can NOT be earlier than @Start.', 16, 1);
@@ -4725,7 +4753,7 @@ CREATE PROC dbo.[inserlect_cache]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF NOT EXISTS (SELECT NULL FROM [tempdb].sys.[objects] WHERE [name] LIKE N'%##admindb_vector_cache%') BEGIN
 		CREATE TABLE ##admindb_vector_cache (
@@ -4785,7 +4813,7 @@ CREATE PROC dbo.[targeted_databases]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
 	SET @Priorities = NULLIF(@Priorities, N'');	
@@ -5165,7 +5193,7 @@ CREATE PROC dbo.list_databases
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -5449,7 +5477,7 @@ CREATE FUNCTION dbo.format_timespan(@Milliseconds bigint)
 RETURNS sysname
 WITH RETURNS NULL ON NULL INPUT
 AS
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	BEGIN
 
 		DECLARE @output sysname;
@@ -5496,7 +5524,7 @@ CREATE FUNCTION dbo.[format_number] (@Number decimal(38,6), @Length int = 14, @D
 RETURNS sysname
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
 		SET @Length = ISNULL(@Length, 14);
@@ -5561,7 +5589,7 @@ CREATE FUNCTION dbo.[xml_decode] (@Input nvarchar(MAX), @TransformLtAndGtOnly bi
 RETURNS nvarchar(MAX)
 	WITH RETURNS NULL ON NULL INPUT
 AS
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -5596,7 +5624,7 @@ CREATE FUNCTION dbo.[get_local_timezone]()
 RETURNS sysname
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -5626,7 +5654,7 @@ CREATE FUNCTION dbo.[get_timezone_offset_minutes] (@TimeZone sysname)
 RETURNS int
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	IF NULLIF(@TimeZone, N'') IS NULL 
@@ -5667,7 +5695,7 @@ CREATE PROC dbo.[notify_operator]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @profile_name = NULLIF(@profile_name, N'');
 
@@ -5744,7 +5772,7 @@ CREATE PROC dbo.[format_html_email]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     SET @extended_header = NULLIF(@extended_header, N'');
     SET @details_header = NULLIF(@details_header, N'');
@@ -6215,7 +6243,7 @@ RETURNS nvarchar(MAX)
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -6263,7 +6291,7 @@ RETURNS nvarchar(MAX)
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -6300,7 +6328,7 @@ CREATE PROC dbo.print_string
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF @input IS NULL 
 		RETURN 0; 
@@ -6391,13 +6419,14 @@ IF OBJECT_ID('dbo.[extract_dynamic_code_lines]','P') IS NOT NULL
 GO
 
 CREATE PROC dbo.[extract_dynamic_code_lines]
+
 	@DynamicCode						nvarchar(MAX), 
 	@TargetLine							int, 
 	@StringOutput						nvarchar(MAX)			= N''	OUTPUT
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @DynamicCode = NULLIF(@DynamicCode, N'');
 
@@ -6470,7 +6499,7 @@ GO
 CREATE FUNCTION dbo.count_matches(@input nvarchar(MAX), @pattern sysname) 
 RETURNS int 
 AS 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN 
 		DECLARE @output int = 0;
@@ -6507,7 +6536,7 @@ RETURNS bit
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -6538,7 +6567,7 @@ CREATE PROC	dbo.[deploy_codelibrary_file]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Key = UPPER(@Key);
 	SET @PrintOnly = ISNULL(@PrintOnly, 0);
@@ -6661,7 +6690,7 @@ CREATE PROC dbo.[verify_codelibrary_file]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @CacheDuration = ISNULL(NULLIF(@CacheDuration, N''), N'1 week');
 
@@ -6708,7 +6737,7 @@ CREATE PROC dbo.[execute_command]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -7194,7 +7223,7 @@ AS
 
 	SET @DotIncludeFile = NULLIF(@DotIncludeFile, N'');
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @commandOutput xml; 
 	DECLARE @returnValue int;
@@ -7270,7 +7299,7 @@ CREATE PROC dbo.[execute_per_database]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @Priorities = NULLIF(@Priorities, N'');
@@ -7426,7 +7455,7 @@ CREATE FUNCTION dbo.[execute_per_database_errors] (@errors xml)
 RETURNS table
 	AS RETURN
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     WITH core AS (
 		SELECT 
@@ -7463,7 +7492,7 @@ CREATE PROC dbo.establish_directory
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
 	IF NULLIF(@TargetDirectory, N'') IS NULL BEGIN 
         SET @Error = N'The @TargetDirectory parameter for dbo.establish_directory may NOT be NULL or empty.';
@@ -7528,7 +7557,7 @@ CREATE PROC dbo.[load_header_details]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- TODO: 
 	--		make sure file/path exists... 
@@ -7660,7 +7689,7 @@ CREATE PROC dbo.load_backup_database_names
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -7750,7 +7779,7 @@ CREATE PROC dbo.shred_string
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @rows table ( 
 		[row_id] int,
@@ -7862,7 +7891,7 @@ CREATE PROC dbo.[get_executing_dbname]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     DECLARE @output sysname;
     DECLARE @resultCount int;
@@ -7925,7 +7954,7 @@ CREATE PROC dbo.[load_id_for_normalized_name]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @targetDatabase sysname, @targetSchema sysname, @targetObjectName sysname;
 	DECLARE @targetObjectId int;
@@ -7989,7 +8018,7 @@ AS
 	SET NOCOUNT ON; 
 	SET ANSI_WARNINGS OFF;  -- for NULL/aggregates
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -8441,7 +8470,7 @@ CREATE PROC dbo.[log_backup_history_detail]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF (SELECT COUNT(*) FROM @ExecutionDetails) <> 1 BEGIN 
 		RAISERROR(N'Invalid Configuration. @ExecutionDetails can only, ever, contain a single row at a time.', 16, 1);
@@ -8557,7 +8586,7 @@ CREATE PROC dbo.[validate_retention]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Retention = UPPER(NULLIF(@Retention, N''));
 
@@ -8656,7 +8685,7 @@ CREATE PROC [dbo].[remove_backup_files]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -9173,7 +9202,7 @@ CREATE PROC dbo.[remove_offsite_backup_files]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF UPPER(@OffSiteRetention) = N'{INFINITE}' BEGIN 
 		PRINT N'-- {INFINITE} retention detected. Terminating off-site cleanup process.';
@@ -9220,7 +9249,7 @@ CREATE PROC dbo.backup_databases
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @CopyToBackupDirectory = NULLIF(@CopyToBackupDirectory, N'');
 	SET @OffSiteBackupPath = NULLIF(@OffSiteBackupPath, N'');
@@ -10434,7 +10463,7 @@ CREATE PROC dbo.[create_code_formatfile]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @binary varbinary(MAX) = (SELECT [code] FROM dbo.[code_library] WHERE [library_key] = N'BCP_FMT_FILE');
 
@@ -10461,7 +10490,7 @@ CREATE PROC dbo.[codelibrary_file]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF NOT EXISTS (SELECT NULL FROM dbo.[code_library] WHERE [library_id] = @LibraryId) BEGIN
 		RAISERROR(N'Requested ResourceID: [%d] not found.', 16, 1, @LibraryId);
@@ -10492,7 +10521,7 @@ CREATE PROC dbo.[initialize_codelibrary]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @settingsKey sysname = N'code_library_enabled';
 	IF EXISTS (SELECT NULL FROM dbo.[settings] WHERE [setting_key] = @settingsKey AND [setting_value] = N'1') BEGIN
@@ -10680,7 +10709,7 @@ CREATE PROC dbo.[update_server_name]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @currentHostNameInWindows sysname;
 	DECLARE @serverNameFromSysServers sysname; 
@@ -10728,7 +10757,7 @@ CREATE PROC dbo.[force_removal_of_tempdb_file]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @FileName = NULLIF(@FileName, N'');
 	SET @Force = NULLIF(@Force, N'');
@@ -10919,7 +10948,7 @@ CREATE PROC dbo.[configure_tempdb_files]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDataFilePath	= NULLIF(@TargetDataFilePath, N'');
 	SET @TargetLogFilePath	= NULLIF(@TargetLogFilePath, N'');
@@ -11138,7 +11167,7 @@ CREATE PROC dbo.script_server_configuration
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 	-- meta / formatting: 
@@ -11567,7 +11596,7 @@ CREATE PROC dbo.export_server_configuration
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -11792,7 +11821,7 @@ CREATE PROC dbo.[backup_server_certificate]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @CertificateName = NULLIF(@CertificateName, N'');
 	SET @BackupDirectory = NULLIF(@BackupDirectory, N'');
@@ -11939,7 +11968,7 @@ CREATE PROC dbo.[create_server_certificate]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @MasterKeyEncryptionPassword = NULLIF(@MasterKeyEncryptionPassword, N'');
 	SET @CertificateName = NULLIF(@CertificateName, N'');
@@ -12089,7 +12118,7 @@ CREATE PROC dbo.[restore_server_certificate]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @OriginalCertificateName = NULLIF(@OriginalCertificateName, N'');
 	SET @CertificateAndKeyRootDirectory = NULLIF(@CertificateAndKeyRootDirectory, N'');
@@ -12250,7 +12279,7 @@ CREATE PROC dbo.[configure_instance]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -12359,7 +12388,7 @@ CREATE PROC dbo.configure_database_mail
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 
 	SET @SmptUserName = NULLIF(@SmptUserName, N'');
@@ -12582,7 +12611,7 @@ CREATE PROC dbo.[enable_alerts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     -- TODO: verify that @OperatorName is a valid operator.
 
@@ -12694,7 +12723,7 @@ CREATE PROC dbo.[enable_alert_filtering_x]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF UPPER(@TargetAlerts) NOT IN (N'SEVERITY', N'IO', N'SEVERITY_AND_IO') BEGIN 
 		RAISERROR('Allowed inputs for @Target Alerts are { SEVERITY | IO | SEVERITY_AND_IO }. Specific alerts my be removed from targeting via @ExcludedAlerts.', 16, 1);
@@ -12922,7 +12951,7 @@ CREATE PROC dbo.[manage_server_history]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	-- TODO: validate inputs... 
 
@@ -13296,7 +13325,7 @@ CREATE PROC dbo.[enable_disk_monitoring]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- TODO: validate inputs... 
 	
@@ -13486,7 +13515,7 @@ CREATE PROC dbo.[create_backup_jobs]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -13884,7 +13913,7 @@ CREATE PROC dbo.[create_restore_test_job]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- TODO: validate inputs... 
 	SET @TimeZoneForUtcOffset = NULLIF(@TimeZoneForUtcOffset, N'');
@@ -14065,7 +14094,7 @@ CREATE PROC dbo.[create_index_maintenance_jobs]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	-- Validate Inputs: 
 	SET @DailyJobRunsOnDays = ISNULL(NULLIF(@DailyJobRunsOnDays, N''), N'M,W,F');
@@ -14293,7 +14322,7 @@ CREATE PROC dbo.[create_consistency_checks_job]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExecutionDays = ISNULL(NULLIF(@ExecutionDays, N''), N'M, W, F, Su');
 	SET @JobName = ISNULL(NULLIF(@JobName, N''), N'Database Consistency Checks');
@@ -14483,7 +14512,7 @@ CREATE PROC dbo.[define_masterkey_encryption]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF NULLIF(@BackupPath, N'') IS NOT NULL BEGIN 
 		IF NULLIF(@BackupEncryptionPassword, N'') IS NULL BEGIN 
@@ -14555,7 +14584,7 @@ CREATE PROC dbo.[script_dbfile_movement_template]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 	SET @TargetFiles = NULLIF(@TargetFiles, N'');
@@ -14746,7 +14775,7 @@ CREATE PROC dbo.[script_login]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @name sysname, @loginType nvarchar(60);
 
@@ -14846,7 +14875,7 @@ CREATE PROC dbo.[script_server_role]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF NOT EXISTS (SELECT NULL FROM sys.[server_principals] WHERE [name] = @RoleName AND [type] = 'R' AND [is_fixed_role] = 0) BEGIN 
 		DECLARE @message nvarchar(MAX) = N'-- No Server Role matching the name: [' + @RoleName + N'] exists on the current server.';
@@ -15043,7 +15072,7 @@ CREATE PROC dbo.[script_logins]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	SET @ExcludedLogins = NULLIF(@ExcludedLogins, N'');
 
 	DECLARE @ingnoredLogins table (
@@ -15157,7 +15186,7 @@ CREATE PROC dbo.[fix_orphaned_users]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	IF NULLIF(@TargetDatabases,'') IS NULL SET @TargetDatabases = N'{ALL}';
 	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
 	SET @ExcludedLogins = NULLIF(@ExcludedLogins, N'');
@@ -15355,7 +15384,7 @@ CREATE PROC dbo.[drop_orphaned_users]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExcludedUsers = NULLIF(@ExcludedUsers, N'');
 
@@ -15475,7 +15504,7 @@ CREATE PROC dbo.export_server_logins
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Dependencies Validation:
@@ -15733,7 +15762,7 @@ CREATE PROC dbo.[prevent_user_access]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDatabases = ISNULL(NULLIF(@TargetDatabases, N''), N'{ALL}');
 	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
@@ -16106,7 +16135,7 @@ CREATE PROC dbo.[script_security_mappings]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TargetDatabases = ISNULL(NULLIF(@TargetDatabases, N''), N'{ALL}');
 	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
@@ -16295,7 +16324,7 @@ CREATE PROC dbo.[import_security_mappings]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
 	SET @ExcludedLogins = NULLIF(@ExcludedLogins, N'');
@@ -16620,7 +16649,7 @@ CREATE PROC dbo.[script_server_certificate]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @private_key_password = NULLIF(@private_key_password, N'');
 
@@ -16690,7 +16719,7 @@ CREATE PROC dbo.[restore_encoded_certificate]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @private_key_password = NULLIF(@private_key_password, N'');
 
@@ -16857,7 +16886,7 @@ RETURNS datetime
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -16973,7 +17002,7 @@ CREATE PROC dbo.[report_rpo_restore_violations]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDatabases = ISNULL(NULLIF(@TargetDatabases, N''), N'{ALL}');
 	SET @Scope = ISNULL(NULLIF(@Scope, N''), N'WEEK');
@@ -17142,7 +17171,7 @@ CREATE PROC dbo.restore_databases
 AS
     SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @IfTargetExists = UPPER(ISNULL(@IfTargetExists, N'THROW'));
 
@@ -18660,7 +18689,7 @@ CREATE PROC dbo.copy_database
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF NULLIF(@SourceDatabaseName,'') IS NULL BEGIN
 		RAISERROR('@SourceDatabaseName cannot be Empty/NULL. Please specify the name of the database you wish to copy (from).', 16, 1);
@@ -18845,7 +18874,7 @@ CREATE PROC dbo.[apply_logs]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     -----------------------------------------------------------------------------
     -- Dependencies Validation:
@@ -19494,7 +19523,7 @@ CREATE PROC dbo.list_recovery_metrics
 AS 
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -19835,7 +19864,7 @@ CREATE PROC dbo.[list_top]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	SET @TopRequests = ISNULL(@TopRequests, 20);
 	
 	SELECT
@@ -19932,7 +19961,7 @@ AS
 		RETURN -1;
 	END;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	CREATE TABLE #core (
 		[row_source] sysname NOT NULL,
@@ -20487,7 +20516,7 @@ CREATE PROC dbo.[list_parallel_processes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SELECT 
 		[spid] [session_id],
@@ -20584,7 +20613,7 @@ CREATE PROC dbo.list_transactions
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	CREATE TABLE #core (
 		[row_number] int IDENTITY(1,1) NOT NULL,
@@ -21048,7 +21077,7 @@ CREATE PROC dbo.[list_collisions]
 AS 
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF NULLIF(@TargetDatabases, N'') IS NULL
 		SET @TargetDatabases = N'{ALL}';
@@ -21413,7 +21442,7 @@ CREATE PROC dbo.[list_cpu_history]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @LastNMinutesOnly = ISNULL(@LastNMinutesOnly, 256); 
 
@@ -21527,7 +21556,7 @@ CREATE PROC dbo.[initialize_migration]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @FinalBackupType = ISNULL(NULLIF(@FinalBackupType, N''), N'LOG');
@@ -21835,7 +21864,7 @@ CREATE PROC dbo.[finalize_migration]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Databases = NULLIF(@Databases, N'');
 	SET @Priorities = NULLIF(@Priorities, N'');
@@ -22181,7 +22210,7 @@ CREATE PROC dbo.[disable_jobs]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExcludedJobs = NULLIF(@ExcludedJobs, N'');
 	SET @PrintOnly = ISNULL(@PrintOnly, 1);
@@ -22270,7 +22299,7 @@ CREATE PROC dbo.[disable_logins]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExcludedLogins = NULLIF(@ExcludedLogins, N'');
 	SET @ExcludeSaLogin = ISNULL(@ExcludeSaLogin, 1);
@@ -22386,7 +22415,7 @@ CREATE PROC dbo.[script_job_states]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @enabled nchar(3) = N'[+]';
@@ -22496,7 +22525,7 @@ CREATE PROC dbo.[script_login_states]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
 	DECLARE @enabled nchar(3) = N'[+]';
@@ -22620,7 +22649,7 @@ DECLARE @running_jobs nvarchar(MAX) = N'ALTER PROC dbo.[running_jobs]
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @start = NULLIF(@start, N'''');  -- can''t be the case with this as a datetime ... but once I change this to a timespan or whatever... then it''ll be sysname. 
 	SET @jobs = NULLIF(@jobs, N'''');
@@ -22864,7 +22893,7 @@ RETURNS table
 AS
     RETURN
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
 	WITH specifications AS (
 		SELECT 
@@ -23016,7 +23045,7 @@ RETURNS bit
 	WITH RETURNS NULL ON NULL INPUT
 AS 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN;
 		
@@ -23059,7 +23088,7 @@ CREATE PROC dbo.[translate_program_name_to_agent_job]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     DECLARE @jobID uniqueidentifier;
 
@@ -23109,7 +23138,7 @@ CREATE PROC dbo.[get_last_job_completion]
 AS
     SET NOCOUNT ON; 
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     IF NULLIF(@JobName, N'') IS NULL AND @JobID IS NULL BEGIN 
         RAISERROR(N'Please specify either the @JobName or @JobID parameter to execute.', 16, 1);
@@ -23187,7 +23216,7 @@ CREATE PROC dbo.[get_last_job_completion_by_session_id]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     DECLARE @success int = -1;
     DECLARE @jobName sysname; 
@@ -23239,7 +23268,7 @@ CREATE PROC dbo.[jobstep_body_alter]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	/* Verify that Job + Step Exist */
 	DECLARE @jobID uniqueidentifier;
@@ -23298,7 +23327,7 @@ CREATE PROC dbo.[jobstep_body_get]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	/* Verify that Job + Step Exist */
 	DECLARE @jobID uniqueidentifier;
@@ -23351,7 +23380,7 @@ CREATE PROC dbo.[aggregated_errorlog]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @top = ISNULL(@top, 100);
 
@@ -23545,7 +23574,7 @@ CREATE PROC dbo.[vlf_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
 	SET @Priorities = NULLIF(@Priorities, N'');
@@ -23678,7 +23707,7 @@ CREATE PROC dbo.[compute_details]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @signalWaits decimal(5,2);
 	SELECT 
@@ -23805,7 +23834,7 @@ CREATE PROC dbo.[disabled_constraints]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @databases = ISNULL(NULLIF(@databases, N''), N'{USER}');
 	SET @priorities = NULLIF(@priorities, N'');
@@ -23913,7 +23942,7 @@ RETURNS @defaults table (
 )
 AS BEGIN 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @xml xml = (SELECT * FROM sys.databases WHERE [database_id] = @database_id FOR XML PATH(N'db'), TYPE);
 
@@ -23953,7 +23982,7 @@ AS
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
 	SET @Priorities = NULLIF(@Priorities, N'');
 
-	CREATE TABLE #freeSpace (
+	CREATE TABLE #fileSpace (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[database_name] sysname NOT NULL, 
 		[file_name] sysname NOT NULL, 
@@ -23962,7 +23991,7 @@ AS
 		[free_space_mb] decimal(24,2) NULL 
 	); 
 	DECLARE @sql nvarchar(MAX) = N'USE [{CURRENT_DB}];
-	INSERT INTO [#freeSpace] ([database_name], [file_name], [type], [file_size_mb], [free_space_mb])
+	INSERT INTO [#fileSpace] ([database_name], [file_name], [type], [file_size_mb], [free_space_mb])
 	SELECT
 		N''{CURRENT_DB}'' [database_name], 
 		[name] AS [file_name],
@@ -24083,12 +24112,12 @@ AS
 	
 	WITH files_on_c AS ( 
 		SELECT 
-			[name],
+			DB_NAME([database_id]) [name],
 			MAX(CASE WHEN [physical_name] LIKE N''C:\%'' THEN 1 ELSE 0 END) [files_on_c]
 		FROM 
 			sys.[master_files]
 		GROUP BY 
-			[name]
+			DB_NAME([database_id])
 	), 
 	core AS ( 
 		SELECT 
@@ -24106,8 +24135,9 @@ AS
 			--		ideally, there''s some way to communicate if we''re primary, secondary, RO, distributed, etc. 
 
 			[d].[collation_name] [collation],
-			CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,2)) [db_size_gb],
-			(SELECT SUM([free_space_mb]) FROM [#freeSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
+			--CAST((([s].[size] * 8.0 / 1024.0) / 1024.0) AS decimal(24,2)) [db_size_gb],
+			(SELECT SUM([file_size_mb]) FROM [#fileSpace] WHERE [database_name] = [d].[name] AND [type] = 0) / 1024. [db_size_gb],
+			(SELECT SUM([free_space_mb]) FROM [#fileSpace] WHERE [database_name] = [d].[name] AND [type] = 0) [free_space_mb],
 			CAST(([log_space].[reserved_mb] / 1024.0) AS decimal(24,2)) [log_size_gb],
 			[log_space].[used_percent] [%_log_used],
 			[d].[recovery_model_desc] [recovery],
@@ -24142,9 +24172,9 @@ AS
 			sys.databases [d]
 			LEFT OUTER JOIN [files_on_c] [fc] ON [d].[name] = [fc].[name]
 			LEFT OUTER JOIN [#fileCount] [c] ON [d].[database_id] = [c].[database_id]
-			LEFT OUTER JOIN (
-				SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
-			) [s] ON [d].database_id = [s].database_id
+	--LEFT OUTER JOIN (
+	--	SELECT	database_id, SUM(size) size, COUNT(database_id) [Files] FROM sys.master_files WHERE [type] = 0 GROUP BY database_id
+	--) [s] ON [d].database_id = [s].database_id
 			LEFT OUTER JOIN [#logSpace] [log_space] ON [d].[name] = [log_space].[database_name]
 	), 
 	vlfs AS ( 
@@ -24315,7 +24345,7 @@ CREATE PROC dbo.[table_sizes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Databases = ISNULL(NULLIF(@Databases, N''), N'{ALL}');
 	SET @Priorities = NULLIF(@Priorities, N'');
@@ -24513,7 +24543,7 @@ AS
 		GOTO ErrorDetails;
 	END;
 
-	IF (SELECT dbo.is_xml_empty(@SerializedOutput)) = 1 BEGIN
+	IF dbo.is_xml_empty(@SerializedOutput) = 1 BEGIN
 		SET @SerializedOutput = (
 			SELECT 
 				[outer].[database_name] [@name], 
@@ -24614,7 +24644,7 @@ CREATE PROC dbo.[io_freezes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @start = ISNULL(@start, DATEADD(DAY, -14, GETDATE()));
 	SET @end = ISNULL(@end, GETDATE());
@@ -24745,7 +24775,7 @@ CREATE PROC dbo.[server_configuration]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @mode = UPPER(ISNULL(@mode, N'NON_DEFAULTs'));
 
@@ -24987,6 +25017,356 @@ GO
 USE [admindb];
 GO
 
+IF OBJECT_ID('dbo.[leaked_connections]','P') IS NOT NULL
+	DROP PROC dbo.[leaked_connections];
+GO
+
+CREATE PROC dbo.[leaked_connections]
+	@idle_threshold							sysname				= N'120 seconds',
+	@pool_count_threshold					int					= 20,
+	@aggregate								sysname				= N'DB_APP_LOGIN',			-- { DB_APP_LOGIN | APP_LOGIN | LOGIN | DB_APP_LOGIN_HOST | DB_APP_LOGIN_IP }
+	@mode									sysname				= N'DETAIL',				-- { SUMMARY | DETAIL }
+	@databases								nvarchar(MAX)		= NULL,
+	@applications							nvarchar(MAX)		= NULL, 
+	@principals								nvarchar(MAX)		= NULL, 
+	@roles									nvarchar(MAX)		= NULL,						
+	@hosts									nvarchar(MAX)		= NULL, 
+	@ips									nvarchar(MAX)		= NULL, 
+	@statements								nvarchar(MAX)		= NULL,	
+	@print_only								bit					= 0,
+	@serialized_output						xml					= N'<default/>'		OUTPUT
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	
+	SET @idle_threshold = ISNULL(NULLIF(@idle_threshold, N''), N'120 seconds');
+	SET @pool_count_threshold = ISNULL(NULLIF(@pool_count_threshold, 0), 20);
+	SET @aggregate = UPPER(ISNULL(NULLIF(@aggregate, N''), N'DB_APP_LOGIN'));
+	SET @mode = UPPER(ISNULL(NULLIF(@mode, N''), N'DETAIL'));
+	SET @databases = NULLIF(@databases, N'');
+	SET @applications = NULLIF(@applications, N'');
+	SET @principals = NULLIF(@principals, N'');
+	SET @roles = NULLIF(@roles, N'');
+	SET @hosts = NULLIF(@hosts, N'');
+	SET @ips = NULLIF(@ips, N'');
+	SET @statements = NULLIF(@statements, N'');
+	SET @print_only = ISNULL(@print_only, 0);
+
+	IF @aggregate NOT IN (N'DB_APP_LOGIN', N'APP_LOGIN', N'LOGIN', N'DB_APP_LOGIN_HOST', N'DB_APP_LOGIN_IP') BEGIN
+		RAISERROR(N'Invalid value for @aggregate parameter. Valid values are: { DB_APP_LOGIN, APP_LOGIN, LOGIN, DB_APP_LOGIN_HOST, DB_APP_LOGIN_IP }.', 16, 1);
+		RETURN -10;
+	END
+
+	DECLARE @idleThresholdMilliseconds bigint = -1, @vectorError nvarchar(MAX);
+
+	IF @idle_threshold IS NOT NULL BEGIN 
+		EXEC admindb.dbo.[translate_vector]
+			@Vector = @idle_threshold,
+			@ValidationParameterName = N'@idle_threshold',
+			@Output = @idleThresholdMilliseconds OUTPUT,
+			@Error = @vectorError OUTPUT; 
+
+		IF @vectorError IS NOT NULL BEGIN
+			RAISERROR(@vectorError, 16, 1);
+			RETURN -11;  
+		END;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Identify Leaks (via aggregated idle connections):
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	CREATE TABLE #conn_pool_leaks (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[connections] int NOT NULL
+	);
+
+	IF @aggregate LIKE N'%DB%' ALTER TABLE [#conn_pool_leaks] ADD [database] sysname NOT NULL;
+	IF @aggregate LIKE N'%APP%' ALTER TABLE [#conn_pool_leaks] ADD [application] sysname NOT NULL;
+	IF @aggregate LIKE N'%LOGIN%' ALTER TABLE [#conn_pool_leaks] ADD [principal] sysname NOT NULL;
+	IF @aggregate LIKE N'%HOST%' ALTER TABLE [#conn_pool_leaks] ADD [host] sysname NOT NULL;
+	IF @aggregate LIKE N'%IP%' ALTER TABLE [#conn_pool_leaks] ADD [ip] sysname NOT NULL;
+
+	DECLARE @sql nvarchar(MAX) = N'SELECT
+		COUNT([s].[session_id]) [connections],
+		{GroupBy}
+	FROM
+		[sys].[dm_exec_sessions] [s]
+		INNER JOIN [sys].[dm_exec_connections] [c] ON [s].[session_id] = [c].[session_id]
+	WHERE
+		[s].[is_user_process] = 1 --AND [s].[status] != ''running''
+	GROUP BY
+		{GroupBy}
+	HAVING
+		COUNT([s].[session_id]) > @pool_count_threshold
+	ORDER BY
+		COUNT([s].[session_id]) DESC; ';
+
+	DECLARE @crlftabtab nchar(4) = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9);
+	DECLARE @groupBy nvarchar(MAX) = '', @cursorVars nvarchar(MAX), @predicates nvarchar(MAX) = N'', @fetchedCols nvarchar(MAX) = N'', @columns nvarchar(MAX) = N'';
+	SELECT 
+		@groupBy = STRING_AGG([x].[translation], N', ') WITHIN GROUP (ORDER BY [x].[order] ASC), 
+		@cursorVars = STRING_AGG(N'@' + LOWER([a].[result]) + N' sysname', N', ') WITHIN GROUP (ORDER BY [x].[order] ASC), 
+		@predicates = STRING_AGG(N'AND ' + [x].[translation] + N' = @' + LOWER([a].[result]), @crlftabtab) WITHIN GROUP (ORDER BY [x].[order] ASC), 
+		@fetchedCols = STRING_AGG(N'@' + LOWER([a].[result]), N', ') WITHIN GROUP (ORDER BY [x].[order] ASC), 
+		@columns = STRING_AGG([x].[column], N', ') WITHIN GROUP (ORDER BY [x].[order] ASC)
+	FROM 
+		dbo.[split_string](@aggregate, N'_', 1) [a]
+		INNER JOIN (
+		SELECT 
+			[source], 
+			[translation], 
+			[column],
+			[order]
+		FROM 
+			(VALUES
+				(N'DB', N'DB_NAME([s].[database_id])', N'[database]', 1), 
+				(N'APP', N'[s].[program_name]', N'[application]', 2),
+				(N'LOGIN', N'[s].[login_name]', N'[principal]', 3), 
+				(N'HOST', N'[s].[host_name]', N'[host]', 4), 
+				(N'IP', N'[c].[client_net_address]', N'[ip]', 5)
+			) [x]([source], [translation], [column], [order])
+		) [x] ON [x].[source] = [result];
+	
+	SET @sql = REPLACE(@sql, N'{GroupBy}', @groupBy);
+
+	INSERT INTO [#conn_pool_leaks] -- I hate NON-EXPLICIT INSERTs... but... 
+	EXEC sp_executesql 
+		@sql, 
+		N'@pool_count_threshold int', 
+		@pool_count_threshold = @pool_count_threshold;
+
+	IF NOT EXISTS (SELECT NULL FROM [#conn_pool_leaks]) BEGIN 
+		RETURN 0;
+	END;
+
+	IF @print_only = 1 BEGIN 
+		SELECT * FROM [#conn_pool_leaks] ORDER BY [connections] DESC;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Expand all Leaks > @pool_count_threshold
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	CREATE TABLE #all_leaked_spids (
+		[session_id] smallint NOT NULL,
+		[login_time] datetime NOT NULL,
+		[host] sysname NULL,
+		[application] sysname NULL,
+		[principal] sysname NOT NULL,
+		[status] nvarchar(30) NOT NULL,
+		[last_request_end_time] datetime NULL,
+		[is_user_process] bit NOT NULL,
+		[prev_error] int NOT NULL,
+		[last_successful_logon] datetime NULL,
+		[open_transaction_count] int NOT NULL,
+		[ip] nvarchar(48) NULL,
+		[most_recent_sql_handle] varbinary(64) NULL, 
+		[statement] nvarchar(MAX) NULL
+	);
+
+	DECLARE @selectTemplate nvarchar(MAX) = N'SELECT
+		[s].[session_id],
+		[s].[login_time],
+		[s].[host_name] [host],
+		[s].[program_name] [application],
+		[s].[login_name] [principal],
+		[s].[status],
+		[s].[last_request_end_time],
+		[s].[is_user_process],
+		[s].[prev_error],
+		[s].[last_successful_logon],
+		[s].[open_transaction_count],
+		[c].[client_net_address] [ip],
+		[c].[most_recent_sql_handle], 
+		[t].[text] [statement]
+	FROM
+		[sys].[dm_exec_sessions] [s]
+		INNER JOIN [sys].[dm_exec_connections] [c] ON [s].[session_id] = [c].[session_id]
+		OUTER APPLY sys.[dm_exec_sql_text]([c].[most_recent_sql_handle]) [t]
+	WHERE
+		[s].[status] = ''sleeping''
+		' + @predicates;
+
+	SET @sql = N'DECLARE {declarations};
+DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+SELECT 
+	{columns}
+FROM 
+	[#conn_pool_leaks];
+	
+OPEN [walker];
+FETCH NEXT FROM [walker] INTO {fetchedCols};
+	
+WHILE @@FETCH_STATUS = 0 BEGIN
+	
+	INSERT INTO [#all_leaked_spids]
+	(
+		[session_id],
+		[login_time],
+		[host],
+		[application],
+		[principal],
+		[status],
+		[last_request_end_time],
+		[is_user_process],
+		[prev_error],
+		[last_successful_logon],
+		[open_transaction_count],
+		[ip],
+		[most_recent_sql_handle], 
+		[statement]
+	)
+	{selectTemplate}
+	
+	FETCH NEXT FROM [walker] INTO {fetchedCols};
+END;
+	
+CLOSE [walker];
+DEALLOCATE [walker]; ';
+
+	SET @sql = REPLACE(@sql, N'{selectTemplate}', @selectTemplate);
+	SET @sql = REPLACE(@sql, N'{declarations}', @cursorVars);
+	SET @sql = REPLACE(@sql, N'{fetchedCols}', @fetchedCols);
+	SET @sql = REPLACE(@sql, N'{columns}', REPLACE(REPLACE(@columns, N'DB_NAME([s].[database_id])', N'[s].[database_id]'), N'[s].', N''));
+
+	EXEC [sys].[sp_executesql] 
+		@sql;
+	
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Filters / Exclusions (Predicates):
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+PREDICATES:
+	IF @databases IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_databases ([row_id] int IDENTITY(1,1) NOT NULL, [database] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [database]));
+	END;
+	
+	IF @applications IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
+	END; 
+
+	IF @hosts IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
+	END;
+
+	IF @ips IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_ips ([row_id] int IDENTITY(1,1) NOT NULL, [ip] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [ip]));		
+	END;
+
+	IF @principals IS NOT NULL BEGIN
+		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
+	END;
+
+	IF @statements IS NOT NULL BEGIN
+		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
+	END;
+
+	DECLARE @joins nvarchar(MAX), @filters nvarchar(MAX);
+	EXEC dbo.[core_predicates]
+		@Databases = @databases,
+		@Applications = @applications,
+		@Hosts = @hosts,
+		@IPs = @ips,
+		@Principals = @principals,
+		@Statements = @statements,
+		@JoinPredicates = @joins OUTPUT,
+		@FilterPredicates = @filters OUTPUT;
+
+	IF @mode = N'SUMMARY' BEGIN 
+		
+		-- push the results of this into #intermediateSummary ... 
+		--    with predicates ... 
+		--   and order by POOL_COUNT desc... 
+		-- OBVIOUSLY ... figuring out WHICH columns exist is ... going to be a bit odd/weird/different. 
+
+		SELECT * FROM #conn_pool_leaks ORDER BY [connections] DESC;
+		
+		-- THEN, from intermediateSummary ... project or push the results into @serialized_output ...
+
+		RETURN 0;
+	END;
+
+	CREATE TABLE #intermediate (
+		[session_id] smallint NOT NULL,
+		[login_time] datetime NOT NULL,
+		[host] sysname NULL,
+		[application] sysname NULL,
+		[principal] sysname NOT NULL,
+		[status] nvarchar(30) NOT NULL,
+		[last_request_end_time] datetime NULL,
+		[is_user_process] bit NOT NULL,
+		[prev_error] int NOT NULL,
+		[last_successful_logon] datetime NULL,
+		[open_transaction_count] int NOT NULL,
+		[ip] nvarchar(48) NULL,
+		[most_recent_sql_handle] varbinary(64) NULL, 
+		[statement] nvarchar(MAX) NULL
+	);
+
+
+-- TODO: the following SELECT is fine/great - but it's missing something: identification of which sessions are ... part of which connection-pool leak GROUPS. 
+--    To 'solve' for this, I should do the following: 
+--	   a. tweak my (dynamic) cursor to pull in the @connections (count) per each row being walked through ...
+--			b. push that into the #all_leaked_spids table (as a new column) ...
+--     c. and... better than just a 'number' (like 48, 22)... 
+--        1. ROW_NUMBER() OVER ... partition by COUNT... to ASCII => A, B, C, D, E etc. 
+--        2. and have this [pool_id] column in the SUMMARY output
+--		3 as well as in the DETAIL ... that way you can see that pool B is xxx... and pull the detail and get all sorts of details on Pool B. 
+
+	SET @sql = N'SELECT 
+	[x].[session_id],
+	[x].[login_time],
+	[x].[host],
+	[x].[application],
+	[x].[principal],
+	[x].[status],
+	[x].[last_request_end_time],
+	[x].[is_user_process],
+	[x].[prev_error],
+	[x].[last_successful_logon],
+	[x].[open_transaction_count],
+	[x].[ip],
+	[x].[most_recent_sql_handle],
+	[x].[statement] 
+FROM 
+	[#all_leaked_spids] [x]{joins}
+WHERE 
+	1 = 1{filters}
+ORDER BY 
+	[x].[session_id];';  -- TODO: need to order by the columns that we're aggregating against? right? 
+
+	SET @sql = REPLACE(@sql, N'{joins}', @joins);
+	SET @sql = REPLACE(@sql, N'{filters}', @filters);
+
+	INSERT INTO [#intermediate]
+	EXEC [sys].[sp_executesql] 
+		@sql;
+
+	SELECT 
+		[session_id],
+		[login_time],
+		[host],
+		[application],
+		[principal],
+		[status],
+		[last_request_end_time],
+		[is_user_process],
+		[prev_error],
+		[last_successful_logon],
+		[open_transaction_count],
+		[ip],
+		[most_recent_sql_handle],
+		[statement] 
+	FROM 
+		#intermediate;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID(N'dbo.[thesevensets_server_useroptions]', N'P') IS NOT NULL
 	DROP PROC dbo.[thesevensets_server_useroptions];
 GO
@@ -24996,7 +25376,7 @@ CREATE PROC dbo.[thesevensets_server_useroptions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @actualServerUserOptions int;
 	DECLARE @configedServerUserOptions int;
@@ -25084,7 +25464,7 @@ CREATE PROC dbo.[thesevensets_database_settings]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @databases = ISNULL(NULLIF(@databases, N''), N'{ALL}');
 	SET @verbose = ISNULL(@verbose, 1);
@@ -25385,7 +25765,7 @@ CREATE PROC dbo.[thesevensets_problem_connections]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @databases = ISNULL(NULLIF(@databases, N''), N'{ALL}');
 	SET @include_system = ISNULL(@include_system, 0);
@@ -25702,7 +26082,7 @@ CREATE PROC [dbo].[thesevensets_problem_objects]
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @databases = ISNULL(NULLIF(@databases, N''), N'{ALL}');
 
@@ -25843,7 +26223,7 @@ CREATE PROC dbo.[filtered_index_obstacles]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @databases  = ISNULL(NULLIF(@databases, N''), N'{USER}');
 	SET @priorities = NULLIF(@priorities, N'');
@@ -26529,7 +26909,7 @@ CREATE PROC dbo.[script_indexes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TargetTables = ISNULL(NULLIF(@TargetTables, N''), N'{ALL}'); 
 	SET @TargetIndexes = ISNULL(NULLIF(@TargetIndexes, N''), N'{ALL}'); 
@@ -26895,7 +27275,7 @@ CREATE PROC dbo.[list_index_metrics]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 		
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 
@@ -27609,7 +27989,7 @@ CREATE PROC dbo.[help_index]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @normalizedName sysname; 
 	DECLARE @targetObjectID int; 
@@ -27735,7 +28115,7 @@ CREATE PROC dbo.[list_heaps]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	CREATE TABLE #sizes (
 		[object_id] int NOT NULL, 
@@ -27906,7 +28286,7 @@ AS
 
 	SET @PageUsagePercentBelowThreshold = ISNULL(@PageUsagePercentBelowThreshold, 20.0);
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	CREATE TABLE #sizes (
 		[object_id] int NOT NULL, 
@@ -28111,6 +28491,1334 @@ GO
 USE [admindb];
 GO
 
+IF OBJECT_ID(N'dbo.[latch_sources]', N'P') IS NOT NULL
+	DROP PROC dbo.[latch_sources];
+GO
+
+CREATE PROC dbo.[latch_sources]
+	@granularity					sysname = N'SERVER',		-- { SERVER | DATABASE | TABLE }
+	@order_by						sysname = N'AVG_LEAF',		-- { TOTAL_LEAF | AVG_LEAF | TOTAL_TREE | AVG_TREE | TOTAL_IO | AVG_IO }
+	@exclude_system_objects			bit = 1,					-- { 0 | 1 }
+	@databases						nvarchar(MAX)		= NULL, 
+	@tables							nvarchar(MAX)		= NULL, 
+	@serialized_output				xml					= N'<default/>'		OUTPUT
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+
+	SET @databases = NULLIF(@databases, N'');
+	SET @tables = NULLIF(@tables, N'');
+	SET @exclude_system_objects = ISNULL(@exclude_system_objects, 1);
+	SET @granularity = UPPER(ISNULL(NULLIF(@granularity, N''), N'SERVER'));
+	SET @order_by = UPPER(ISNULL(NULLIF(@order_by, N''), N'AVG_LEAF'));
+	
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Validation:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF @granularity NOT IN (N'SERVER', N'DATABASE', N'TABLE') BEGIN 
+		RAISERROR(N'Valid values for @granularity are: { SERVER | DATABASE | TABLE }.', 16, 1);
+		RETURN -1;
+	END;
+
+	IF @order_by NOT IN (N'TOTAL_LEAF', N'AVG_LEAF', N'TOTAL_TREE', N'AVG_TREE', N'TOTAL_IO', N'AVG_IO') BEGIN 
+		RAISERROR(N'Valid values for @order_by are: { TOTAL_LEAF | AVG_LEAF | TOTAL_TREE | AVG_TREE | TOTAL_IO | AVG_IO }.', 16, 1);
+		RETURN -2;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Dynamic Logic:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @filterPredicate nvarchar(MAX) = N'';
+	DECLARE @filterJoin nvarchar(MAX) = N'';
+	IF @granularity = N'SERVER' BEGIN 
+		IF @tables IS NOT NULL BEGIN
+			RAISERROR(N'A value for @tables is not permitted when @granularity is SERVER.', 16, 1);
+			RETURN -4;
+		END; 
+	  END;
+	ELSE BEGIN 
+		IF @databases IS NULL BEGIN 
+			RAISERROR(N'A value for @databases must be specified when @granularity is not SERVER.', 16, 1);
+			RETURN -3;
+		END;
+
+		DECLARE @serializedOutput xml; 
+		EXEC [admindb]..[targeted_databases]
+			@Databases = @databases, 
+			@SerializedOutput = @serializedOutput OUTPUT;
+
+		DECLARE @count int;
+		WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('@id[1]', 'int') [row_id], 
+			[data].[row].value('.[1]', 'sysname') [database_name]
+		FROM 
+			@serializedOutput.nodes('//database') [data]([row])
+		)
+
+		SELECT @count = COUNT(*) FROM shredded;
+
+		IF @count <> 1 BEGIN 
+			RAISERROR(N'The value for @databases must be the name of a SINGLE database when @granularity is not set to SERVER.', 16, 1);
+			RETURN -6;
+		END;
+
+		IF @granularity = N'TABLE' BEGIN
+			IF (SELECT COUNT(*) FROM dbo.split_string(@tables, N',', 1)) <> 1 BEGIN
+				RAISERROR(N'The value for @tables must be the name of a SINGLE table when @granularity is set to TABLE.', 16, 1);
+				RETURN -22;
+			END;
+		  END;
+		ELSE BEGIN
+			CREATE TABLE #ts_predicate_tables ([table] sysname NOT NULL, [exclude] bit NOT NULL);
+
+			IF NULLIF(UPPER(@tables), N'{ALL}') IS NOT NULL BEGIN
+				INSERT INTO #ts_predicate_tables ([table], [exclude])
+				SELECT 
+					CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [table], 
+					CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
+				FROM 
+					dbo.[split_string](@tables, N',', 1);
+
+				IF EXISTS (SELECT NULL FROM #ts_predicate_tables WHERE [exclude] = 0) BEGIN 
+					SET @filterJoin = N'INNER JOIN #ts_predicate_tables [t] ON [t].[table] LIKE [x].[table]';
+				END;
+
+				IF EXISTS (SELECT NULL FROM #ts_predicate_tables WHERE [exclude] = 1) BEGIN 
+					/* NOTE: because table(name) is wrapped in quoted_idents (for both schema and table) ... need to handle the LIKE a bit differently (than normal):  */
+					SET @filterJoin = N'LEFT OUTER JOIN [#ts_predicate_tables] [t] ON [t].[exclude] = 1 AND [x].[table] LIKE N''%'' + REPLACE([t].[table], N''%'', N'''') + N''%''';
+					SET @filterPredicate = N'[t].[table] IS NULL';					
+				END;
+			END;
+		END;
+	END;
+
+	DECLARE @orderBy nvarchar(MAX) = N'';
+	SELECT @orderBy = CASE @order_by 
+		WHEN N'TOTAL_LEAF' THEN N'[leaf_latch_ms] DESC, [io_latch_count] + [io_latch_count] DESC'
+		WHEN N'AVG_LEAF' THEN N'[avg_leaf_latch_ms] DESC, [io_latch_count] + [io_latch_count] DESC'
+		WHEN N'TOTAL_TREE' THEN N'[tree_latch_ms] DESC, [io_latch_count] + [leaf_latch_count] DESC'
+		WHEN N'AVG_TREE' THEN N'[avg_tree_latch_ms] DESC, [io_latch_count] + [leaf_latch_count] DESC'
+		WHEN N'TOTAL_IO' THEN N'[io_latch_ms] DESC, [leaf_latch_count] + [io_latch_count] DESC'
+		WHEN N'AVG_IO' THEN N'[avg_io_latch_ms] DESC, [leaf_latch_count] + [io_latch_count] DESC'
+		ELSE N''
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Processing:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @sql nvarchar(max) = N'';
+
+	IF @granularity = N'SERVER' BEGIN 
+
+		/* NOTE: the ONLY reason for extracting latches database-by-database is to provide an OPTION for excluding SYSTEM-OBJECTS|tables|IXes. */
+		CREATE TABLE #serverLatches (
+			[database] sysname NULL,
+			[tree_latch_count] bigint NULL,
+			[tree_latch_ms] bigint NULL,
+			[avg_tree_latch_ms] bigint NOT NULL,
+			[leaf_latch_count] bigint NULL,
+			[leaf_latch_ms] bigint NULL,
+			[avg_leaf_latch_ms] bigint NOT NULL,
+			[io_latch_count] bigint NULL,
+			[io_latch_ms] bigint NULL,
+			[avg_io_latch_ms] bigint NOT NULL
+		);
+
+		SET @sql = N'USE [{CURRENT_DB}];
+WITH core AS ( 
+	SELECT
+		DB_NAME([database_id]) [database],
+		SUM([tree_page_latch_wait_count]) [tree_latch_count],
+		SUM([tree_page_latch_wait_in_ms]) [tree_latch_ms],
+		SUM([page_latch_wait_count]) - SUM([tree_page_latch_wait_count]) [leaf_latch_count],
+		SUM([page_latch_wait_in_ms]) - SUM([tree_page_latch_wait_in_ms]) [leaf_latch_ms],
+		SUM([page_io_latch_wait_count]) [io_latch_count],
+		SUM([page_io_latch_wait_in_ms]) [io_latch_ms]
+	FROM
+		[sys].dm_db_index_operational_stats(DB_ID(), NULL, NULL, NULL){WHERE}
+	GROUP BY
+		[database_id]
+)
+
+INSERT INTO #serverLatches ([database], [tree_latch_count], [tree_latch_ms], [avg_tree_latch_ms], [leaf_latch_count], [leaf_latch_ms], [avg_leaf_latch_ms], [io_latch_count], [io_latch_ms], [avg_io_latch_ms])
+SELECT 
+	ISNULL([c].[database], [empty].[database]) [database],
+	ISNULL([c].[tree_latch_count], [empty].[tree_latch_count]) [tree_latch_count],
+	ISNULL([c].[tree_latch_ms], [empty].[tree_latch_ms]) [tree_latch_ms],
+	ISNULL([c].[tree_latch_count] / NULLIF([c].[tree_latch_ms], 0), 0) [avg_tree_latch_ms],
+	ISNULL([c].[leaf_latch_count], [empty].[leaf_latch_count]) [leaf_latch_count],
+	ISNULL([c].[leaf_latch_ms], [empty].[leaf_latch_ms]) [leaf_latch_ms],
+	ISNULL([c].[leaf_latch_count] / NULLIF([c].[leaf_latch_ms], 0), 0) [avg_leaf_latch_ms],
+	ISNULL([c].[io_latch_count], [empty].[io_latch_count]) [io_latch_count],
+	ISNULL([c].[io_latch_ms], [empty].[io_latch_ms]) [io_latch_ms],
+	ISNULL([c].[io_latch_count] / NULLIF([c].[io_latch_ms], 0), 0) [avg_io_latch_ms]
+FROM 
+	(SELECT DB_NAME() [database], 0 [tree_latch_count], 0 [tree_latch_ms], 0 [avg_tree_latch_ms], 0 [leaf_latch_count], 0 [leaf_latch_ms], 0 [avg_leaf_latch_ms], 0 [io_latch_count], 0 [io_latch_ms], 0 [avg_io_latch_ms]) [empty]
+	LEFT OUTER JOIN [core] [c] ON [empty].[database] = [c].[database];';
+
+		IF @exclude_system_objects = 1 
+			SET @sql = REPLACE(@sql, N'{WHERE}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N' WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9)+ N'OBJECTPROPERTY([object_id], ''IsUserTable'') = 1');
+		ELSE 
+			SET @sql = REPLACE(@sql, N'{WHERE}', N'');
+
+		DECLARE @errors xml;
+		DECLARE @errorContext nvarchar(MAX);
+
+		SET @databases = ISNULL(@databases, N'{ALL}');	
+		EXEC dbo.[execute_per_database]
+			@Databases = @databases,
+			@Statement = @sql,
+			@Errors = @errors OUTPUT; 
+
+		IF @errors IS NOT NULL BEGIN 
+			RAISERROR('Unexpected error while extracting latch details (per database): ', 16, 1);
+			RETURN -20;
+		END;
+
+		CREATE TABLE [#finalLatches] (
+			[row_id] int IDENTITY(1,1) NOT NULL,
+			[database] sysname NULL,
+			[tree_latch_count] bigint NULL,
+			[tree_latch_ms] bigint NULL,
+			[avg_tree_latch_ms] bigint NOT NULL,
+			[leaf_latch_count] bigint NULL,
+			[leaf_latch_ms] bigint NULL,
+			[avg_leaf_latch_ms] bigint NOT NULL,
+			[io_latch_count] bigint NULL,
+			[io_latch_ms] bigint NULL,
+			[avg_io_latch_ms] bigint NOT NULL
+		);
+
+		SET @sql = N'SELECT
+	[database],
+	[tree_latch_count],
+	[tree_latch_ms],
+	[avg_tree_latch_ms],
+	[leaf_latch_count],
+	[leaf_latch_ms],
+	[avg_leaf_latch_ms],
+	[io_latch_count],
+	[io_latch_ms],
+	[avg_io_latch_ms]
+FROM
+	[#serverLatches]
+ORDER BY
+	' + @orderBy + N'; ';
+
+		INSERT INTO #finalLatches ([database], [tree_latch_count], [tree_latch_ms], [avg_tree_latch_ms], [leaf_latch_count], [leaf_latch_ms], [avg_leaf_latch_ms], [io_latch_count], [io_latch_ms], [avg_io_latch_ms])
+		EXEC sys.sp_executesql @sql;
+
+		IF dbo.is_xml_empty(@serialized_output) = 1 BEGIN		
+			SELECT @serialized_output = (
+				SELECT 
+					[tree_latch_count] [@tree_latch_count],
+					[tree_latch_ms] [@tree_latch_ms],
+					[avg_tree_latch_ms] [@avg_tree_latch_ms],
+					[leaf_latch_count] [@leaf_latch_count],
+					[leaf_latch_ms] [@leaf_latch_ms],
+					[avg_leaf_latch_ms] [@avg_leaf_latch_ms],
+					[io_latch_count] [@io_latch_count],
+					[io_latch_ms] [@io_latch_ms],
+					[avg_io_latch_ms] [@avg_io_latch_ms],
+					[database] [*]
+				FROM 
+					[#finalLatches]
+				ORDER BY 
+					[row_id]
+				FOR XML PATH(N'latch'), ROOT(N'latches'), TYPE
+			);
+
+			RETURN 0;
+		END;
+
+		SELECT 
+			[database],
+			[tree_latch_count],
+			[tree_latch_ms],
+			[avg_tree_latch_ms],
+			[leaf_latch_count],
+			[leaf_latch_ms],
+			[avg_leaf_latch_ms],
+			[io_latch_count],
+			[io_latch_ms],
+			[avg_io_latch_ms] 
+		FROM 
+			[#finalLatches]
+		ORDER BY 
+			[row_id];
+
+		RETURN 0; 
+	END;
+		
+	CREATE TABLE #finalDbLatches (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[table] nvarchar(260) NULL,
+		[tree_latch_count] bigint NULL,
+		[tree_latch_ms] bigint NULL,
+		[avg_tree_latch_ms] bigint NOT NULL,
+		[leaf_latch_count] bigint NULL,
+		[leaf_latch_ms] bigint NULL,
+		[avg_leaf_latch_ms] bigint NOT NULL,
+		[io_latch_count] bigint NULL,
+		[io_latch_ms] bigint NULL,
+		[avg_io_latch_ms] bigint NOT NULL
+	);
+
+	IF @granularity = N'TABLE' BEGIN
+		ALTER TABLE #finalDbLatches ADD	[index_id] int NOT NULL;
+		ALTER TABLE #finalDbLatches ADD	[index_name] sysname NULL;
+	END;
+
+	SET @sql = N'USE [{CURRENT_DB}];
+WITH core AS ( 
+	SELECT
+		[object_id],{index_id}
+		SUM([tree_page_latch_wait_count]) [tree_latch_count],
+		SUM([tree_page_latch_wait_in_ms]) [tree_latch_ms],
+		SUM([page_latch_wait_count]) - SUM([tree_page_latch_wait_count]) [leaf_latch_count],
+		SUM([page_latch_wait_in_ms]) - SUM([tree_page_latch_wait_in_ms]) [leaf_latch_ms],
+		SUM([page_io_latch_wait_count]) [io_latch_count],
+		SUM([page_io_latch_wait_in_ms]) [io_latch_ms]
+	FROM
+		[sys].dm_db_index_operational_stats(DB_ID(), {tableName}, NULL, NULL){WHERE}
+	GROUP BY
+		[object_id]{ix_group}
+), 
+[names] AS ( 
+	SELECT DISTINCT /* YES. This is Evil(TM). But ... I''m a trained professional - and in this case, DISTINCT is just, cough, easier. */
+		[x].[object_id],
+		QUOTENAME(SCHEMA_NAME([o].[schema_id])) + N''.'' + QUOTENAME([o].[name]) [table]
+	FROM 
+		[core] [x]
+		INNER JOIN sys.objects [o] ON [x].[object_id] = [o].[object_id]
+) 
+
+SELECT 
+	[x].[table],
+	[c].[tree_latch_count],
+	[c].[tree_latch_ms],
+	ISNULL([c].[tree_latch_count] / NULLIF([c].[tree_latch_ms], 0), 0) [avg_tree_latch_ms],
+	[c].[leaf_latch_count],
+	[c].[leaf_latch_ms],
+	ISNULL([c].[leaf_latch_count] / NULLIF([c].[leaf_latch_ms], 0), 0) [avg_leaf_latch_ms],
+	[c].[io_latch_count],
+	[c].[io_latch_ms],
+	ISNULL([c].[io_latch_count] / NULLIF([c].[io_latch_ms], 0), 0) [avg_io_latch_ms]{ix_Cols}
+FROM 
+	[core] [c]{ix_JOIN}
+	INNER JOIN [names] [x] ON [c].[object_id] = [x].[object_id]{exclusionJoin}
+ORDER BY 
+	{orderBy}; ';
+
+	SET @sql = REPLACE(@sql, N'{CURRENT_DB}', @databases);
+	SET @sql = REPLACE(@sql, N'{orderBy}', @orderBy);
+
+	IF @granularity = N'TABLE' BEGIN
+		SET @sql = REPLACE(@sql, N'{index_id}', NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + N'[index_id],');
+		SET @sql = REPLACE(@sql, N'{tableName}', N'OBJECT_ID(N''' + @tables + N''')');
+		SET @sql = REPLACE(@sql, N'{ix_group}', N', [index_id]');
+		SET @sql = REPLACE(@sql, N'{ix_JOIN}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N'INNER JOIN sys.indexes [i] ON [c].[object_id] = [i].[object_id] AND [c].[index_id] = [i].[index_id]');
+		SET @sql = REPLACE(@sql, N'{ix_Cols}', N',' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'[c].[index_id],' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'[i].[name] [index_name]');
+	  END;
+	ELSE BEGIN
+		SET @sql = REPLACE(@sql, N'{index_id}', N'');
+		SET @sql = REPLACE(@sql, N'{tableName}', N'NULL');
+		SET @sql = REPLACE(@sql, N'{ix_group}', N'');
+		SET @sql = REPLACE(@sql, N'{ix_JOIN}', N'');
+		SET @sql = REPLACE(@sql, N'{ix_Cols}', N'');
+	END;
+		
+	IF @exclude_system_objects = 1 
+		SET @sql = REPLACE(@sql, N'{WHERE}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N'WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9)+ N'OBJECTPROPERTY([object_id], ''IsUserTable'') = 1');
+	ELSE
+		SET @sql = REPLACE(@sql, N'{WHERE}', N'');
+		
+	IF @tables IS NULL 
+		SET @sql = REPLACE(@sql, N'{exclusionJoin}', N'');
+	ELSE BEGIN 
+		DECLARE @exclusionDetails nvarchar(MAX) = NCHAR(13) + NCHAR(10) + NCHAR(9) + @filterJoin;
+			
+		IF @filterPredicate <> N'' 
+			SET @exclusionDetails = @exclusionDetails + NCHAR(13) + NCHAR(10) + N'WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + @filterPredicate;
+
+		SET @sql = REPLACE(@sql, N'{exclusionJoin}', @exclusionDetails);
+	END;
+
+	INSERT INTO #finalDbLatches
+	EXEC sys.sp_executesql 
+		@sql;
+
+	DECLARE @columns table ( 
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[column] sysname NOT NULL, 
+		[xml_alias] sysname NOT NULL, 
+		[is_ix_detail] bit NOT NULL, 
+		[sort] int NOT NULL
+	);
+
+	INSERT INTO @columns ([column], [xml_alias], [is_ix_detail], [sort])
+	VALUES 
+		(N'[table]', N'[*]', 0, 1000),
+		(N'[index_id]', N'[@index_id]', 1, 0),
+		(N'[index_name]', N'[@index_name]', 1, 0),
+		(N'[tree_latch_count]', N'[@tree_latch_count]', 0, 0),
+		(N'[tree_latch_ms]', N'[@tree_latch_ms]', 0, 0),
+		(N'[avg_tree_latch_ms]', N'[@avg_tree_latch_ms]', 0, 0),
+		(N'[leaf_latch_count]', N'[@leaf_latch_count]', 0, 0),
+		(N'[leaf_latch_ms]', N'[@leaf_latch_ms]', 0, 0),
+		(N'[avg_leaf_latch_ms]', N'[@avg_leaf_latch_ms]', 0, 0),
+		(N'[io_latch_count]', N'[@io_latch_count]', 0, 0),
+		(N'[io_latch_ms]', N'[@io_latch_ms]', 0, 0),
+		(N'[avg_io_latch_ms]', N'[@avg_io_latch_ms]', 0, 0);
+
+	SET @sql = N'SELECT' + NCHAR(13) + NCHAR(10) + NCHAR(9);
+
+	DECLARE @forXML bit = dbo.is_xml_empty(@serialized_output);
+
+	DECLARE @columnData nvarchar(MAX) = N'';
+	WITH [core] AS (
+		SELECT 
+			CASE WHEN @forXML = 1 THEN [column] + N' ' + [xml_alias] ELSE [column] END [definition],
+			CASE WHEN @forXML = 1 THEN [sort] + [row_id] ELSE [row_id] END [sort]
+		FROM 
+			@columns
+		WHERE 
+			[is_ix_detail] = CASE WHEN @granularity = N'DATABASE' THEN 0 ELSE [is_ix_detail] END 
+	) 
+
+	SELECT 
+		@columnData = STRING_AGG([definition], N',' + NCHAR(13) + NCHAR(10) + NCHAR(9)) WITHIN GROUP (ORDER BY [sort])
+	FROM 
+		[core];
+		
+	DECLARE @xmlPathOption nvarchar(MAX) = N';';   -- default to non-XML output
+	IF @forXML = 1 
+		SET @xmlPathOption = NCHAR(13) + NCHAR(10) + N'FOR XML PATH(N''latch''), ROOT(N''latches''), TYPE';
+
+	SET @sql = @sql + @columnData + NCHAR(13) + NCHAR(10) + 
+		N'FROM' + NCHAR(13) + NCHAR(10) + NCHAR(9) + 
+		N'[#finalDbLatches]' + NCHAR(13) + NCHAR(10) + 
+		N'ORDER BY' + NCHAR(13) + NCHAR(10) + NCHAR(9) + @orderBy + 
+		@xmlPathOption;
+
+	IF dbo.is_xml_empty(@serialized_output) = 1 BEGIN
+		
+		SET @sql = N'SELECT @serialized_output = (' + @sql + N');';
+
+		EXEC sys.sp_executesql
+			@sql,
+			N'@serialized_output xml OUTPUT',
+			@serialized_output = @serialized_output OUTPUT;
+
+		RETURN 0;
+	END;
+
+	EXEC sys.sp_executesql
+		@sql;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID(N'dbo.[block_sources]', N'P') IS NOT NULL
+	DROP PROC dbo.[block_sources];
+GO
+
+CREATE PROC dbo.[block_sources]
+	@granularity					sysname = N'SERVER',		-- { SERVER | DATABASE | TABLE }
+	@order_by						sysname = N'TOTAL_ROW',		-- { TOTAL_ROW | AVG_ROW | TOTAL_PAGE | AVG_PAGE | PROMOTE_ATTEMPT | PROMOTE_SUCCESS }
+	@exclude_system_objects			bit = 1,					-- { 0 | 1 }
+	@databases						nvarchar(MAX)		= NULL, 
+	@tables							nvarchar(MAX)		= NULL, 
+	@serialized_output				xml					= N'<default/>'		OUTPUT
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	
+	SET @databases = NULLIF(@databases, N'');
+	SET @tables = NULLIF(@tables, N'');
+	SET @exclude_system_objects = ISNULL(@exclude_system_objects, 1);
+	SET @granularity = UPPER(ISNULL(NULLIF(@granularity, N''), N'SERVER'));
+	SET @order_by = UPPER(ISNULL(NULLIF(@order_by, N''), N'TOTAL_ROW'));
+	
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Validation:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF @granularity NOT IN (N'SERVER', N'DATABASE', N'TABLE') BEGIN 
+		RAISERROR(N'Valid values for @granularity are: { SERVER | DATABASE | TABLE }.', 16, 1);
+		RETURN -1;
+	END;
+
+	IF @order_by NOT IN (N'TOTAL_ROW', N'AVG_ROW', N'TOTAL_PAGE', N'AVG_PAGE', N'PROMOTE_ATTEMPTS', N'PROMOTE_SUCCESS') BEGIN 
+		RAISERROR(N'Valid values for @order_by are: { TOTAL_ROW | AVG_ROW | TOTAL_PAGE | AVG_PAGE | PROMOTE_ATTEMPTS | PROMOTE_SUCCESS }.', 16, 1);
+		RETURN -2;
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Dynamic Logic:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @filterPredicate nvarchar(MAX) = N'';
+	DECLARE @filterJoin nvarchar(MAX) = N'';
+	IF @granularity = N'SERVER' BEGIN 
+		IF @tables IS NOT NULL BEGIN
+			RAISERROR(N'A value for @tables is not permitted when @granularity is SERVER.', 16, 1);
+			RETURN -4;
+		END; 
+	  END;
+	ELSE BEGIN 
+		IF @databases IS NULL BEGIN 
+			RAISERROR(N'A value for @databases must be specified when @granularity is not SERVER.', 16, 1);
+			RETURN -3;
+		END;
+
+		DECLARE @serializedOutput xml; 
+		EXEC [admindb]..[targeted_databases]
+			@Databases = @databases, 
+			@SerializedOutput = @serializedOutput OUTPUT;
+
+		DECLARE @count int;
+		WITH shredded AS ( 
+		SELECT 
+			[data].[row].value('@id[1]', 'int') [row_id], 
+			[data].[row].value('.[1]', 'sysname') [database_name]
+		FROM 
+			@serializedOutput.nodes('//database') [data]([row])
+		)
+
+		SELECT @count = COUNT(*) FROM shredded;
+
+		IF @count <> 1 BEGIN 
+			RAISERROR(N'The value for @databases must be the name of a SINGLE database when @granularity is not set to SERVER.', 16, 1);
+			RETURN -6;
+		END;
+
+		IF @granularity = N'TABLE' BEGIN
+			IF (SELECT COUNT(*) FROM dbo.split_string(@tables, N',', 1)) <> 1 BEGIN
+				RAISERROR(N'The value for @tables must be the name of a SINGLE table when @granularity is set to TABLE.', 16, 1);
+				RETURN -22;
+			END;
+		  END;
+		ELSE BEGIN
+			CREATE TABLE #ts_predicate_tables ([table] sysname NOT NULL, [exclude] bit NOT NULL);
+
+			IF NULLIF(UPPER(@tables), N'{ALL}') IS NOT NULL BEGIN
+				INSERT INTO #ts_predicate_tables ([table], [exclude])
+				SELECT 
+					CASE WHEN [result] LIKE N'-%' THEN RIGHT([result], LEN([result]) -1) ELSE [result] END [table], 
+					CASE WHEN [result] LIKE N'-%' THEN 1 ELSE 0 END [exclude]	
+				FROM 
+					dbo.[split_string](@tables, N',', 1);
+
+				IF EXISTS (SELECT NULL FROM #ts_predicate_tables WHERE [exclude] = 0) BEGIN 
+					SET @filterJoin = N'INNER JOIN #ts_predicate_tables [t] ON [t].[table] LIKE [x].[table]';
+				END;
+
+				IF EXISTS (SELECT NULL FROM #ts_predicate_tables WHERE [exclude] = 1) BEGIN 
+					/* NOTE: because table(name) is wrapped in quoted_idents (for both schema and table) ... need to handle the LIKE a bit differently (than normal):  */
+					SET @filterJoin = N'LEFT OUTER JOIN [#ts_predicate_tables] [t] ON [t].[exclude] = 1 AND [x].[table] LIKE N''%'' + REPLACE([t].[table], N''%'', N'''') + N''%''';
+					SET @filterPredicate = N'[t].[table] IS NULL';					
+				END;
+			END;
+		END;
+	END;
+
+	DECLARE @orderBy nvarchar(MAX) = N'';
+	SELECT @orderBy = CASE @order_by 
+		WHEN N'TOTAL_ROW' THEN N'[row_lock_ms] DESC, [page_lock_waits] + [ix_promote_attempts] DESC'
+		WHEN N'AVG_ROW' THEN N'[avg_row_lock_ms] DESC, [page_lock_waits] + [ix_promote_attempts] DESC'
+		WHEN N'TOTAL_PAGE' THEN N'[page_lock_ms] DESC, [row_lock_waits] + [ix_promote_attempts] DESC'
+		WHEN N'AVG_PAGE' THEN N'[avg_page_lock_ms] DESC, [row_lock_waits] + [ix_promote_attempts] DESC'
+		WHEN N'PROMOTE_ATTEMPTS' THEN N'[ix_promote_attempts] DESC, [row_lock_ms] + [page_lock_ms] DESC'
+		WHEN N'PROMOTE_SUCCESS' THEN N'[ix_promote_success] DESC, [row_lock_ms] + [page_lock_ms] DESC'
+		ELSE N''
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Processing:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @sql nvarchar(max) = N'';
+
+	IF @granularity = N'SERVER' BEGIN 
+
+		/* NOTE: the ONLY reason for extracting locks database-by-database is to provide an OPTION for excluding SYSTEM-OBJECTS|tables|IXes. */
+		CREATE TABLE #serverLocks (
+			[database] sysname NOT NULL,
+			[row_lock_waits] bigint NOT NULL,
+			[row_lock_ms] bigint NOT NULL,
+			[avg_row_lock_wait] bigint NOT NULL,
+			[page_lock_waits] bigint NOT NULL,
+			[page_lock_ms] bigint NOT NULL,
+			[avg_page_lock_wait] bigint NOT NULL,
+			[ix_promote_attempts] bigint NOT NULL,
+			[ix_promote_success] bigint NOT NULL
+		);
+
+		SET @sql = N'USE [{CURRENT_DB}];
+WITH core AS ( 
+	SELECT
+		DB_NAME([database_id]) [database],
+		SUM([row_lock_wait_count]) [row_lock_waits],
+		SUM([row_lock_wait_in_ms]) [row_lock_ms],
+		SUM([page_lock_wait_count]) [page_lock_waits],
+		SUM([page_lock_wait_in_ms]) [page_lock_ms],
+		SUM([index_lock_promotion_attempt_count]) [ix_promote_attempts],
+		SUM([index_lock_promotion_count]) [ix_promote_success]
+	FROM
+		[sys].dm_db_index_operational_stats(DB_ID(), NULL, NULL, NULL){WHERE}
+	GROUP BY
+		[database_id]
+)
+
+INSERT INTO #serverLocks ([database], [row_lock_waits], [row_lock_ms], [avg_row_lock_wait], [page_lock_waits], [page_lock_ms], [avg_page_lock_wait], [ix_promote_attempts], [ix_promote_success])
+SELECT 
+	ISNULL([c].[database], [empty].[database]) [database],
+	ISNULL([c].[row_lock_waits], [empty].[row_lock_waits]) [row_lock_waits],
+	ISNULL([c].[row_lock_ms], [empty].[row_lock_ms]) [row_lock_ms],
+	ISNULL([c].[row_lock_waits] / NULLIF([c].[row_lock_ms], 0), 0) [avg_row_lock_wait],
+	ISNULL([c].[page_lock_waits], [empty].[page_lock_waits]) [page_lock_waits],
+	ISNULL([c].[page_lock_ms], [empty].[page_lock_ms]) [page_lock_ms],
+	ISNULL([c].[page_lock_waits] / NULLIF([c].[page_lock_ms], 0), 0) [avg_page_lock_wait],
+	ISNULL([c].[ix_promote_attempts], [empty].[ix_promote_attempts]) [ix_promote_attempts],
+	ISNULL([c].[ix_promote_success], [empty].[ix_promote_success]) [ix_promote_success]
+FROM 
+	(SELECT DB_NAME() [database], 0 [row_lock_waits], 0 [row_lock_ms], 0 [avg_row_lock_wait], 0 [page_lock_waits], 0 [page_lock_ms], 0 [avg_page_lock_wait], 0 [ix_promote_attempts], 0 [ix_promote_success]) [empty]
+	LEFT OUTER JOIN [core] [c] ON [empty].[database] = [c].[database];';
+
+		IF @exclude_system_objects = 1 
+			SET @sql = REPLACE(@sql, N'{WHERE}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N' WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9)+ N'OBJECTPROPERTY([object_id], ''IsUserTable'') = 1');
+		ELSE 
+			SET @sql = REPLACE(@sql, N'{WHERE}', N'');
+
+		DECLARE @errors xml;
+		DECLARE @errorContext nvarchar(MAX);
+
+		SET @databases = ISNULL(@databases, N'{ALL}');	
+		EXEC dbo.[execute_per_database]
+			@Databases = @databases,
+			@Statement = @sql,
+			@Errors = @errors OUTPUT; 
+
+		IF @errors IS NOT NULL BEGIN 
+			RAISERROR(N'Unexpected error while extracting lock details (per database): ', 16, 1);
+			RETURN -20;
+		END;
+
+		CREATE TABLE [#finalLocks] (
+			[row_id] int IDENTITY(1,1) NOT NULL,
+			[database] sysname NOT NULL,
+			[row_lock_waits] bigint NOT NULL,
+			[row_lock_ms] bigint NOT NULL,
+			[avg_row_lock_wait] bigint NOT NULL,
+			[page_lock_waits] bigint NOT NULL,
+			[page_lock_ms] bigint NOT NULL,
+			[avg_page_lock_wait] bigint NOT NULL,
+			[ix_promote_attempts] bigint NOT NULL,
+			[ix_promote_success] bigint NOT NULL
+		);
+
+		SET @sql = N'SELECT
+	[database],
+	[row_lock_waits],
+	[row_lock_ms],
+	[avg_row_lock_wait],
+	[page_lock_waits],
+	[page_lock_ms],
+	[avg_page_lock_wait],
+	[ix_promote_attempts],
+	[ix_promote_success]
+FROM
+	[#serverLocks]
+ORDER BY
+	' + @orderBy + N'; ';
+
+		INSERT INTO #finalLocks ([database], [row_lock_waits], [row_lock_ms], [avg_row_lock_wait], [page_lock_waits], [page_lock_ms], [avg_page_lock_wait], [ix_promote_attempts], [ix_promote_success])
+		EXEC sys.sp_executesql @sql;
+
+		IF dbo.is_xml_empty(@serialized_output) = 1 BEGIN		
+			SELECT @serialized_output = (
+				SELECT 
+					[row_lock_waits] [@row_lock_waits],
+					[row_lock_ms] [@row_lock_ms],
+					[avg_row_lock_wait] [@avg_row_lock_wait],
+					[page_lock_waits] [@page_lock_waits],
+					[page_lock_ms] [@page_lock_ms],
+					[avg_page_lock_wait] [@avg_page_lock_wait],
+					[ix_promote_attempts] [@ix_promote_attempts],
+					[ix_promote_success] [@ix_promote_success],
+					[database] [*]
+				FROM 
+					[#finalLocks]
+				ORDER BY 
+					[row_id]
+				FOR XML PATH(N'lock'), ROOT(N'locks'), TYPE
+			);
+
+			RETURN 0;
+		END;
+
+		SELECT 
+			[database],
+			[row_lock_waits],
+			[row_lock_ms],
+			[avg_row_lock_wait],
+			[page_lock_waits],
+			[page_lock_ms],
+			[avg_page_lock_wait],
+			[ix_promote_attempts],
+			[ix_promote_success]
+		FROM 
+			#finalLocks
+		ORDER BY 
+			[row_id];
+
+		RETURN 0; 
+	END;
+		
+	CREATE TABLE #finalDbLocks (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[table] nvarchar(260) NULL,
+		[row_lock_waits] bigint NULL,
+		[row_lock_ms] bigint NULL,
+		[avg_row_lock_wait] bigint NOT NULL,
+		[page_lock_waits] bigint NOT NULL,
+		[page_lock_ms] bigint NULL,
+		[avg_page_lock_wait] bigint NOT NULL,
+		[ix_promote_attempts] bigint NULL,
+		[ix_promote_success] bigint NOT NULL
+	);
+
+	IF @granularity = N'TABLE' BEGIN
+		ALTER TABLE #finalDbLocks ADD [index_id] int NOT NULL;
+		ALTER TABLE #finalDbLocks ADD [index_name] sysname NULL;
+	END;
+
+	SET @sql = N'USE [{CURRENT_DB}];
+WITH core AS ( 
+	SELECT
+		[object_id],{index_id}
+		SUM([row_lock_wait_count]) [row_lock_waits],
+		SUM([row_lock_wait_in_ms]) [row_lock_ms],
+		SUM([page_lock_wait_count]) [page_lock_waits],
+		SUM([page_lock_wait_in_ms]) [page_lock_ms],
+		SUM([index_lock_promotion_attempt_count]) [ix_promote_attempts],
+		SUM([index_lock_promotion_count]) [ix_promote_success]
+	FROM
+		[sys].dm_db_index_operational_stats(DB_ID(), {tableName}, NULL, NULL){WHERE}
+	GROUP BY
+		[object_id]{ix_group}
+), 
+[names] AS ( 
+	SELECT DISTINCT /* YES. This is Evil(TM). But ... I''m a trained professional - and in this case, DISTINCT is just, cough, easier. */
+		[x].[object_id],
+		QUOTENAME(SCHEMA_NAME([o].[schema_id])) + N''.'' + QUOTENAME([o].[name]) [table]
+	FROM 
+		[core] [x]
+		INNER JOIN sys.objects [o] ON [x].[object_id] = [o].[object_id]
+) 
+
+SELECT 
+	[x].[table],
+	[c].[row_lock_waits],
+	[c].[row_lock_ms],
+	ISNULL([c].[row_lock_waits] / NULLIF([c].[row_lock_ms], 0), 0) [avg_row_lock_wait],
+	[c].[page_lock_waits],
+	[c].[page_lock_ms],
+	ISNULL([c].[page_lock_waits] / NULLIF([c].[page_lock_ms], 0), 0) [avg_page_lock_wait],
+	[c].[ix_promote_attempts],
+	[c].[ix_promote_success]{ix_Cols}
+FROM 
+	[core] [c]{ix_JOIN}
+	INNER JOIN [names] [x] ON [c].[object_id] = [x].[object_id]{exclusionJoin}
+ORDER BY 
+	{orderBy}; ';
+
+	SET @sql = REPLACE(@sql, N'{CURRENT_DB}', @databases);
+	SET @sql = REPLACE(@sql, N'{orderBy}', @orderBy);
+
+	IF @granularity = N'TABLE' BEGIN
+		SET @sql = REPLACE(@sql, N'{index_id}', NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + N'[index_id],');
+		SET @sql = REPLACE(@sql, N'{tableName}', N'OBJECT_ID(N''' + @tables + N''')');
+		SET @sql = REPLACE(@sql, N'{ix_group}', N', [index_id]');
+		SET @sql = REPLACE(@sql, N'{ix_JOIN}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N'INNER JOIN sys.indexes [i] ON [c].[object_id] = [i].[object_id] AND [c].[index_id] = [i].[index_id]');
+		SET @sql = REPLACE(@sql, N'{ix_Cols}', N',' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'[c].[index_id],' + NCHAR(13) + NCHAR(10) + NCHAR(9) + N'[i].[name] [index_name]');
+	  END;
+	ELSE BEGIN
+		SET @sql = REPLACE(@sql, N'{index_id}', N'');
+		SET @sql = REPLACE(@sql, N'{tableName}', N'NULL');
+		SET @sql = REPLACE(@sql, N'{ix_group}', N'');
+		SET @sql = REPLACE(@sql, N'{ix_JOIN}', N'');
+		SET @sql = REPLACE(@sql, N'{ix_Cols}', N'');
+	END;
+		
+	IF @exclude_system_objects = 1 
+		SET @sql = REPLACE(@sql, N'{WHERE}', NCHAR(13) + NCHAR(10) + NCHAR(9) + N'WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9)+ N'OBJECTPROPERTY([object_id], ''IsUserTable'') = 1');
+	ELSE
+		SET @sql = REPLACE(@sql, N'{WHERE}', N'');
+		
+	IF @tables IS NULL 
+		SET @sql = REPLACE(@sql, N'{exclusionJoin}', N'');
+	ELSE BEGIN 
+		DECLARE @exclusionDetails nvarchar(MAX) = NCHAR(13) + NCHAR(10) + NCHAR(9) + @filterJoin;
+			
+		IF @filterPredicate <> N'' 
+			SET @exclusionDetails = @exclusionDetails + NCHAR(13) + NCHAR(10) + N'WHERE ' + NCHAR(13) + NCHAR(10) + NCHAR(9) + @filterPredicate;
+
+		SET @sql = REPLACE(@sql, N'{exclusionJoin}', @exclusionDetails);
+	END;
+
+	INSERT INTO #finalDbLocks
+	EXEC sys.sp_executesql 
+		@sql;
+
+	DECLARE @columns table ( 
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[column] sysname NOT NULL, 
+		[xml_alias] sysname NOT NULL, 
+		[is_ix_detail] bit NOT NULL, 
+		[sort] int NOT NULL
+	);
+
+	INSERT INTO @columns ([column], [xml_alias], [is_ix_detail], [sort])
+	VALUES 
+		(N'[table]', N'[*]', 0, 1000),
+		(N'[index_id]', N'[@index_id]', 1, 0),
+		(N'[index_name]', N'[@index_name]', 1, 0),
+		(N'[row_lock_waits]', N'[@row_lock_waits]', 0, 0),
+		(N'[row_lock_ms]', N'[@row_lock_ms]', 0, 0),
+		(N'[avg_row_lock_wait]', N'[@avg_row_lock_wait]', 0, 0),
+		(N'[page_lock_waits]', N'[@page_lock_waits]', 0, 0),
+		(N'[page_lock_ms]', N'[@page_lock_ms]', 0, 0),
+		(N'[avg_page_lock_wait]', N'[@avg_page_lock_wait]', 0, 0),
+		(N'[ix_promote_attempts]', N'[@ix_promote_attempts]', 0, 0),
+		(N'[ix_promote_success]', N'[@ix_promote_success]', 0, 0);
+
+	SET @sql = N'SELECT' + NCHAR(13) + NCHAR(10) + NCHAR(9);
+
+	DECLARE @forXML bit = dbo.is_xml_empty(@serialized_output);
+
+	DECLARE @columnData nvarchar(MAX) = N'';
+	WITH [core] AS (
+		SELECT 
+			CASE WHEN @forXML = 1 THEN [column] + N' ' + [xml_alias] ELSE [column] END [definition],
+			CASE WHEN @forXML = 1 THEN [sort] + [row_id] ELSE [row_id] END [sort]
+		FROM 
+			@columns
+		WHERE 
+			[is_ix_detail] = CASE WHEN @granularity = N'DATABASE' THEN 0 ELSE [is_ix_detail] END 
+	) 
+
+	SELECT 
+		@columnData = STRING_AGG([definition], N',' + NCHAR(13) + NCHAR(10) + NCHAR(9)) WITHIN GROUP (ORDER BY [sort])
+	FROM 
+		[core];
+		
+	DECLARE @xmlPathOption nvarchar(MAX) = N';';   -- default to non-XML output
+	IF @forXML = 1 
+		SET @xmlPathOption = NCHAR(13) + NCHAR(10) + N'FOR XML PATH(N''lock''), ROOT(N''locks''), TYPE';
+
+	SET @sql = @sql + @columnData + NCHAR(13) + NCHAR(10) + 
+		N'FROM' + NCHAR(13) + NCHAR(10) + NCHAR(9) + 
+		N'[#finalDbLocks]' + NCHAR(13) + NCHAR(10) + 
+		N'ORDER BY' + NCHAR(13) + NCHAR(10) + NCHAR(9) + @orderBy + 
+		@xmlPathOption;
+
+	IF dbo.is_xml_empty(@serialized_output) = 1 BEGIN
+		
+		SET @sql = N'SELECT @serialized_output = (' + @sql + N');';
+
+		EXEC sys.sp_executesql
+			@sql,
+			N'@serialized_output xml OUTPUT',
+			@serialized_output = @serialized_output OUTPUT;
+
+		RETURN 0;
+	END;
+
+	EXEC sys.sp_executesql
+		@sql;
+
+	RETURN 0;
+GO	
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID(N'dbo.[zombie_transactions]', N'P') IS NOT NULL
+	DROP PROC dbo.[zombie_transactions];
+GO
+
+CREATE PROC dbo.[zombie_transactions]
+	@idle_threshold							sysname				= N'90 seconds',
+	@sort									sysname				= N'IDLE_TIME',						-- { IDLE_TIME | SESSION_ID | TEMPDB_LRC | LOCKS_COUNT | LOG_USED }
+	@exclude_backups_and_restores			bit					= 0,					
+	@exclude_sqlagent_jobs					bit					= 0,	
+	@databases								nvarchar(MAX)		= NULL,
+	@applications							nvarchar(MAX)		= NULL, 
+	@principals								nvarchar(MAX)		= NULL, 
+	@roles									nvarchar(MAX)		= NULL,						
+	@hosts									nvarchar(MAX)		= NULL, 
+	@ips									nvarchar(MAX)		= NULL, 
+	@statements								nvarchar(MAX)		= NULL,	
+	@serialized_output						xml					= N'<default/>'		OUTPUT
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+
+	SET @idle_threshold = ISNULL(NULLIF(@idle_threshold, N''), N'90 seconds');
+	SET @sort = UPPER(ISNULL(NULLIF(@sort, N''), N'IDLE_TIME'));
+
+	SET @exclude_backups_and_restores = ISNULL(@exclude_backups_and_restores, 0);
+	SET @exclude_sqlagent_jobs = ISNULL(@exclude_sqlagent_jobs, 0);
+	SET @databases = NULLIF(@databases, N'');
+	SET @applications = NULLIF(@applications, N'');
+	SET @principals = NULLIF(@principals, N'');
+	SET @roles = NULLIF(@roles, N'');
+	SET @hosts = NULLIF(@hosts, N'');
+	SET @ips = NULLIF(@ips, N'');
+	SET @statements = NULLIF(@statements, N'');
+
+	IF @sort NOT IN (N'IDLE_TIME', N'SESSION_ID', N'TEMPDB_LRC', N'LOCKS_COUNT', N'LOG_USED') BEGIN
+		RAISERROR(N'Invalid @sort value. Valid values are: { IDLE_TIME | SESSION_ID | TEMPDB_LRC | LOCKS_COUNT	| LOG_USED }', 16, 1);
+		RETURN -10;  
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Predicates:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	DECLARE @idleThresholdMilliseconds bigint = -1, @vectorError nvarchar(MAX);
+
+	IF @idle_threshold IS NOT NULL BEGIN 
+		EXEC admindb.dbo.[translate_vector]
+			@Vector = @idle_threshold,
+			@ValidationParameterName = N'@idle_threshold',
+			@Output = @idleThresholdMilliseconds OUTPUT,
+			@Error = @vectorError OUTPUT; 
+
+		IF @vectorError IS NOT NULL BEGIN
+			RAISERROR(@vectorError, 16, 1);
+			RETURN -10;  
+		END;
+	END;
+
+	DECLARE @idleCutoff datetime = DATEADD(SECOND, 0 - (@idleThresholdMilliseconds / 1000), GETDATE());
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Identify Potential Zombie-Like Sessions:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	SELECT
+		[s].[session_id],
+		[s].[login_name],
+		[s].[host_name],
+		[s].[program_name],
+		[s].[status], 
+		[s].[open_transaction_count] [open_transactions],
+		DATEDIFF_BIG(MILLISECOND, [s].[last_request_end_time], GETDATE()) [idle_milliseconds],
+		[at].[transaction_id] [tx_id],
+		[at].[name] [tx_name],
+		[at].[transaction_begin_time] [tx_start],
+		CASE [at].[transaction_state]
+			WHEN 0 THEN 'Not fully initialized'
+			WHEN 1 THEN 'Initialized but not started'
+			WHEN 2 THEN 'Active'
+			WHEN 3 THEN 'Ended (Read-only)'
+			WHEN 4 THEN 'Commit initiated'
+			WHEN 5 THEN 'Commit - Awaiting Resolution'
+			WHEN 6 THEN 'Committed'
+			WHEN 7 THEN 'Rollback - Started'
+			WHEN 8 THEN 'Rollback - Completed'
+			ELSE 'Unknown'
+		END AS [transaction_state],
+		[s].[database_id],
+		[i].[event_info] [last_statement]
+	INTO 
+		#potential_zombies
+	FROM
+		[sys].[dm_exec_sessions] [s]
+		INNER JOIN [sys].[dm_tran_session_transactions] [st] ON [st].[session_id] = [s].[session_id]
+		INNER JOIN [sys].[dm_tran_active_transactions] [at] ON [at].[transaction_id] = [st].[transaction_id]
+		OUTER APPLY [sys].[dm_exec_input_buffer]([s].[session_id], NULL) [i]
+	WHERE
+		[s].[is_user_process] = 1 
+		AND [s].[open_transaction_count] > 0 
+		AND [s].[status] = N'sleeping' 
+		AND NOT EXISTS (SELECT NULL FROM [sys].[dm_exec_requests] [r] WHERE [r].[session_id] = [s].[session_id])
+		AND [s].[last_request_end_time] <= @idleCutoff;
+
+	IF NOT EXISTS (SELECT NULL FROM #potential_zombies)
+		RETURN 0;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Identify Locked Resources held by zombie-like sessions:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	SELECT
+		[l].[request_session_id] [session_id],
+		[l].[resource_type] + CASE WHEN [resource_subtype] <> N'' THEN N' - ' + [resource_subtype] ELSE N'' END  [resource_type],
+		[l].[resource_database_id] [database_id],
+		[l].[request_mode],
+		[l].[request_status],
+		[l].[request_owner_type], 
+		COUNT(*) [count]
+	INTO 
+		#zombie_resources 
+	FROM
+		[sys].[dm_tran_locks] [l]
+	WHERE 
+		[l].[request_session_id] IN (SELECT [session_id] FROM #potential_zombies)
+	GROUP BY 
+		[l].[request_session_id],
+		[l].[resource_type],
+		[l].[resource_subtype],
+		[l].[resource_database_id],
+		[l].[request_mode],
+		[l].[request_status],
+		[l].[request_owner_type];
+
+	WITH aggregated AS ( 
+		SELECT 
+			[session_id],
+			[database_id]
+		FROM 
+			[#zombie_resources] 
+		GROUP BY 
+			[session_id], 
+			[database_id]
+	)
+
+	SELECT 
+		[session_id], 
+		STRING_AGG(DB_NAME([database_id]), N', ') WITHIN GROUP (ORDER BY [database_id]) [databases] 
+	INTO 
+		#databases_by_session
+	FROM 
+		aggregated 
+	GROUP BY 
+		[session_id];
+
+	WITH [session] AS ( 
+		SELECT [session_id], STRING_AGG(DB_NAME([database_id]), N', ') WITHIN GROUP (ORDER BY [database_id]) [databases] FROM #zombie_resources GROUP BY [session_id]
+	), 
+	[session_db] AS ( 
+		SELECT [session_id], [database_id] FROM #zombie_resources GROUP BY [session_id], [database_id]
+	) 
+
+	SELECT 
+		[session_id],
+		(
+			SELECT 
+				DB_NAME([database_id]) [@name], 
+				ISNULL((
+					SELECT 
+						CAST([dt].[database_transaction_log_bytes_used] / 1024. AS decimal(10,2)) 
+					FROM 
+						[sys].[dm_tran_session_transactions] [st] 
+						INNER JOIN [sys].[dm_tran_active_transactions] [at] ON [at].[transaction_id] = [st].[transaction_id] 
+						INNER JOIN [sys].[dm_tran_database_transactions] [dt] ON [dt].[transaction_id] = [at].[transaction_id]
+					WHERE 
+						[st].[session_id] = [mid].[session_id]
+						AND dt.database_id = [mid].[database_id]
+				), 0) [@log_kb_used],
+				(
+					SELECT 
+						[request_mode] [@request_mode],
+						[resource_type] [@resource_type],
+						[request_status] [@request_status],
+						[request_owner_type] [@request_owner_type],
+						[count] [@count]
+					FROM 
+						#zombie_resources [inner]
+					WHERE 
+						[mid].[session_id] = [inner].[session_id]
+						AND [mid].[database_id] = [inner].[database_id]	
+					FOR XML PATH(N'resource'), TYPE
+				)
+			FROM 
+				session_db [mid] 
+			WHERE
+				[mid].[session_id] = [session].[session_id]
+
+			FOR XML PATH(N'database'), ROOT(N'databases'), TYPE
+		) [resources]
+	INTO 
+		#resources_xml
+	FROM 
+		[session];
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Get-Tempdb (LOG) usage for all sessions: 
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	SELECT
+		[st].[session_id],
+		[dt].[database_transaction_log_record_count] [record_count],
+		CAST([dt].[database_transaction_log_bytes_used] / 1048576. AS decimal(12, 2)) [log_used_mb],
+		CAST([dt].[database_transaction_log_bytes_reserved] / 1048576. AS decimal(12, 2)) [log_reserved_mb]
+	INTO 
+		#log_usage
+	FROM
+		[tempdb].[sys].[dm_tran_database_transactions] [dt]
+		INNER JOIN [tempdb].[sys].[dm_tran_active_transactions] [at] ON [at].[transaction_id] = [dt].[transaction_id]
+		LEFT OUTER JOIN [tempdb].[sys].[dm_tran_session_transactions] [st] ON [st].[transaction_id] = [dt].[transaction_id]
+	WHERE
+		[dt].[database_id] = 2 AND [st].[session_id] IS NOT NULL
+	ORDER BY
+		[dt].[database_transaction_log_bytes_used] + [dt].[database_transaction_log_bytes_reserved] DESC;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Predication:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF @databases IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_databases ([row_id] int IDENTITY(1,1) NOT NULL, [database] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [database]));
+	END;
+	
+	IF @applications IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
+	END; 
+
+	IF @hosts IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
+	END;
+
+	IF @ips IS NOT NULL BEGIN 
+		CREATE TABLE #ts_cp_ips ([row_id] int IDENTITY(1,1) NOT NULL, [ip] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [ip]));		
+	END;
+
+	IF @principals IS NOT NULL BEGIN
+		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
+	END;
+
+	IF @statements IS NOT NULL BEGIN
+		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
+	END;
+
+	DECLARE @joins nvarchar(MAX), @filters nvarchar(MAX);
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	DECLARE @tab nchar(1) = NCHAR(9);
+	EXEC dbo.[core_predicates]
+		@Databases = @databases,
+		@Applications = @applications,
+		@Hosts = @hosts,
+		@IPs = @ips,
+		@Principals = @principals,
+		@Statements = @statements,
+		@JoinPredicates = @joins OUTPUT,
+		@FilterPredicates = @filters OUTPUT;
+
+	CREATE TABLE [#intermediate] (
+		[row_id] int IDENTITY(1,1) NOT NULL,
+		[session_id] smallint NOT NULL,
+		[databases] nvarchar(4000) NULL,
+		[principal] nvarchar(128) NOT NULL,
+		[host] nvarchar(128) NULL,
+		[ip] nvarchar(48) NULL,
+		[application] nvarchar(128) NULL,
+		[status] nvarchar(30) NOT NULL,
+		[session_conn_count] int NULL,
+		[open_tx_count] int NULL,
+		[idle_time] sysname NULL,
+		[idle_milliseconds] bigint NULL,
+		[tx_id] bigint NOT NULL,
+		[tempdb_lrc] bigint NULL,
+		[tempdb_log_used_mb] decimal(12, 2) NULL,
+		[tempdb_log_reserved_mb] decimal(12, 2) NULL,
+		[resources] xml NULL,
+		[tx_name] nvarchar(32) NOT NULL,
+		[tx_start] datetime NOT NULL,
+		[transaction_state] varchar(28) NOT NULL,
+		[database_id] smallint NOT NULL,
+		[statement] nvarchar(MAX) NULL
+	);
+
+	DECLARE @orderBy nvarchar(MAX);
+	SELECT @orderBy = CASE @sort
+		WHEN N'IDLE_TIME' THEN N'[x].[idle_milliseconds] DESC'
+		WHEN N'SESSION_ID' THEN N'[x].[session_id]'
+		WHEN N'TEMPDB_LRC' THEN N'[x].[tempdb_lrc] DESC'
+		WHEN N'LOCKS_COUNT' THEN N'DATALENGTH([x].[resources]) DESC'
+		WHEN N'LOG_USED' THEN N'[x].[log_used_mb] DESC'
+		ELSE N'[x].[idle_milliseconds] DESC'
+	END;
+
+	DECLARE @sql nvarchar(MAX) = N'WITH core AS (
+	SELECT
+		[z].[session_id],
+		[d].[databases] [database],  -- tweaked spelling to allow for joins/predicates to filter vs [database]
+		[z].[login_name] [principal],
+		[z].[host_name] [host],
+		(SELECT [e].[client_net_address] FROM sys.[dm_exec_connections] [e] WHERE [z].[session_id] = [e].[session_id] AND [e].[parent_connection_id] IS NULL) [ip],
+		[z].[program_name] [application],
+		[z].[status],
+		(SELECT COUNT(*) FROM sys.[dm_exec_connections] [e] WHERE [z].[session_id] = [e].[session_id]) [session_conn_count], /* Good ol'' MARS (sigh) */
+		(SELECT SUM([open_transactions]) FROM [#potential_zombies] [z2] WHERE [z2].[session_id] = [z].[session_id]) [open_tx_count],
+		[dbo].[format_timespan]([z].[idle_milliseconds]) [idle_time],
+		[z].[idle_milliseconds],
+		[z].[tx_id],
+		[l].[record_count] [tempdb_lrc],
+		[l].[log_used_mb] [tempdb_log_used_mb],
+		[l].[log_reserved_mb] [tempdb_log_reserved_mb],
+		[x].[resources],
+		CAST([x].[resources].value(N''xs:decimal(sum(/databases/database/@log_kb_used))'', N''decimal(10,2)'') AS decimal(10,2)) [log_used_mb],
+		[z].[tx_name],
+		[z].[tx_start],
+		[z].[transaction_state],
+		[z].[database_id],
+		[z].[last_statement] [statement]
+	FROM
+		[#potential_zombies] [z]
+		INNER JOIN #databases_by_session [d] ON [z].[session_id] = [d].[session_id]
+		INNER JOIN [#resources_xml] [x] ON [z].[session_id] = [x].[session_id]
+		LEFT OUTER JOIN [#log_usage] [l] ON [z].[session_id] = [l].[session_id]
+)
+
+SELECT
+	[x].[session_id],
+	[x].[database] [databases],
+	[x].[principal],
+	[x].[host],
+	[x].[ip],
+	[x].[application],
+	[x].[status],
+	[x].[session_conn_count],
+	[x].[open_tx_count],
+	[x].[idle_time],
+	[x].[idle_milliseconds],
+	[x].[tx_id],
+	[x].[tempdb_lrc],
+	[x].[tempdb_log_used_mb],
+	[x].[tempdb_log_reserved_mb],
+	[x].[resources],
+	[x].[tx_name],
+	[x].[tx_start],
+	[x].[transaction_state],
+	[x].[database_id],
+	[x].[statement] 
+FROM 
+	[core] [x]{joins}
+WHERE 
+	1 = 1{filters}
+ORDER BY
+	{orderBy};';
+
+	SET @sql = REPLACE(@sql, N'{joins}', @joins);
+	SET @sql = REPLACE(@sql, N'{filters}', @filters);
+	SET @sql = REPLACE(@sql, N'{orderBy}', @orderBy);
+
+	INSERT INTO [#intermediate] (
+		[session_id],
+		[databases],
+		[principal],
+		[host],
+		[ip],
+		[application],
+		[status],
+		[session_conn_count],
+		[open_tx_count],
+		[idle_time],
+		[idle_milliseconds],
+		[tx_id],
+		[tempdb_lrc],
+		[tempdb_log_used_mb],
+		[tempdb_log_reserved_mb],
+		[resources],
+		[tx_name],
+		[tx_start],
+		[transaction_state],
+		[database_id],
+		[statement]
+	)
+	EXEC sys.sp_executesql 
+		@sql;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Checks for Missing [statement]:
+-- well... crap. I can't predicate for statements and THEN look for more data 
+-- have to move this up the stack.
+-- https://overachieverllc.atlassian.net/browse/S4-997
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	UPDATE
+		[x]
+	SET
+		[x].[statement] = COALESCE([t].[text], N'  [SqlHandle: ' + CONVERT(sysname, ISNULL([e].[most_recent_sql_handle], 0), 1)) + N']'
+	FROM
+		[sys].[dm_exec_connections] [e]
+		INNER JOIN [#intermediate] [x] ON [e].[session_id] = [x].[session_id]
+		OUTER APPLY [sys].dm_exec_sql_text([e].[most_recent_sql_handle]) [t]
+	WHERE
+		[x].[statement] IS NULL AND [e].[parent_connection_id] IS NOT NULL;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Project or Return:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF dbo.is_xml_empty(@serialized_output) = 1 BEGIN
+		SELECT @serialized_output = (
+			SELECT 
+				[session_id] [@session_id],
+				[databases] [@databases],
+				[idle_time] [@idle_time],
+				[idle_milliseconds] [@idle_milliseconds],
+				[status] [@status],
+				[tx_name] [@tx_name],
+				[transaction_state] [@tx_state],
+				[session_conn_count] [@conn_count],
+				[open_tx_count] [@open_tx_count],
+				[tempdb_lrc] [@tempdb_lrc],
+				[tempdb_log_used_mb] [@tempdb_log_used_mb], 
+				[tempdb_log_reserved_mb] [@tempdb_log_reserved_mb],
+				[tx_start] [@tx_start],
+				[principal] [@principal],
+				[application] [@application],
+				[host] [@host],
+				[ip] [@ip], 
+				[resources],
+				REPLACE([statement] COLLATE Latin1_General_BIN, char(0x0), N'') [statement]
+			FROM
+				#intermediate
+			ORDER BY 
+				[row_id]
+			FOR XML PATH(N'session'), ROOT(N'zombie_transactions'), TYPE
+		);
+		RETURN 0;
+	END;
+
+	SELECT 
+		[session_id],
+		[databases],
+		[principal],
+		[application],
+		[status],
+		[tx_name],
+		[transaction_state] [tx_state],
+		[idle_time],
+		[session_conn_count] [conn_count],
+		[open_tx_count],
+		[tempdb_lrc],
+		CAST ([tempdb_log_used_mb] AS sysname) + CASE WHEN [tempdb_log_used_mb] = [tempdb_log_reserved_mb] THEN N'' ELSE N' (' + CAST([tempdb_log_reserved_mb] AS sysname) + N')' END [tempdb_log_mb (reserved)],
+		[resources],
+		[tx_start],
+		[host],
+		[ip],
+		[statement]
+	FROM
+		#intermediate
+	ORDER BY 
+		[row_id];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID('dbo.[plancache_shred_columns_by_table]','P') IS NOT NULL
 	DROP PROC dbo.[plancache_shred_columns_by_table];
 GO
@@ -28121,7 +29829,7 @@ CREATE PROC dbo.[plancache_shred_columns_by_table]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDatabase = REPLACE(REPLACE(@TargetDatabase, N'[', N''), N']', N'');
 	SET @TargetTable = REPLACE(REPLACE(@TargetTable, N'[', N''), N']', N'');
@@ -28319,7 +30027,7 @@ CREATE PROC dbo.[plancache_shred_metrics_for_index]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 	SELECT @TargetIndex = REPLACE(REPLACE(@TargetIndex, N']', N''), N'[', N''); 
@@ -28442,7 +30150,7 @@ CREATE PROC dbo.[plancache_shred_columns_by_index]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 	SELECT @TargetIndex = REPLACE(REPLACE(@TargetIndex, N']', N''), N'[', N''); 
@@ -28657,7 +30365,7 @@ CREATE PROC dbo.[plancache_shred_statistics_by_table]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDatabase = REPLACE(REPLACE(@TargetDatabase, N'[', N''), N']', N'');
 	SET @TargetTable = REPLACE(REPLACE(@TargetTable, N'[', N''), N']', N'');
@@ -28765,7 +30473,7 @@ CREATE PROC dbo.[querystats_consumers]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @order_by = UPPER(ISNULL(NULLIF(@order_by, N''), N'CPU_TOTAL'));
 
@@ -28898,24 +30606,20 @@ ORDER BY
 		@sql, 
 		N'@top int', 
 		@top = @top;
-	
-/*
-
-				--CASE WHEN [x].[dbid] = 32767 THEN N'(object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME([t].[objectid], [t].[dbid]) END [module],
-
-
-*/
-
-
 
 	SELECT 
 		[n].[row_id],
 		dbo.format_timespan(DATEDIFF_BIG(MILLISECOND, [n].[creation_time], GETDATE())) [plan_age],
 		dbo.format_timespan(DATEDIFF_BIG(MILLISECOND, [n].[last_execution_time], GETDATE())) [last_execution],
 		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'resource_db' ELSE DB_NAME(ISNULL([t].[dbid], [x].[dbid])) END [database], 
-		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'  (object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME(ISNULL([t].[objectid], [x].[objectid]), ISNULL([t].[dbid], [x].[dbid])) END [module],
+		ISNULL([t].[objectid], [x].[objectid]) [module],
+		CASE WHEN ISNULL([t].[dbid], [x].[dbid]) = 32767 THEN N'  (object_id: ' + ISNULL(CAST([x].[objectid] AS sysname), N'') + N')' ELSE OBJECT_NAME(ISNULL([t].[objectid], [x].[objectid]), ISNULL([t].[dbid], [x].[dbid])) END [module_name],
 		SUBSTRING([t].[text], n.[statement_start_offset] / 2 + 1, (CASE WHEN [n].[statement_end_offset] = -1 THEN LEN([t].[text]) * 2 ELSE [n].[statement_end_offset] END - [n].[statement_start_offset]) / 2) [statement],
-		CAST([x].[query_plan] AS xml) [statement_plan],
+		CASE 
+			WHEN TRY_CAST([x].[query_plan] AS xml) IS NULL THEN (SELECT NCHAR(13) + NCHAR(10) + NCHAR(9) + N'This plan is too large to display. Remove the TOP line, and the BOTTOM line, then save as .sqlplan and open.' + NCHAR(13) + NCHAR(10) +
+			REPLACE([x].[query_plan], N'</ShowPlanXML>', N'</ShowPlanXML>' + NCHAR(13) + NCHAR(10)) [processing-instruction(Plan_Too_Large)] FOR XML PATH(N''), TYPE)
+			ELSE TRY_CAST([x].[query_plan] AS xml)
+		END [statement_plan],
 		[p].[query_plan] [batch_plan],
 		FORMAT([n].[execution_count], N'N0') [exec_count],
 		FORMAT([n].[total_cpu] / 1000, N'N0') [total_cpu_ms],
@@ -28939,7 +30643,8 @@ ORDER BY
 
 		-- TODO: see https://overachieverllc.atlassian.net/browse/S4-969
 		[n].[querystore_sql_handle],
-		[n].[querystore_context_id]
+		[n].[querystore_context_id], 
+		CAST(N'' AS sysname) [querystore_details]
 	INTO 
 		#intermediate
 	FROM 
@@ -28948,19 +30653,155 @@ ORDER BY
 		OUTER APPLY sys.[dm_exec_sql_text]([n].[sql_handle]) [t]
 		OUTER APPLY sys.[dm_exec_text_query_plan]([n].[plan_handle], [n].[statement_start_offset], [n].[statement_end_offset]) [x];
 
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Extract Module Names:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF EXISTS (SELECT NULL FROM [#intermediate] WHERE [module] IS NOT NULL) BEGIN
+		DECLARE @modules table (
+			[row_id] int NOT NULL, 
+			[database] sysname NOT NULL,
+			[module] int NOT NULL, 
+			[schema_name] sysname NULL
+		);
+
+		INSERT INTO @modules ([row_id], [database], [module])
+		SELECT
+			[row_id],
+			[database],
+			[module]
+		FROM
+			[#intermediate]
+		WHERE
+			[module] IS NOT NULL;
+
+		DECLARE @template nvarchar(MAX) = N'SELECT @schemaName = [s].[name] FROM [{database}].sys.objects [o] INNER JOIN [{database}].sys.schemas [s] ON [o].[schema_id] = [s].[schema_id] WHERE [o].[object_id] = @moduleId; ';
+		DECLARE @database sysname, @moduleId int, @schemaName sysname;
+
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT	DISTINCT
+			[database],
+			[module]
+		FROM
+			[#intermediate]
+		WHERE
+			[module] IS NOT NULL 
+			AND [database] <> N'resource_db';
+
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @database, @moduleId;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+			SET @sql = REPLACE(@template, N'{database}', @database);
+
+			EXEC sys.sp_executesql 
+				@sql, 
+				N'@moduleId int, @schemaName sysname OUTPUT', 
+				@moduleId = @moduleId,
+				@schemaName = @schemaName OUTPUT;
+
+			UPDATE @modules 
+			SET 
+				[schema_name] = @schemaName
+			WHERE 
+				[database] = @database
+				AND module = @moduleId;
+		
+			FETCH NEXT FROM [walker] INTO @database, @moduleId;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		UPDATE [i]
+		SET 
+			[i].[module_name] = QUOTENAME([m].[schema_name]) + N'.' + QUOTENAME([i].[module_name])
+		FROM 
+			#intermediate [i]
+			INNER JOIN @modules [m] ON [i].[row_id] = [m].[row_id];
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Extract QueryStore Query-IDs:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
+	IF EXISTS (SELECT NULL FROM [#intermediate] WHERE [querystore_sql_handle] IS NOT NULL) BEGIN
+		DECLARE @queryStoreQueryIds table (
+			[row_id] int NOT NULL, 
+			[database] sysname NOT NULL,
+			[querystore_sql_handle] varbinary(64) NOT NULL, 
+			[query_id] bigint NULL
+		);
+
+		INSERT INTO @queryStoreQueryIds ([row_id], [database], [querystore_sql_handle])
+		SELECT
+			[row_id],
+			[database],
+			[querystore_sql_handle]
+		FROM 
+			[#intermediate] 
+		WHERE 
+			querystore_sql_handle IS NOT NULL;
+
+		SET @template = N'SELECT @queryId = [query_text_id] FROM [{database}].sys.[query_store_query_text] WHERE [statement_sql_handle] = @sqlHandle; ';
+		DECLARE @sqlHandle varbinary(64), @queryId bigint;
+
+		DECLARE [walker] CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT DISTINCT
+			[database],
+			[querystore_sql_handle] 
+		FROM 
+			#intermediate 
+		WHERE 
+			querystore_sql_handle IS NOT NULL;
+		
+		OPEN [walker];
+		FETCH NEXT FROM [walker] INTO @database, @sqlHandle;
+		
+		WHILE @@FETCH_STATUS = 0 BEGIN
+		
+			SET @sql = REPLACE(@template, N'{database}', @database);
+
+			EXEC sys.sp_executesql 
+				@sql, 
+				N'@sqlHandle varbinary(64), @queryId bigint OUTPUT', 
+				@sqlHandle = @sqlHandle,
+				@queryId = @queryId OUTPUT;
+
+			UPDATE @queryStoreQueryIds 
+			SET 
+				query_id = @queryId
+			WHERE 
+				[database] = @database
+				AND [querystore_sql_handle] = @sqlHandle;
+		
+			FETCH NEXT FROM [walker] INTO @database, @sqlHandle;
+		END;
+		
+		CLOSE [walker];
+		DEALLOCATE [walker];
+
+		UPDATE [i]
+		SET 
+			[i].[querystore_details] = [i].[database] + N':' + CAST([q].[query_id] AS sysname) + N':' + CAST([i].[querystore_context_id] AS sysname)
+		FROM 
+			#intermediate [i]
+			INNER JOIN @queryStoreQueryIds [q] ON [i].[row_id] = [q].[row_id];
+	END;
+
+	/*---------------------------------------------------------------------------------------------------------------------------------------------------
+	-- Final Projection:
+	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	SET @sql = N'SELECT 
 	[plan_age],
 	[last_execution],
 	[database],
-	[module],
+	ISNULL(CASE WHEN [database] = N''resource_db'' THEN N''  [object_id]: '' + ISNULL(CAST([module] AS sysname), N'''') ELSE [module_name] END, N'''') [module],
 	[statement],
-	[statement_plan],
-	[batch_plan],
 	[exec_count],
 	{targetColumns}, 
 	(SELECT {metricsColumns} FROM [#intermediate] [i2] WHERE [#intermediate].[row_id] = [i2].[row_id] FOR XML PATH(N''detail''), TYPE) [metrics],
-	[querystore_sql_handle],
-	[querystore_context_id] 
+	[statement_plan],
+	[batch_plan],
+	[querystore_details]
 FROM 
 	[#intermediate]
 ORDER BY 
@@ -29021,7 +30862,7 @@ CREATE PROC dbo.[column_widths]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SELECT
 		[c].[object_id],
@@ -29113,7 +30954,7 @@ CREATE PROC dbo.[escalated_server_permissions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @targetPermissions table (
 		[row_id] int IDENTITY(1,1) NOT NULL,
@@ -29332,7 +31173,7 @@ CREATE PROC dbo.[list_orphaned_users]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF NULLIF(@TargetDatabases,'') IS NULL SET @TargetDatabases = N'{ALL}';
 	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
@@ -29562,7 +31403,7 @@ CREATE PROC dbo.[list_login_permissions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Mode = ISNULL(NULLIF(@Mode, N''), N'SUMMARY');
 
@@ -29841,7 +31682,7 @@ CREATE PROC dbo.[nonsafe_clr_assemblies]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	CREATE TABLE [#assemblies] (
 		[row_id] int IDENTITY(1,1) NOT NULL,
@@ -29949,7 +31790,7 @@ CREATE PROC dbo.[server_role_members]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @server_roles = (ISNULL(NULLIF(@server_roles, N''), N'{ALL}'));
 
@@ -30081,7 +31922,7 @@ CREATE PROC dbo.[server_permissions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
     SELECT
 		[perms].[class_desc],
@@ -30208,7 +32049,7 @@ CREATE PROC dbo.[extract_log_events]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @start = ISNULL(NULLIF(@start, N''), N'2 weeks');
 	SET @end = NULLIF(@end, N'');
@@ -30376,7 +32217,7 @@ CREATE PROC dbo.[system_disks]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	--SET @disks = ISNULL(NULLIF(@disks, N''), N'{ALL}');
 
@@ -30463,7 +32304,7 @@ CREATE PROC dbo.[directory_sizing]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @command nvarchar(MAX) = N'Get-ChildItem -Path "{path}" -Directory | ForEach-Object { 
 		$s = Get-ChildItem $_.FullName -File -Recurse -Force -EA SilentlyContinue | 
@@ -30552,7 +32393,7 @@ CREATE PROC dbo.[file_stalls]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @databases = UPPER(ISNULL(NULLIF(@databases, N''), N'{ALL}'));
 	SET @minimum_ms = ISNULL(@minimum_ms, 0);
@@ -30836,7 +32677,7 @@ CREATE PROC dbo.[tempdb_details]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Collect Core Details and Metrics:
@@ -30847,13 +32688,14 @@ AS
 	);
 
 	WITH gbs AS ( 
-		SELECT DISTINCT
-			s.volume_mount_point [drive],
-			CAST(s.available_bytes / 1073741824 AS decimal(24,2)) [available_gbs]
-		FROM 
-			sys.master_files f
-			CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.[file_id]) s
+		SELECT	DISTINCT
+			[s].[volume_mount_point] [drive],
+			CAST([s].[available_bytes] / 1073741824 AS decimal(24, 2)) [available_gbs]
+		FROM
+			[sys].[master_files] [f]
+			CROSS APPLY [sys].dm_os_volume_stats([f].[database_id], [f].[file_id]) [s]
 	) 
+
 	INSERT INTO [#disk_space] ([drive], [available_gbs])
 	SELECT 
 		[drive],
@@ -30869,6 +32711,7 @@ AS
 		ISNULL([io_stall_write_ms] / NULLIF([num_of_writes], 0), 0) [avg_write_latency], 
         CAST([num_of_bytes_read] / (1024. * 1024. * 1024.) AS decimal(24,3)) [read_gbs], 
 		CAST([num_of_bytes_written] / (1024. * 1024. * 1024.) AS decimal(24,3)) [written_gbs], 
+-- HUH? these 2x columns look like they're on drugs... 
 		CAST(ISNULL(NULLIF([num_of_reads], 0), 0) / 1024. AS decimal(24,3)) [avg_read_kb],
 		CAST(ISNULL(NULLIF([num_of_writes], 0), 0) / 1024. AS decimal(24,3)) [avg_write_kb], 
 		CASE WHEN [io_stall_queued_read_ms] = 0 THEN 0 ELSE 1 END [rg_queued_read_latency],
@@ -30884,65 +32727,76 @@ AS
 		[physical_name] nvarchar(260) NOT NULL,
 		[type_desc] nvarchar(60) NULL,
 		[state_desc] nvarchar(60) NULL,
-		[size] int NOT NULL,
+		[start_size] int NOT NULL,
+		[current_size] int NOT NULL,
 		[max_size] int NOT NULL,
 		[growth] int NOT NULL,
 		[is_percent_growth] bit NOT NULL
 	); 
 
-	INSERT INTO [#tempdb_files] ([file_id], [name], [type_desc], [physical_name], [state_desc], [size], [max_size], [growth], [is_percent_growth])
+	INSERT INTO [#tempdb_files] ([file_id], [name], [type_desc], [physical_name], [state_desc], [start_size], [current_size], [max_size], [growth], [is_percent_growth])
 	SELECT 
-		[file_id],
-		[name],
-		[type_desc],
-		[physical_name],
-		[state_desc],
-		[size],
-		[max_size],
-		[growth],
-		[is_percent_growth]
+		[f].[file_id],
+		[f].[name],
+		[f].[type_desc],
+		[f].[physical_name],
+		[f].[state_desc],
+		[f].[size] [start_size],
+		[d].[size] [current_size],
+		[f].[max_size],
+		[f].[growth],
+		[f].[is_percent_growth]
 	FROM 
-		sys.[master_files] 
+		sys.[master_files] [f]
+		INNER JOIN [tempdb].sys.database_files [d] ON [f].[file_id] = [d].[file_id]
 	WHERE 
 		[database_id] = 2
 	ORDER BY 
 		[file_id];
 
 	CREATE TABLE #log_space (
-		[reserved_gb] decimal(22,3) NOT NULL,
-		[used_gb] decimal(23,3) NOT NULL,
-		[used_percent] decimal(5,1) NOT NULL
+		[space_used] decimal(23,3) NOT NULL,
+		[space_available] decimal(5,1) NOT NULL
 	);
+
 	DECLARE @sql nvarchar(MAX) = N'USE [tempdb];
-	INSERT INTO [#log_space] ([reserved_gb], [used_gb], [used_percent])
-	SELECT 
-		CAST(ROUND([total_log_size_in_bytes] / (1024. * 1024. * 1024.), 1) AS decimal(24, 3)) [reserved_gb],
-		CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024. * 1024.), 1) AS decimal(24, 3)) [used_gb],
-		CAST([used_log_space_in_percent] AS decimal(5,1)) [used_percent]
-	FROM 
-		sys.[dm_db_log_space_usage]; ';
+SELECT 
+	CAST(ROUND([used_log_space_in_bytes] / (1024. * 1024. * 1024.), 1) AS decimal(24, 3)) [space_used],
+	CAST(100. - [used_log_space_in_percent] AS decimal(5,1)) [space_available]
+FROM 
+	sys.[dm_db_log_space_usage]; ';
+
+	INSERT INTO [#log_space] ([space_used], [space_available])
 	EXEC sys.sp_executesql @sql;
 
 	CREATE TABLE #tempdb_space (
-		[total_size] decimal(22,3) NOT NULL,
 		[free_space] decimal(22,3) NOT NULL,
+		[space_available] decimal(5,2) NOT NULL,	
 		[temp_tables] decimal(22,3) NOT NULL,
 		[work_tables] decimal(22,3) NOT NULL,
 		[version_store] decimal(22,3) NOT NULL,
 		[tiny_tables] decimal(22,3) NOT NULL
 	);
+
+	/* sys.dm_db_file_space_usage ALWAYS under-reports available space by a TINY bit... */
+	DECLARE @totalCurrentSpace decimal(10,2) = (SELECT SUM([current_size]) * .00000762 FROM [#tempdb_files] WHERE [type_desc] = N'ROWS');
+
 	SET @sql = N'USE [tempdb];
-INSERT INTO [#tempdb_space] ([total_size], [free_space], [temp_tables], [work_tables], [version_store], [tiny_tables])
 SELECT
-	CAST(SUM([total_page_count]) * 8. / (1024. * 1024.) AS decimal(22,3)) [total_size],
-	CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [free_space],
-	CAST(SUM(ISNULL(user_object_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [temp_tables],
-	CAST(SUM(ISNULL(internal_object_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [work_tables],
-	CAST(SUM(ISNULL(version_store_reserved_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [version_store],
-	CAST(SUM(ISNULL(mixed_extent_page_count, 0)) * 8. / (1024. * 1024.) AS decimal(22,3)) [tiny_tables]
+	CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * .00000762 AS decimal(22,3)) [free_space],
+	CAST(CAST(SUM(ISNULL(unallocated_extent_page_count, 0)) * .00000762 AS decimal(22,3)) * 100. / @totalCurrentSpace AS decimal(5,2)) [space_available],
+	CAST(SUM(ISNULL(user_object_reserved_page_count, 0)) * .00000762 AS decimal(22,3)) [temp_tables],
+	CAST(SUM(ISNULL(internal_object_reserved_page_count, 0)) * .00000762 AS decimal(22,3)) [work_tables],
+	CAST(SUM(ISNULL(version_store_reserved_page_count, 0)) * .00000762 AS decimal(22,3)) [version_store],
+	CAST(SUM(ISNULL(mixed_extent_page_count, 0)) * .00000762 AS decimal(22,3)) [tiny_tables]
 FROM 
 	sys.[dm_db_file_space_usage];';
-	EXEC sys.sp_executesql @sql;
+
+	INSERT INTO [#tempdb_space] ([free_space], [space_available], [temp_tables], [work_tables], [version_store], [tiny_tables])
+	EXEC sys.sp_executesql 
+		@sql, 
+		N'@totalCurrentSpace decimal(10,2) = 0',
+		@totalCurrentSpace = @totalCurrentSpace;
 
 	CREATE TABLE #config_settings (
 		[scope] sysname NOT NULL, 
@@ -30985,28 +32839,29 @@ FROM
 		[global] bit NOT NULL, 
 		[session] bit NOT NULL
 	);
+
 	INSERT INTO #trace_status ([flag], [status], [global], [session])
-	EXEC ('DBCC TRACESTATUS(-1)');
+	EXEC (N'DBCC TRACESTATUS(-1)');
 
 	DECLARE @rgTempdbLimitsInPlace bit = 0;
 
 	IF (SELECT dbo.[engine_version](N'RTM')) > 17.1000 BEGIN
 		SET @sql = N'IF EXISTS (SELECT NULL FROM sys.[resource_governor_configuration] WHERE [is_enabled] = 1) BEGIN
-		IF EXISTS (SELECT NULL FROM sys.[resource_governor_workload_groups] WHERE [group_max_tempdb_data_mb] IS NOT NULL OR [group_max_tempdb_data_mb] IS NOT NULL)
-			SET @rgTempdbLimitsInPlace = 1;
-	END; ';
+	IF EXISTS (SELECT NULL FROM sys.[resource_governor_workload_groups] WHERE [group_max_tempdb_data_mb] IS NOT NULL OR [group_max_tempdb_data_mb] IS NOT NULL)
+		SET @rgTempdbLimitsInPlace = 1;
+END; ';
 
-	EXEC sys.[sp_executesql] 
-		@sql, 
-		N'@rgTempdbLimitsInPlace bit = 0 OUTPUT', 
-		@rgTempdbLimitsInPlace = @rgTempdbLimitsInPlace OUTPUT;
-
+		EXEC sys.[sp_executesql] 
+			@sql, 
+			N'@rgTempdbLimitsInPlace bit = 0 OUTPUT', 
+			@rgTempdbLimitsInPlace = @rgTempdbLimitsInPlace OUTPUT;
 	END;
 
 	DECLARE @tempdbCollation sysname = (SELECT [collation_name] FROM sys.databases WHERE name = N'tempdb');
 	DECLARE @tempdbCompat tinyint = (SELECT [compatibility_level] FROM sys.databases WHERE name = N'tempdb');
 
-	DECLARE @message sysname
+	DECLARE @message sysname;
+	
 	CREATE TABLE #outputs (
 		[row_id] int IDENTITY(1,1) NOT NULL,
 		[classification] sysname NOT NULL, 
@@ -31017,24 +32872,27 @@ FROM
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- INFO:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @xml xml = (SELECT * FROM [#tempdb_space] FOR XML PATH(N'attribute'), TYPE);
-	INSERT INTO [#outputs] ([classification], [context], [detail])
-	SELECT 
-		N'INFO' [classification],
-		N'data_files.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
-		[x].[r].value(N'.', N'nvarchar(MAX)') + N'GB' [detail]
-	FROM 
-		@xml.nodes(N'//attribute/*') AS [x]([r]);
+	DECLARE @xml xml;
+	SELECT @xml = (
+		SELECT 
+			COUNT(CASE WHEN [type_desc] = N'ROWS' THEN 1 END) [datafile_count],
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'ROWS' THEN [start_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [data_init_size],
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'ROWS' THEN [current_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [data_current_size],
+			COUNT(CASE WHEN [type_desc] = N'LOG' THEN 1 END) [logfile_count],
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'LOG' THEN [start_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [log_init_size], 
+			CAST(CAST(SUM(CASE WHEN [type_desc] = N'LOG' THEN [current_size] ELSE 0 END) * .00000762 AS DECIMAL(12,2)) AS nvarchar(MAX)) + N'GB' [log_current_size]
+		FROM 
+			#tempdb_files
+		FOR XML PATH(N'attribute'), TYPE
+	);
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
-		CASE WHEN COUNT(*) > 8 THEN N'SMELL' ELSE N'INFO' END [classification],
-		N'data_files.count' [context], 
-		COUNT(*) [detail]
+		N'INFO' [classification],
+		N'database.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
+		[x].[r].value(N'.', N'nvarchar(MAX)') [detail]
 	FROM 
-		[#tempdb_files]
-	WHERE 
-		[type_desc] = N'ROWS';
+		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
 	DECLARE @disks nvarchar(MAX) = N'';
 	WITH disks AS ( 
@@ -31044,61 +32902,54 @@ FROM
 			[#tempdb_files]
 	)
 	SELECT 
-		@disks = @disks + [x].[drive] + N', free_gb=' + CAST([x].[available_gbs] AS sysname) + N'; ' 
+		@disks =STRING_AGG(QUOTENAME([x].[drive]) + N', free_gb=' + CAST([x].[available_gbs] AS sysname), N'; ')
 	FROM 
 		disks [d]
 		INNER JOIN [#disk_space] [x] ON [d].[disk] = [x].[drive];
-	IF @disks LIKE N'%,%' SET @disks = LEFT(@disks, LEN(@disks) - 1);
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'INFO', N'data_files.disks', @disks);
+	VALUES (N'INFO', N'data_files.available_space', @disks);
+
+	SELECT @xml = (SELECT * FROM [#tempdb_space] FOR XML PATH(N'attribute'), TYPE);
+	INSERT INTO [#outputs] ([classification], [context], [detail])
+	SELECT 
+		N'INFO' [classification],
+		N'usage.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
+		[x].[r].value(N'.', N'nvarchar(MAX)') + CASE WHEN [x].[r].value(N'local-name(.)', N'sysname') LIKE N'%available%' THEN N'%' ELSE N'GB' END [detail]
+	FROM 
+		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
 	SELECT @xml = (SELECT * FROM [#log_space] FOR XML PATH(N'attribute'), TYPE);
 	INSERT INTO [#outputs] ([classification], [context], [detail])
 	SELECT 
 		N'INFO' [classification],
-		N'log_files.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
-		[x].[r].value(N'.', N'nvarchar(MAX)') + CASE WHEN [x].[r].value(N'local-name(.)', N'sysname') LIKE N'%percent' THEN N'%' ELSE N'GB' END [detail]
+		N'log_usage.' + [x].[r].value(N'local-name(.)', N'sysname') [context],
+		[x].[r].value(N'.', N'nvarchar(MAX)') + CASE WHEN [x].[r].value(N'local-name(.)', N'sysname') LIKE N'%available%' THEN N'%' ELSE N'GB' END [detail]
 	FROM 
 		@xml.nodes(N'//attribute/*') AS [x]([r]);
 
 	SET @disks = N'';
-	SELECT @disks = @disks + [name] + N'=' + LEFT([physical_name], 1) + N', ' FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
-	SET @disks = LEFT(@disks, LEN(@disks) - 1);
+	SELECT @disks = STRING_AGG(QUOTENAME([name]) + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'INFO', N'data_files.disks', @disks);
+	VALUES (N'INFO', N'data_files.disk(s)', @disks);
 
-		SET @disks = N'';
-	SELECT @disks = @disks + [name] + N'=' + LEFT([physical_name], 1) + N', ' FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
-	SET @disks = LEFT(@disks, LEN(@disks) - 1);
+	SET @disks = N'';
+	SELECT @disks = STRING_AGG(QUOTENAME([name]) + N'=' + LEFT([physical_name], 1), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'INFO', N'log_files.disks', @disks);
+	VALUES (N'INFO', N'log_file(s).disk(s)', @disks);
 
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- PERF:
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	DECLARE @files nvarchar(MAX) = N'';
-	SELECT 
-		@files = @files + QUOTENAME([f].[name]) + N', '
-	FROM 
-		#latencies [l]
-		INNER JOIN [#tempdb_files] [f] ON [l].[file_id] = [f].[file_id]
-	WHERE 
-		[l].[avg_read_latency] < 2 AND [l].[avg_write_latency] < 2
-	ORDER BY 
-		[f].[file_id];
 
-	IF @files LIKE N'%,%' SET @files = LEFT(@files, LEN(@files) - 1);
-	INSERT INTO [#outputs] ([classification], [context], [detail])
-	VALUES (N'PERF', N'latency.under_2ms', @files);
-
-	IF EXISTS (SELECT NULL FROM #latencies [l] WHERE [l].[avg_read_latency] >= 2 OR [l].[avg_write_latency] >= 2) BEGIN
+	IF EXISTS (SELECT NULL FROM #latencies [l] WHERE [l].[avg_read_latency] >= 8 OR [l].[avg_write_latency] >= 8) BEGIN
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		SELECT 
 			CASE WHEN [l].[avg_read_latency] > 30 OR [l].[avg_write_latency] > 30 THEN N'PERF-WARNING' ELSE N'PERF' END [classification], 
-			CASE WHEN [l].[avg_read_latency] > 30 OR [l].[avg_write_latency] > 30 THEN N'latency.over_30ms' ELSE N'latency.over_2ms' END [context], 
+			CASE WHEN [l].[avg_read_latency] > 30 OR [l].[avg_write_latency] > 30 THEN N'latency.over_30ms' ELSE N'latency.over_8ms' END [context], 
 			QUOTENAME([f].[name]) + N': read=' + CAST([l].[avg_read_latency] AS sysname) + N'ms, write=' + CAST([l].[avg_write_latency] AS sysname) + N'ms'
 				+ N', gbs_read=' + CAST([l].[read_gbs] AS sysname) + N', avg_read_kb=' + CAST([l].[avg_read_kb] AS sysname) 
 				+ N', gbs_written=' + CAST([l].[written_gbs] AS sysname) + N', avg_write_kb=' + CAST([l].[avg_write_kb] AS sysname) [detail]
@@ -31106,7 +32957,7 @@ FROM
 			[#latencies] [l]
 			INNER JOIN [#tempdb_files] [f] ON [l].[file_id] = [f].[file_id]
 		WHERE 
-			[l].[avg_read_latency] >= 2 OR [l].[avg_write_latency] >= 2;
+			[l].[avg_read_latency] >= 8 OR [l].[avg_write_latency] >= 8;
 	END;
 
 	IF EXISTS (SELECT NULL FROM #latencies [l] WHERE [l].[rg_queued_read_latency] > 0 OR [l].[rg_queued_write_latency] > 0) BEGIN
@@ -31125,7 +32976,8 @@ FROM
 	
 	DECLARE @mismatchedCollations int = (SELECT COUNT(*) FROM sys.databases WHERE [collation_name] <> @tempdbCollation);
 	IF @mismatchedCollations > 0 BEGIN
-		SET @message = N'mismatch_count=' + CAST(@mismatchedCollations AS sysname)
+		SET @message = N'count=' + CAST(@mismatchedCollations AS nvarchar(MAX)); 
+		SET @message = @message + N'; dbs=' + (SELECT STRING_AGG(QUOTENAME([name]), N', ') FROM sys.databases WHERE [collation_name] <> @tempdbCollation);
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'PERF-WARNING', N'config.collation_mismatch', @message);  /* NOTE: Contained DBs can/will 'cause' this. That and ... poor config. */
 	END;
@@ -31192,8 +33044,7 @@ FROM
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N', ' FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]), N', ') FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'SMELL', N'data_files.using_percent_growth', @files);
@@ -31201,8 +33052,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'LOG') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N', ' FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]), N', ') FROM [#tempdb_files] WHERE [is_percent_growth] = 1 AND [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'SMELL', N'log_files.using_percent_growth', @files);
@@ -31210,8 +33060,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [state_desc] + N', ' FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [state_desc], N', ') FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
 		
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'SMELL', N'data_files.not_online', @files);
@@ -31219,16 +33068,11 @@ FROM
 
 	IF (SELECT COUNT(DISTINCT [max_size]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
 		/* This is a SMELL because in SOME cases there's an argument for letting 1x file grow LARGER as an 'overspill'. NOT great ... but... not quite a WARN either.  */
+		SET @files = N'';
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + CAST([max_size] AS sysname), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
+		
 		INSERT INTO [#outputs] ([classification], [context], [detail])
-		SELECT 
-			N'SMELL' [classification], 
-			N'files.different_max_sizes' [context], 
-			QUOTENAME([name]) + N'=' + CAST([max_size] AS sysname)
-		FROM 
-			[#tempdb_files]
-		WHERE 
-			[type_desc] = N'ROWS'
-			AND [max_size] <> -1;
+		VALUES(N'SMELL', N'data_files.different_max_sizes', @files);
 	END;
 
 	INSERT INTO [#outputs] ([classification], [context], [detail])
@@ -31270,8 +33114,7 @@ FROM
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [state_desc] + N', ' FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [state_desc], N', ') FROM [#tempdb_files] WHERE [state_desc] <> N'ONLINE' AND [type_desc] = N'ROWS';
 		
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES(N'WARNING', N'log_files.not_online', @files);
@@ -31294,8 +33137,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'ROWS') BEGIN 
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [name] + N', ' FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [name], N', ') FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'data_files.on_c_drive', @files);
@@ -31303,8 +33145,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'LOG') BEGIN 
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + [name] + N', ' FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + [name], N', ') FROM [#tempdb_files] WHERE [physical_name] LIKE N'C:\%' AND [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'log_files.on_c_drive', @files);
@@ -31312,8 +33153,7 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'ROWS') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=-1, ' FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=-1', N', ') FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'data_files.unlimited_growth', @files);
@@ -31321,17 +33161,15 @@ FROM
 
 	IF EXISTS (SELECT NULL FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'LOG') BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=-1, ' FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=-1', N', ') FROM [#tempdb_files] WHERE [max_size] = -1 AND [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'log_files.unlimited_growth', @files);
 	END;
 
-	IF (SELECT DISTINCT COUNT([growth]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
+	IF (SELECT COUNT(DISTINCT[growth]) FROM [#tempdb_files] WHERE [type_desc] = N'ROWS') > 1 BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N'=' + CAST([growth] * 8 / 1024 AS sysname) + N'MB, ' FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]) + N'=' + CAST([growth] * 8 / 1024 AS sysname) + N'MB', N', ') FROM [#tempdb_files] WHERE [type_desc] = N'ROWS';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'files.heterogeneous_growth', @files);
@@ -31339,8 +33177,7 @@ FROM
 
 	IF (SELECT COUNT(*) FROM [#tempdb_files] WHERE [type_desc] = N'LOG') > 1 BEGIN
 		SET @files = N'';
-		SELECT @files = @files + QUOTENAME([name]) + N', ' FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
-		SET @files = LEFT(@files, LEN(@files) - 1);
+		SELECT @files = STRING_AGG(QUOTENAME([name]), N', ') FROM [#tempdb_files] WHERE [type_desc] = N'LOG';
 
 		INSERT INTO [#outputs] ([classification], [context], [detail])
 		VALUES (N'WARNING', N'log_files.multiple_log_files', @files);
@@ -31393,7 +33230,7 @@ CREATE PROC dbo.[querystore_details]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @databases = ISNULL(NULLIF(@databases, N''), N'{ALL}');
 	SET @priorities = NULLIF(@priorities, N'');
@@ -32059,7 +33896,7 @@ CREATE PROC dbo.[view_querystore_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	
 	IF UPPER(@Granularity) NOT IN (N'MINUTE', N'MINUTES', N'HOUR', N'DAY') BEGIN 
@@ -32324,7 +34161,7 @@ CREATE PROC dbo.[querystore_compilation_consumers]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
 	SET @Mode = UPPER(ISNULL(NULLIF(@Mode, N''), N'DURATION'));
@@ -32451,7 +34288,7 @@ CREATE PROC dbo.[querystore_list_forced_plans]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @ShowTimespanInsteadOfDates = ISNULL(@ShowTimespanInsteadOfDates, 0);
 	SET @IncludeObjectDetails = ISNULL(@IncludeObjectDetails, 0);
@@ -32646,6 +34483,364 @@ GO
 USE [admindb];
 GO
 
+IF OBJECT_ID('dbo.[querystore_variations_by_query_ids]','P') IS NOT NULL
+	DROP PROC dbo.[querystore_variations_by_query_ids];
+GO
+
+CREATE PROC dbo.[querystore_variations_by_query_ids]
+	@TargetDatabase			sysname					= NULL,
+	@Granularity			sysname					= N'TOTAL',			-- { TOTAL | DAY | NATIVE }
+	@QueryIds				bigint_enumeration		READONLY,
+	@ExtractParameters		bit						= 0,
+	@StartTime				datetime2(7), 
+	@EndTime				datetime2(7)
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	
+	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'TOTAL'));
+
+	IF @Granularity NOT IN (N'TOTAL', N'DAY', N'NATIVE') BEGIN
+		RAISERROR(N'Allowed values for @Granularity are: { TOTAL | DAY | NATIVE }.', 16, 1);
+		RETURN -10;
+	END;
+
+	CREATE TABLE #results (
+		[query_id] [bigint] NOT NULL,
+		[plan_id] [bigint] NOT NULL,
+		[text] [nvarchar](MAX) NULL,
+		[execution_count] [bigint] NULL,
+		[max_duration] [float] NULL,
+		[total_duration] [float] NULL,
+		[avg_duration] [float] NULL,
+		[min_duration] [float] NULL,
+		[window_start] [datetimeoffset](3) NULL,
+		[window_end] [datetimeoffset](3) NULL,
+		[query_plan] [xml] NULL,
+		[is_forced_plan] [bit] NOT NULL,
+		[execution_type] [nvarchar](60) NULL
+	);
+
+	DECLARE @granularityColumns nvarchar(MAX) = N'';
+	DECLARE @granularityGroupBy nvarchar(MAX) = N'';
+
+	IF @Granularity = N'TOTAL' BEGIN
+		SET @granularityColumns = N'MIN([rs].[last_execution_time]) [window_start],' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9) + N'MAX([rs].[last_execution_time]) [window_end],';
+		SET @granularityGroupBy = N'';
+	END	
+
+	IF @Granularity = N'DAY' BEGIN
+		SET @granularityColumns = N'CAST([rs].[last_execution_time] AS date) [window_start],' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9) + N'DATEADD(DAY, 1, CAST([rs].[last_execution_time] AS date)) [window_end],';
+		SET @granularityGroupBy = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9) + N'CAST([rs].[last_execution_time] AS date),';
+	END 
+
+	IF @Granularity = N'NATIVE' BEGIN
+		SET @granularityColumns = N'DATEADD(HOUR, ((DATEDIFF(HOUR, 0, [rs].[last_execution_time]))), 0) [window_start],' + NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9) + N'DATEADD(HOUR, (1 + (DATEDIFF(HOUR, 0, [rs].[last_execution_time]))), 0) [window_end],';
+		SET @granularityGroupBy = NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + NCHAR(9) + N'DATEDIFF(HOUR, 0, [rs].[last_execution_time]),';
+	END;
+
+	DECLARE @sql nvarchar(MAX) = N'WITH bucketizer AS (
+		-- MKC: Stolen from SSMS'' Tracked-Query Report.
+		SELECT
+			[x].[value] [query_id],  
+			[rs].[plan_id] [plan_id],
+			[rs].[execution_type_desc] [execution_type],
+			SUM([rs].count_executions) [execution_count],
+			{granularityColumns}
+			ROUND(CONVERT(float, SUM([rs].[avg_duration] * [rs].[count_executions])) / NULLIF(SUM([rs].[count_executions]), 0) * .001, 2) [avg_duration],
+			ROUND(CONVERT(float, MAX([rs].[max_duration])) * .001, 2) [max_duration],
+			ROUND(CONVERT(float, MIN([rs].[min_duration])) * .001, 2) [min_duration],
+			--ROUND(CONVERT(float, SQRT(SUM([rs].[stdev_duration] * [rs].[stdev_duration] * [rs].[count_executions])/NULLIF(SUM([rs].[count_executions]), 0)))*0.001,2) [stdev_duration],
+			--ISNULL(ROUND(CONVERT(float, (SQRT(SUM([rs].[stdev_duration] * [rs].[stdev_duration] * [rs].[count_executions]) / NULLIF(SUM([rs].[count_executions]), 0)) * SUM([rs].[count_executions])) / NULLIF(SUM([rs].[avg_duration] *[rs].[count_executions]), 0)), 2), 0) [variation_duration],
+			ROUND(CONVERT(float, SUM([rs].[avg_duration] * [rs].[count_executions])) * .001, 2) [total_duration]
+		FROM
+			{targetDB}.sys.[query_store_runtime_stats] [rs]
+			INNER JOIN {targetDB}.sys.[query_store_plan] [p] ON [p].[plan_id] = [rs].[plan_id]
+			INNER JOIN @QueryIds [x] ON p.[query_id] = [x].[value]  
+		WHERE
+			NOT ([rs].[first_execution_time] > @EndTime OR [rs].[last_execution_time] <= @StartTime)
+		GROUP BY
+			[rs].plan_id,
+			[rs].execution_type_desc,{granularityGroupBy}
+			[x].[value]
+),
+is_forced as
+(
+	SELECT [is_forced_plan], [plan_id]
+		FROM {targetDB}.sys.[query_store_plan]
+)
+
+SELECT 
+	[b].[query_id], 
+	[b].[plan_id],
+	[t].[query_sql_text] [text],
+	[execution_count],
+	[max_duration],
+	[total_duration], 
+	[avg_duration],
+	[min_duration],
+	SWITCHOFFSET([window_start], DATEPART(TZOFFSET, @StartTime)) [window_start],
+	SWITCHOFFSET([window_end], DATEPART(TZOFFSET, @StartTime)) [window_end],
+	CASE 
+		WHEN TRY_CAST([p].[query_plan] AS xml) IS NULL THEN (SELECT NCHAR(13) + NCHAR(10) + NCHAR(9) + N''This plan is too large to display. Remove the TOP line, and the BOTTOM line, then save as .sqlplan and open.'' + NCHAR(13) + NCHAR(10) +
+			REPLACE([p].[query_plan], N''</ShowPlanXML>'', N''</ShowPlanXML>'' + NCHAR(13) + NCHAR(10)) [processing-instruction(Plan_Too_Large)] FOR XML PATH(N''''), TYPE) 
+		ELSE TRY_CAST([p].[query_plan] AS xml)
+	END,
+	[f].[is_forced_plan],
+	[execution_type]
+FROM 
+	[bucketizer] [b]
+	INNER JOIN [is_forced] [f] ON [f].[plan_id] = [b].[plan_id]
+	INNER JOIN {targetDB}.[sys].[query_store_plan] [p] ON [b].[plan_id] = [p].[plan_id] AND b.query_id = p.[query_id]
+	INNER JOIN {targetDB}.[sys].[query_store_query] [q] ON [b].[query_id] = [q].[query_id]
+	INNER JOIN {targetDB}.[sys].[query_store_query_text] [t] ON [q].[query_text_id] = [t].[query_text_id]; ';	
+
+	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
+	SET @sql = REPLACE(@sql, N'{granularityColumns}', @granularityColumns);
+	SET @sql = REPLACE(@sql, N'{granularityGroupBy}', @granularityGroupBy);
+
+	DECLARE @errorMessage nvarchar(MAX), @errorLine int;
+	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
+	BEGIN TRY
+		INSERT INTO [#results] (
+			[query_id],
+			[plan_id],
+			[text],
+			[execution_count],
+			[max_duration],
+			[total_duration],
+			[avg_duration],
+			[min_duration],
+			[window_start],
+			[window_end],
+			[query_plan],
+			[is_forced_plan],
+			[execution_type]
+		)
+		EXEC sys.[sp_executesql]
+			@sql,
+			N'@QueryIds bigint_enumeration READONLY, @StartTime datetime2(7), @EndTime datetime2(7)', 
+			@QueryIds = @QueryIds,
+			@StartTime = @StartTime,
+			@EndTime = @EndTime;
+	END TRY 
+	BEGIN CATCH 
+		SELECT 
+			@errorLine = ERROR_LINE(), 
+			@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
+
+		RAISERROR(@errorMessage, 16, 1);
+		EXEC admindb.dbo.[extract_dynamic_code_lines] @sql, @errorLine, 6;
+	END CATCH;
+
+	SELECT 
+		[query_id],
+		[plan_id],
+		[text],
+		[execution_count],
+		[max_duration],
+		[total_duration],
+		[avg_duration],
+		[min_duration],
+		[window_start],
+		[window_end],
+		[query_plan],
+		[is_forced_plan],
+		[execution_type] 
+	FROM 
+		[#results]
+	ORDER BY 
+		[query_id],
+		[plan_id],
+		[window_start];
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID(N'dbo.[querystore_module_variations]', N'P') IS NOT NULL
+	DROP PROC dbo.[querystore_module_variations];
+GO
+
+CREATE PROC dbo.[querystore_module_variations]
+	@TargetDatabase			sysname					= NULL,
+	@ModuleName				sysname, 
+	@Granularity			sysname					= N'TOTAL',			-- { TOTAL | DAY | NATIVE }
+	@ExtractParameters		bit						= 1,
+	@StartTimeUtc			datetime				= NULL,				-- defaults to 2 weeks ago. 
+	@EndTimeUtc				datetime				= NULL
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	
+	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'TOTAL'));
+	
+	IF @Granularity NOT IN (N'TOTAL', N'DAY', N'NATIVE') BEGIN
+		RAISERROR(N'Allowed values for @Granularity are: { TOTAL | DAY | NATIVE }.', 16, 1);
+		RETURN -10;
+	END;
+
+	IF NULLIF(@ModuleName, N'') IS NULL BEGIN 
+		RAISERROR(N'@ModuleName cannot be NULL or empty.', 16, 1);
+		RETURN -2;
+	END;
+
+	IF @TargetDatabase IS NULL BEGIN 
+		EXEC dbo.[get_executing_dbname] @ExecutingDBName = @TargetDatabase OUTPUT;
+		
+		IF @TargetDatabase IS NULL BEGIN 
+			RAISERROR('Invalid Database-Name specified for @TargetDatabase and/or S4 was unable to determine calling-db-context. Please specify a valid database name for @TargetDatabase and retry. ', 16, 1);
+			RETURN -5;
+		END;
+	END;
+
+	IF @StartTimeUtc IS NULL BEGIN 
+		SET @StartTimeUtc = DATEADD(DAY, 0 - 14, GETUTCDATE());
+	END;
+
+	DECLARE @enum bigint_enumeration;
+
+	DECLARE @sql nvarchar(MAX) = N'SELECT 
+		[q].[query_id]
+	FROM 
+		[{targetDB}].[sys].[query_store_query] [q]
+		INNER JOIN [{targetDB}].[sys].[objects] [o] ON [q].[object_id] = [o].[object_id] AND [o].[name] = @ModuleName
+	WHERE
+		[q].[last_execution_time] >= @StartTimeUtc AT TIME ZONE ''UTC''{endTime}; ';
+
+	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
+
+	IF @EndTimeUtc IS NULL 
+		SET @sql = REPLACE(@sql, N'{endTime}', N'');
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{endTime}', NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + N'AND [q].[last_execution_time] < @EndTimeUtc AT TIME ZONE ''UTC''');
+
+	INSERT INTO @enum ([value])
+	EXEC sys.[sp_executesql] 
+		@sql, 
+		N'@ModuleName sysname, @StartTimeUtc datetime, @EndTimeUtc datetime', 
+		@ModuleName = @ModuleName, 
+		@StartTimeUtc = @StartTimeUtc, 
+		@EndTimeUtc = @EndTimeUtc;
+
+	IF NOT EXISTS (SELECT NULL FROM @enum) BEGIN 
+		RAISERROR(N'@ModuleName and/or other specified parameters yielded NO results.', 16, 1);
+		RETURN 0;
+	END;
+
+	DECLARE @startTime datetime2(7) = @StartTimeUtc AT TIME ZONE 'UTC';
+	DECLARE @endTime datetime2(7) = ISNULL(@EndTimeUtc, GETUTCDATE()) AT TIME ZONE 'UTC';
+
+	EXEC dbo.[querystore_variations_by_query_ids]
+		@TargetDatabase = @TargetDatabase,
+		@Granularity = @Granularity,
+		@QueryIds = @enum,
+		@ExtractParameters = @ExtractParameters,
+		@StartTime = @startTime,
+		@EndTime = @endTime;
+
+	RETURN 0
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.[querystore_statement_variations]','P') IS NOT NULL
+	DROP PROC dbo.[querystore_statement_variations];
+GO
+
+CREATE PROC dbo.[querystore_statement_variations]
+	@TargetDatabase			sysname					= NULL,
+	@StatementPattern		nvarchar(MAX),								-- Expects wildcards to already be in place. 
+	@Granularity			sysname					= N'TOTAL',			-- { TOTAL | DAY | NATIVE }
+	@ExtractParameters		bit						= 1,
+	@StartTimeUtc			datetime				= NULL,				-- defaults to 2 weeks ago. 
+	@EndTimeUtc				datetime				= NULL
+AS
+    SET NOCOUNT ON; 
+
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	
+	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'TOTAL'));
+
+	IF @Granularity NOT IN (N'TOTAL', N'DAY', N'NATIVE') BEGIN
+		RAISERROR(N'Allowed values for @Granularity are: { TOTAL | DAY | NATIVE }.', 16, 1);
+		RETURN -10;
+	END;
+
+	IF @TargetDatabase IS NULL BEGIN 
+		EXEC dbo.[get_executing_dbname] @ExecutingDBName = @TargetDatabase OUTPUT;
+		
+		IF @TargetDatabase IS NULL BEGIN 
+			RAISERROR('Invalid Database-Name specified for @TargetDatabase and/or S4 was unable to determine calling-db-context. Please specify a valid database name for @TargetDatabase and retry. ', 16, 1);
+			RETURN -5;
+		END;
+	END;
+
+	IF @StartTimeUtc IS NULL BEGIN 
+		SET @StartTimeUtc = DATEADD(DAY, 0 - 14, GETUTCDATE());
+	END;
+
+	DECLARE @enum bigint_enumeration;
+
+	DECLARE @sql nvarchar(MAX) = N'
+	SELECT 
+		[q].[query_id] 
+	FROM 
+		[{targetDB}].[sys].[query_store_query] [q] 
+		INNER JOIN [{targetDB}].[sys].[query_store_query_text] [t] ON [q].[query_text_id] = [t].[query_text_id]
+	WHERE 
+		[t].[query_sql_text] LIKE @StatementPattern 
+		AND [q].[last_execution_time] >= @StartTimeUtc AT TIME ZONE ''UTC''{endTime}
+		AND [t].[query_sql_text] NOT LIKE N''%@StartTimeUtc AT TIME ZONE ''''UTC''''%''; ';
+
+	SET @sql = REPLACE(@sql, N'{targetDB}', @TargetDatabase);
+
+	IF @EndTimeUtc IS NULL 
+		SET @sql = REPLACE(@sql, N'{endTime}', N'');
+	ELSE 
+		SET @sql = REPLACE(@sql, N'{endTime}', NCHAR(13) + NCHAR(10) + NCHAR(9) + NCHAR(9) + N'AND [q].[last_execution_time] < @EndTimeUtc AT TIME ZONE ''UTC''');
+
+	INSERT INTO @enum ([value])
+	EXEC sys.[sp_executesql] 
+		@sql, 
+		N'@StatementPattern nvarchar(MAX), @StartTimeUtc datetime, @EndTimeUtc datetime', 
+		@StatementPattern = @StatementPattern, 
+		@StartTimeUtc = @StartTimeUtc, 
+		@EndTimeUtc = @EndTimeUtc;
+	
+	IF NOT EXISTS (SELECT NULL FROM @enum) BEGIN 
+		RAISERROR(N'@StatementPattern and/or other specified parameters yielded NO results.', 16, 1);
+		RETURN 0;
+	END;
+
+	DECLARE @startTime datetime2(7) = @StartTimeUtc AT TIME ZONE 'UTC';
+	DECLARE @endTime datetime2(7) = ISNULL(@EndTimeUtc, GETUTCDATE()) AT TIME ZONE 'UTC';
+
+	EXEC dbo.[querystore_variations_by_query_ids]
+		@TargetDatabase = @TargetDatabase,
+		@Granularity = @Granularity,
+		@QueryIds = @enum,
+		@ExtractParameters = @ExtractParameters,
+		@StartTime = @startTime,
+		@EndTime = @endTime;
+
+	RETURN 0;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
 IF OBJECT_ID(N'dbo.[versionstore_consumers]', N'P') IS NOT NULL
 	DROP PROC dbo.[versionstore_consumers];
 GO
@@ -32655,7 +34850,7 @@ CREATE PROC dbo.[versionstore_consumers]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SELECT 
 		[v].[session_id],
@@ -32740,6 +34935,11 @@ AS
 	--		can't remember if there is such a thing (but there might, actually, be one in sys.sysprocesses? )
 	SELECT 
 		[c].[session_id],
+		DB_NAME([s].[database_id]) [database],
+		[s].[login_name] [principal],
+		[s].[host_name] [host],
+		[s].[program_name] [application],
+		[s].[status] [session_status],
 		[c].[duration],
 		[c].[tx_id],
 		[c].[is_user_tx],
@@ -32754,6 +34954,7 @@ AS
 	FROM 
 		[#core] [c] 
 		INNER JOIN [#details] [d] ON [c].[session_id] = [d].[session_id] 
+		LEFT OUTER JOIN sys.[dm_exec_sessions] [s] ON [c].[session_id] = [s].[session_id]
 	ORDER BY 
 		[c].[elapsed_time_seconds] DESC;
 
@@ -32776,7 +34977,7 @@ CREATE PROC dbo.[versionstore_generators]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @ExcludeMsdb = ISNULL(@ExcludeMsdb, 1);
 	SET @TargetDatabase = NULLIF(@TargetDatabase, N'');
@@ -32919,7 +35120,7 @@ CREATE PROC dbo.[signal_waits]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @vector_tag = NULLIF(@vector_tag, N'');
 	
@@ -33052,7 +35253,7 @@ CREATE PROC dbo.[wait_stats]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @vector_tag = NULLIF(@vector_tag, N'');
 	SET @exclusions = NULLIF(@exclusions, N'');
@@ -33310,7 +35511,7 @@ CREATE PROC dbo.verify_backup_execution
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -33729,7 +35930,7 @@ CREATE PROC dbo.verify_database_configurations
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	SET @RcsiExclusions = NULLIF(@RcsiExclusions, N'');
 	SET @DatabasesToExclude = NULLIF(@DatabasesToExclude, N'');
 	SET @CompatabilityExclusions = NULLIF(@CompatabilityExclusions, N'');
@@ -34073,7 +36274,7 @@ CREATE PROC dbo.[verify_drivespace]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @moduleKey sysname = QUOTENAME(OBJECT_SCHEMA_NAME(@@PROCID)) + N'.' + QUOTENAME(OBJECT_NAME(@@PROCID));
 
@@ -34678,7 +36879,7 @@ CREATE PROC dbo.process_alerts
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @response nvarchar(2000); 
 	SELECT @response = response FROM dbo.alert_responses 
@@ -34808,7 +37009,7 @@ DECLARE @monitor_transaction_durations nvarchar(MAX) = N'ALTER PROC dbo.monitor_
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     -----------------------------------------------------------------------------
     -- Validate Inputs: 
@@ -35133,7 +37334,7 @@ CREATE PROC dbo.[verify_cpu_thresholds]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -35429,7 +37630,7 @@ CREATE PROC dbo.[verify_ple_thresholds]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -35574,7 +37775,7 @@ CREATE PROC dbo.[verify_dev_configurations]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	-----------------------------------------------------------------------------
 	-- Validate Inputs: 
@@ -35860,7 +38061,7 @@ CREATE PROC dbo.[list_xe_sessions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetSessionName = NULLIF(@TargetSessionName, N'');
 	SET @IncludeDiagnostics = NULLIF(@IncludeDiagnostics, 0);
@@ -36072,7 +38273,7 @@ CREATE PROC dbo.[eventstore_get_target_by_key]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @eventStoreTarget sysname = (SELECT [target_table] FROM [dbo].[eventstore_settings] WHERE [event_store_key] = @EventStoreKey); 
 	DECLARE @outputID int;
@@ -36110,7 +38311,7 @@ RETURNS @output table (
 	[error_id] int
 ) 
 AS 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -36146,7 +38347,7 @@ CREATE PROC dbo.[eventstore_initialize_extraction]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SELECT @CET = DATEADD(MILLISECOND, -2, GETUTCDATE());
 
@@ -36197,7 +38398,7 @@ CREATE PROC dbo.[eventstore_finalize_extraction]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Attributes = NULLIF(@Attributes, N'');
 
@@ -36235,7 +38436,7 @@ CREATE PROC dbo.[eventstore_extract_session_xml]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	SET @SessionName = NULLIF(@SessionName, N'');
 
 	IF @SessionName IS NULL BEGIN 
@@ -36257,7 +38458,7 @@ AS
 	DECLARE @storageType sysname, @fileName sysname;
 	SELECT 
 		@storageType = [nodes].[data].value(N'(storage_type)[1]',N'sysname'), 
-		@fileName = [nodes].[data].value(N'(file_name)[1]',N'sysname')
+		@fileName = [nodes].[data].value(N'(target)[1]',N'sysname')
 	FROM 
 		@SerializedOutput.nodes(N'//session') [nodes] ([data]);
 
@@ -36334,6 +38535,7 @@ AS
 				[x].[XMLData].value(N'(/event/@timestamp)[1]', N'datetime2') >= @lset AND [x].[XMLData].value(N'(/event/@timestamp)[1]', N'datetime2') < @cet;
 		  END; 
 		ELSE BEGIN
+
 			INSERT INTO [#raw_xe_data] (
 				[event_data],
 				[file_name],
@@ -36397,7 +38599,7 @@ CREATE PROC dbo.[eventstore_etl_session]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @InitializeDaysBack = ISNULL(@InitializeDaysBack, 10);	
 
@@ -36522,7 +38724,7 @@ CREATE PROC dbo.[eventstore_etl_processor]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Get Sessions to Process:
@@ -36613,7 +38815,7 @@ CREATE PROC dbo.[eventstore_verify_jobs]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @dateAsInt int = CAST(CONVERT(sysname, GETDATE(), 112) AS int);
 
@@ -36739,7 +38941,7 @@ CREATE PROC dbo.[eventstore_setup_session]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @PrintOnly = ISNULL(@PrintOnly, 0);
 	SET @MaxFiles = ISNULL(NULLIF(@MaxFiles, 0), 10);
@@ -37032,7 +39234,7 @@ CREATE PROC dbo.[eventstore_data_cleanup]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Get Sessions to Process:
@@ -37079,7 +39281,7 @@ CREATE PROC dbo.[eventstore_timebounded_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	IF UPPER(@Granularity) LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
@@ -37173,7 +39375,7 @@ CREATE PROC dbo.[eventstore_heatmap_frame]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Granularity = UPPER(ISNULL(NULLIF(@Granularity, N''), N'HOUR'));
 	IF @Granularity LIKE N'%S' SET @Granularity = LEFT(@Granularity, LEN(@Granularity) - 1);
@@ -37290,7 +39492,7 @@ CREATE PROC dbo.[eventstore_enable_all_errors]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @eventStoreKey sysname = N'ALL_ERRORS';
 
@@ -37431,7 +39633,7 @@ CREATE PROC dbo.[eventstore_enable_blocked_processes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @eventStoreKey sysname = N'BLOCKED_PROCESSES';
 
@@ -37602,7 +39804,7 @@ CREATE PROC dbo.[eventstore_enable_deadlocks]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @eventStoreKey sysname = N'DEADLOCKS';
 
@@ -37712,7 +39914,7 @@ CREATE PROC dbo.[eventstore_enable_large_sql]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @eventStoreKey sysname = N'LARGE_SQL';
 
@@ -37845,7 +40047,7 @@ CREATE PROC dbo.[eventstore_etl_all_errors]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @SessionName = ISNULL(NULLIF(@SessionName, N''), N'eventstore_all_errors');
 	SET @EventStoreTarget = ISNULL(NULLIF(@EventStoreTarget, N''), N'admindb.dbo.eventstore_all_errors');
@@ -37912,7 +40114,7 @@ CREATE PROC dbo.[eventstore_etl_blocked_processes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @SessionName = ISNULL(NULLIF(@SessionName, N''), N'blocked_processes');
 	SET @EventStoreTarget = ISNULL(NULLIF(@EventStoreTarget, N''), N'admindb.dbo.eventstore_blocked_processes');
@@ -38354,7 +40556,7 @@ CREATE PROC dbo.[eventstore_etl_deadlocks]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @SessionName = ISNULL(NULLIF(@SessionName, N''), N'eventstore_deadlocks');
 	SET @EventStoreTarget = ISNULL(NULLIF(@EventStoreTarget, N''), N'admindb.dbo.eventstore_deadlocks');
@@ -38564,7 +40766,7 @@ CREATE PROC dbo.[eventstore_etl_large_sql]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @SessionName = ISNULL(NULLIF(@SessionName, N''), N'capture_large_sql');
 	SET @EventStoreTarget = ISNULL(NULLIF(@EventStoreTarget, N''), N'admindb.dbo.eventstore_large_sql');
@@ -38637,7 +40839,7 @@ CREATE PROC dbo.[eventstore_report_predicates]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @JoinPredicates = N''; 
 	SET @FilterPredicates = N'';
@@ -38822,7 +41024,7 @@ CREATE PROC dbo.[eventstore_get_report_preferences]
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 		
 	SELECT 
 		@PreferredTimeZone = ISNULL([setting_value], N'{SERVER_LOCAL}') 
@@ -38905,7 +41107,7 @@ CREATE PROC dbo.[eventstore_report_all_errors_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
@@ -39444,7 +41646,7 @@ CREATE PROC dbo.[eventstore_report_all_errors_chronology]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 
@@ -39955,7 +42157,7 @@ CREATE PROC dbo.[eventstore_report_all_errors_heatmap]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = ISNULL(NULLIF(@TimeZone, N''), N'UTC');
@@ -40514,7 +42716,7 @@ CREATE PROC dbo.[eventstore_report_all_errors_problems]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 	SET @GroupBy = UPPER(ISNULL(NULLIF(@GroupBy, N''), N'ERRROR'));
@@ -41027,7 +43229,7 @@ CREATE PROC dbo.[eventstore_report_blocked_processes_chronology]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TimeZone = NULLIF(@TimeZone, N'');
 
@@ -41680,7 +43882,7 @@ CREATE PROC dbo.[eventstore_report_blocked_processes_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
@@ -42438,7 +44640,7 @@ CREATE PROC dbo.[eventstore_report_deadlock_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExcludeSqlAgentJobs = ISNULL(@ExcludeSqlAgentJobs, 1);
 	SET @ExcludedStatements = NULLIF(@ExcludedStatements, N'');
@@ -42655,7 +44857,7 @@ CREATE PROC dbo.[eventstore_report_large_sql_chronology]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
@@ -43048,7 +45250,7 @@ CREATE PROC dbo.[eventstore_report_large_sql_counts]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Granularity = ISNULL(NULLIF(@Granularity, N''), N'HOUR');
 	SET @TimeZone = NULLIF(@TimeZone, N'');
@@ -43457,7 +45659,7 @@ CREATE PROC dbo.[check_database_consistency]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF @MaxDOP <= 0 SET @MaxDOP = NULL;
 
@@ -43665,7 +45867,7 @@ CREATE PROC dbo.[clear_stale_jobsactivity]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	SET @ThresholdVectorForStaleJobActivities = ISNULL(NULLIF(@ThresholdVectorForStaleJobActivities, N''), N'1 month');
 	
 	DECLARE @retentionCutoff datetime;
@@ -43728,7 +45930,7 @@ CREATE PROC dbo.list_logfile_sizes
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -43935,7 +46137,7 @@ CREATE PROC dbo.shrink_logfiles
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	-- Validate Dependencies:
@@ -44380,7 +46582,7 @@ CREATE PROC dbo.[normalize_text]
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- effectively, just putting a wrapper around sp_get_query_template - to account for the scenarios/situations where it throws an error or has problems.
 
@@ -44481,7 +46683,7 @@ CREATE PROC dbo.extract_statement
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @name sysname, @is_encrypted bit;
 	DECLARE @sql nvarchar(MAX) = N'USE [{TargetDatabase}];
@@ -44545,7 +46747,7 @@ CREATE PROC dbo.[extract_code_lines]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetModule = NULLIF(@TargetModule, N'');
 	SET @TargetLine = ISNULL(@TargetLine, -1);
@@ -44646,7 +46848,7 @@ RETURNS bit
 	--WITH RETURNS NULL ON NULL INPUT  -- note, this WORKS ... but... uh, busts functionality cuz we don't want NULL if empty, we want 1... 
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -44678,7 +46880,7 @@ CREATE PROC dbo.[refresh_code]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @Mode = ISNULL(NULLIF(@Mode, N''), N'VIEWS_AND_MODULES');
 
@@ -44802,7 +47004,7 @@ RETURNS sysname
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -44850,7 +47052,7 @@ RETURNS sysname
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -44891,7 +47093,7 @@ CREATE PROC dbo.[count_rows]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @normalizedName sysname; 
 	DECLARE @targetObjectID int; 
@@ -44958,7 +47160,7 @@ CREATE PROC dbo.[dump_module_code]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	CREATE TABLE #matches (
 		[row_id] int IDENTITY(1,1) NOT NULL,
@@ -45191,7 +47393,7 @@ CREATE PROC dbo.[kill_blocking_processes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	/*---------------------------------------------------------------------------------------------------------------------------------------------------
 	-- Parameter Defaults / Validation:
@@ -45763,7 +47965,7 @@ Capture_Snapshot:
 	VALUES
 	(
 		GETDATE(),	-- timestamp
-		N'blocking_processes', 
+		N'BLOCKING_PROCESSES', 
 		@PrintOnly, 
 		@count, 
 		@killCount, 
@@ -45802,1742 +48004,7 @@ SendMessage:
 		@crlf + @crlf + @tab + N']' +
 		@crlf + @crlf
 	FROM 
-		dbo.[view_killed_blocking_processes]()
-	WHERE 
-		[instance_id] = @snapshotId;
-
-	DECLARE @subject sysname; 
-	SET @subject = ISNULL(@EmailSubjectPrefix, N'') + N' - Blocking Processes were Detected';
-	SET @message = N'The following blocking processes were detected on ' + @@SERVERNAME + N' and processed as follows: ' + @crlf + @crlf;
-	SET @message = @message + @body; 
-	SET @message = @message + @crlf + @crlf; 
-	SET @message = @message + N'For more details run the following: { SELECT * FROM admindb.dbo.[view_killed_blocking_processes]() WHERE [instance_id] = ' + CAST(@snapshotId AS sysname) + N'; }.';
-
-	IF @PrintOnly = 1 BEGIN 
-		PRINT N'SUBJECT: ' + @subject; 
-		PRINT N'BODY: ' + @message;
-	  END; 
-	ELSE BEGIN 
-		EXEC [msdb]..[sp_notify_operator] 
-			@profile_name = @MailProfileName,
-			@name = @OperatorName, 
-			@subject = @subject, 
-			@body = @message;	
-	END;
-
-	RETURN 0;
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.kill_connections_by_statement','P') IS NOT NULL
-	DROP PROC dbo.[kill_connections_by_statement];
-GO
-
-CREATE PROC dbo.[kill_connections_by_statement]
-	@StatementPattern						nvarchar(MAX), 
-	@CpuMillisecondsThreshold				int					= 2200,
-	@KillableApplicationNames				nvarchar(MAX)		= NULL,			
-	@KillableHostNames						nvarchar(MAX)		= NULL,			
-	@KillableLogins							nvarchar(MAX)		= NULL,
-	@KillableDatabases						nvarchar(MAX)		= NULL,
-	@ExcludeBackupsAndRestores				bit					= 1,			
-	@ExcludeSqlServerAgentJobs				bit					= 1,			
-	@ExcludedApplicationNames				nvarchar(MAX)		= NULL,		
-	@ExcludedHostNames						nvarchar(MAX)		= NULL, 
-	@ExcludedLogins							nvarchar(MAX)		= NULL,
-	@ExcludedDatabases						nvarchar(MAX)		= NULL,
-	@PrintOnly								bit					= 0	
-AS
-    SET NOCOUNT ON; 
-
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
-	
-	SET @CpuMillisecondsThreshold = ISNULL(@CpuMillisecondsThreshold, 2200);
-
-	SET @ExcludeBackupsAndRestores = ISNULL(@ExcludeBackupsAndRestores, 1);
-	SET @ExcludeSqlServerAgentJobs = ISNULL(@ExcludeSqlServerAgentJobs, 1);
-	SET @ExcludedApplicationNames = NULLIF(@ExcludedApplicationNames, N'');
-	SET @ExcludedDatabases = NULLIF(@ExcludedDatabases, N'');
-	SET @ExcludedHostNames = NULLIF(@ExcludedHostNames, N'');
-	SET @ExcludedLogins = NULLIF(@ExcludedLogins, N'');
-
-	SET @KillableApplicationNames = NULLIF(@KillableApplicationNames, N'');
-	SET @KillableHostNames = NULLIF(@KillableHostNames, N'');
-	SET @KillableLogins = NULLIF(@KillableLogins, N'');
-	SET @KillableDatabases = NULLIF(@KillableDatabases, N'');
-
-	CREATE TABLE [#results] ( 
-		[session_id] smallint NOT NULL,
-		[database] sysname NOT NULL,
-		[elapsed_milliseconds] int NOT NULL,
-		[status] nvarchar(30) NOT NULL,
-		[command] nvarchar(32) NOT NULL,
-		[program_name] sysname NULL,
-		[login_name] sysname NOT NULL,
-		[host_name] sysname NULL,
-		[statement] nvarchar(max) NULL
-	) 
-
-	INSERT INTO [#results] (
-		[session_id],
-		[database],
-		[elapsed_milliseconds],
-		[status],
-		[command],
-		[program_name],
-		[login_name],
-		[host_name],
-		[statement]
-	)
-	SELECT 
-		r.[session_id], 
-		DB_NAME(r.[database_id]) [database], 
-		r.[total_elapsed_time] [elapsed_milliseconds], 
-		r.[status], 
-		r.[command], 
-		s.[program_name], 
-		s.[login_name], 
-		s.[host_name], 
-		t.[text] [statement]
-	FROM 
-		sys.dm_exec_requests r
-		INNER JOIN sys.[dm_exec_sessions] s ON r.[session_id] = s.[session_id]
-		OUTER APPLY sys.[dm_exec_sql_text](r.[sql_handle]) t
-	WHERE 
-		[r].[session_id] > 50
-		AND s.[is_user_process] = 1
-		AND r.[session_id] <> @@SPID
-		AND r.[total_elapsed_time] >= @CpuMillisecondsThreshold;
-
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Normalize % within @StatementPattern - i.e., LEAVE any inside... but strip start/end ... then ADD % and % to start and end... 
-	-----------------------------------------------------------------------------------------------------------------------------------------------------
-	DECLARE @normalizedStatementPattern nvarchar(MAX) = @StatementPattern;
-	IF LEFT(@normalizedStatementPattern, 1) = N'%'
-		SET @normalizedStatementPattern = RIGHT(@normalizedStatementPattern, LEN(@normalizedStatementPattern) -1);
-
-	IF RIGHT(@normalizedStatementPattern, 1) = N'%'
-		SET @normalizedStatementPattern = LEFT(@normalizedStatementPattern, LEN(@normalizedStatementPattern) -1);
-
-	SET @normalizedStatementPattern = N'%' + @normalizedStatementPattern + N'%';
-	
-	PRINT N'Normalized @StatementPattern used for matching target statements to kill: [' + @normalizedStatementPattern + N']';
-
-	DELETE FROM [#results] WHERE [statement] NOT LIKE @normalizedStatementPattern;
-
-
-	IF EXISTS (SELECT NULL FROM [#results]) BEGIN 
-
-		DELETE FROM [#results] WHERE [session_id] IS NULL; -- no idea why/how this one happens... but it occasionally does. 
-
-		-----------------------------------------------------------------------------------------------------------------------------------------------------
-		-- Process Explicit Exclusions (i.e., white-listed - or un-KILL-able) operations:
-		-----------------------------------------------------------------------------------------------------------------------------------------------------
-		IF @ExcludeBackupsAndRestores = 1 BEGIN 
-			DELETE FROM [#results]
-			WHERE 
-				[command] LIKE N'%BACKUP%'
-				OR 
-				[command] LIKE N'%RESTORE%'
-		END;
-
-
-
-		IF NOT EXISTS (SELECT NULL FROM [#results]) BEGIN
-			RETURN 0; -- short-circuit (i.e., nothing to do or report).
-		END;
-
-		DECLARE @excludedApps table (
-			row_id int IDENTITY(1,1) NOT NULL, 
-			[app_name] sysname NOT NULL 
-		);
-
-		IF @ExcludeSqlServerAgentJobs = 1 BEGIN 
-			INSERT INTO @excludedApps ([app_name])
-			VALUES	(N'SQLAgent - TSQL JobStep%');
-		END;
-
-		IF @ExcludedApplicationNames IS NOT NULL BEGIN 
-			INSERT INTO @excludedApps ([app_name])
-			SELECT [result] FROM dbo.[split_string](@ExcludedApplicationNames, N', ', 1);
-		END;
-
-		IF EXISTS (SELECT NULL FROM @excludedApps) BEGIN 
-			DELETE b
-			FROM 
-				[#results] b 
-				INNER JOIN @excludedApps x ON b.[program_name] LIKE x.[app_name];
-		END;
-
-		IF @ExcludedHostNames IS NOT NULL BEGIN 
-			DELETE r 
-			FROM 
-				[#results] r 
-				INNER JOIN (SELECT [result] FROM dbo.[split_string](@ExcludedHostNames, N', ', 1)) x ON r.[host_name] LIKE x.[result];
-		END;
-
-		IF @ExcludedLogins IS NOT NULL BEGIN 
-			DELETE r 
-			FROM 
-				[#results] r 
-				INNER JOIN (SELECT [result] FROM dbo.[split_string](@ExcludedLogins, N', ', 1)) x ON r.[login_name] LIKE x.[result];
-		END;
-
-		IF @ExcludedDatabases IS NOT NULL BEGIN 
-			DELETE r
-			FROM 
-				[#results] r
-				INNER JOIN (SELECT [result] FROM dbo.[split_string](@ExcludedDatabases, N', ', 1)) x ON r.[database] LIKE x.[result];
-		END;
-
-
-		-- Don't attempt to KILL anything already in a kill state:
-		DELETE FROM [#results] 
-		WHERE 
-			[command] = N'KILLED/ROLLBACK';
-
-		-----------------------------------------------------------------------------------------------------------------------------------------------------
-		-- Remove Operations that DON'T match applicable INCLUSIONS:
-		-----------------------------------------------------------------------------------------------------------------------------------------------------
-		IF @KillableApplicationNames IS NOT NULL BEGIN 
-			DECLARE @killableApps table (
-				[row_id] int IDENTITY(1,1) NOT NULL, 
-				[app_name] sysname NOT NULL
-			); 
-
-			INSERT INTO @killableApps ([app_name])
-			SELECT [result] FROM dbo.[split_string](@KillableApplicationNames, N', ', 1);
-		
-			DELETE x 
-			FROM 
-				[#results] x  
-				INNER JOIN @killableApps t ON x.[program_name] NOT LIKE t.[app_name];
-		END;
-
-		IF @KillableHostNames IS NOT NULL BEGIN 
-			DECLARE @killableHosts table (
-				[row_id] int IDENTITY(1,1) NOT NULL, 
-				[host_name] sysname NOT NULL
-			); 
-
-			INSERT INTO @killableHosts ([host_name])
-			SELECT [result] FROM dbo.[split_string](@KillableHostNames, N', ', 1);
-
-			DELETE x 
-			FROM 
-				[#results] x 
-				INNER JOIN @killableHosts t ON [x].[host_name] NOT LIKE [t].[host_name];
-		END;
-
-		IF @KillableLogins IS NOT NULL BEGIN 
-			DECLARE @killable_Logins table (
-				[row_id] int IDENTITY(1,1) NOT NULL, 
-				[login_name] sysname NOT NULL
-			); 
-
-			INSERT INTO @killable_Logins ([login_name])
-			SELECT [result] FROM dbo.[split_string](@KillableLogins, N', ', 1);
-
-			DELETE x 
-			FROM 
-				[#results] x 
-				INNER JOIN @killable_Logins t ON [x].[login_name] NOT LIKE [t].[login_name];
-		END;
-
-		IF @KillableDatabases IS NOT NULL BEGIN 
-			DECLARE @killable_databases table (
-				[row_id] int IDENTITY(1,1) NOT NULL, 
-				[database] sysname NOT NULL
-			); 
-
-			INSERT INTO @killable_databases ([database])
-			SELECT [result] FROM dbo.[split_string](@KillableDatabases, N', ', 1);
-
-			DELETE x 
-			FROM 
-				[#results] x 
-				INNER JOIN @killable_databases d ON x.[database] NOT LIKE d.[database];
-		END;
-
-		-----------------------------------------------------------------------------------------------------------------------------------------------------
-		-- KILL whatever is left:
-		-----------------------------------------------------------------------------------------------------------------------------------------------------
-		IF EXISTS (SELECT NULL FROM [#results]) BEGIN 
-			DECLARE @sessionId int, @elapsed int;
-			DECLARE @command sysname;
-			DECLARE @statement nvarchar(MAX);
-			DECLARE @errorId int, @errorMessage nvarchar(MAX);
-
-			DECLARE @template nvarchar(MAX) = N'-- Elapsed (ms): {ms}. Command: {command}. 
---		Statement: {statement}
-KILL {id};
-' ;
-			DECLARE @sql nvarchar(MAX);
-
-			PRINT N'';
-			PRINT N'';
-
-			DECLARE [cursorName] CURSOR LOCAL FAST_FORWARD FOR 
-			SELECT 
-				session_id, 
-				[command], 
-				[statement], 
-				[elapsed_milliseconds]
-			FROM 
-				[#results]
-			ORDER BY 
-				[elapsed_milliseconds] DESC;			
-			
-			OPEN [cursorName];
-			FETCH NEXT FROM [cursorName] INTO @sessionId, @command, @statement, @elapsed;
-			
-			WHILE @@FETCH_STATUS = 0 BEGIN
-	
-				IF LEN(@statement) > 140
-					SET @statement = LEFT(@statement, 140) + N' ... ';
-				
-				SET @statement = REPLACE(@statement, NCHAR(13) + NCHAR(10), N' ');
-
-				SET @sql = REPLACE(@template, N'{id}', @sessionId);
-				SET @sql = REPLACE(@sql, N'{command}', @command);
-				SET @sql = REPLACE(@sql, N'{statement}', @statement);
-				SET @sql = REPLACE(@sql, N'{ms}', FORMAT(@elapsed, N'N0'));
-				
-				IF @PrintOnly = 1 BEGIN 
-					PRINT @sql;
-				  END; 
-				ELSE BEGIN 
-					BEGIN TRY 
-						EXEC sys.[sp_executesql] 
-							@sql;
-
-						PRINT N'KILL executed against session_id: ' + CAST(@sessionId AS sysname);
-					END TRY 
-					BEGIN CATCH 
-						SELECT @errorId = ERROR_NUMBER(), @errorMessage = ERROR_MESSAGE();
-
-						PRINT N'Error Attempting KILL against session_id: ' + CAST(@sessionId AS sysname) + N'. Error ' + CAST(@errorId AS sysname) + N' - ' + @errorMessage;
-					END CATCH;
-				END;
-			
-				FETCH NEXT FROM [cursorName] INTO @sessionId, @command, @statement, @elapsed;
-			END;
-			
-			CLOSE [cursorName];
-			DEALLOCATE [cursorName];
-
-
-
-
-		  END;
-		ELSE BEGIN
-			PRINT 'Matches excluded or white-listed.';
-		END;
-
-	  END; 
-	ELSE BEGIN 
-		PRINT 'No Matches.';
-	END
-	
-	RETURN 0; 
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-
-IF OBJECT_ID('dbo.kill_connections_by_hostname','P') IS NOT NULL
-	DROP PROC dbo.kill_connections_by_hostname;
-GO
-
-CREATE PROC dbo.kill_connections_by_hostname
-	@HostName				sysname, 
-	@Interval				sysname			= '3 seconds', 
-	@MaxIterations			int				= 5, 
-
--- TODO: Add error-handling AND reporting... along with options to 'run silent' and so on... 
---		as in, there are going to be some cases where we automate this, and it should raise errors if it can't kill all spids owned by @HostName... 
---			and, at other times... we won't necessarily care... (and just want the tool to do 'ad hoc' kills of a single host-name - without having to have all of the 'plumbing' needed for Mail Profiles, Operators, Etc... 
-	@PrintOnly				int				= 0
-AS 
-	SET NOCOUNT ON; 
-
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
-
-	-----------------------------------------------------------------------------
-	-- Validate Inputs:
-	IF UPPER(HOST_NAME()) = UPPER(@HostName) BEGIN 
-		RAISERROR('Invalid HostName - You can''t KILL spids owned by the host running this stored procedure.', 16, 1);
-		RETURN -1;
-	END;
-
-	DECLARE @waitFor sysname
-	DECLARE @error nvarchar(MAX);
-
-	EXEC dbo.[translate_vector_delay]
-	    @Vector = @Interval,
-	    @ParameterName = N'@Interval',
-	    @Output = @waitFor OUTPUT,
-	    @Error = @error OUTPUT;
-	
-	IF @error IS NOT NULL BEGIN 
-		RAISERROR(@error, 16, 1);
-		RETURN -10;
-	END;
-
-	-----------------------------------------------------------------------------
-	-- Processing: 	
-	DECLARE @statement nvarchar(MAX) = N'';
-	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
-
-	DECLARE @currentIteration int = 0; 
-	WHILE (@currentIteration < @MaxIterations) BEGIN
-		
-		SET @statement = N''; 
-
-		SELECT 
-			@statement = @statement + N'KILL ' + CAST(session_id AS sysname) + N';'  + @crlf
-		FROM 
-			[master].sys.[dm_exec_sessions] 
-		WHERE 
-			[host_name] = @HostName;
-		
-		IF @PrintOnly = 1 BEGIN 
-			PRINT N'--------------------------------------';
-			PRINT @statement; 
-			PRINT @crlf;
-			PRINT N'WAITFOR DELAY ' + @waitFor; 
-			PRINT @crlf;
-			PRINT @crlf;
-		  END; 
-		ELSE BEGIN 
-			EXEC (@statement);
-			WAITFOR DELAY @waitFor;
-		END;
-
-		SET @currentIteration += 1;
-	END; 
-
-	-- then... report on any problems/errors.
-
-	RETURN 0;
-GO	
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.[kill_blocking_processes]','P') IS NOT NULL
-	DROP PROC dbo.[kill_blocking_processes];
-GO
-
-CREATE PROC dbo.[kill_blocking_processes]
-	@BlockingCountThreshold					int					= 1,					-- CAN, obviously, be set higher, but 1x blocked spid can be a major problem.... 
-	@AlertThreshold							sysname				= NULL, 
-	@KillThreshold							sysname				= N'90 seconds',		-- What about adding? {DISABLED} | {INFINITE}
-	@ExcludeBackupsAndRestores				bit					= 1,					-- ALL exclude/allow directives apply to ROOT blocker only.
-	@ExcludeSqlServerAgentJobs				bit					= 1,	
-	@Databases								nvarchar(MAX)		= NULL,
-	@Applications							nvarchar(MAX)		= NULL, 
-	@Principals								nvarchar(MAX)		= NULL, 
-	@Hosts									nvarchar(MAX)		= NULL, 
-	@IPs									nvarchar(MAX)		= NULL, 
-	@Statements								nvarchar(MAX)		= NULL,
-	@KillType								sysname				= N'KILL',			-- KILL | CAPTURE_ONLY
-	@SendAlerts								bit					= 1,
-	@OperatorName							sysname				= N'Alerts',
-	@MailProfileName						sysname				= N'General',
-	@EmailSubjectPrefix						nvarchar(50)		= N'[Blocked Processes]',
-	@PrintOnly								bit					= 0
-AS
-    SET NOCOUNT ON; 
-
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
-	
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Parameter Defaults / Validation:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	SET @BlockingCountThreshold = ISNULL(@BlockingCountThreshold, 2);
-	
-	IF @AlertThreshold IS NULL
-		SET @KillThreshold = ISNULL(NULLIF(@KillThreshold, N''), N'90 seconds');	
-	
-	SET @AlertThreshold = NULLIF(@AlertThreshold, N'');
-	SET @ExcludeBackupsAndRestores = ISNULL(@ExcludeBackupsAndRestores, 1);
-	SET @ExcludeSqlServerAgentJobs = ISNULL(@ExcludeSqlServerAgentJobs, 1);
-
-	SET @Databases = NULLIF(@Databases, N'');
-	SET @Applications = NULLIF(@Applications, N'');
-	SET @Principals = NULLIF(@Principals, N'');
-	SET @Hosts = NULLIF(@Hosts, N'');
-	SET @IPs = NULLIF(@IPs, N'');
-	SET @Statements = NULLIF(@Statements, N'');
-
-	SET @KillType = UPPER(ISNULL(NULLIF(@KillType, N''), N'KILL'));
-	SET @SendAlerts = ISNULL(@SendAlerts, 1);
-
-	IF @KillType NOT IN (N'KILL', N'CAPTURE_ONLY') BEGIN 
-		RAISERROR(N'Invalid @KillType Specified: [%s]. Allowed Values are { KILL | CAPTURE_ONLY }.', 16, 1);
-		RETURN -10;
-	END;
-
-	DECLARE @alertThresholdMilliseconds bigint = -1, @killThresholdMilliseconds bigint = -1, @vectorError nvarchar(MAX);
-
-	IF @AlertThreshold IS NOT NULL BEGIN 
-		EXEC admindb.dbo.[translate_vector]
-			@Vector = @AlertThreshold,
-			@ValidationParameterName = N'@AlertThreshold',
-			@Output = @alertThresholdMilliseconds OUTPUT,
-			@Error = @vectorError OUTPUT; 
-
-		IF @vectorError IS NOT NULL BEGIN
-			RAISERROR(@vectorError, 16, 1);
-			RETURN -10;  
-		END;
-	END;
-
-	IF @KillThreshold IS NOT NULL BEGIN 
-		SET @vectorError = NULL;
-		EXEC admindb.dbo.[translate_vector]
-			@Vector = @KillThreshold,
-			@ValidationParameterName = N'@KillThreshold',
-			@Output = @killThresholdMilliseconds OUTPUT,
-			@Error = @vectorError OUTPUT; 
-
-		IF @vectorError IS NOT NULL BEGIN
-			RAISERROR(@vectorError, 16, 1);
-			RETURN -10;  
-		END;
-	END;
-
-	IF @killThresholdMilliseconds > 0 BEGIN
-		IF @alertThresholdMilliseconds > @killThresholdMilliseconds BEGIN 
-			RAISERROR(N'@AlertThreshold my NOT be greater than @KillThreshold.', 16, 1);
-			RETURN -11;
-		END;
-	END;
-
-	IF @alertThresholdMilliseconds < 1 AND @killThresholdMilliseconds < 1 BEGIN
-		RAISERROR(N'@AlertThreshold or @KillThreshold must be set - both can NOT be NULL (or zero).', 16, 1);
-		RETURN -12;
-	END;
-
-	DECLARE @action sysname = N'';
-	IF @alertThresholdMilliseconds > 0 SET @action = @action + N'ALERT';
-	IF @killThresholdMilliseconds > 0 SET @action = @action + N'KILL';
-
-	DECLARE @minThreshold bigint = (SELECT MIN(n) FROM (VALUES(@alertThresholdMilliseconds), (@killThresholdMilliseconds)) x(n) WHERE n > 0);
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Check for ANY Blocking:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	CREATE TABLE #snapshot (
-		[database] sysname NULL,
-		[blocking_chain] nvarchar(400) NULL,
-		[blocking_session_id] nvarchar(4000) NULL,
-		[session_id] nvarchar(4000) NULL,
-		[command] sysname NULL,
-		[status] sysname NOT NULL,
-		[statement] nvarchar(MAX) NULL,
-		[wait_time] int NULL,
-		[wait_type] sysname NULL,
-		[wait_resource] nvarchar(256) NOT NULL,
-		[is_system] bit NOT NULL,
-		[duration] bigint NULL,
-		[transaction_state] varchar(11) NOT NULL,
-		[isolation_level] varchar(14) NULL,
-		[transaction_type] varchar(8) NOT NULL,
-		[context] xml NULL
-	);
-
-	INSERT INTO [#snapshot] (
-		[database],
-		[blocking_chain],
-		[blocking_session_id],
-		[session_id],
-		[command],
-		[status],
-		[statement],
-		[wait_time],
-		[wait_type],
-		[wait_resource],
-		[duration],
-		[is_system],
-		[transaction_state],
-		[isolation_level],
-		[transaction_type],
-		[context]
-	)
-	EXEC dbo.[list_collisions] 
-		@TargetDatabases = N'{ALL}', 
-		@IncludePlans = 0, 
-		@IncludeContext = 1, 
-		@UseInputBuffer = 1, 
-		@FormatTimeSpans = 0, 
-		@ExcludeFullTextCollisions = 0;
-
-	DELETE FROM [#snapshot] WHERE [session_id] IS NULL; -- no idea why/how this one happens... but it occasionally does. 
-
-	IF NOT EXISTS (SELECT NULL FROM [#snapshot]) BEGIN
-		RETURN 0; -- short-circuit (i.e., nothing to do or report).
-	END;
-
-	DECLARE @maxWait int = (SELECT MAX(wait_time) FROM [#snapshot] WHERE [wait_time] IS NOT NULL);
-	IF @maxWait < @minThreshold BEGIN 
-		RETURN 0;
-	END;
-
-	DECLARE @message nvarchar(MAX);
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Shred / Extract Details on ANY Blocking > @minThreshold:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	BEGIN TRY 
-		WITH shredded AS ( 
-			SELECT 
-				[database],
-				CAST([session_id] AS int) [session_id], 
-				CAST((REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' ' + CHAR(187) + N' ', N'')) AS int) [blocker],
-				[blocking_chain],
-				[command],
-				[status],
-				[statement],
-				[wait_time],
-				[wait_type],
-				[wait_resource],
-				[duration],
-				[is_system],
-				[transaction_state],
-				[isolation_level],
-				[transaction_type],
-				[context].value(N'(/context/program_name)[1]', N'sysname') [program_name],
-				[context].value(N'(/context/host_name)[1]', N'sysname') [host_name], 
-				[context].value(N'(/context/ip_address)[1]', N'sysname') [ip_address],
-				[context].value(N'(/context/login_name)[1]', N'sysname') [login_name]
-			FROM 
-				[#snapshot]
-		) 
-
-		SELECT 
-			[x].[database],
-			[x].[session_id],
-			[x].[blocking_chain],
-			(SELECT COUNT(*) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) [blocked_count],
-			ISNULL([x].[command], N'<orphaned>') [command],
-			[x].[status],
-			[x].[statement],
-			[x].[wait_type], 
-			[x].[wait_resource],
-			[x].[duration],
-			[x].[is_system],
-			CASE
-				WHEN [x].[transaction_state] = N'#Unknown#' THEN N'<orphaned>' 
-				ELSE [x].[transaction_state]
-			END [transaction_state],
-			[x].[isolation_level],
-			[x].[transaction_type],
-			[x].[program_name] [application], 
-			[x].[host_name] [host], 
-			[x].[ip_address] [ip],
-			[x].[login_name] [principal], 
-			CAST(NULL AS sysname) [action], 
-			CAST(NULL AS nvarchar(MAX)) [outcome]
-		INTO 
-			[#leads]
-		FROM 
-			[shredded] x
-		WHERE 
-			[x].[blocker] = 0
-			AND (SELECT MAX(wait_time) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) > (@minThreshold);
-	END TRY 
-	BEGIN CATCH 
-		SELECT @message = N'Exception Identifying Blockers: [' + ERROR_MESSAGE() + N'] on line [' + CAST(ERROR_LINE() AS sysname) + N'].';
-		GOTO SendMessage;
-	END CATCH;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Predication / Filters:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @Databases IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_databases ([row_id] int IDENTITY(1,1) NOT NULL, [database] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [database]));
-	END;
-	
-	IF @Applications IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
-	END; 
-
-	IF @Hosts IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
-	END;
-
-	IF @IPs IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_ips ([row_id] int IDENTITY(1,1) NOT NULL, [ip] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [ip]));		
-	END;
-
-	IF @Principals IS NOT NULL BEGIN
-		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
-	END;
-
-	IF @Statements IS NOT NULL BEGIN
-		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
-	END;
-
-	DECLARE @joins nvarchar(MAX), @filters nvarchar(MAX);
-	EXEC dbo.[core_predicates]
-		@Databases = @Databases,
-		@Applications = @Applications,
-		@Hosts = @Hosts,
-		@IPs = @IPs,
-		@Principals = @Principals,
-		@Statements = @Statements,
-		@JoinPredicates = @joins OUTPUT,
-		@FilterPredicates = @filters OUTPUT;
-
-	CREATE TABLE [#actionable](
-		[row_id] int IDENTITY(1,1) NOT NULL,
-		[database] sysname NULL,
-		[session_id] int NULL,
-		[blocked_count] int NULL,
-		[command] sysname NOT NULL,
-		[status] sysname NOT NULL,
-		[statement] nvarchar(MAX) NULL,
-		[wait_type] sysname NULL,
-		[wait_resource] nvarchar(256) NULL,
-		[duration] sysname NULL,
-		[is_system] [bit] NOT NULL,
-		[transaction_state] nvarchar(11) NOT NULL,
-		[isolation_level] varchar(14) NULL,
-		[transaction_type] varchar(8) NOT NULL,
-		[application] sysname NULL,
-		[host] sysname NULL,
-		[ip] sysname NULL,
-		[principal] sysname NULL,
-		[action] sysname NULL,
-		[outcome] nvarchar(MAX) NULL
-	);
-
-	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
-	DECLARE @tab nchar(1) = NCHAR(9);
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
-	[x].[database],
-	[x].[session_id],
-	[x].[blocked_count],
-	[x].[command],
-	[x].[status],
-	[x].[statement],
-	[x].[wait_type],
-	[x].[wait_resource],
-	[x].[duration],
-	[x].[is_system],
-	[x].[transaction_state],
-	[x].[isolation_level],
-	[x].[transaction_type],
-	[x].[application],
-	[x].[host],
-	[x].[ip],
-	[x].[principal] 
-FROM 
-	[#leads] [x]{joins}
-WHERE
-	1 = 1{filters}
-ORDER BY 
-	[x].[duration] DESC; ';
-
-	SET @sql = REPLACE(@sql, N'{joins}', @joins);
-	SET @sql = REPLACE(@sql, N'{filters}', @filters);
-
-	INSERT INTO [#actionable]
-	(
-		[database],
-		[session_id],
-		[blocked_count],
-		[command],
-		[status],
-		[statement],
-		[wait_type],
-		[wait_resource],
-		[duration],
-		[is_system],
-		[transaction_state],
-		[isolation_level],
-		[transaction_type],
-		[application],
-		[host],
-		[ip],
-		[principal]
-	)
-	EXEC sys.sp_executesql 
-		@sql;
-
-	UPDATE [l] 
-	SET 
-		[l].[action] = N'REMOVED_BY_STANDARD_PREDICATES'
-	FROM 
-		[#leads] [l] 
-		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]
-	WHERE
-		[x].[session_id] IS NULL;		
-	
-	DELETE FROM [#actionable] 
-	WHERE 
-		blocked_count < @BlockingCountThreshold;
-
-	IF @ExcludeSqlServerAgentJobs = 1 BEGIN 
-		DELETE FROM [#actionable] WHERE [application] LIKE N'SQLAgent - TSQL JobStep%';
-	END;
-
-	IF @ExcludeBackupsAndRestores = 1 BEGIN 
-		DELETE FROM [#actionable] 
-		WHERE 
-			[command] LIKE N'%BACKUP%'
-			OR 
-			[command] LIKE N'%RESTORE%'
-			OR 
-			[command] LIKE N'%DBCC%';
-	END;
-
-	UPDATE [l] 
-	SET 
-		[l].[action] = N'REMOVED_BY_CUSTOM_PREDICATES'
-	FROM 
-		[#leads] [l] 
-		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]
-	WHERE
-		[x].[session_id] IS NULL;
-
-	DELETE FROM [#actionable] 
-	WHERE 
-		[command] = N'KILLED/ROLLBACK';
-
-	UPDATE [l] 
-	SET 
-		[l].[action] = N'ALREADY_IN_KILL_STATE'
-	FROM 
-		[#leads] [l] 
-		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]
-	WHERE
-		[x].[session_id] IS NULL;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Process any remaining results:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @exit bit = 0;
-	IF NOT EXISTS (SELECT NULL FROM [#actionable]) BEGIN 
-		SET @exit = 1;
-		GOTO Capture_Snapshot;
-	END;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Mark Actionable Rows for Processing:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @action LIKE N'%KILL%' BEGIN
-		UPDATE [#actionable]
-		SET 
-			[action] = N'KILL'
-		WHERE
-			[duration] > @killThresholdMilliseconds;
-	END;
-
-	IF @action LIKE N'%ALERT%' BEGIN
-		UPDATE [#actionable]
-		SET 
-			[action] = N'ALERT'
-		WHERE 
-			[action] IS NULL
-			AND [duration] > @alertThresholdMilliseconds;
-	END;
-
-	UPDATE [#actionable] 
-	SET 
-		[action] = N'BLOCKER'
-	WHERE 
-		[action] IS NULL; 
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- KILL killable SPIDS:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF EXISTS (SELECT NULL FROM [#actionable] WHERE [action] = N'KILL') BEGIN 
-		DECLARE @rowId int, @sessionId int, @isSystem bit;
-		DECLARE @command sysname;	
-
-		DECLARE @errorMessage nvarchar(MAX), @errorLine int;
-	
-		DECLARE [killer] CURSOR LOCAL FAST_FORWARD FOR 
-		SELECT 
-			[row_id],
-			[session_id], 
-			[is_system]
-		FROM 
-			[#actionable]
-		WHERE 
-			[action] = N'KILL'
-		ORDER BY 
-			[duration] DESC;
-	
-		OPEN [killer];
-		FETCH NEXT FROM [killer]INTO @rowId, @sessionId, @isSystem;
-	
-		WHILE @@FETCH_STATUS = 0 BEGIN
-		
-			IF @isSystem = 0 OR @KillType <> N'KILL' BEGIN 
-				SET @command = N'KILL ' + CAST(@sessionId AS sysname) + N';';
-		
-				IF @PrintOnly = 1 BEGIN
-					PRINT @command;
-
-					UPDATE [#actionable] SET [outcome] = N'@PrintOnly = 1.' WHERE [row_id] = @rowId;
-				  END;
-				ELSE BEGIN
-					BEGIN TRY
-						EXEC(@command);
-
-						UPDATE [#actionable] SET [outcome] = N'KILLED.' WHERE [row_id] = @rowId;
-					END TRY 
-					BEGIN CATCH 
-						SELECT 
-						@errorLine = ERROR_LINE(), 
-						@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
-
-						UPDATE [#actionable] SET [outcome] = @errorMessage WHERE [row_id] = @rowId;
-
-					END CATCH;
-				END;
-			  END;
-			ELSE BEGIN 
-				IF @isSystem = 1 BEGIN 
-					UPDATE [#actionable] SET [outcome] = N'SYSTEM-PROCESS - COULD NOT KILL.' WHERE [row_id] = @rowId;
-				  END;
-				ELSE BEGIN 
-					UPDATE [#actionable] SET [outcome] = N'@KillType = CAPTURE_ONLY.' WHERE [row_id] = @rowId;
-				END;
-			END;
-
-			FETCH NEXT FROM [killer]INTO @rowId, @sessionId, @isSystem;
-		END;
-	
-		CLOSE [killer];
-		DEALLOCATE [killer];
-	END;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Snapshot:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-Capture_Snapshot:
-	DECLARE @snapshot xml, @snapshotId int;
-	DECLARE @parameters xml;
-
-	SELECT @parameters = (SELECT 
-		@BlockingCountThreshold [@BlockingCountThreshold],
-		@AlertThreshold [@AlertThreshold],
-		@KillThreshold [@KillThreshold],
-		@ExcludeBackupsAndRestores [@ExcludeBackupsAndRestores],
-		@ExcludeSqlServerAgentJobs [@ExcludeSqlServerAgentJobs],
-		@Databases [@Databases],
-		@Applications [@Applications],
-		@Principals [@Principals],
-		@Hosts [@Hosts],
-		@IPs [@IPs],
-		@Statements [@Statements],
-		@KillType [@KillType],
-		@SendAlerts [@SendAlerts],
-		@OperatorName [@OperatorName],
-		@MailProfileName [@MailProfileName],
-		@EmailSubjectPrefix [@EmailSubjectPrefix],
-		@PrintOnly [@PrintOnly]
-	FOR 
-		XML PATH(N'values'), ROOT(N'parameter'), TYPE);
-
-	WITH shredded AS ( 
-		SELECT 
-			[database],
-			CAST([session_id] AS int) [session_id], 
-			CAST((REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' ' + CHAR(187) + N' ', N'')) AS int) [blocker],
-			[blocking_chain],
-			[command],
-			[status],
-			[statement],
-			[wait_time],
-			[wait_type],
-			[wait_resource],
-			[duration],
-			[is_system],
-			[transaction_state],
-			[isolation_level],
-			[transaction_type],
-			[context].value(N'(/context/program_name)[1]', N'sysname') [program_name],
-			[context].value(N'(/context/host_name)[1]', N'sysname') [host_name], 
-			[context].value(N'(/context/ip_address)[1]', N'sysname') [ip_address],
-			[context].value(N'(/context/login_name)[1]', N'sysname') [login_name]
-		FROM 
-			[#snapshot]
-	) 
-
-	SELECT @snapshot = (
-		SELECT 
-			[x].[database],
-			[x].[session_id],
-			[x].[blocking_chain],
-			(SELECT COUNT(*) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) [blocked_count],
-			ISNULL([x].[command], N'<orphaned>') [command],
-			[x].[status],
-			[x].[statement],
-			[x].[wait_type], 
-			[x].[wait_resource],
-			[x].[duration],
-			[x].[is_system],
-			CASE
-				WHEN [x].[transaction_state] = N'#Unknown#' THEN N'<orphaned>' 
-				ELSE [x].[transaction_state]
-			END [transaction_state],
-			[x].[isolation_level],
-			[x].[transaction_type],
-			[x].[program_name] [application], 
-			[x].[host_name] [host], 
-			[x].[ip_address] [ip],
-			[x].[login_name] [principal], 
-			COALESCE([a].[action], [l].[action], N'VICTIM') [action],
-			ISNULL([a].[outcome], N'') [outcome]
-		FROM 
-			[shredded] [x]
-			LEFT OUTER JOIN [#actionable] [a] ON [x].[session_id] = [a].[session_id]
-			LEFT OUTER JOIN [#leads] [l] ON [x].[session_id] = [l].[session_id]
-		FOR XML PATH(N'row'), ROOT(N'blocked_processes'), TYPE, ELEMENTS XSINIL
-	);
-
-	DECLARE @count int = 0, @killCount int = 0;
-
-	SELECT @count = COUNT(*) FROM [#snapshot] WHERE [duration] > @minThreshold;
-	SELECT @killCount = COUNT(*) FROM [#actionable] WHERE [outcome] = N'KILLED';
-
-	INSERT INTO dbo.[killed_processes]
-	(
-		[timestamp],
-		[type],
-		[print_only],
-		[row_count],
-		[kill_count],
-		[executed_by],
-		[app_name],
-		[parameters],
-		[snapshot]
-	)
-	VALUES
-	(
-		GETDATE(),	-- timestamp
-		N'blocking_processes', 
-		@PrintOnly, 
-		@count, 
-		@killCount, 
-		SUSER_NAME(), 
-		(SELECT [program_name] FROM sys.[dm_exec_sessions] WHERE [session_id] = @@SPID), 
-		@parameters,
-		@snapshot
-	);
-	SELECT @snapshotId = SCOPE_IDENTITY();
-
-	IF @exit = 1 OR @SendAlerts = 0 BEGIN 
-		RETURN 0;
-	END;
-
-SendMessage:
-
-	DECLARE @body nvarchar(MAX) = N'';
-	SELECT 
-		@body = @body + CASE WHEN [action] IN (N'KILL', N'ALERT', N'BLOCKER') THEN N'BLOCKER: ' ELSE  N'  VICTIM: ' END +
-		CASE WHEN ISNULL([action], N'VICTIM') = N'VICTIM' THEN N'' ELSE @crlf + @tab + N'ACTION					: ' + ISNULL([action], N'') END + 
-		CASE WHEN NULLIF([outcome], N'') IS NULL THEN N'' ELSE @crlf + @tab + N'OUTCOME				: ' + [outcome] END +
-		@crlf + @tab + N'database				:' + ISNULL([database], N'') +
-		@crlf + @tab + N'Session Id             : ' + CAST(ISNULL([session_id], -1) AS sysname) +
-		@crlf + @tab + N'Blocking Chain			: ' + CAST(ISNULL([blocking_chain], -1) AS sysname) + 
-		@crlf + @tab + N'Transaction Type		: ' + ISNULL([transaction_type], N'#UNKNOWN#') + 
-		@crlf + @tab + N'Status                 : ' + ISNULL([status], N'') +
-		@crlf + @tab + N'Command                : ' + ISNULL([command], N'') +
-		@crlf + @tab + N'Run Time               : ' + ISNULL([duration], N'') + 
-		@crlf + @tab + N'Transaction State      : ' + ISNULL([transaction_state], N'') +
-		@crlf + @tab + N'Isolation Level        : ' + ISNULL([isolation_level], N'#UNKNOWN#') +
-		@crlf + @tab + N'Program Name           : ' + ISNULL([application], N'') +
-		@crlf + @tab + N'Host                   : ' + ISNULL([host], N'') +
-		@crlf + @tab + N'Login                  : ' + ISNULL([principal], N'') +
-		@crlf + @tab + N'Statement: [' + 
-		@crlf + @tab + @tab + REPLACE(RTRIM(ISNULL([statement], N'')), @crlf, @crlf + @tab + @tab) +
-		@crlf + @crlf + @tab + N']' +
-		@crlf + @crlf
-	FROM 
-		dbo.[view_killed_blocking_processes]()
-	WHERE 
-		[instance_id] = @snapshotId;
-
-	DECLARE @subject sysname; 
-	SET @subject = ISNULL(@EmailSubjectPrefix, N'') + N' - Blocking Processes were Detected';
-	SET @message = N'The following blocking processes were detected on ' + @@SERVERNAME + N' and processed as follows: ' + @crlf + @crlf;
-	SET @message = @message + @body; 
-	SET @message = @message + @crlf + @crlf; 
-	SET @message = @message + N'For more details run the following: { SELECT * FROM admindb.dbo.[view_killed_blocking_processes]() WHERE [instance_id] = ' + CAST(@snapshotId AS sysname) + N'; }.';
-
-	IF @PrintOnly = 1 BEGIN 
-		PRINT N'SUBJECT: ' + @subject; 
-		PRINT N'BODY: ' + @message;
-	  END; 
-	ELSE BEGIN 
-		EXEC [msdb]..[sp_notify_operator] 
-			@profile_name = @MailProfileName,
-			@name = @OperatorName, 
-			@subject = @subject, 
-			@body = @message;	
-	END;
-
-	RETURN 0;
-GO
-
-
------------------------------------
-USE [admindb];
-GO
-
-IF OBJECT_ID('dbo.[kill_blocking_processes]','P') IS NOT NULL
-	DROP PROC dbo.[kill_blocking_processes];
-GO
-
-CREATE PROC dbo.[kill_blocking_processes]
-	@BlockingCountThreshold					int					= 1,					-- CAN, obviously, be set higher, but 1x blocked spid can be a major problem.... 
-	@AlertThreshold							sysname				= NULL, 
-	@KillThreshold							sysname				= N'90 seconds',		-- What about adding? {DISABLED} | {INFINITE}
-	@ExcludeBackupsAndRestores				bit					= 1,					-- ALL exclude/allow directives apply to ROOT blocker only.
-	@ExcludeSqlServerAgentJobs				bit					= 1,	
-	@Databases								nvarchar(MAX)		= NULL,
-	@Applications							nvarchar(MAX)		= NULL, 
-	@Principals								nvarchar(MAX)		= NULL, 
-	@Hosts									nvarchar(MAX)		= NULL, 
-	@IPs									nvarchar(MAX)		= NULL, 
-	@Statements								nvarchar(MAX)		= NULL,
-	@KillType								sysname				= N'KILL',			-- KILL | CAPTURE_ONLY
-	@SendAlerts								bit					= 1,
-	@OperatorName							sysname				= N'Alerts',
-	@MailProfileName						sysname				= N'General',
-	@EmailSubjectPrefix						nvarchar(50)		= N'[Blocked Processes]',
-	@PrintOnly								bit					= 0
-AS
-    SET NOCOUNT ON; 
-
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
-	
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Parameter Defaults / Validation:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	SET @BlockingCountThreshold = ISNULL(@BlockingCountThreshold, 2);
-	
-	IF @AlertThreshold IS NULL
-		SET @KillThreshold = ISNULL(NULLIF(@KillThreshold, N''), N'90 seconds');	
-	
-	SET @AlertThreshold = NULLIF(@AlertThreshold, N'');
-	SET @ExcludeBackupsAndRestores = ISNULL(@ExcludeBackupsAndRestores, 1);
-	SET @ExcludeSqlServerAgentJobs = ISNULL(@ExcludeSqlServerAgentJobs, 1);
-
-	SET @Databases = NULLIF(@Databases, N'');
-	SET @Applications = NULLIF(@Applications, N'');
-	SET @Principals = NULLIF(@Principals, N'');
-	SET @Hosts = NULLIF(@Hosts, N'');
-	SET @IPs = NULLIF(@IPs, N'');
-	SET @Statements = NULLIF(@Statements, N'');
-
-	SET @KillType = UPPER(ISNULL(NULLIF(@KillType, N''), N'KILL'));
-	SET @SendAlerts = ISNULL(@SendAlerts, 1);
-
-	IF @KillType NOT IN (N'KILL', N'CAPTURE_ONLY') BEGIN 
-		RAISERROR(N'Invalid @KillType Specified: [%s]. Allowed Values are { KILL | CAPTURE_ONLY }.', 16, 1);
-		RETURN -10;
-	END;
-
-	DECLARE @alertThresholdMilliseconds bigint = -1, @killThresholdMilliseconds bigint = -1, @vectorError nvarchar(MAX);
-
-	IF @AlertThreshold IS NOT NULL BEGIN 
-		EXEC admindb.dbo.[translate_vector]
-			@Vector = @AlertThreshold,
-			@ValidationParameterName = N'@AlertThreshold',
-			@Output = @alertThresholdMilliseconds OUTPUT,
-			@Error = @vectorError OUTPUT; 
-
-		IF @vectorError IS NOT NULL BEGIN
-			RAISERROR(@vectorError, 16, 1);
-			RETURN -10;  
-		END;
-	END;
-
-	IF @KillThreshold IS NOT NULL BEGIN 
-		SET @vectorError = NULL;
-		EXEC admindb.dbo.[translate_vector]
-			@Vector = @KillThreshold,
-			@ValidationParameterName = N'@KillThreshold',
-			@Output = @killThresholdMilliseconds OUTPUT,
-			@Error = @vectorError OUTPUT; 
-
-		IF @vectorError IS NOT NULL BEGIN
-			RAISERROR(@vectorError, 16, 1);
-			RETURN -10;  
-		END;
-	END;
-
-	IF @killThresholdMilliseconds > 0 BEGIN
-		IF @alertThresholdMilliseconds > @killThresholdMilliseconds BEGIN 
-			RAISERROR(N'@AlertThreshold my NOT be greater than @KillThreshold.', 16, 1);
-			RETURN -11;
-		END;
-	END;
-
-	IF @alertThresholdMilliseconds < 1 AND @killThresholdMilliseconds < 1 BEGIN
-		RAISERROR(N'@AlertThreshold or @KillThreshold must be set - both can NOT be NULL (or zero).', 16, 1);
-		RETURN -12;
-	END;
-
-	DECLARE @action sysname = N'';
-	IF @alertThresholdMilliseconds > 0 SET @action = @action + N'ALERT';
-	IF @killThresholdMilliseconds > 0 SET @action = @action + N'KILL';
-
-	DECLARE @minThreshold bigint = (SELECT MIN(n) FROM (VALUES(@alertThresholdMilliseconds), (@killThresholdMilliseconds)) x(n) WHERE n > 0);
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Check for ANY Blocking:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	CREATE TABLE #snapshot (
-		[database] sysname NULL,
-		[blocking_chain] nvarchar(400) NULL,
-		[blocking_session_id] nvarchar(4000) NULL,
-		[session_id] nvarchar(4000) NULL,
-		[command] sysname NULL,
-		[status] sysname NOT NULL,
-		[statement] nvarchar(MAX) NULL,
-		[wait_time] int NULL,
-		[wait_type] sysname NULL,
-		[wait_resource] nvarchar(256) NOT NULL,
-		[is_system] bit NOT NULL,
-		[duration] bigint NULL,
-		[transaction_state] varchar(11) NOT NULL,
-		[isolation_level] varchar(14) NULL,
-		[transaction_type] varchar(8) NOT NULL,
-		[context] xml NULL
-	);
-
-	INSERT INTO [#snapshot] (
-		[database],
-		[blocking_chain],
-		[blocking_session_id],
-		[session_id],
-		[command],
-		[status],
-		[statement],
-		[wait_time],
-		[wait_type],
-		[wait_resource],
-		[duration],
-		[is_system],
-		[transaction_state],
-		[isolation_level],
-		[transaction_type],
-		[context]
-	)
-	EXEC dbo.[list_collisions] 
-		@TargetDatabases = N'{ALL}', 
-		@IncludePlans = 0, 
-		@IncludeContext = 1, 
-		@UseInputBuffer = 1, 
-		@FormatTimeSpans = 0, 
-		@ExcludeFullTextCollisions = 0;
-
-	DELETE FROM [#snapshot] WHERE [session_id] IS NULL; -- no idea why/how this one happens... but it occasionally does. 
-
-	IF NOT EXISTS (SELECT NULL FROM [#snapshot]) BEGIN
-		RETURN 0; -- short-circuit (i.e., nothing to do or report).
-	END;
-
-	DECLARE @maxWait int = (SELECT MAX(wait_time) FROM [#snapshot] WHERE [wait_time] IS NOT NULL);
-	IF @maxWait < @minThreshold BEGIN 
-		RETURN 0;
-	END;
-
-	DECLARE @message nvarchar(MAX);
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Shred / Extract Details on ANY Blocking > @minThreshold:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	BEGIN TRY 
-		WITH shredded AS ( 
-			SELECT 
-				[database],
-				CAST([session_id] AS int) [session_id], 
-				CAST((REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' ' + CHAR(187) + N' ', N'')) AS int) [blocker],
-				[blocking_chain],
-				[command],
-				[status],
-				[statement],
-				[wait_time],
-				[wait_type],
-				[wait_resource],
-				[duration],
-				[is_system],
-				[transaction_state],
-				[isolation_level],
-				[transaction_type],
-				[context].value(N'(/context/program_name)[1]', N'sysname') [program_name],
-				[context].value(N'(/context/host_name)[1]', N'sysname') [host_name], 
-				[context].value(N'(/context/ip_address)[1]', N'sysname') [ip_address],
-				[context].value(N'(/context/login_name)[1]', N'sysname') [login_name]
-			FROM 
-				[#snapshot]
-		) 
-
-		SELECT 
-			[x].[database],
-			[x].[session_id],
-			[x].[blocking_chain],
-			(SELECT COUNT(*) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) [blocked_count],
-			ISNULL([x].[command], N'<orphaned>') [command],
-			[x].[status],
-			[x].[statement],
-			[x].[wait_type], 
-			[x].[wait_resource],
-			[x].[duration],
-			[x].[is_system],
-			CASE
-				WHEN [x].[transaction_state] = N'#Unknown#' THEN N'<orphaned>' 
-				ELSE [x].[transaction_state]
-			END [transaction_state],
-			[x].[isolation_level],
-			[x].[transaction_type],
-			[x].[program_name] [application], 
-			[x].[host_name] [host], 
-			[x].[ip_address] [ip],
-			[x].[login_name] [principal], 
-			CAST(NULL AS sysname) [action], 
-			CAST(NULL AS nvarchar(MAX)) [outcome]
-		INTO 
-			[#leads]
-		FROM 
-			[shredded] x
-		WHERE 
-			[x].[blocker] = 0
-			AND (SELECT MAX(wait_time) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) > (@minThreshold);
-	END TRY 
-	BEGIN CATCH 
-		SELECT @message = N'Exception Identifying Blockers: [' + ERROR_MESSAGE() + N'] on line [' + CAST(ERROR_LINE() AS sysname) + N'].';
-		GOTO SendMessage;
-	END CATCH;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Predication / Filters:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @Databases IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_databases ([row_id] int IDENTITY(1,1) NOT NULL, [database] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [database]));
-	END;
-	
-	IF @Applications IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_applications ([row_id] int IDENTITY(1,1) NOT NULL, [application] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [application]));
-	END; 
-
-	IF @Hosts IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_hosts ([row_id] int IDENTITY(1,1) NOT NULL, [host] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [host])); 
-	END;
-
-	IF @IPs IS NOT NULL BEGIN 
-		CREATE TABLE #ts_cp_ips ([row_id] int IDENTITY(1,1) NOT NULL, [ip] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [ip]));		
-	END;
-
-	IF @Principals IS NOT NULL BEGIN
-		CREATE TABLE #ts_cp_principals ([row_id] int IDENTITY(1,1) NOT NULL, [principal] sysname NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude], [principal]));
-	END;
-
-	IF @Statements IS NOT NULL BEGIN
-		CREATE TABLE #ts_cp_statements ([row_id] int IDENTITY(1,1) NOT NULL, [statement] nvarchar(MAX) NOT NULL, [exclude] bit DEFAULT(0), PRIMARY KEY CLUSTERED ([exclude]));
-	END;
-
-	DECLARE @joins nvarchar(MAX), @filters nvarchar(MAX);
-	EXEC dbo.[core_predicates]
-		@Databases = @Databases,
-		@Applications = @Applications,
-		@Hosts = @Hosts,
-		@IPs = @IPs,
-		@Principals = @Principals,
-		@Statements = @Statements,
-		@JoinPredicates = @joins OUTPUT,
-		@FilterPredicates = @filters OUTPUT;
-
-	CREATE TABLE [#actionable](
-		[row_id] int IDENTITY(1,1) NOT NULL,
-		[database] sysname NULL,
-		[session_id] int NULL,
-		[blocked_count] int NULL,
-		[command] sysname NOT NULL,
-		[status] sysname NOT NULL,
-		[statement] nvarchar(MAX) NULL,
-		[wait_type] sysname NULL,
-		[wait_resource] nvarchar(256) NULL,
-		[duration] sysname NULL,
-		[is_system] [bit] NOT NULL,
-		[transaction_state] nvarchar(11) NOT NULL,
-		[isolation_level] varchar(14) NULL,
-		[transaction_type] varchar(8) NOT NULL,
-		[application] sysname NULL,
-		[host] sysname NULL,
-		[ip] sysname NULL,
-		[principal] sysname NULL,
-		[action] sysname NULL,
-		[outcome] nvarchar(MAX) NULL
-	);
-
-	DECLARE @crlf nchar(2) = NCHAR(13) + NCHAR(10);
-	DECLARE @tab nchar(1) = NCHAR(9);
-	DECLARE @sql nvarchar(MAX) = N'SELECT 
-	[x].[database],
-	[x].[session_id],
-	[x].[blocked_count],
-	[x].[command],
-	[x].[status],
-	[x].[statement],
-	[x].[wait_type],
-	[x].[wait_resource],
-	[x].[duration],
-	[x].[is_system],
-	[x].[transaction_state],
-	[x].[isolation_level],
-	[x].[transaction_type],
-	[x].[application],
-	[x].[host],
-	[x].[ip],
-	[x].[principal] 
-FROM 
-	[#leads] [x]{joins}
-WHERE
-	1 = 1{filters}
-ORDER BY 
-	[x].[duration] DESC; ';
-
-	SET @sql = REPLACE(@sql, N'{joins}', @joins);
-	SET @sql = REPLACE(@sql, N'{filters}', @filters);
-
-	INSERT INTO [#actionable]
-	(
-		[database],
-		[session_id],
-		[blocked_count],
-		[command],
-		[status],
-		[statement],
-		[wait_type],
-		[wait_resource],
-		[duration],
-		[is_system],
-		[transaction_state],
-		[isolation_level],
-		[transaction_type],
-		[application],
-		[host],
-		[ip],
-		[principal]
-	)
-	EXEC sys.sp_executesql 
-		@sql;
-
-	UPDATE [l] 
-	SET 
-		[l].[action] = N'REMOVED_BY_STANDARD_PREDICATES'
-	FROM 
-		[#leads] [l] 
-		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]
-	WHERE
-		[x].[session_id] IS NULL;		
-	
-	DELETE FROM [#actionable] 
-	WHERE 
-		blocked_count < @BlockingCountThreshold;
-
-	IF @ExcludeSqlServerAgentJobs = 1 BEGIN 
-		DELETE FROM [#actionable] WHERE [application] LIKE N'SQLAgent - TSQL JobStep%';
-	END;
-
-	IF @ExcludeBackupsAndRestores = 1 BEGIN 
-		DELETE FROM [#actionable] 
-		WHERE 
-			[command] LIKE N'%BACKUP%'
-			OR 
-			[command] LIKE N'%RESTORE%'
-			OR 
-			[command] LIKE N'%DBCC%';
-	END;
-
-	UPDATE [l] 
-	SET 
-		[l].[action] = N'REMOVED_BY_CUSTOM_PREDICATES'
-	FROM 
-		[#leads] [l] 
-		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]
-	WHERE
-		[x].[session_id] IS NULL;
-
-	DELETE FROM [#actionable] 
-	WHERE 
-		[command] = N'KILLED/ROLLBACK';
-
-	UPDATE [l] 
-	SET 
-		[l].[action] = N'ALREADY_IN_KILL_STATE'
-	FROM 
-		[#leads] [l] 
-		LEFT OUTER JOIN [#actionable] [x] ON [l].[session_id] = [x].[session_id]
-	WHERE
-		[x].[session_id] IS NULL;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Process any remaining results:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	DECLARE @exit bit = 0;
-	IF NOT EXISTS (SELECT NULL FROM [#actionable]) BEGIN 
-		SET @exit = 1;
-		GOTO Capture_Snapshot;
-	END;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Mark Actionable Rows for Processing:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF @action LIKE N'%KILL%' BEGIN
-		UPDATE [#actionable]
-		SET 
-			[action] = N'KILL'
-		WHERE
-			[duration] > @killThresholdMilliseconds;
-	END;
-
-	IF @action LIKE N'%ALERT%' BEGIN
-		UPDATE [#actionable]
-		SET 
-			[action] = N'ALERT'
-		WHERE 
-			[action] IS NULL
-			AND [duration] > @alertThresholdMilliseconds;
-	END;
-
-	UPDATE [#actionable] 
-	SET 
-		[action] = N'BLOCKER'
-	WHERE 
-		[action] IS NULL; 
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- KILL killable SPIDS:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-	IF EXISTS (SELECT NULL FROM [#actionable] WHERE [action] = N'KILL') BEGIN 
-		DECLARE @rowId int, @sessionId int, @isSystem bit;
-		DECLARE @command sysname;	
-
-		DECLARE @errorMessage nvarchar(MAX), @errorLine int;
-	
-		DECLARE [killer] CURSOR LOCAL FAST_FORWARD FOR 
-		SELECT 
-			[row_id],
-			[session_id], 
-			[is_system]
-		FROM 
-			[#actionable]
-		WHERE 
-			[action] = N'KILL'
-		ORDER BY 
-			[duration] DESC;
-	
-		OPEN [killer];
-		FETCH NEXT FROM [killer]INTO @rowId, @sessionId, @isSystem;
-	
-		WHILE @@FETCH_STATUS = 0 BEGIN
-		
-			IF @isSystem = 0 OR @KillType <> N'KILL' BEGIN 
-				SET @command = N'KILL ' + CAST(@sessionId AS sysname) + N';';
-		
-				IF @PrintOnly = 1 BEGIN
-					PRINT @command;
-
-					UPDATE [#actionable] SET [outcome] = N'@PrintOnly = 1.' WHERE [row_id] = @rowId;
-				  END;
-				ELSE BEGIN
-					BEGIN TRY
-						EXEC(@command);
-
-						UPDATE [#actionable] SET [outcome] = N'KILLED.' WHERE [row_id] = @rowId;
-					END TRY 
-					BEGIN CATCH 
-						SELECT 
-						@errorLine = ERROR_LINE(), 
-						@errorMessage = N'Exception: ' + @crlf + N'Msg ' + CAST(ERROR_NUMBER() AS sysname) + N', Line ' + CAST(ERROR_LINE() AS sysname) + @crlf + ERROR_MESSAGE();
-
-						UPDATE [#actionable] SET [outcome] = @errorMessage WHERE [row_id] = @rowId;
-
-					END CATCH;
-				END;
-			  END;
-			ELSE BEGIN 
-				IF @isSystem = 1 BEGIN 
-					UPDATE [#actionable] SET [outcome] = N'SYSTEM-PROCESS - COULD NOT KILL.' WHERE [row_id] = @rowId;
-				  END;
-				ELSE BEGIN 
-					UPDATE [#actionable] SET [outcome] = N'@KillType = CAPTURE_ONLY.' WHERE [row_id] = @rowId;
-				END;
-			END;
-
-			FETCH NEXT FROM [killer]INTO @rowId, @sessionId, @isSystem;
-		END;
-	
-		CLOSE [killer];
-		DEALLOCATE [killer];
-	END;
-
-	/*---------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Snapshot:
-	---------------------------------------------------------------------------------------------------------------------------------------------------*/
-Capture_Snapshot:
-	DECLARE @snapshot xml, @snapshotId int;
-	DECLARE @parameters xml;
-
-	SELECT @parameters = (SELECT 
-		@BlockingCountThreshold [@BlockingCountThreshold],
-		@AlertThreshold [@AlertThreshold],
-		@KillThreshold [@KillThreshold],
-		@ExcludeBackupsAndRestores [@ExcludeBackupsAndRestores],
-		@ExcludeSqlServerAgentJobs [@ExcludeSqlServerAgentJobs],
-		@Databases [@Databases],
-		@Applications [@Applications],
-		@Principals [@Principals],
-		@Hosts [@Hosts],
-		@IPs [@IPs],
-		@Statements [@Statements],
-		@KillType [@KillType],
-		@SendAlerts [@SendAlerts],
-		@OperatorName [@OperatorName],
-		@MailProfileName [@MailProfileName],
-		@EmailSubjectPrefix [@EmailSubjectPrefix],
-		@PrintOnly [@PrintOnly]
-	FOR 
-		XML PATH(N'values'), ROOT(N'parameter'), TYPE);
-
-	WITH shredded AS ( 
-		SELECT 
-			[database],
-			CAST([session_id] AS int) [session_id], 
-			CAST((REPLACE(LEFT([blocking_chain], PATINDEX(N'% >%', [blocking_chain])), N' ' + CHAR(187) + N' ', N'')) AS int) [blocker],
-			[blocking_chain],
-			[command],
-			[status],
-			[statement],
-			[wait_time],
-			[wait_type],
-			[wait_resource],
-			[duration],
-			[is_system],
-			[transaction_state],
-			[isolation_level],
-			[transaction_type],
-			[context].value(N'(/context/program_name)[1]', N'sysname') [program_name],
-			[context].value(N'(/context/host_name)[1]', N'sysname') [host_name], 
-			[context].value(N'(/context/ip_address)[1]', N'sysname') [ip_address],
-			[context].value(N'(/context/login_name)[1]', N'sysname') [login_name]
-		FROM 
-			[#snapshot]
-	) 
-
-	SELECT @snapshot = (
-		SELECT 
-			[x].[database],
-			[x].[session_id],
-			[x].[blocking_chain],
-			(SELECT COUNT(*) FROM [shredded] x2 WHERE [x2].[blocker] = x.[session_id]) [blocked_count],
-			ISNULL([x].[command], N'<orphaned>') [command],
-			[x].[status],
-			[x].[statement],
-			[x].[wait_type], 
-			[x].[wait_resource],
-			[x].[duration],
-			[x].[is_system],
-			CASE
-				WHEN [x].[transaction_state] = N'#Unknown#' THEN N'<orphaned>' 
-				ELSE [x].[transaction_state]
-			END [transaction_state],
-			[x].[isolation_level],
-			[x].[transaction_type],
-			[x].[program_name] [application], 
-			[x].[host_name] [host], 
-			[x].[ip_address] [ip],
-			[x].[login_name] [principal], 
-			COALESCE([a].[action], [l].[action], N'VICTIM') [action],
-			ISNULL([a].[outcome], N'') [outcome]
-		FROM 
-			[shredded] [x]
-			LEFT OUTER JOIN [#actionable] [a] ON [x].[session_id] = [a].[session_id]
-			LEFT OUTER JOIN [#leads] [l] ON [x].[session_id] = [l].[session_id]
-		FOR XML PATH(N'row'), ROOT(N'blocked_processes'), TYPE, ELEMENTS XSINIL
-	);
-
-	DECLARE @count int = 0, @killCount int = 0;
-
-	SELECT @count = COUNT(*) FROM [#snapshot] WHERE [duration] > @minThreshold;
-	SELECT @killCount = COUNT(*) FROM [#actionable] WHERE [outcome] = N'KILLED';
-
-	INSERT INTO dbo.[killed_processes]
-	(
-		[timestamp],
-		[type],
-		[print_only],
-		[row_count],
-		[kill_count],
-		[executed_by],
-		[app_name],
-		[parameters],
-		[snapshot]
-	)
-	VALUES
-	(
-		GETDATE(),	-- timestamp
-		N'blocking_processes', 
-		@PrintOnly, 
-		@count, 
-		@killCount, 
-		SUSER_NAME(), 
-		(SELECT [program_name] FROM sys.[dm_exec_sessions] WHERE [session_id] = @@SPID), 
-		@parameters,
-		@snapshot
-	);
-	SELECT @snapshotId = SCOPE_IDENTITY();
-
-	IF @exit = 1 OR @SendAlerts = 0 BEGIN 
-		RETURN 0;
-	END;
-
-SendMessage:
-
-	DECLARE @body nvarchar(MAX) = N'';
-	SELECT 
-		@body = @body + CASE WHEN [action] IN (N'KILL', N'ALERT', N'BLOCKER') THEN N'BLOCKER: ' ELSE  N'  VICTIM: ' END +
-		CASE WHEN ISNULL([action], N'VICTIM') = N'VICTIM' THEN N'' ELSE @crlf + @tab + N'ACTION					: ' + ISNULL([action], N'') END + 
-		CASE WHEN NULLIF([outcome], N'') IS NULL THEN N'' ELSE @crlf + @tab + N'OUTCOME				: ' + [outcome] END +
-		@crlf + @tab + N'database				:' + ISNULL([database], N'') +
-		@crlf + @tab + N'Session Id             : ' + CAST(ISNULL([session_id], -1) AS sysname) +
-		@crlf + @tab + N'Blocking Chain			: ' + CAST(ISNULL([blocking_chain], -1) AS sysname) + 
-		@crlf + @tab + N'Transaction Type		: ' + ISNULL([transaction_type], N'#UNKNOWN#') + 
-		@crlf + @tab + N'Status                 : ' + ISNULL([status], N'') +
-		@crlf + @tab + N'Command                : ' + ISNULL([command], N'') +
-		@crlf + @tab + N'Run Time               : ' + ISNULL([duration], N'') + 
-		@crlf + @tab + N'Transaction State      : ' + ISNULL([transaction_state], N'') +
-		@crlf + @tab + N'Isolation Level        : ' + ISNULL([isolation_level], N'#UNKNOWN#') +
-		@crlf + @tab + N'Program Name           : ' + ISNULL([application], N'') +
-		@crlf + @tab + N'Host                   : ' + ISNULL([host], N'') +
-		@crlf + @tab + N'Login                  : ' + ISNULL([principal], N'') +
-		@crlf + @tab + N'Statement: [' + 
-		@crlf + @tab + @tab + REPLACE(RTRIM(ISNULL([statement], N'')), @crlf, @crlf + @tab + @tab) +
-		@crlf + @crlf + @tab + N']' +
-		@crlf + @crlf
-	FROM 
-		dbo.[view_killed_blocking_processes]()
+		dbo.[killed_blocking_processes_data]()
 	WHERE 
 		[instance_id] = @snapshotId;
 
@@ -47576,6 +48043,7 @@ CREATE PROC dbo.[kill_long_running_processes]
 	@ExecutionThresholdSeconds				int					= 70, 
 	@ExcludeBackupsAndRestores				bit					= 1, 
 	@ExcludeSqlServerAgentJobs				bit					= 1, 
+-- TODO: https://overachieverllc.atlassian.net/browse/S4-984
 	@Databases								nvarchar(MAX)		= NULL,
 	@Applications							nvarchar(MAX)		= NULL, 
 	@Principals								nvarchar(MAX)		= NULL, 
@@ -47590,7 +48058,7 @@ CREATE PROC dbo.[kill_long_running_processes]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExecutionThresholdSeconds = ISNULL(@ExecutionThresholdSeconds, 70);
 	SET @ExcludeBackupsAndRestores = ISNULL(@ExcludeBackupsAndRestores, 1);
@@ -47900,6 +48368,7 @@ AS
 	-- Snapshot / Persist any Processes that have made it to this point (whether @PrintOnly = 1 or not):
 	---------------------------------------------------------------------------------------------------------------------------------------------------*/
 	IF @CaptureDetails = 1 BEGIN 
+-- TODO: https://overachieverllc.atlassian.net/browse/S4-985
 		INSERT INTO dbo.[long_running_process_snapshots]
 		(
 			[timestamp],
@@ -48063,7 +48532,7 @@ RETURNS table
 AS
     RETURN
 	
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SELECT 
 		number[position], 
@@ -48095,7 +48564,7 @@ CREATE PROC dbo.[aws3_verify_configuration]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @VerifyNuget = ISNULL(@VerifyNuget, 0);
 	SET @VerifyGalleryAccess = ISNULL(@VerifyGalleryAccess, 0);
@@ -48502,7 +48971,7 @@ CREATE PROC dbo.[aws3_install_modules]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @returnValue int;
 	DECLARE @commandResults xml;
@@ -48628,7 +49097,7 @@ CREATE PROC dbo.[aws3_initialize_profile]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	EXEC dbo.[verify_advanced_capabilities];
 
@@ -48716,7 +49185,7 @@ CREATE PROC dbo.[aws3_list_buckets]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @ExcludedBuckets = NULLIF(@ExcludedBuckets, N'');
 	SET @OrderBy = ISNULL(@OrderBy, N'NAME');
@@ -48919,7 +49388,7 @@ CREATE PROC dbo.[aws3_verify_bucket_write]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	EXEC dbo.[verify_advanced_capabilities];
 
@@ -49031,7 +49500,7 @@ CREATE PROC dbo.[idiom_for_batched_operation]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @WaitFor = NULLIF(@WaitFor, N'');
 	SET @StopIfTempTableExists = NULLIF(@StopIfTempTableExists, N'');
@@ -49578,7 +50047,7 @@ CREATE PROC dbo.[blueprint_for_batched_operation]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	------------------------------------------------------------------------------------------------------------------------------
 	-- Validate Inputs:
@@ -50267,7 +50736,7 @@ CREATE PROC dbo.[kill_resource_governor_connections]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TargetWorkgroups = ISNULL(NULLIF(@TargetWorkgroups, N''), N'{ALL}');
 	SET @TargetResourcePools = ISNULL(NULLIF(@TargetResourcePools, N''), N'{ALL}');
@@ -50565,7 +51034,7 @@ AS
 
 	SET @Mode = ISNULL(NULLIF(@Mode, N''), N'READ_AND_WRITE');
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF UPPER(@Mode) IN (N'READ', N'READ_AND_WRITE') BEGIN
 		SELECT 
@@ -50631,7 +51100,7 @@ CREATE PROC dbo.[translate_cpu_counters]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -50951,7 +51420,7 @@ CREATE PROC dbo.[translate_io_counters]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @SourceTable = NULLIF(@SourceTable, N'');
 	SET @TargetTable = NULLIF(@TargetTable, N'');
@@ -51322,7 +51791,7 @@ CREATE PROC dbo.[translate_memory_counters]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @normalizedName sysname; 
 	DECLARE @sourceObjectID int; 
@@ -51489,7 +51958,7 @@ CREATE PROC dbo.[report_cpu_and_sql_exception_percentages]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @CpuOverPercentageThreshold = NULLIF(@CpuOverPercentageThreshold, 0);
 	SET @PleUnderThreshold = NULLIF(@PleUnderThreshold, 0);
@@ -51638,7 +52107,7 @@ CREATE PROC dbo.[report_cpu_and_sql_threshold_exceptions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @CpuOverPercentageThreshold = NULLIF(@CpuOverPercentageThreshold, 0);
 	SET @PleUnderThreshold = NULLIF(@PleUnderThreshold, 0);
@@ -51790,7 +52259,7 @@ CREATE PROC dbo.[report_cpu_percent_of_percent_load]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @normalizedName sysname; 
 	DECLARE @targetObjectID int; 
@@ -52002,7 +52471,7 @@ CREATE PROC dbo.[report_io_percent_of_percent_load]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @TargetDisks = ISNULL(NULLIF(@TargetDisks, N''), N'{ALL}');
 
@@ -52457,7 +52926,7 @@ CREATE PROC dbo.[report_io_threshold_exceptions]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @TargetDisks = ISNULL(NULLIF(@TargetDisks, N''), N'{ALL}');
 
@@ -52662,7 +53131,7 @@ CREATE PROC dbo.[report_memory_percent_of_percent_load]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @Ple_GYR_Thresholds = ISNULL(NULLIF(@Ple_GYR_Thresholds, N''), N'6000, 2000, 1200');
 	SET @GransSizeGB_GYR_Thresholds = ISNULL(NULLIF(@GransSizeGB_GYR_Thresholds, N''), N'2, 4, 8');
@@ -52985,7 +53454,7 @@ CREATE PROC dbo.[report_trace_continuity]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	SET @SourceTable = NULLIF(@SourceTable, N'');
 
@@ -53155,7 +53624,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN;
 
@@ -53191,7 +53660,7 @@ RETURNS @synchronizingDatabases table (
 	[role] sysname
 ) 
 AS
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	 
 	BEGIN;
 
@@ -53233,7 +53702,7 @@ GO
 CREATE FUNCTION dbo.is_primary_server()
 RETURNS bit
 AS 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN
 		DECLARE @output bit = 0;
@@ -53269,7 +53738,7 @@ GO
 CREATE FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -53295,7 +53764,7 @@ DECLARE @is_primary_database nvarchar(MAX) = N'
 ALTER FUNCTION dbo.is_primary_database(@DatabaseName sysname)
 RETURNS bit
 AS
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	BEGIN 
 		DECLARE @description sysname;
@@ -53345,7 +53814,7 @@ RETURNS sysname
 	WITH RETURNS NULL ON NULL INPUT
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -53379,7 +53848,7 @@ CREATE PROC dbo.compare_jobs
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @localServerName sysname = @@SERVERNAME;
 	DECLARE @remoteServerName sysname; 
@@ -53869,7 +54338,7 @@ CREATE PROC dbo.[process_synchronization_status]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @serverName sysname = @@SERVERNAME;
 	DECLARE @username sysname;
@@ -54366,7 +54835,7 @@ CREATE PROC dbo.[process_synchronization_server_start]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	IF @PrintOnly = 0 
 		WAITFOR DELAY '00:00:05.00'; /* nah. really. let things settle down a bit before conducting an analysis... */
@@ -54566,7 +55035,7 @@ CREATE PROC dbo.verify_job_states
 AS 
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF @PrintOnly = 0 BEGIN -- if we're not running a 'manual' execution - make sure we have all parameters:
 		-- Operator Checks:
@@ -54769,7 +55238,7 @@ CREATE PROC dbo.[populate_trace_flags]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	TRUNCATE TABLE dbo.[server_trace_flags];
 
@@ -54815,7 +55284,7 @@ CREATE PROC dbo.[verify_partner]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @output nvarchar(MAX);
 
@@ -54865,7 +55334,7 @@ CREATE PROC [dbo].[verify_job_synchronization]
 AS 
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @IgnoredJobs = NULLIF(@IgnoredJobs, N'');
 	SET @JobCategoryMapping = NULLIF(@JobCategoryMapping, N'');
@@ -55630,7 +56099,7 @@ CREATE PROC dbo.verify_server_synchronization
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-----------------------------------------------------------------------------
 	IF (SELECT dbo.[is_primary_server]()) = 0 BEGIN
@@ -56885,7 +57354,7 @@ CREATE PROC dbo.verify_data_synchronization
 AS
 	SET NOCOUNT ON;
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	----------------------------------------------
 	-- Determine which server to run checks on. 
@@ -57519,7 +57988,7 @@ CREATE PROC dbo.[add_synchronization_partner]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	SET @ServerNames = NULLIF(@ServerNames, N'');
 
@@ -57602,13 +58071,23 @@ AS
     END;
 
     BEGIN TRY
+		DECLARE @provider sysname = N'MSOLEDBSQL';
+		IF dbo.[engine_version](N'RTM') <= 13
+			SET @provider = N'SQLNCLI';
+
         EXEC master.dbo.sp_addlinkedserver 
 	        @server = N'PARTNER', 
 	        @srvproduct = N'', 
--- TODO: IF SQL Server 2016 or lower, use 'SQLNCLI' instead of MSOLEDBSQL
-	        @provider = N'MSOLEDBSQL', 
+	        @provider = @provider, 
 	        @datasrc = @remoteHostName, 
 	        @catalog = N'master';
+
+		IF dbo.[engine_version](N'RTM') >= 17. BEGIN
+			EXEC master.dbo.sp_serveroption 
+				@server = N'PARTNER', 
+				@optname = N'provider string', 
+				@optvalue = N'Encrypt=Yes;TrustServerCertificate=Yes';
+		END;
 
         EXEC master.dbo.sp_addlinkedsrvlogin 
 	        @rmtsrvname = N'PARTNER',
@@ -57681,7 +58160,7 @@ CREATE PROC dbo.[add_failover_processing]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     DECLARE @errorMessage nvarchar(MAX);
 
@@ -57847,7 +58326,7 @@ CREATE PROC dbo.[create_sync_check_jobs]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	-- TODO: validate inputs... 
 
@@ -58208,7 +58687,7 @@ CREATE PROC dbo.[verify_synchronization_setup]
 AS
     SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
     CREATE TABLE #Errors (
 	    ErrorId int IDENTITY(1,1) NOT NULL, 
@@ -58534,7 +59013,7 @@ RETURNS @nonaccessibleDatabases table (
 )
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -58586,7 +59065,7 @@ RETURNS @nonaccessibleDatabases table (
 )
 AS
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
     
     BEGIN; 
     	
@@ -58647,7 +59126,7 @@ CREATE FUNCTION dbo.[log_events_data] (@events xml)
 RETURNS table
 	AS RETURN 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	WITH core AS ( 
 		SELECT
@@ -58683,7 +59162,7 @@ CREATE FUNCTION dbo.[directory_sizing_data] (@directories xml)
 RETURNS table
     AS RETURN 
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
   
 	WITH core AS ( 
 		SELECT 
@@ -58720,7 +59199,7 @@ CREATE FUNCTION dbo.[system_disks_data] (@disks xml)
 RETURNS table
     AS RETURN 
     
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
   
 	WITH core AS ( 
 		SELECT 
@@ -58741,6 +59220,163 @@ RETURNS table
 		[size_gb],
 		[free_gb],
 		[percent_used] 
+	FROM 
+		core;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID(N'dbo.[killed_processes_data]', N'IF') IS NOT NULL
+	DROP FUNCTION dbo.[killed_processes_data];
+GO
+
+CREATE FUNCTION dbo.[killed_processes_data] ()
+RETURNS table
+AS
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+    
+    RETURN
+    WITH core AS ( 
+        SELECT 
+            [s].[row_id] [instance_id],
+            LAG([s].[row_id], 1, -1) OVER (ORDER BY [s].[row_id]) [previous_id],
+			[s].[timestamp],
+
+			[nodes].[row].value(N'(action)[1]', N'sysname') [action],
+			[nodes].[row].value(N'(outcome)[1]', N'sysname') [outcome],
+
+			[nodes].[row].value(N'(database)[1]', N'sysname') [database], 
+            [nodes].[row].value(N'(session_id)[1]', N'int') [session_id],
+			[nodes].[row].value(N'(command)[1]', N'sysname') [command],
+			[nodes].[row].value(N'(status)[1]', N'sysname') [status],
+			[nodes].[row].value(N'(statement)[1]', N'nvarchar(MAX)') [statement], 
+			[nodes].[row].value(N'(application)[1]', N'sysname') [application],
+			[nodes].[row].value(N'(host)[1]', N'sysname') [host],
+			[nodes].[row].value(N'(ip)[1]', N'sysname') [ip],
+			[nodes].[row].value(N'(principal)[1]', N'sysname') [principal], 
+            [nodes].[row].value(N'(cpu_time)[1]', N'bigint') [cpu_time],
+            [nodes].[row].value(N'(reads)[1]', N'bigint') [reads],
+            [nodes].[row].value(N'(writes)[1]', N'bigint') [writes],
+            [nodes].[row].value(N'(memory_usage)[1]', N'bigint') [memory_usage],
+            [nodes].[row].value(N'(total_scheduled_time)[1]', N'bigint') [total_scheduled_time],
+            [nodes].[row].value(N'(total_elapsed_time)[1]', N'bigint') [total_elapsed_time],
+            [nodes].[row].value(N'(open_transaction_count)[1]', N'int') [open_transaction_count],
+            [nodes].[row].value(N'(statement_start_offset)[1]', N'int') [statement_start_offset],
+            [nodes].[row].value(N'(statement_end_offset)[1]', N'int') [statement_end_offset], 
+            [nodes].[row].value(N'(plan_handle)[1]', 'varbinary(64)') [plan_handle]
+        FROM 
+            dbo.[killed_processes] [s]
+            OUTER APPLY [s].[snapshot].nodes(N'killed_process/row') [nodes]([row])
+        WHERE 
+            [type] = N'KILLED_PROCESSES'
+    )
+    	
+    SELECT 
+		CASE WHEN [instance_id] = [previous_id] THEN N'' ELSE CAST([instance_id] AS sysname) END [snapshot_id],
+		CASE WHEN [instance_id] = [previous_id] THEN N'' ELSE CONVERT(sysname, [timestamp], 120) END[timestamp],
+		[session_id], 
+        [host], 
+        [application], 
+        [principal], 
+        [ip],
+        [database], 
+        [command], 
+        [status], 
+        [action],
+		[outcome],
+        [statement], 
+        [cpu_time], 
+        [reads], 
+        [writes], 
+        [memory_usage],
+        [total_scheduled_time], 
+        [total_elapsed_time], 
+        [open_transaction_count], 
+        [statement_start_offset], 
+        [statement_end_offset], 
+        [plan_handle]
+    FROM 
+        core;
+GO
+
+
+-----------------------------------
+USE [admindb];
+GO
+
+IF OBJECT_ID('dbo.[killed_blocking_processes_data]','IF') IS NOT NULL
+	DROP FUNCTION dbo.[killed_blocking_processes_data];
+GO
+
+CREATE FUNCTION dbo.[killed_blocking_processes_data]()
+RETURNS table
+AS
+    
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	RETURN
+	WITH core AS ( 
+
+		SELECT 
+			[s].[row_id] [instance_id],
+			LAG([s].[row_id], 1, -1) OVER (ORDER BY [s].[row_id]) [previous_id],
+			[s].[timestamp],
+			[s].[print_only],
+
+			[nodes].[row].value(N'(action)[1]', N'sysname') [action],
+			[nodes].[row].value(N'(outcome)[1]', N'sysname') [outcome],
+			[nodes].[row].value(N'(database)[1]', N'sysname') [database],
+			[nodes].[row].value(N'(blocking_chain)[1]', N'sysname') [blocking_chain],
+			[nodes].[row].value(N'(session_id)[1]', N'int') [session_id],
+			[nodes].[row].value(N'(command)[1]', N'sysname') [command],
+			[nodes].[row].value(N'(status)[1]', N'sysname') [status],
+			[nodes].[row].value(N'(statement)[1]', N'nvarchar(MAX)') [statement],
+			[nodes].[row].value(N'(duration)[1]', N'sysname') [duration],
+			[nodes].[row].value(N'(wait_type)[1]', N'sysname') [wait_type],
+			[nodes].[row].value(N'(wait_resource)[1]', N'sysname') [wait_resource],
+			[nodes].[row].value(N'(is_system)[1]', N'sysname') [is_system],
+			[nodes].[row].value(N'(transaction_state)[1]', N'sysname') [transaction_state],
+			[nodes].[row].value(N'(transaction_type)[1]', N'sysname') [transaction_type], 
+			[nodes].[row].value(N'(isolation_level)[1]', N'sysname') [isolation_level],
+			[nodes].[row].value(N'(application)[1]', N'sysname') [application],
+			[nodes].[row].value(N'(host)[1]', N'sysname') [host],
+			[nodes].[row].value(N'(ip)[1]', N'sysname') [ip],
+			[nodes].[row].value(N'(principal)[1]', N'sysname') [principal]
+
+		FROM 
+			dbo.[killed_processes] [s]
+			OUTER APPLY [s].[snapshot].nodes(N'blocked_processes/row') [nodes]([row])
+		WHERE 
+			[type] = N'BLOCKING_PROCESSES'
+
+	) 
+
+	SELECT 
+		[instance_id],
+		CASE WHEN [instance_id] = [previous_id] THEN N'' ELSE CAST([instance_id] AS sysname) END [id],
+		CASE WHEN [instance_id] = [previous_id] THEN N'' ELSE CONVERT(sysname, [timestamp], 120) END[timestamp],
+		[database],
+		[blocking_chain],
+		[session_id],
+		[command],
+		[status],
+		N'' [ ],
+		[action],
+		[outcome],
+		[statement],
+		[duration],
+		[wait_type],
+		[wait_resource],
+		[is_system],
+		[transaction_state], 
+		[transaction_type], 
+		[isolation_level],
+		[application], 
+		[host], 
+		[ip], 
+		[principal]		
 	FROM 
 		core;
 GO
@@ -58776,7 +59412,7 @@ DECLARE @generate_audit_signature nvarchar(MAX) = N'ALTER PROC dbo.generate_audi
 AS
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @hash int = 0;
@@ -58848,7 +59484,7 @@ CREATE PROC dbo.generate_specification_signature
 AS
 	SET NOCOUNT ON; 
 	
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 	
 	DECLARE @errorMessage nvarchar(MAX);
 	DECLARE @specificationScope sysname;
@@ -59025,7 +59661,7 @@ CREATE PROC dbo.verify_audit_configuration
 AS 
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -59143,7 +59779,7 @@ CREATE PROC dbo.verify_specification_configuration
 AS	
 	SET NOCOUNT ON; 
 
-	-- [v14.7.5586.5] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
+	-- [v14.8.5641.3] - License, Code, & Docs: https://github.com/overachiever-productions/s4/ 
 
 	IF UPPER(@ExpectedEnabledState) NOT IN (N'ON', N'OFF') BEGIN
 		RAISERROR('Allowed values for @ExpectedEnabledState are ''ON'' or ''OFF'' - no other values are allowed.', 16, 1);
@@ -59287,8 +59923,8 @@ GO
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- 5. Update version_history with details about current version (i.e., if we got this far, the deployment is successful). 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-DECLARE @CurrentVersion varchar(20) = N'14.7.5586.5';
-DECLARE @VersionDescription nvarchar(200) = N'Overhaul of dbo.print_string() + addition of dbo.querystats_consumers.';
+DECLARE @CurrentVersion varchar(20) = N'14.8.5641.3';
+DECLARE @VersionDescription nvarchar(200) = N'Major changes and improvements to tempdb diagnostics + addition of dbo.zombie_transactions.';
 DECLARE @InstallType nvarchar(20) = N'Install. ';
 
 IF EXISTS (SELECT NULL FROM dbo.[version_history] WHERE CAST(LEFT(version_number, 3) AS decimal(3,1)) >= 4)
